@@ -470,11 +470,6 @@ export function InstancesManager<TAccount extends AccountLike>({
     }
   };
 
-  const handleOpenStrategyModal = () => {
-    setPendingStrategy(restartStrategy);
-    setShowStrategyModal(true);
-  };
-
   const handleConfirmStrategy = () => {
     setRestartStrategy(pendingStrategy);
     setShowStrategyModal(false);

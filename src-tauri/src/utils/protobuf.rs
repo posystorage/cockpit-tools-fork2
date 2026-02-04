@@ -9,6 +9,20 @@ pub fn encode_varint(mut value: u64) -> Vec<u8> {
     buf
 }
 
+/// 编码长度分隔字段 (wire_type = 2)
+pub fn encode_len_delim_field(field_num: u32, data: &[u8]) -> Vec<u8> {
+    let tag = (field_num << 3) | 2;
+    let mut f = encode_varint(tag as u64);
+    f.extend(encode_varint(data.len() as u64));
+    f.extend_from_slice(data);
+    f
+}
+
+/// 编码字符串字段 (wire_type = 2)
+pub fn encode_string_field(field_num: u32, value: &str) -> Vec<u8> {
+    encode_len_delim_field(field_num, value.as_bytes())
+}
+
 /// 读取 Protobuf Varint
 pub fn read_varint(data: &[u8], offset: usize) -> Result<(u64, usize), String> {
     let mut result = 0u64;
@@ -81,62 +95,32 @@ pub fn remove_field(data: &[u8], field_num: u32) -> Result<Vec<u8>, String> {
     Ok(result)
 }
 
-/// 创建 OAuthTokenInfo (Field 6)
-pub fn create_oauth_field(access_token: &str, refresh_token: &str, expiry: i64) -> Vec<u8> {
+/// 创建 OAuthTokenInfo 消息
+pub fn create_oauth_info(access_token: &str, refresh_token: &str, expiry: i64) -> Vec<u8> {
     // Field 1: access_token (string, wire_type = 2)
-    let tag1 = (1 << 3) | 2;
-    let field1 = {
-        let mut f = encode_varint(tag1);
-        f.extend(encode_varint(access_token.len() as u64));
-        f.extend(access_token.as_bytes());
-        f
-    };
+    let field1 = encode_string_field(1, access_token);
 
     // Field 2: token_type (string, fixed value "Bearer", wire_type = 2)
-    let tag2 = (2 << 3) | 2;
-    let token_type = "Bearer";
-    let field2 = {
-        let mut f = encode_varint(tag2);
-        f.extend(encode_varint(token_type.len() as u64));
-        f.extend(token_type.as_bytes());
-        f
-    };
+    let field2 = encode_string_field(2, "Bearer");
 
     // Field 3: refresh_token (string, wire_type = 2)
-    let tag3 = (3 << 3) | 2;
-    let field3 = {
-        let mut f = encode_varint(tag3);
-        f.extend(encode_varint(refresh_token.len() as u64));
-        f.extend(refresh_token.as_bytes());
-        f
-    };
+    let field3 = encode_string_field(3, refresh_token);
 
     // Field 4: expiry (嵌套的 Timestamp 消息, wire_type = 2)
     let timestamp_tag = (1 << 3) | 0;
-    let timestamp_msg = {
-        let mut m = encode_varint(timestamp_tag);
-        m.extend(encode_varint(expiry as u64));
-        m
-    };
-    
-    let tag4 = (4 << 3) | 2;
-    let field4 = {
-        let mut f = encode_varint(tag4);
-        f.extend(encode_varint(timestamp_msg.len() as u64));
-        f.extend(timestamp_msg);
-        f
-    };
+    let mut timestamp_msg = encode_varint(timestamp_tag);
+    timestamp_msg.extend(encode_varint(expiry as u64));
+
+    let field4 = encode_len_delim_field(4, &timestamp_msg);
 
     // 合并所有字段为 OAuthTokenInfo 消息
-    let oauth_info = [field1, field2, field3, field4].concat();
+    [field1, field2, field3, field4].concat()
+}
 
-    // 包装为 Field 6 (length-delimited)
-    let tag6 = (6 << 3) | 2;
-    let mut field6 = encode_varint(tag6);
-    field6.extend(encode_varint(oauth_info.len() as u64));
-    field6.extend(oauth_info);
-
-    field6
+/// 创建 OAuthTokenInfo (Field 6)
+pub fn create_oauth_field(access_token: &str, refresh_token: &str, expiry: i64) -> Vec<u8> {
+    let oauth_info = create_oauth_info(access_token, refresh_token, expiry);
+    encode_len_delim_field(6, &oauth_info)
 }
 
 /// 从 protobuf 数据中提取 refresh_token

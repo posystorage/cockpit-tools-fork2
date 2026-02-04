@@ -1,6 +1,6 @@
 use crate::utils::protobuf;
 use base64::{engine::general_purpose, Engine as _};
-use rusqlite::Connection;
+use rusqlite::{Connection, Error as SqliteError};
 use std::path::{Path, PathBuf};
 
 /// 获取 Antigravity 数据库路径
@@ -45,38 +45,49 @@ pub fn inject_token_to_path(
 ) -> Result<String, String> {
     crate::modules::logger::log_info(&format!("注入 Token 到数据库: {:?}", db_path));
 
+    // 新格式：antigravityUnifiedStateSync.oauthToken
+    inject_unified_oauth_token_to_path(db_path, access_token, refresh_token, expiry)?;
+
     let conn = Connection::open(db_path).map_err(|e| format!("打开数据库失败: {}", e))?;
 
-    // 读取当前数据
-    let current_data: String = conn
-        .query_row(
-            "SELECT value FROM ItemTable WHERE key = ?",
-            ["jetskiStateSync.agentManagerInitState"],
-            |row| row.get(0),
+    // 读取旧格式数据（可能不存在）
+    let current_data: Option<String> = match conn.query_row(
+        "SELECT value FROM ItemTable WHERE key = ?",
+        ["jetskiStateSync.agentManagerInitState"],
+        |row| row.get(0),
+    ) {
+        Ok(value) => Some(value),
+        Err(SqliteError::QueryReturnedNoRows) => None,
+        Err(e) => return Err(format!("读取数据失败: {}", e)),
+    };
+
+    if let Some(current_data) = current_data {
+        // Base64 解码
+        let blob = general_purpose::STANDARD
+            .decode(&current_data)
+            .map_err(|e| format!("Base64 解码失败: {}", e))?;
+
+        // 移除旧 Field 6
+        let clean_data = protobuf::remove_field(&blob, 6)?;
+
+        // 创建新 Field 6
+        let new_field = protobuf::create_oauth_field(access_token, refresh_token, expiry);
+
+        // 合并数据
+        let final_data = [clean_data, new_field].concat();
+        let final_b64 = general_purpose::STANDARD.encode(&final_data);
+
+        // 写入数据库
+        conn.execute(
+            "UPDATE ItemTable SET value = ? WHERE key = ?",
+            [&final_b64, "jetskiStateSync.agentManagerInitState"],
         )
-        .map_err(|e| format!("读取数据失败: {}", e))?;
-
-    // Base64 解码
-    let blob = general_purpose::STANDARD
-        .decode(&current_data)
-        .map_err(|e| format!("Base64 解码失败: {}", e))?;
-
-    // 移除旧 Field 6
-    let clean_data = protobuf::remove_field(&blob, 6)?;
-
-    // 创建新 Field 6
-    let new_field = protobuf::create_oauth_field(access_token, refresh_token, expiry);
-
-    // 合并数据
-    let final_data = [clean_data, new_field].concat();
-    let final_b64 = general_purpose::STANDARD.encode(&final_data);
-
-    // 写入数据库
-    conn.execute(
-        "UPDATE ItemTable SET value = ? WHERE key = ?",
-        [&final_b64, "jetskiStateSync.agentManagerInitState"],
-    )
-    .map_err(|e| format!("写入数据失败: {}", e))?;
+        .map_err(|e| format!("写入数据失败: {}", e))?;
+    } else {
+        crate::modules::logger::log_warn(
+            "未找到 jetskiStateSync.agentManagerInitState，跳过旧格式注入",
+        );
+    }
 
     // 注入 Onboarding 标记
     let onboarding_key = "antigravityOnboarding";
@@ -88,6 +99,39 @@ pub fn inject_token_to_path(
 
     crate::modules::logger::log_info("Token 注入成功");
     Ok(format!("Token 注入成功！\n数据库: {:?}", db_path))
+}
+
+/// 注入 Token 到 antigravityUnifiedStateSync.oauthToken（新格式）
+pub fn inject_unified_oauth_token_to_path(
+    db_path: &Path,
+    access_token: &str,
+    refresh_token: &str,
+    expiry: i64,
+) -> Result<(), String> {
+    let conn = Connection::open(db_path).map_err(|e| format!("打开数据库失败: {}", e))?;
+
+    // 创建 OAuthTokenInfo（二进制）
+    let oauth_info = protobuf::create_oauth_info(access_token, refresh_token, expiry);
+    let oauth_info_b64 = general_purpose::STANDARD.encode(&oauth_info);
+
+    // InnerMessage2: field 1 = base64(oauth_info)
+    let inner2 = protobuf::encode_string_field(1, &oauth_info_b64);
+
+    // InnerMessage: field 1 = sentinel key, field 2 = inner2
+    let inner1 = protobuf::encode_string_field(1, "oauthTokenInfoSentinelKey");
+    let inner = [inner1, protobuf::encode_len_delim_field(2, &inner2)].concat();
+
+    // OuterMessage: field 1 = inner
+    let outer = protobuf::encode_len_delim_field(1, &inner);
+    let outer_b64 = general_purpose::STANDARD.encode(&outer);
+
+    conn.execute(
+        "INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)",
+        ["antigravityUnifiedStateSync.oauthToken", &outer_b64],
+    )
+    .map_err(|e| format!("写入新格式失败: {}", e))?;
+
+    Ok(())
 }
 
 /// 注入 Token 到 Antigravity 默认数据库
