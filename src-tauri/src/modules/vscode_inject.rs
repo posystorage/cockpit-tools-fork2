@@ -629,20 +629,6 @@ fn build_github_auth_sessions(
     Ok((serde_json::Value::Array(sessions), existing_prefix))
 }
 
-/// Inject a Copilot account's GitHub token into VS Code's auth storage.
-///
-/// This replaces the `user:email` scoped session in the
-/// `vscode.github-authentication` secret with the provided token,
-/// effectively switching the logged-in GitHub account for Copilot.
-pub fn inject_copilot_token(
-    username: &str,
-    token: &str,
-    github_user_id: Option<&str>,
-) -> Result<String, String> {
-    let data_root = resolve_vscode_data_root(None)?;
-    inject_copilot_token_with_data_root(&data_root, username, token, github_user_id)
-}
-
 pub fn inject_copilot_token_for_user_data_dir(
     user_data_dir: &str,
     username: &str,

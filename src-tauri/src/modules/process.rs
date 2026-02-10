@@ -660,6 +660,7 @@ pub fn detect_and_save_app_path(app: &str) -> Option<String> {
 }
 
 /// 检查 Antigravity 是否在运行
+#[allow(dead_code)]
 pub fn is_antigravity_running() -> bool {
     let mut system = System::new();
     system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
@@ -2371,6 +2372,7 @@ fn get_antigravity_pids() -> Vec<u32> {
     pids
 }
 
+#[allow(dead_code)]
 fn collect_antigravity_main_pids() -> Vec<u32> {
     let entries = collect_antigravity_process_entries();
     if entries.is_empty() {
@@ -2399,6 +2401,7 @@ fn collect_antigravity_main_pids() -> Vec<u32> {
 }
 
 /// 关闭 Antigravity 进程
+#[allow(dead_code)]
 pub fn close_antigravity(timeout_secs: u64) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     let _ = timeout_secs; // Silence unused warning on Windows
