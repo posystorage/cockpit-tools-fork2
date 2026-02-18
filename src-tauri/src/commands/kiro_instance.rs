@@ -106,17 +106,22 @@ pub async fn kiro_create_instance(
     copy_source_instance_id: Option<String>,
     init_mode: Option<String>,
 ) -> Result<InstanceProfileView, String> {
-    let instance = modules::kiro_instance::create_instance(modules::kiro_instance::CreateInstanceParams {
-        name,
-        user_data_dir,
-        extra_args: extra_args.unwrap_or_default(),
-        bind_account_id,
-        copy_source_instance_id,
-        init_mode,
-    })?;
+    let instance =
+        modules::kiro_instance::create_instance(modules::kiro_instance::CreateInstanceParams {
+            name,
+            user_data_dir,
+            extra_args: extra_args.unwrap_or_default(),
+            bind_account_id,
+            copy_source_instance_id,
+            init_mode,
+        })?;
 
     let initialized = is_profile_initialized(&instance.user_data_dir);
-    Ok(InstanceProfileView::from_profile(instance, false, initialized))
+    Ok(InstanceProfileView::from_profile(
+        instance,
+        false,
+        initialized,
+    ))
 }
 
 #[tauri::command]
@@ -173,12 +178,13 @@ pub async fn kiro_update_instance(
         }
     }
 
-    let instance = modules::kiro_instance::update_instance(modules::kiro_instance::UpdateInstanceParams {
-        instance_id,
-        name,
-        extra_args,
-        bind_account_id,
-    })?;
+    let instance =
+        modules::kiro_instance::update_instance(modules::kiro_instance::UpdateInstanceParams {
+            instance_id,
+            name,
+            extra_args,
+            bind_account_id,
+        })?;
 
     let running = instance
         .last_pid
@@ -187,7 +193,11 @@ pub async fn kiro_update_instance(
         })
         .is_some();
     let initialized = is_profile_initialized(&instance.user_data_dir);
-    Ok(InstanceProfileView::from_profile(instance, running, initialized))
+    Ok(InstanceProfileView::from_profile(
+        instance,
+        running,
+        initialized,
+    ))
 }
 
 #[tauri::command]
@@ -220,7 +230,10 @@ pub async fn kiro_start_instance(instance_id: String) -> Result<InstanceProfileV
         )?;
 
         let extra_args = modules::process::parse_extra_args(&default_settings.extra_args);
-        let pid = modules::kiro_instance::start_kiro_default_with_args_with_new_window(&extra_args, true)?;
+        let pid = modules::kiro_instance::start_kiro_default_with_args_with_new_window(
+            &extra_args,
+            true,
+        )?;
         let _ = modules::kiro_instance::update_default_pid(Some(pid))?;
 
         let running = modules::kiro_instance::resolve_kiro_pid(Some(pid), None).is_some();
@@ -247,10 +260,9 @@ pub async fn kiro_start_instance(instance_id: String) -> Result<InstanceProfileV
         .find(|item| item.id == instance_id)
         .ok_or("实例不存在")?;
 
-    if let Some(pid) = modules::kiro_instance::resolve_kiro_pid(
-        instance.last_pid,
-        Some(&instance.user_data_dir),
-    ) {
+    if let Some(pid) =
+        modules::kiro_instance::resolve_kiro_pid(instance.last_pid, Some(&instance.user_data_dir))
+    {
         modules::process::close_pid(pid, 20)?;
         let _ = modules::kiro_instance::update_instance_pid(&instance.id, None)?;
     }
@@ -272,7 +284,11 @@ pub async fn kiro_start_instance(instance_id: String) -> Result<InstanceProfileV
     let running =
         modules::kiro_instance::resolve_kiro_pid(Some(pid), Some(&updated.user_data_dir)).is_some();
     let initialized = is_profile_initialized(&updated.user_data_dir);
-    Ok(InstanceProfileView::from_profile(updated, running, initialized))
+    Ok(InstanceProfileView::from_profile(
+        updated,
+        running,
+        initialized,
+    ))
 }
 
 #[tauri::command]
@@ -316,23 +332,28 @@ pub async fn kiro_stop_instance(instance_id: String) -> Result<InstanceProfileVi
         .find(|item| item.id == instance_id)
         .ok_or("实例不存在")?;
 
-    if let Some(pid) = modules::kiro_instance::resolve_kiro_pid(
-        instance.last_pid,
-        Some(&instance.user_data_dir),
-    ) {
+    if let Some(pid) =
+        modules::kiro_instance::resolve_kiro_pid(instance.last_pid, Some(&instance.user_data_dir))
+    {
         modules::process::close_pid(pid, 20)?;
     }
 
     let updated = modules::kiro_instance::update_instance_pid(&instance.id, None)?;
     let initialized = is_profile_initialized(&updated.user_data_dir);
-    Ok(InstanceProfileView::from_profile(updated, false, initialized))
+    Ok(InstanceProfileView::from_profile(
+        updated,
+        false,
+        initialized,
+    ))
 }
 
 #[tauri::command]
 pub async fn kiro_open_instance_window(instance_id: String) -> Result<(), String> {
     if instance_id == DEFAULT_INSTANCE_ID {
-        let default_settings: DefaultInstanceSettings = modules::kiro_instance::load_default_settings()?;
-        if let Err(err) = modules::kiro_instance::focus_kiro_instance(default_settings.last_pid, None)
+        let default_settings: DefaultInstanceSettings =
+            modules::kiro_instance::load_default_settings()?;
+        if let Err(err) =
+            modules::kiro_instance::focus_kiro_instance(default_settings.last_pid, None)
         {
             modules::logger::log_warn(&format!(
                 "定位 Kiro 默认实例窗口失败，回退为启动实例: {}",

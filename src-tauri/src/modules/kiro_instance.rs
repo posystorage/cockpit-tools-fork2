@@ -1094,7 +1094,12 @@ fn is_idc_provider(provider: &str) -> bool {
 fn account_profile_arn(account: &KiroAccount) -> Option<String> {
     pick_string_by_paths(
         account.kiro_profile_raw.as_ref(),
-        &[&["arn"], &["profileArn"], &["profile", "arn"], &["account", "arn"]],
+        &[
+            &["arn"],
+            &["profileArn"],
+            &["profile", "arn"],
+            &["account", "arn"],
+        ],
     )
     .or_else(|| {
         pick_string_by_paths(
@@ -1107,7 +1112,12 @@ fn account_profile_arn(account: &KiroAccount) -> Option<String> {
 fn account_profile_name(account: &KiroAccount) -> Option<String> {
     pick_string_by_paths(
         account.kiro_profile_raw.as_ref(),
-        &[&["name"], &["profileName"], &["provider"], &["loginProvider"]],
+        &[
+            &["name"],
+            &["profileName"],
+            &["provider"],
+            &["loginProvider"],
+        ],
     )
     .or_else(|| {
         pick_string_by_paths(
@@ -1267,7 +1277,12 @@ fn write_local_auth_token_file(account: &KiroAccount) -> Result<(), String> {
     if !account.email.trim().is_empty() {
         obj.insert("email".to_string(), Value::String(account.email.clone()));
     }
-    if let Some(value) = account.user_id.as_ref().map(|v| v.trim()).filter(|v| !v.is_empty()) {
+    if let Some(value) = account
+        .user_id
+        .as_ref()
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty())
+    {
         obj.insert("userId".to_string(), Value::String(value.to_string()));
         obj.insert("user_id".to_string(), Value::String(value.to_string()));
     }
@@ -1310,7 +1325,12 @@ fn write_profile_file(profile_dir: &Path, account: &KiroAccount) -> Result<(), S
     if let Some(value) = normalize_non_empty_value(Some(account.email.as_str())) {
         obj.insert("email".to_string(), Value::String(value));
     }
-    if let Some(value) = account.user_id.as_ref().map(|v| v.trim()).filter(|v| !v.is_empty()) {
+    if let Some(value) = account
+        .user_id
+        .as_ref()
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty())
+    {
         obj.insert("userId".to_string(), Value::String(value.to_string()));
     }
     if let Some(value) = account
@@ -1319,7 +1339,10 @@ fn write_profile_file(profile_dir: &Path, account: &KiroAccount) -> Result<(), S
         .map(|v| v.trim())
         .filter(|v| !v.is_empty())
     {
-        obj.insert("loginProvider".to_string(), Value::String(value.to_string()));
+        obj.insert(
+            "loginProvider".to_string(),
+            Value::String(value.to_string()),
+        );
     }
 
     let content = serde_json::to_string_pretty(&raw)

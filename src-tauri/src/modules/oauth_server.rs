@@ -157,7 +157,9 @@ async fn process_callback_request(
     };
 
     if callback_url.path() != OAUTH_CALLBACK_PATH {
-        let _ = stream.write_all(oauth_not_found_response().as_bytes()).await;
+        let _ = stream
+            .write_all(oauth_not_found_response().as_bytes())
+            .await;
         let _ = stream.flush().await;
         return None;
     }

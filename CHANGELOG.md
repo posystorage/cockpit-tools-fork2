@@ -7,6 +7,17 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [0.8.3] - 2026-02-18
+
+### Changed
+- **Tray platform matrix expanded with Kiro**: Added Kiro to tray platform ordering/display and account-count aggregation, and introduced Kiro account summary rendering in tray menus (plan + prompt/add-on remaining with reset time).
+- **Legacy tray layout compatibility for Kiro rollout**: When loading old four-platform tray configs, Kiro is auto-appended only for legacy default layouts while preserving user-customized visibility/order.
+- **Raw plan/tier labels enforced in account pages**: Antigravity/Codex/GitHub Copilot/Windsurf account cards, tables, and filter options now show original plan/tier values directly (no localized remapping).
+
+### Fixed
+- **Auto-switch threshold boundary**: Account auto-switch trigger now fires when remaining percentage is less than or equal to threshold (`<=`) to avoid missing boundary cases at exact threshold.
+
+---
 ## [0.8.2] - 2026-02-18
 
 ### Changed

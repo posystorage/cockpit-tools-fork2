@@ -657,7 +657,7 @@ fn should_trigger_auto_switch(account: &Account, threshold: i32) -> bool {
         return true;
     }
 
-    quota.models.iter().any(|m| m.percentage < threshold)
+    quota.models.iter().any(|m| m.percentage <= threshold)
 }
 
 fn can_be_auto_switch_candidate(account: &Account, current_id: &str, threshold: i32) -> bool {

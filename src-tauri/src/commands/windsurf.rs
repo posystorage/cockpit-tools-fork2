@@ -107,7 +107,10 @@ pub async fn refresh_all_windsurf_tokens(app: AppHandle) -> Result<i32, String> 
     }
     if success_count > 0 {
         if let Err(e) = windsurf_account::run_quota_alert_if_needed() {
-            logger::log_warn(&format!("[QuotaAlert][Windsurf] 全量刷新后预警检查失败: {}", e));
+            logger::log_warn(&format!(
+                "[QuotaAlert][Windsurf] 全量刷新后预警检查失败: {}",
+                e
+            ));
         }
     }
     let _ = crate::modules::tray::update_tray_menu(&app);

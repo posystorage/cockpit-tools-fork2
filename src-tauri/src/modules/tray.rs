@@ -24,15 +24,17 @@ enum PlatformId {
     Codex,
     GitHubCopilot,
     Windsurf,
+    Kiro,
 }
 
 impl PlatformId {
-    fn default_order() -> [Self; 4] {
+    fn default_order() -> [Self; 5] {
         [
             Self::Antigravity,
             Self::Codex,
             Self::GitHubCopilot,
             Self::Windsurf,
+            Self::Kiro,
         ]
     }
 
@@ -42,6 +44,7 @@ impl PlatformId {
             crate::modules::tray_layout::PLATFORM_CODEX => Some(Self::Codex),
             crate::modules::tray_layout::PLATFORM_GITHUB_COPILOT => Some(Self::GitHubCopilot),
             crate::modules::tray_layout::PLATFORM_WINDSURF => Some(Self::Windsurf),
+            crate::modules::tray_layout::PLATFORM_KIRO => Some(Self::Kiro),
             _ => None,
         }
     }
@@ -52,6 +55,7 @@ impl PlatformId {
             Self::Codex => crate::modules::tray_layout::PLATFORM_CODEX,
             Self::GitHubCopilot => crate::modules::tray_layout::PLATFORM_GITHUB_COPILOT,
             Self::Windsurf => crate::modules::tray_layout::PLATFORM_WINDSURF,
+            Self::Kiro => crate::modules::tray_layout::PLATFORM_KIRO,
         }
     }
 
@@ -61,6 +65,7 @@ impl PlatformId {
             Self::Codex => "Codex",
             Self::GitHubCopilot => "GitHub Copilot",
             Self::Windsurf => "Windsurf",
+            Self::Kiro => "Kiro",
         }
     }
 
@@ -70,6 +75,7 @@ impl PlatformId {
             Self::Codex => "codex",
             Self::GitHubCopilot => "github-copilot",
             Self::Windsurf => "windsurf",
+            Self::Kiro => "kiro",
         }
     }
 
@@ -79,6 +85,7 @@ impl PlatformId {
             Self::Codex => 1,
             Self::GitHubCopilot => 2,
             Self::Windsurf => 3,
+            Self::Kiro => 4,
         }
     }
 }
@@ -307,6 +314,10 @@ fn collect_platform_account_counts() -> HashMap<PlatformId, usize> {
         PlatformId::Windsurf,
         crate::modules::windsurf_account::list_accounts().len(),
     );
+    counts.insert(
+        PlatformId::Kiro,
+        crate::modules::kiro_account::list_accounts().len(),
+    );
     counts
 }
 
@@ -356,6 +367,7 @@ fn get_account_display_info(platform: PlatformId, lang: &str) -> AccountDisplayI
         PlatformId::Codex => build_codex_display_info(lang),
         PlatformId::GitHubCopilot => build_github_copilot_display_info(lang),
         PlatformId::Windsurf => build_windsurf_display_info(lang),
+        PlatformId::Kiro => build_kiro_display_info(lang),
     }
 }
 
@@ -435,7 +447,10 @@ fn build_github_copilot_display_info(lang: &str) -> AccountDisplayInfo {
     );
 
     AccountDisplayInfo {
-        account: format!("📧 {}", display_login_email(account.github_email.as_deref(), &account.github_login)),
+        account: format!(
+            "📧 {}",
+            display_login_email(account.github_email.as_deref(), &account.github_login)
+        ),
         quota_lines: build_copilot_quota_lines(lang, usage, "Inline", "Chat"),
     }
 }
@@ -462,8 +477,62 @@ fn build_windsurf_display_info(lang: &str) -> AccountDisplayInfo {
     }
 
     AccountDisplayInfo {
-        account: format!("📧 {}", display_login_email(account.github_email.as_deref(), &account.github_login)),
+        account: format!(
+            "📧 {}",
+            display_login_email(account.github_email.as_deref(), &account.github_login)
+        ),
         quota_lines: build_windsurf_quota_lines(lang, usage),
+    }
+}
+
+fn build_kiro_display_info(lang: &str) -> AccountDisplayInfo {
+    let accounts = crate::modules::kiro_account::list_accounts();
+    let Some(account) = resolve_kiro_current_account(&accounts) else {
+        return AccountDisplayInfo {
+            account: format!("📧 {}", get_text("not_logged_in", lang)),
+            quota_lines: vec!["—".to_string()],
+        };
+    };
+
+    let mut quota_lines = Vec::new();
+    let reset_text = format_reset_time_from_ts(lang, account.usage_reset_at);
+
+    if let Some(plan) =
+        first_non_empty(&[account.plan_name.as_deref(), account.plan_tier.as_deref()])
+    {
+        quota_lines.push(format!("Plan: {}", plan));
+    }
+
+    if let Some(remaining_pct) = calc_remaining_percent(account.credits_total, account.credits_used)
+    {
+        quota_lines.push(format!(
+            "Prompt: {}% · {} {}",
+            remaining_pct,
+            get_text("reset", lang),
+            reset_text
+        ));
+    }
+
+    if let Some(remaining_pct) = calc_remaining_percent(account.bonus_total, account.bonus_used) {
+        quota_lines.push(format!(
+            "Add-on: {}% · {} {}",
+            remaining_pct,
+            get_text("reset", lang),
+            reset_text
+        ));
+    }
+
+    if quota_lines.is_empty() {
+        quota_lines.push(get_text("loading", lang));
+    }
+
+    AccountDisplayInfo {
+        account: format!(
+            "📧 {}",
+            first_non_empty(&[Some(account.email.as_str()), Some(account.id.as_str())])
+                .unwrap_or("—")
+        ),
+        quota_lines,
     }
 }
 
@@ -481,7 +550,10 @@ fn resolve_github_copilot_current_account(
         }
     }
 
-    accounts.iter().max_by_key(|account| account.last_used).cloned()
+    accounts
+        .iter()
+        .max_by_key(|account| account.last_used)
+        .cloned()
 }
 
 fn resolve_windsurf_current_account(
@@ -498,7 +570,53 @@ fn resolve_windsurf_current_account(
         }
     }
 
-    accounts.iter().max_by_key(|account| account.last_used).cloned()
+    accounts
+        .iter()
+        .max_by_key(|account| account.last_used)
+        .cloned()
+}
+
+fn resolve_kiro_current_account(
+    accounts: &[crate::models::kiro::KiroAccount],
+) -> Option<crate::models::kiro::KiroAccount> {
+    if let Ok(settings) = crate::modules::kiro_instance::load_default_settings() {
+        if let Some(bind_id) = settings.bind_account_id {
+            let bind_id = bind_id.trim();
+            if !bind_id.is_empty() {
+                if let Some(account) = accounts.iter().find(|account| account.id == bind_id) {
+                    return Some(account.clone());
+                }
+            }
+        }
+    }
+
+    accounts
+        .iter()
+        .max_by_key(|account| account.last_used)
+        .cloned()
+}
+
+fn first_non_empty<'a>(values: &[Option<&'a str>]) -> Option<&'a str> {
+    values
+        .iter()
+        .flatten()
+        .map(|value| value.trim())
+        .find(|value| !value.is_empty())
+}
+
+fn calc_remaining_percent(total: Option<f64>, used: Option<f64>) -> Option<i32> {
+    let total = total?;
+    if !total.is_finite() || total <= 0.0 {
+        return None;
+    }
+
+    let used = used.unwrap_or(0.0);
+    if !used.is_finite() {
+        return None;
+    }
+
+    let remaining = (total - used).max(0.0);
+    Some(clamp_percent((remaining / total) * 100.0))
 }
 
 fn display_login_email(email: Option<&str>, login: &str) -> String {
@@ -583,7 +701,11 @@ fn compute_copilot_usage(
     let token_map = parse_token_map(token);
     let reset_ts = limited_reset_ts
         .or_else(|| parse_reset_date_to_ts(quota_reset_date))
-        .or_else(|| parse_token_number(&token_map, "rd").map(|value| value.floor() as i64).filter(|value| *value > 0));
+        .or_else(|| {
+            parse_token_number(&token_map, "rd")
+                .map(|value| value.floor() as i64)
+                .filter(|value| *value > 0)
+        });
     let sku = token_map
         .get("sku")
         .map(|value| value.to_lowercase())
@@ -633,8 +755,14 @@ fn resolve_windsurf_plan_end_ts(account: &crate::models::windsurf::WindsurfAccou
     let user_status = account.windsurf_user_status.as_ref();
     let snapshots = account.copilot_quota_snapshots.as_ref();
 
-    candidates.push(json_path(user_status, &["userStatus", "planStatus", "planEnd"]));
-    candidates.push(json_path(user_status, &["userStatus", "planStatus", "plan_end"]));
+    candidates.push(json_path(
+        user_status,
+        &["userStatus", "planStatus", "planEnd"],
+    ));
+    candidates.push(json_path(
+        user_status,
+        &["userStatus", "planStatus", "plan_end"],
+    ));
     candidates.push(json_path(user_status, &["planStatus", "planEnd"]));
     candidates.push(json_path(user_status, &["planStatus", "plan_end"]));
     candidates.push(json_path(snapshots, &["windsurfPlanStatus", "planEnd"]));
@@ -665,7 +793,10 @@ fn resolve_windsurf_plan_end_ts(account: &crate::models::windsurf::WindsurfAccou
     None
 }
 
-fn json_path<'a>(root: Option<&'a serde_json::Value>, path: &[&str]) -> Option<&'a serde_json::Value> {
+fn json_path<'a>(
+    root: Option<&'a serde_json::Value>,
+    path: &[&str],
+) -> Option<&'a serde_json::Value> {
     let mut current = root?;
     for key in path {
         current = current.as_object()?.get(*key)?;
@@ -1016,7 +1147,9 @@ fn get_text(key: &str, lang: &str) -> String {
         ("reset", "ja") => "リセット".to_string(),
         ("reset_done", "ja") => "リセット済み".to_string(),
         ("more_platforms", "ja") => "その他のプラットフォーム".to_string(),
-        ("no_platform_selected", "ja") => "トレイに表示するプラットフォームがありません".to_string(),
+        ("no_platform_selected", "ja") => {
+            "トレイに表示するプラットフォームがありません".to_string()
+        }
 
         // 俄语
         ("show_window", "ru") => "Показать окно".to_string(),

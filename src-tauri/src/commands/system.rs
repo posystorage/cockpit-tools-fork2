@@ -318,7 +318,8 @@ pub fn save_general_config(
             .unwrap_or(current.codex_quota_alert_enabled),
         codex_quota_alert_threshold: codex_quota_alert_threshold
             .unwrap_or(current.codex_quota_alert_threshold),
-        ghcp_quota_alert_enabled: ghcp_quota_alert_enabled.unwrap_or(current.ghcp_quota_alert_enabled),
+        ghcp_quota_alert_enabled: ghcp_quota_alert_enabled
+            .unwrap_or(current.ghcp_quota_alert_enabled),
         ghcp_quota_alert_threshold: ghcp_quota_alert_threshold
             .unwrap_or(current.ghcp_quota_alert_threshold),
         windsurf_quota_alert_enabled: windsurf_quota_alert_enabled
@@ -386,7 +387,9 @@ pub fn detect_app_path(app: String, force: Option<bool>) -> Result<Option<String
     let force = force.unwrap_or(false);
     match app.as_str() {
         "windsurf" => Ok(modules::windsurf_instance::detect_and_save_windsurf_launch_path(force)),
-        "kiro" => Ok(modules::kiro_instance::detect_and_save_kiro_launch_path(force)),
+        "kiro" => Ok(modules::kiro_instance::detect_and_save_kiro_launch_path(
+            force,
+        )),
         "antigravity" | "codex" | "vscode" | "opencode" => Ok(
             modules::process::detect_and_save_app_path(app.as_str(), force),
         ),

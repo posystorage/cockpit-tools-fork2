@@ -11,12 +11,14 @@ pub const PLATFORM_ANTIGRAVITY: &str = "antigravity";
 pub const PLATFORM_CODEX: &str = "codex";
 pub const PLATFORM_GITHUB_COPILOT: &str = "github-copilot";
 pub const PLATFORM_WINDSURF: &str = "windsurf";
+pub const PLATFORM_KIRO: &str = "kiro";
 
-pub const SUPPORTED_PLATFORM_IDS: [&str; 4] = [
+pub const SUPPORTED_PLATFORM_IDS: [&str; 5] = [
     PLATFORM_ANTIGRAVITY,
     PLATFORM_CODEX,
     PLATFORM_GITHUB_COPILOT,
     PLATFORM_WINDSURF,
+    PLATFORM_KIRO,
 ];
 
 pub const SORT_MODE_AUTO: &str = "auto";
@@ -91,8 +93,28 @@ fn normalize_order(ids: &[String]) -> Vec<String> {
     ordered
 }
 
-fn normalize_tray_platforms(ids: &[String]) -> Vec<String> {
-    sanitize_platform_ids(ids)
+fn contains_platform(ids: &[String], target: &str) -> bool {
+    ids.iter().any(|id| id == target)
+}
+
+fn normalize_tray_platforms(ids: &[String], raw_order_has_kiro: bool) -> Vec<String> {
+    let mut sanitized = sanitize_platform_ids(ids);
+
+    // 兼容旧版本（无 Kiro）配置：
+    // 仅当旧配置明确包含历史四平台且未出现 Kiro 时，自动补上 Kiro 到托盘显示列表。
+    // 若配置本身已包含 Kiro（或顺序已是新版），则尊重用户当前选择，不强制补回。
+    let has_kiro = contains_platform(&sanitized, PLATFORM_KIRO);
+    let has_legacy_all = contains_platform(&sanitized, PLATFORM_ANTIGRAVITY)
+        && contains_platform(&sanitized, PLATFORM_CODEX)
+        && contains_platform(&sanitized, PLATFORM_GITHUB_COPILOT)
+        && contains_platform(&sanitized, PLATFORM_WINDSURF);
+    let is_legacy_default = sanitized.len() == 4 && has_legacy_all;
+
+    if !raw_order_has_kiro && !has_kiro && is_legacy_default {
+        sanitized.push(PLATFORM_KIRO.to_string());
+    }
+
+    sanitized
 }
 
 fn normalize_sort_mode(raw: &str) -> String {
@@ -103,10 +125,14 @@ fn normalize_sort_mode(raw: &str) -> String {
 }
 
 fn normalize_config(config: TrayLayoutConfig) -> TrayLayoutConfig {
+    let raw_order_has_kiro = config
+        .ordered_platform_ids
+        .iter()
+        .any(|id| id.trim() == PLATFORM_KIRO);
     TrayLayoutConfig {
         sort_mode: normalize_sort_mode(&config.sort_mode),
         ordered_platform_ids: normalize_order(&config.ordered_platform_ids),
-        tray_platform_ids: normalize_tray_platforms(&config.tray_platform_ids),
+        tray_platform_ids: normalize_tray_platforms(&config.tray_platform_ids, raw_order_has_kiro),
     }
 }
 

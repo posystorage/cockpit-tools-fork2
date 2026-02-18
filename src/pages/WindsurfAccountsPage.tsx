@@ -742,19 +742,6 @@ export function WindsurfAccountsPage() {
     [resolveCreditsSummary],
   );
 
-  const resolvePlanLabel = useCallback(
-    (account: (typeof accounts)[number], planKey: string) => {
-      const credits = resolveCreditsSummary(account);
-      const candidates = [credits.planName, account.copilot_plan, account.plan_type];
-      for (const candidate of candidates) {
-        const raw = candidate?.trim();
-        if (raw && raw.toUpperCase() !== 'UNKNOWN') return raw;
-      }
-      return planKey;
-    },
-    [resolveCreditsSummary],
-  );
-
   const formatCreditsNumber = useCallback((value: number | null | undefined) => {
     const n = typeof value === 'number' && Number.isFinite(value) ? value : 0;
     return n.toFixed(2);
@@ -984,7 +971,7 @@ export function WindsurfAccountsPage() {
       const promptMetrics = resolvePromptMetrics(credits);
       const addOnMetrics = resolveAddOnMetrics(credits);
       const planKey = resolvePlanKey(account);
-      const planLabel = resolvePlanLabel(account, planKey);
+      const planLabel = planKey;
       const isSelected = selected.has(account.id);
       const isCurrent = currentAccountId === account.id;
 
@@ -1114,7 +1101,7 @@ export function WindsurfAccountsPage() {
       const promptMetrics = resolvePromptMetrics(credits);
       const addOnMetrics = resolveAddOnMetrics(credits);
       const planKey = resolvePlanKey(account);
-      const planLabel = resolvePlanLabel(account, planKey);
+      const planLabel = planKey;
       const isCurrent = currentAccountId === account.id;
       return (
         <tr key={groupKey ? `${groupKey}-${account.id}` : account.id} className={isCurrent ? 'current' : ''}>
@@ -1308,33 +1295,12 @@ export function WindsurfAccountsPage() {
               onChange={(e) => setFilterType(e.target.value as typeof filterType)}
               aria-label={t('common.shared.filterLabel', '筛选')}
             >
-              <option value="all">
-                {t('common.shared.filter.all', { count: tierCounts.all, defaultValue: 'All ({{count}})' })}
-              </option>
-              <option value="FREE">
-                {t('common.shared.filter.free', { count: tierCounts.FREE, defaultValue: 'FREE ({{count}})' })}
-              </option>
-              <option value="INDIVIDUAL">
-                {t('common.shared.filter.individual', {
-                  count: tierCounts.INDIVIDUAL,
-                  defaultValue: 'INDIVIDUAL ({{count}})',
-                })}
-              </option>
-              <option value="PRO">
-                {t('common.shared.filter.pro', { count: tierCounts.PRO, defaultValue: 'PRO ({{count}})' })}
-              </option>
-              <option value="BUSINESS">
-                {t('common.shared.filter.business', {
-                  count: tierCounts.BUSINESS,
-                  defaultValue: 'BUSINESS ({{count}})',
-                })}
-              </option>
-              <option value="ENTERPRISE">
-                {t('common.shared.filter.enterprise', {
-                  count: tierCounts.ENTERPRISE,
-                  defaultValue: 'ENTERPRISE ({{count}})',
-                })}
-              </option>
+              <option value="all">{t('common.shared.filter.all', { count: tierCounts.all })}</option>
+              <option value="FREE">{`FREE (${tierCounts.FREE})`}</option>
+              <option value="INDIVIDUAL">{`INDIVIDUAL (${tierCounts.INDIVIDUAL})`}</option>
+              <option value="PRO">{`PRO (${tierCounts.PRO})`}</option>
+              <option value="BUSINESS">{`BUSINESS (${tierCounts.BUSINESS})`}</option>
+              <option value="ENTERPRISE">{`ENTERPRISE (${tierCounts.ENTERPRISE})`}</option>
             </select>
           </div>
 

@@ -14,8 +14,9 @@ const KIRO_REFRESH_ENDPOINT: &str = "https://prod.us-east-1.auth.desktop.kiro.de
 const KIRO_RUNTIME_DEFAULT_ENDPOINT: &str = "https://q.us-east-1.amazonaws.com";
 const OAUTH_TIMEOUT_SECONDS: u64 = 600;
 const OAUTH_POLL_INTERVAL_MS: u64 = 250;
-const CALLBACK_PORT_CANDIDATES: [u16; 10] =
-    [3128, 4649, 6588, 8008, 9091, 49153, 50153, 51153, 52153, 53153];
+const CALLBACK_PORT_CANDIDATES: [u16; 10] = [
+    3128, 4649, 6588, 8008, 9091, 49153, 50153, 51153, 52153, 53153,
+];
 
 #[derive(Clone, Debug)]
 struct OAuthCallbackData {
@@ -366,7 +367,10 @@ fn provider_from_login_option(login_option: &str) -> Option<String> {
     }
 }
 
-fn build_token_exchange_redirect_uri(base_callback_url: &str, callback: &OAuthCallbackData) -> String {
+fn build_token_exchange_redirect_uri(
+    base_callback_url: &str,
+    callback: &OAuthCallbackData,
+) -> String {
     let callback_path = if callback.path.starts_with('/') {
         callback.path.clone()
     } else {
@@ -436,7 +440,11 @@ fn inject_callback_context_into_token(token: &mut Value, callback: &OAuthCallbac
                 value
                     .as_i64()
                     .or_else(|| value.as_u64().map(|n| n as i64))
-                    .or_else(|| value.as_str().and_then(|raw| raw.trim().parse::<i64>().ok()))
+                    .or_else(|| {
+                        value
+                            .as_str()
+                            .and_then(|raw| raw.trim().parse::<i64>().ok())
+                    })
             })
             .unwrap_or(0);
         if expires_in_seconds > 0 {
@@ -579,7 +587,11 @@ async fn start_callback_server(
                 } else {
                     format!("授权失败: {} ({})", error_code, error_description)
                 };
-                set_callback_result_for_login(&expected_login_id, &expected_state, Err(message.clone()));
+                set_callback_result_for_login(
+                    &expected_login_id,
+                    &expected_state,
+                    Err(message.clone()),
+                );
                 let redirect = auth_error_redirect_url(&message);
                 let response = Header::from_bytes(&b"Location"[..], redirect.as_bytes())
                     .ok()
@@ -592,7 +604,11 @@ async fn start_callback_server(
             let callback_state = params.get("state").cloned().unwrap_or_default();
             if callback_state.is_empty() || callback_state != expected_state {
                 let message = "授权状态校验失败，请重新发起登录".to_string();
-                set_callback_result_for_login(&expected_login_id, &expected_state, Err(message.clone()));
+                set_callback_result_for_login(
+                    &expected_login_id,
+                    &expected_state,
+                    Err(message.clone()),
+                );
                 let redirect = auth_error_redirect_url(&message);
                 let response = Header::from_bytes(&b"Location"[..], redirect.as_bytes())
                     .ok()
@@ -645,7 +661,11 @@ async fn start_callback_server(
                 expected_login_id,
                 callback.path,
                 callback.login_option,
-                callback.code.as_ref().map(|v| !v.is_empty()).unwrap_or(false)
+                callback
+                    .code
+                    .as_ref()
+                    .map(|v| !v.is_empty())
+                    .unwrap_or(false)
             ));
 
             set_callback_result_for_login(&expected_login_id, &expected_state, Ok(callback));
@@ -673,7 +693,18 @@ fn decode_jwt_claims(token: &str) -> Option<Value> {
     serde_json::from_slice::<Value>(&decoded).ok()
 }
 
-fn extract_usage_payload(usage: Option<&Value>) -> (Option<String>, Option<String>, Option<f64>, Option<f64>, Option<f64>, Option<f64>, Option<i64>, Option<i64>) {
+fn extract_usage_payload(
+    usage: Option<&Value>,
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    Option<i64>,
+    Option<i64>,
+) {
     let usage = resolve_usage_root(usage);
 
     let plan_name = pick_string(
@@ -734,7 +765,12 @@ fn extract_usage_payload(usage: Option<&Value>) -> (Option<String>, Option<Strin
             &["bonusCredits", "total"],
             &["bonus", "total"],
             &["usageBreakdowns", "bonus", "total"],
-            &["usageBreakdownList", "0", "freeTrialInfo", "usageLimitWithPrecision"],
+            &[
+                "usageBreakdownList",
+                "0",
+                "freeTrialInfo",
+                "usageLimitWithPrecision",
+            ],
             &["usageBreakdownList", "0", "freeTrialInfo", "usageLimit"],
         ],
     );
@@ -745,7 +781,12 @@ fn extract_usage_payload(usage: Option<&Value>) -> (Option<String>, Option<Strin
             &["bonusCredits", "used"],
             &["bonus", "used"],
             &["usageBreakdowns", "bonus", "used"],
-            &["usageBreakdownList", "0", "freeTrialInfo", "currentUsageWithPrecision"],
+            &[
+                "usageBreakdownList",
+                "0",
+                "freeTrialInfo",
+                "currentUsageWithPrecision",
+            ],
             &["usageBreakdownList", "0", "freeTrialInfo", "currentUsage"],
         ],
     );
@@ -790,9 +831,8 @@ fn extract_usage_payload(usage: Option<&Value>) -> (Option<String>, Option<Strin
         )
     });
 
-    let plan_tier = plan_tier.or_else(|| {
-        pick_string(breakdown, &[&["currency"], &["type"], &["unit"]])
-    });
+    let plan_tier =
+        plan_tier.or_else(|| pick_string(breakdown, &[&["currency"], &["type"], &["unit"]]));
 
     if credits_total.is_none() {
         credits_total = pick_number(
@@ -878,7 +918,12 @@ fn extract_usage_payload(usage: Option<&Value>) -> (Option<String>, Option<Strin
 fn extract_profile_arn(auth_token: Option<&Value>, profile: Option<&Value>) -> Option<String> {
     pick_string(
         profile,
-        &[&["arn"], &["profileArn"], &["profile", "arn"], &["account", "arn"]],
+        &[
+            &["arn"],
+            &["profileArn"],
+            &["profile", "arn"],
+            &["account", "arn"],
+        ],
     )
     .or_else(|| pick_string(auth_token, &[&["profileArn"], &["profile_arn"], &["arn"]]))
 }
@@ -886,7 +931,12 @@ fn extract_profile_arn(auth_token: Option<&Value>, profile: Option<&Value>) -> O
 fn extract_profile_name(auth_token: Option<&Value>, profile: Option<&Value>) -> Option<String> {
     pick_string(
         profile,
-        &[&["name"], &["profileName"], &["provider"], &["loginProvider"]],
+        &[
+            &["name"],
+            &["profileName"],
+            &["provider"],
+            &["loginProvider"],
+        ],
     )
     .or_else(|| pick_string(auth_token, &[&["provider"], &["loginProvider"]]))
 }
@@ -931,12 +981,22 @@ fn build_payload_from_snapshot(
 
     let id_token_claims = pick_string(
         Some(&auth_token),
-        &[&["idToken"], &["id_token"], &["idTokenJwt"], &["id_token_jwt"]],
+        &[
+            &["idToken"],
+            &["id_token"],
+            &["idTokenJwt"],
+            &["id_token_jwt"],
+        ],
     )
     .and_then(|raw| decode_jwt_claims(&raw));
     let access_token_claims = pick_string(
         Some(&auth_token),
-        &[&["accessToken"], &["access_token"], &["token"], &["accessTokenJwt"]],
+        &[
+            &["accessToken"],
+            &["access_token"],
+            &["token"],
+            &["accessTokenJwt"],
+        ],
     )
     .and_then(|raw| decode_jwt_claims(&raw));
 
@@ -991,8 +1051,18 @@ fn build_payload_from_snapshot(
             &[&["userId"], &["user_id"], &["sub"], &["accountId"]],
         )
     })
-    .or_else(|| pick_string(id_token_claims.as_ref(), &[&["sub"], &["user_id"], &["uid"]]))
-    .or_else(|| pick_string(access_token_claims.as_ref(), &[&["sub"], &["user_id"], &["uid"]]))
+    .or_else(|| {
+        pick_string(
+            id_token_claims.as_ref(),
+            &[&["sub"], &["user_id"], &["uid"]],
+        )
+    })
+    .or_else(|| {
+        pick_string(
+            access_token_claims.as_ref(),
+            &[&["sub"], &["user_id"], &["uid"]],
+        )
+    })
     .or_else(|| profile_arn.clone());
 
     let login_provider = pick_string(
@@ -1051,8 +1121,16 @@ fn build_payload_from_snapshot(
         None
     };
 
-    let (plan_name, plan_tier, credits_total, credits_used, bonus_total, bonus_used, usage_reset_at, bonus_expire_days) =
-        extract_usage_payload(usage.as_ref());
+    let (
+        plan_name,
+        plan_tier,
+        credits_total,
+        credits_used,
+        bonus_total,
+        bonus_used,
+        usage_reset_at,
+        bonus_expire_days,
+    ) = extract_usage_payload(usage.as_ref());
 
     Ok(KiroOAuthCompletePayload {
         email,
@@ -1110,8 +1188,9 @@ pub fn payload_from_account(account: &KiroAccount) -> KiroOAuthCompletePayload {
 }
 
 pub fn build_payload_from_local_files() -> Result<KiroOAuthCompletePayload, String> {
-    let auth_token = kiro_account::read_local_auth_token_json()?
-        .ok_or_else(|| "未在本机找到 Kiro 登录信息（~/.aws/sso/cache/kiro-auth-token.json）".to_string())?;
+    let auth_token = kiro_account::read_local_auth_token_json()?.ok_or_else(|| {
+        "未在本机找到 Kiro 登录信息（~/.aws/sso/cache/kiro-auth-token.json）".to_string()
+    })?;
     let profile = kiro_account::read_local_profile_json()?;
     let usage = kiro_account::read_local_usage_snapshot()?;
     build_payload_from_snapshot(auth_token, profile, usage)
@@ -1227,7 +1306,9 @@ fn merge_refreshed_auth_token_into_payload(
             .or_else(|| get_path_value(&auth_token, &["expiration"])),
     ) {
         payload.expires_at = Some(expires_at);
-    } else if let Some(expires_in) = pick_number(Some(&auth_token), &[&["expiresIn"], &["expires_in"]]) {
+    } else if let Some(expires_in) =
+        pick_number(Some(&auth_token), &[&["expiresIn"], &["expires_in"]])
+    {
         let now = now_timestamp();
         payload.expires_at = Some(now + expires_in.round() as i64);
     }
@@ -1286,9 +1367,10 @@ fn merge_refreshed_auth_token_into_payload(
     }
     payload.kiro_auth_token_raw = Some(merged_auth);
 
-    if let Some(profile_arn) =
-        pick_string(Some(&auth_token), &[&["profileArn"], &["profile_arn"], &["arn"]])
-    {
+    if let Some(profile_arn) = pick_string(
+        Some(&auth_token),
+        &[&["profileArn"], &["profile_arn"], &["arn"]],
+    ) {
         let profile_value = normalize_non_empty(Some(profile_arn.as_str())).unwrap_or(profile_arn);
         let mut profile_raw = payload
             .kiro_profile_raw
@@ -1436,7 +1518,9 @@ pub async fn enrich_payload_with_runtime_usage(
     }
 
     let profile_arn = extract_profile_arn_from_payload(&payload).unwrap_or(initial_profile_arn);
-    match fetch_usage_limits_via_runtime(payload.access_token.as_str(), profile_arn.as_str(), true).await {
+    match fetch_usage_limits_via_runtime(payload.access_token.as_str(), profile_arn.as_str(), true)
+        .await
+    {
         Ok(usage) => {
             apply_runtime_usage_to_payload(&mut payload, usage);
         }
@@ -1474,17 +1558,29 @@ fn merge_account_context_into_auth_token(auth_token: &mut Value, account: &KiroA
             .entry("accessToken".to_string())
             .or_insert_with(|| Value::String(account.access_token.clone()));
     }
-    if let Some(value) = account.refresh_token.as_deref().and_then(|v| normalize_non_empty(Some(v))) {
+    if let Some(value) = account
+        .refresh_token
+        .as_deref()
+        .and_then(|v| normalize_non_empty(Some(v)))
+    {
         target
             .entry("refreshToken".to_string())
             .or_insert_with(|| Value::String(value));
     }
-    if let Some(value) = account.token_type.as_deref().and_then(|v| normalize_non_empty(Some(v))) {
+    if let Some(value) = account
+        .token_type
+        .as_deref()
+        .and_then(|v| normalize_non_empty(Some(v)))
+    {
         target
             .entry("tokenType".to_string())
             .or_insert_with(|| Value::String(value));
     }
-    if let Some(value) = account.login_provider.as_deref().and_then(|v| normalize_non_empty(Some(v))) {
+    if let Some(value) = account
+        .login_provider
+        .as_deref()
+        .and_then(|v| normalize_non_empty(Some(v)))
+    {
         target
             .entry("provider".to_string())
             .or_insert_with(|| Value::String(value.clone()));
@@ -1492,7 +1588,11 @@ fn merge_account_context_into_auth_token(auth_token: &mut Value, account: &KiroA
             .entry("loginProvider".to_string())
             .or_insert_with(|| Value::String(value));
     }
-    if let Some(value) = account.idc_region.as_deref().and_then(|v| normalize_non_empty(Some(v))) {
+    if let Some(value) = account
+        .idc_region
+        .as_deref()
+        .and_then(|v| normalize_non_empty(Some(v)))
+    {
         target
             .entry("idc_region".to_string())
             .or_insert_with(|| Value::String(value.clone()));
@@ -1500,7 +1600,11 @@ fn merge_account_context_into_auth_token(auth_token: &mut Value, account: &KiroA
             .entry("idcRegion".to_string())
             .or_insert_with(|| Value::String(value));
     }
-    if let Some(value) = account.issuer_url.as_deref().and_then(|v| normalize_non_empty(Some(v))) {
+    if let Some(value) = account
+        .issuer_url
+        .as_deref()
+        .and_then(|v| normalize_non_empty(Some(v)))
+    {
         target
             .entry("issuer_url".to_string())
             .or_insert_with(|| Value::String(value.clone()));
@@ -1508,7 +1612,11 @@ fn merge_account_context_into_auth_token(auth_token: &mut Value, account: &KiroA
             .entry("issuerUrl".to_string())
             .or_insert_with(|| Value::String(value));
     }
-    if let Some(value) = account.client_id.as_deref().and_then(|v| normalize_non_empty(Some(v))) {
+    if let Some(value) = account
+        .client_id
+        .as_deref()
+        .and_then(|v| normalize_non_empty(Some(v)))
+    {
         target
             .entry("client_id".to_string())
             .or_insert_with(|| Value::String(value.clone()));
@@ -1516,7 +1624,11 @@ fn merge_account_context_into_auth_token(auth_token: &mut Value, account: &KiroA
             .entry("clientId".to_string())
             .or_insert_with(|| Value::String(value));
     }
-    if let Some(value) = account.scopes.as_deref().and_then(|v| normalize_non_empty(Some(v))) {
+    if let Some(value) = account
+        .scopes
+        .as_deref()
+        .and_then(|v| normalize_non_empty(Some(v)))
+    {
         target
             .entry("scopes".to_string())
             .or_insert_with(|| Value::String(value.clone()));
@@ -1524,7 +1636,11 @@ fn merge_account_context_into_auth_token(auth_token: &mut Value, account: &KiroA
             .entry("scope".to_string())
             .or_insert_with(|| Value::String(value));
     }
-    if let Some(value) = account.login_hint.as_deref().and_then(|v| normalize_non_empty(Some(v))) {
+    if let Some(value) = account
+        .login_hint
+        .as_deref()
+        .and_then(|v| normalize_non_empty(Some(v)))
+    {
         target
             .entry("login_hint".to_string())
             .or_insert_with(|| Value::String(value.clone()));
@@ -1537,7 +1653,11 @@ fn merge_account_context_into_auth_token(auth_token: &mut Value, account: &KiroA
             .entry("email".to_string())
             .or_insert_with(|| Value::String(account.email.clone()));
     }
-    if let Some(value) = account.user_id.as_deref().and_then(|v| normalize_non_empty(Some(v))) {
+    if let Some(value) = account
+        .user_id
+        .as_deref()
+        .and_then(|v| normalize_non_empty(Some(v)))
+    {
         target
             .entry("userId".to_string())
             .or_insert_with(|| Value::String(value.clone()));
@@ -1557,7 +1677,10 @@ fn pick_profile_and_usage_for_refresh(
     _auth_token: &Value,
 ) -> (Option<Value>, Option<Value>) {
     // 刷新逻辑仅依赖当前账号 JSON，不再读取 Kiro 本地快照文件。
-    (account.kiro_profile_raw.clone(), account.kiro_usage_raw.clone())
+    (
+        account.kiro_profile_raw.clone(),
+        account.kiro_usage_raw.clone(),
+    )
 }
 
 pub async fn refresh_payload_for_account(
@@ -1639,9 +1762,12 @@ pub async fn start_login() -> Result<KiroOAuthStartResponse, String> {
     let expected_state = state_token.clone();
     let callback_port = pending.callback_port;
     tokio::spawn(async move {
-        if let Err(err) =
-            start_callback_server(callback_port, expected_login_id.clone(), expected_state.clone())
-                .await
+        if let Err(err) = start_callback_server(
+            callback_port,
+            expected_login_id.clone(),
+            expected_state.clone(),
+        )
+        .await
         {
             logger::log_error(&format!(
                 "[Kiro OAuth] 本地回调服务异常: login_id={}, error={}",
@@ -1657,9 +1783,7 @@ pub async fn start_login() -> Result<KiroOAuthStartResponse, String> {
 
     logger::log_info(&format!(
         "[Kiro OAuth] 登录会话已创建: login_id={}, callback_url={}, expires_in={}s",
-        pending.login_id,
-        pending.callback_url,
-        OAUTH_TIMEOUT_SECONDS
+        pending.login_id, pending.callback_url, OAUTH_TIMEOUT_SECONDS
     ));
 
     Ok(KiroOAuthStartResponse {
@@ -1710,7 +1834,8 @@ pub async fn complete_login(login_id: &str) -> Result<KiroOAuthCompletePayload, 
             }
 
             let redirect_uri = build_token_exchange_redirect_uri(&state.callback_url, &callback);
-            let auth_token = exchange_code_for_token(&callback, &state.code_verifier, &redirect_uri).await?;
+            let auth_token =
+                exchange_code_for_token(&callback, &state.code_verifier, &redirect_uri).await?;
             let payload = build_payload_from_snapshot(auth_token, None, None)?;
             return Ok(enrich_payload_with_runtime_usage(payload).await);
         }

@@ -369,7 +369,10 @@ fn merge_duplicate_account(primary: &mut KiroAccount, duplicate: &KiroAccount) {
     fill_if_none(&mut primary.bonus_used, &duplicate.bonus_used);
     fill_if_none(&mut primary.usage_reset_at, &duplicate.usage_reset_at);
     fill_if_none(&mut primary.bonus_expire_days, &duplicate.bonus_expire_days);
-    fill_if_none(&mut primary.kiro_auth_token_raw, &duplicate.kiro_auth_token_raw);
+    fill_if_none(
+        &mut primary.kiro_auth_token_raw,
+        &duplicate.kiro_auth_token_raw,
+    );
     fill_if_none(&mut primary.kiro_profile_raw, &duplicate.kiro_profile_raw);
     fill_if_none(&mut primary.kiro_usage_raw, &duplicate.kiro_usage_raw);
 
@@ -421,7 +424,10 @@ fn normalize_account_index(index: &mut KiroAccountIndex) -> Vec<KiroAccount> {
     }
 
     if loaded_accounts.len() <= 1 {
-        index.accounts = loaded_accounts.iter().map(|account| account.summary()).collect();
+        index.accounts = loaded_accounts
+            .iter()
+            .map(|account| account.summary())
+            .collect();
         return loaded_accounts;
     }
 
@@ -480,11 +486,8 @@ fn normalize_account_index(index: &mut KiroAccountIndex) -> Vec<KiroAccount> {
             continue;
         }
 
-        let primary_idx = choose_primary_account_index(
-            group,
-            &loaded_accounts,
-            preferred_bound_id.as_deref(),
-        );
+        let primary_idx =
+            choose_primary_account_index(group, &loaded_accounts, preferred_bound_id.as_deref());
         let mut primary = loaded_accounts[primary_idx].clone();
         for member in group {
             if *member == primary_idx {
@@ -769,7 +772,10 @@ pub fn import_from_json(json_content: &str) -> Result<Vec<KiroAccount>, String> 
 }
 
 pub fn export_accounts(account_ids: &[String]) -> Result<String, String> {
-    let accounts: Vec<KiroAccount> = account_ids.iter().filter_map(|id| load_account(id)).collect();
+    let accounts: Vec<KiroAccount> = account_ids
+        .iter()
+        .filter_map(|id| load_account(id))
+        .collect();
     serde_json::to_string_pretty(&accounts).map_err(|e| format!("序列化失败: {}", e))
 }
 
@@ -866,7 +872,10 @@ fn clear_quota_alert_cooldown(account_id: &str, threshold: i32) {
     }
 }
 
-fn pick_quota_alert_recommendation(accounts: &[KiroAccount], current_id: &str) -> Option<KiroAccount> {
+fn pick_quota_alert_recommendation(
+    accounts: &[KiroAccount],
+    current_id: &str,
+) -> Option<KiroAccount> {
     let mut candidates: Vec<KiroAccount> = accounts
         .iter()
         .filter(|account| account.id != current_id)
@@ -890,7 +899,8 @@ fn pick_quota_alert_recommendation(accounts: &[KiroAccount], current_id: &str) -
     candidates.into_iter().next()
 }
 
-pub fn run_quota_alert_if_needed() -> Result<Option<crate::modules::account::QuotaAlertPayload>, String> {
+pub fn run_quota_alert_if_needed(
+) -> Result<Option<crate::modules::account::QuotaAlertPayload>, String> {
     let cfg = crate::modules::config::get_user_config();
     if !cfg.kiro_quota_alert_enabled {
         return Ok(None);

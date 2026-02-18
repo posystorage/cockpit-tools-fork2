@@ -361,7 +361,10 @@ pub fn load_user_config() -> Result<UserConfig, String> {
             .unwrap_or_else(default_quota_alert_threshold);
 
         if !obj.contains_key("codex_quota_alert_enabled") {
-            obj.insert("codex_quota_alert_enabled".to_string(), json!(legacy_enabled));
+            obj.insert(
+                "codex_quota_alert_enabled".to_string(),
+                json!(legacy_enabled),
+            );
         }
         if !obj.contains_key("codex_quota_alert_threshold") {
             obj.insert(
@@ -370,10 +373,16 @@ pub fn load_user_config() -> Result<UserConfig, String> {
             );
         }
         if !obj.contains_key("ghcp_quota_alert_enabled") {
-            obj.insert("ghcp_quota_alert_enabled".to_string(), json!(legacy_enabled));
+            obj.insert(
+                "ghcp_quota_alert_enabled".to_string(),
+                json!(legacy_enabled),
+            );
         }
         if !obj.contains_key("ghcp_quota_alert_threshold") {
-            obj.insert("ghcp_quota_alert_threshold".to_string(), json!(legacy_threshold));
+            obj.insert(
+                "ghcp_quota_alert_threshold".to_string(),
+                json!(legacy_threshold),
+            );
         }
         if !obj.contains_key("windsurf_quota_alert_enabled") {
             obj.insert(
@@ -388,10 +397,16 @@ pub fn load_user_config() -> Result<UserConfig, String> {
             );
         }
         if !obj.contains_key("kiro_quota_alert_enabled") {
-            obj.insert("kiro_quota_alert_enabled".to_string(), json!(legacy_enabled));
+            obj.insert(
+                "kiro_quota_alert_enabled".to_string(),
+                json!(legacy_enabled),
+            );
         }
         if !obj.contains_key("kiro_quota_alert_threshold") {
-            obj.insert("kiro_quota_alert_threshold".to_string(), json!(legacy_threshold));
+            obj.insert(
+                "kiro_quota_alert_threshold".to_string(),
+                json!(legacy_threshold),
+            );
         }
     }
 

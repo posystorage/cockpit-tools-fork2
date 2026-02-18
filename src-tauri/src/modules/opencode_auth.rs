@@ -36,10 +36,7 @@ fn get_opencode_auth_json_path_candidates() -> Result<Vec<PathBuf>, String> {
 
     // 兼容历史实现写入的位置，作为回退和迁移来源。
     if let Some(data_dir) = dirs::data_dir() {
-        push_unique_path(
-            &mut candidates,
-            data_dir.join("opencode").join("auth.json"),
-        );
+        push_unique_path(&mut candidates, data_dir.join("opencode").join("auth.json"));
     }
 
     if candidates.is_empty() {
@@ -135,8 +132,13 @@ pub fn replace_openai_entry_from_codex(account: &CodexAccount) -> Result<(), Str
                 e
             )
         })?;
-        serde_json::from_str::<serde_json::Value>(&content)
-            .map_err(|e| format!("解析 OpenCode auth.json 失败 ({}): {}", source_path.display(), e))?
+        serde_json::from_str::<serde_json::Value>(&content).map_err(|e| {
+            format!(
+                "解析 OpenCode auth.json 失败 ({}): {}",
+                source_path.display(),
+                e
+            )
+        })?
     } else {
         json!({})
     };

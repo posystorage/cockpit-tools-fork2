@@ -370,7 +370,8 @@ fn extract_limited_metrics(account: &GitHubCopilotAccount) -> Vec<(String, i32)>
     let mut metrics = Vec::new();
 
     if let Some(remaining_completions) = limited.get("completions").and_then(get_json_number) {
-        let total_completions = parse_token_number(&token_map, "cq").unwrap_or(remaining_completions);
+        let total_completions =
+            parse_token_number(&token_map, "cq").unwrap_or(remaining_completions);
         if let Some(percent) = calc_remaining_percent(remaining_completions, total_completions) {
             metrics.push(("Inline Suggestions".to_string(), percent));
         }
@@ -501,7 +502,8 @@ fn pick_quota_alert_recommendation(
     candidates.into_iter().next()
 }
 
-pub fn run_quota_alert_if_needed() -> Result<Option<crate::modules::account::QuotaAlertPayload>, String> {
+pub fn run_quota_alert_if_needed(
+) -> Result<Option<crate::modules::account::QuotaAlertPayload>, String> {
     let cfg = crate::modules::config::get_user_config();
     if !cfg.ghcp_quota_alert_enabled {
         return Ok(None);

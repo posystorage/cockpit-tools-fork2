@@ -629,7 +629,10 @@ fn extract_quota_metrics(account: &CodexAccount) -> Vec<(String, i32)> {
     };
 
     vec![
-        ("5小时额度".to_string(), quota.hourly_percentage.clamp(0, 100)),
+        (
+            "5小时额度".to_string(),
+            quota.hourly_percentage.clamp(0, 100),
+        ),
         ("周额度".to_string(), quota.weekly_percentage.clamp(0, 100)),
     ]
 }
@@ -687,7 +690,10 @@ fn resolve_current_account_id(accounts: &[CodexAccount]) -> Option<String> {
         .map(|account| account.id.clone())
 }
 
-fn pick_quota_alert_recommendation(accounts: &[CodexAccount], current_id: &str) -> Option<CodexAccount> {
+fn pick_quota_alert_recommendation(
+    accounts: &[CodexAccount],
+    current_id: &str,
+) -> Option<CodexAccount> {
     let mut candidates: Vec<CodexAccount> = accounts
         .iter()
         .filter(|account| account.id != current_id)
@@ -711,7 +717,8 @@ fn pick_quota_alert_recommendation(accounts: &[CodexAccount], current_id: &str) 
     candidates.into_iter().next()
 }
 
-pub fn run_quota_alert_if_needed() -> Result<Option<crate::modules::account::QuotaAlertPayload>, String> {
+pub fn run_quota_alert_if_needed(
+) -> Result<Option<crate::modules::account::QuotaAlertPayload>, String> {
     let cfg = crate::modules::config::get_user_config();
     if !cfg.codex_quota_alert_enabled {
         return Ok(None);

@@ -89,10 +89,7 @@ pub async fn refresh_all_kiro_tokens(app: AppHandle) -> Result<i32, String> {
 
     if success_count > 0 {
         if let Err(e) = kiro_account::run_quota_alert_if_needed() {
-            logger::log_warn(&format!(
-                "[QuotaAlert][Kiro] 全量刷新后预警检查失败: {}",
-                e
-            ));
+            logger::log_warn(&format!("[QuotaAlert][Kiro] 全量刷新后预警检查失败: {}", e));
         }
     }
 
@@ -111,7 +108,10 @@ pub async fn kiro_oauth_login_complete(
     app: AppHandle,
     login_id: String,
 ) -> Result<KiroAccount, String> {
-    logger::log_info(&format!("Kiro OAuth complete 命令触发: login_id={}", login_id));
+    logger::log_info(&format!(
+        "Kiro OAuth complete 命令触发: login_id={}",
+        login_id
+    ));
     let payload = kiro_oauth::complete_login(&login_id).await?;
     let account = kiro_account::upsert_account(payload)?;
     logger::log_info(&format!(
@@ -174,7 +174,11 @@ pub async fn inject_kiro_to_vscode(app: AppHandle, account_id: String) -> Result
         logger::log_warn(&format!("更新 Kiro 默认实例绑定账号失败: {}", err));
     }
 
-    let launch_warning = match crate::commands::kiro_instance::kiro_start_instance("__default__".to_string()).await {
+    let launch_warning = match crate::commands::kiro_instance::kiro_start_instance(
+        "__default__".to_string(),
+    )
+    .await
+    {
         Ok(_) => None,
         Err(err) => {
             if err.starts_with("APP_PATH_NOT_FOUND:") || err.contains("启动 Kiro 失败") {

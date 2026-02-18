@@ -41,7 +41,6 @@ import {
   getQuotaClass,
   formatResetTimeDisplay,
   getSubscriptionTier,
-  getSubscriptionTierDisplay,
   getDisplayModels,
   getModelShortName,
   matchModelName
@@ -1357,7 +1356,7 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
     items.map((account) => {
       const isCurrent = currentAccount?.id === account.id
       const tier = getSubscriptionTier(account.quota)
-      const tierLabel = getSubscriptionTierDisplay(account.quota)
+      const tierLabel = tier
       const displayModels = getDisplayModels(account.quota)
       const isDisabled = account.disabled
       const isForbidden = Boolean(account.quota?.is_forbidden)
@@ -1877,7 +1876,7 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
     items.map((account) => {
       const isCurrent = currentAccount?.id === account.id
       const tier = getSubscriptionTier(account.quota)
-      const tierLabel = getSubscriptionTierDisplay(account.quota)
+      const tierLabel = tier
       const displayModels = getDisplayModels(account.quota)
       const isForbidden = Boolean(account.quota?.is_forbidden)
       const quotaError = account.quota_error
@@ -2164,15 +2163,9 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
                 <option value="all">
                   {t('accounts.filter.all', { count: tierCounts.all })}
                 </option>
-                <option value="PRO">
-                  {t('accounts.filter.pro', { count: tierCounts.PRO })}
-                </option>
-                <option value="ULTRA">
-                  {t('accounts.filter.ultra', { count: tierCounts.ULTRA })}
-                </option>
-                <option value="FREE">
-                  {t('accounts.filter.free', { count: tierCounts.FREE })}
-                </option>
+                <option value="PRO">{`PRO (${tierCounts.PRO})`}</option>
+                <option value="ULTRA">{`ULTRA (${tierCounts.ULTRA})`}</option>
+                <option value="FREE">{`FREE (${tierCounts.FREE})`}</option>
               </select>
             </div>
 
@@ -2804,7 +2797,7 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
           const account = accounts.find((a) => a.id === showQuotaModal)
           if (!account) return null
           const tier = getSubscriptionTier(account.quota)
-          const tierLabel = getSubscriptionTierDisplay(account.quota)
+          const tierLabel = tier
           const tierClass =
             tier === 'PRO' || tier === 'ULTRA'
               ? 'pill-success'
