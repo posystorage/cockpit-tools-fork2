@@ -40,6 +40,17 @@ fn header_value(headers: &reqwest::header::HeaderMap, name: reqwest::header::Hea
         .to_string()
 }
 
+fn log_subscription_tier_result(email: &str, subscription_tier: Option<&String>, reason: &str) {
+    if let Some(tier) = subscription_tier {
+        crate::modules::logger::log_info(&format!("📊 [{}] 订阅识别成功: {}", email, tier));
+    } else {
+        crate::modules::logger::log_warn(&format!(
+            "⚠️ [{}] 订阅识别失败: UNKNOWN ({})",
+            email, reason
+        ));
+    }
+}
+
 fn hash_email(email: &str) -> String {
     let normalized = email.trim().to_lowercase();
     let mut hasher = Sha256::new();
@@ -327,16 +338,45 @@ pub async fn fetch_project_id(access_token: &str, email: &str) -> (Option<String
                         match text_result {
                             Ok(text) => match serde_json::from_str::<LoadProjectResponse>(&text) {
                                 Ok(data) => {
-                                    subscription_tier = data
-                                        .paid_tier
-                                        .and_then(|t| t.id)
-                                        .or_else(|| data.current_tier.and_then(|t| t.id));
+                                    let paid_tier_id =
+                                        data.paid_tier.as_ref().and_then(|tier| tier.id.clone());
+                                    let current_tier_id = data
+                                        .current_tier
+                                        .as_ref()
+                                        .and_then(|tier| tier.id.clone());
+                                    subscription_tier =
+                                        paid_tier_id.clone().or(current_tier_id.clone());
 
-                                    if let Some(ref tier) = subscription_tier {
-                                        crate::modules::logger::log_info(&format!(
-                                            "📊 [{}] 订阅识别成功: {}",
-                                            email, tier
-                                        ));
+                                    if subscription_tier.is_some() {
+                                        log_subscription_tier_result(
+                                            email,
+                                            subscription_tier.as_ref(),
+                                            "loadCodeAssist 正常返回",
+                                        );
+                                    } else {
+                                        let allowed_tier_preview = data
+                                            .allowed_tiers
+                                            .as_ref()
+                                            .map(|tiers| {
+                                                tiers
+                                                    .iter()
+                                                    .filter_map(|tier| tier.id.as_deref())
+                                                    .collect::<Vec<_>>()
+                                                    .join(",")
+                                            })
+                                            .unwrap_or_else(|| "-".to_string());
+                                        let reason = format!(
+                                            "loadCodeAssist 成功但无 tier: paidTier={:?}, currentTier={:?}, allowedTiers=[{}], hasProject={}",
+                                            paid_tier_id,
+                                            current_tier_id,
+                                            allowed_tier_preview,
+                                            data.project.is_some()
+                                        );
+                                        log_subscription_tier_result(
+                                            email,
+                                            subscription_tier.as_ref(),
+                                            &reason,
+                                        );
                                     }
 
                                     if let Some(project) = data.project {
@@ -412,14 +452,47 @@ pub async fn fetch_project_id(access_token: &str, email: &str) -> (Option<String
                             }
                         }
                     } else if status == reqwest::StatusCode::UNAUTHORIZED {
+                        let text = res.text().await.unwrap_or_default();
+                        let reason = format!(
+                            "loadCodeAssist 返回 401 Unauthorized, base={}, attempt={}/{}, body={}",
+                            base,
+                            attempt,
+                            DEFAULT_ATTEMPTS,
+                            truncate_log_text(&text, 1000)
+                        );
+                        log_subscription_tier_result(
+                            email,
+                            subscription_tier.as_ref(),
+                            &reason,
+                        );
                         return (None, subscription_tier);
                     } else if status == reqwest::StatusCode::FORBIDDEN {
+                        let text = res.text().await.unwrap_or_default();
+                        let reason = format!(
+                            "loadCodeAssist 返回 403 Forbidden, base={}, attempt={}/{}, body={}",
+                            base,
+                            attempt,
+                            DEFAULT_ATTEMPTS,
+                            truncate_log_text(&text, 1000)
+                        );
+                        log_subscription_tier_result(
+                            email,
+                            subscription_tier.as_ref(),
+                            &reason,
+                        );
                         return (None, subscription_tier);
                     } else {
                         let text = res.text().await.unwrap_or_default();
                         let retryable = status == reqwest::StatusCode::TOO_MANY_REQUESTS
                             || status.as_u16() >= 500;
-                        last_error = Some(format!("loadCodeAssist 失败: {} - {}", status, text));
+                        last_error = Some(format!(
+                            "loadCodeAssist 失败: status={}, base={}, attempt={}/{}, body={}",
+                            status,
+                            base,
+                            attempt,
+                            DEFAULT_ATTEMPTS,
+                            truncate_log_text(&text, 1000)
+                        ));
                         if retryable && attempt < DEFAULT_ATTEMPTS {
                             let delay = get_backoff_delay_ms(attempt + 1);
                             if delay > 0 {
@@ -430,7 +503,10 @@ pub async fn fetch_project_id(access_token: &str, email: &str) -> (Option<String
                     }
                 }
                 Err(e) => {
-                    last_error = Some(format!("loadCodeAssist 网络错误: {}", e));
+                    last_error = Some(format!(
+                        "loadCodeAssist 网络错误: base={}, attempt={}/{}, error={}",
+                        base, attempt, DEFAULT_ATTEMPTS, e
+                    ));
                     if attempt < DEFAULT_ATTEMPTS {
                         let delay = get_backoff_delay_ms(attempt + 1);
                         if delay > 0 {
@@ -445,6 +521,9 @@ pub async fn fetch_project_id(access_token: &str, email: &str) -> (Option<String
 
     if let Some(err) = last_error {
         crate::modules::logger::log_error(&format!("❌ [{}] loadCodeAssist 失败: {}", email, err));
+        log_subscription_tier_result(email, subscription_tier.as_ref(), &err);
+    } else {
+        log_subscription_tier_result(email, subscription_tier.as_ref(), "未知错误");
     }
 
     (None, subscription_tier)

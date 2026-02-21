@@ -63,14 +63,7 @@ impl Account {
         self.last_used = chrono::Utc::now().timestamp();
     }
 
-    pub fn update_quota(&mut self, mut quota: QuotaData) {
-        // 如果新的 subscription_tier 为 None，保留旧值
-        // 避免因 API 返回不完整数据导致 PRO 账号被误判为 FREE
-        if quota.subscription_tier.is_none() {
-            if let Some(ref old_quota) = self.quota {
-                quota.subscription_tier = old_quota.subscription_tier.clone();
-            }
-        }
+    pub fn update_quota(&mut self, quota: QuotaData) {
         self.quota = Some(quota);
     }
 }

@@ -73,7 +73,7 @@ interface AccountsPageProps {
 }
 
 type ViewMode = 'grid' | 'list' | 'compact'
-type FilterType = 'all' | 'PRO' | 'ULTRA' | 'FREE'
+type FilterType = 'all' | 'PRO' | 'ULTRA' | 'FREE' | 'UNKNOWN'
 
 export function AccountsPage({ onNavigate }: AccountsPageProps) {
   const { t, i18n } = useTranslation()
@@ -467,12 +467,13 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
 
   // 统计数量
   const tierCounts = useMemo(() => {
-    const counts = { all: accounts.length, PRO: 0, ULTRA: 0, FREE: 0 }
+    const counts = { all: accounts.length, PRO: 0, ULTRA: 0, FREE: 0, UNKNOWN: 0 }
     accounts.forEach((acc) => {
       const tier = getSubscriptionTier(acc.quota)
       if (tier === 'PRO') counts.PRO++
       else if (tier === 'ULTRA') counts.ULTRA++
-      else counts.FREE++
+      else if (tier === 'FREE') counts.FREE++
+      else counts.UNKNOWN++
     })
     return counts
   }, [accounts])
@@ -2166,6 +2167,7 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
                 <option value="PRO">{`PRO (${tierCounts.PRO})`}</option>
                 <option value="ULTRA">{`ULTRA (${tierCounts.ULTRA})`}</option>
                 <option value="FREE">{`FREE (${tierCounts.FREE})`}</option>
+                <option value="UNKNOWN">{`UNKNOWN (${tierCounts.UNKNOWN})`}</option>
               </select>
             </div>
 
@@ -2815,9 +2817,7 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
                 <div className="modal-header">
                   <h2>{t('modals.quota.title')}</h2>
                   <div className="badges">
-                    {account.quota?.subscription_tier && (
-                      <span className={`pill ${tierClass}`}>{tierLabel}</span>
-                    )}
+                    <span className={`pill ${tierClass}`}>{tierLabel}</span>
                   </div>
                   <button
                     className="close-btn"

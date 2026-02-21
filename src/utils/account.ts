@@ -13,10 +13,13 @@ export function matchModelName(modelName: string, target: string): boolean {
 }
 
 export function getSubscriptionTier(quota?: QuotaData): string {
-  const tier = quota?.subscription_tier || 'FREE';
+  const rawTier = quota?.subscription_tier?.trim();
+  if (!rawTier) return 'UNKNOWN';
+
+  const tier = rawTier.toLowerCase();
   // 映射等级名称
-  if (tier.includes('PRO') || tier.includes('pro')) return 'PRO';
-  if (tier.includes('ULTRA') || tier.includes('ultra')) return 'ULTRA';
+  if (tier.includes('ultra')) return 'ULTRA';
+  if (tier.includes('pro')) return 'PRO';
   return 'FREE';
 }
 

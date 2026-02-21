@@ -7,6 +7,18 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [0.8.7] - 2026-02-21
+
+### Changed
+- **Unknown-tier rendering and filtering added**: Accounts with missing subscription tier now resolve to `UNKNOWN` (instead of falling back to `FREE`) in cards/tables, and the account filter dropdown now supports `UNKNOWN` as a dedicated option.
+- **Unknown badge now uses warning styling**: `UNKNOWN` tier badges are highlighted in red to visually distinguish tier-identification anomalies from normal `FREE` accounts.
+- **Quota modal badge consistency**: Quota details modal now always shows a tier badge, including `UNKNOWN` when subscription tier is unavailable.
+
+### Fixed
+- **No stale tier carry-over after refresh**: Removed backend behavior that preserved previous `subscription_tier` when the new quota payload had no tier, preventing old `PRO/ULTRA` labels from persisting incorrectly.
+- **Tier-identification diagnostics improved**: Subscription identification logs now emit explicit `UNKNOWN` failure reasons (including status/body snippets and loadCodeAssist context) to distinguish API errors from successful responses without tier data.
+
+---
 ## [0.8.6] - 2026-02-21
 
 ### Changed

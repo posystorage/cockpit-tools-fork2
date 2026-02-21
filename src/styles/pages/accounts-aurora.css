@@ -670,8 +670,9 @@
 }
 
 .accounts-page .tier-badge.unknown {
-  background: rgba(148, 163, 184, 0.16);
-  color: var(--text-secondary);
+  background: rgba(239, 68, 68, 0.16);
+  color: #b91c1c;
+  border-color: rgba(239, 68, 68, 0.35);
 }
 
 .accounts-page .status-pill {

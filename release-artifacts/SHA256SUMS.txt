@@ -1,1 +1,1 @@
-2a95e404d94f742997d29e17fc1c6e4e8201446d4821c1e1b62a0bc03db68fd3  src-tauri/target/release/bundle/dmg/Cockpit Tools_0.8.5_aarch64.dmg
+31e046436aad44f7cb4b35d2b364168a243172081462a90e45f591026e738776  src-tauri/target/release/bundle/dmg/Cockpit Tools_0.8.7_aarch64.dmg

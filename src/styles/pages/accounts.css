@@ -234,10 +234,15 @@
   color: #2b2111;
 }
 
-.tier-badge.free,
-.tier-badge.unknown {
+.tier-badge.free {
   background: rgba(148, 163, 184, 0.18);
   border: 1px solid rgba(255,255,255,0.08);
+}
+
+.tier-badge.unknown {
+  background: rgba(239, 68, 68, 0.18);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fecaca;
 }
 
 /* Dark Mode Overrides */
