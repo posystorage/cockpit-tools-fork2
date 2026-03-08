@@ -7,6 +7,13 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [0.11.2] - 2026-03-08
+
+### Fixed
+- **Antigravity default-instance custom launch args now take effect**: launching the default Antigravity instance now parses and passes saved `extra_args` to the actual process start command.
+- **Remote debugging launch flags can now be applied from Cockpit settings**: flags such as `--remote-debugging-port=9333` are no longer silently dropped in the default-instance start path.
+
+---
 ## [0.11.1] - 2026-03-08
 
 ### Changed
