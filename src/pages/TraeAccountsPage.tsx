@@ -1,0 +1,1406 @@
+import { useState, useMemo, useCallback, useEffect, Fragment } from 'react';
+import {
+  Plus,
+  RefreshCw,
+  Download,
+  Upload,
+  Trash2,
+  X,
+  Globe,
+  Database,
+  Copy,
+  Check,
+  KeyRound,
+  Play,
+  RotateCw,
+  CircleAlert,
+  ChevronDown,
+  LayoutGrid,
+  List,
+  Search,
+  ArrowDownWideNarrow,
+  Tag,
+  Eye,
+  EyeOff,
+  BookOpen,
+} from 'lucide-react';
+import { TagEditModal } from '../components/TagEditModal';
+import { ExportJsonModal } from '../components/ExportJsonModal';
+import { QuickSettingsPopover } from '../components/QuickSettingsPopover';
+import {
+  PlatformOverviewTab,
+  PlatformOverviewTabsHeader,
+} from '../components/platform/PlatformOverviewTabsHeader';
+import { useProviderAccountsPage } from '../hooks/useProviderAccountsPage';
+import { TraeInstancesContent } from './TraeInstancesPage';
+import { useTraeAccountStore } from '../stores/useTraeAccountStore';
+import * as traeService from '../services/traeService';
+import type { TraeAccount } from '../types/trae';
+import {
+  getTraeAccountDisplayEmail,
+  getTraeLoginProvider,
+  getTraePlanBadge,
+  getTraePlanBadgeClass,
+  getTraePlanDisplayName,
+  getTraeUsage,
+} from '../types/trae';
+
+const TRAE_CURRENT_ACCOUNT_ID_KEY = 'agtools.trae.current_account_id';
+const TRAE_FLOW_NOTICE_COLLAPSED_KEY = 'agtools.trae.flow_notice_collapsed';
+const TRAE_KNOWN_SORT_KEYS = ['created_at', 'plan', 'quota'] as const;
+
+function formatNumber(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '--';
+  const hasDecimal = Math.abs(value - Math.trunc(value)) > 0.001;
+  return new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: hasDecimal ? 2 : 0,
+  }).format(value);
+}
+
+function computeQuotaClass(percent: number | null): 'high' | 'medium' | 'critical' {
+  if (percent == null) return 'high';
+  if (percent >= 90) return 'critical';
+  if (percent >= 70) return 'medium';
+  return 'high';
+}
+
+function formatTraeResetAt(timestamp: number): string {
+  const date = new Date(timestamp * 1000);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(
+    date.getHours(),
+  )}:${pad(date.getMinutes())}`;
+}
+
+export function TraeAccountsPage() {
+  const [activeTab, setActiveTab] = useState<PlatformOverviewTab>('overview');
+  const untaggedKey = '__untagged__';
+
+  const store = useTraeAccountStore();
+
+  const page = useProviderAccountsPage<TraeAccount>({
+    platformKey: 'Trae',
+    oauthLogPrefix: 'TraeOAuth',
+    flowNoticeCollapsedKey: TRAE_FLOW_NOTICE_COLLAPSED_KEY,
+    currentAccountIdKey: TRAE_CURRENT_ACCOUNT_ID_KEY,
+    exportFilePrefix: 'trae_accounts',
+    store: {
+      accounts: store.accounts,
+      loading: store.loading,
+      fetchAccounts: store.fetchAccounts,
+      deleteAccounts: store.deleteAccounts,
+      refreshToken: store.refreshToken,
+      refreshAllTokens: store.refreshAllTokens,
+      updateAccountTags: store.updateAccountTags,
+    },
+    oauthService: {
+      startLogin: traeService.traeOauthLoginStart,
+      completeLogin: (loginId: string) => traeService.traeOauthLoginComplete(loginId),
+      cancelLogin: (loginId?: string) => traeService.traeOauthLoginCancel(loginId),
+    },
+    dataService: {
+      importFromJson: traeService.importTraeFromJson,
+      importFromLocal: traeService.importTraeFromLocal,
+      exportAccounts: traeService.exportTraeAccounts,
+      injectToVSCode: traeService.injectTraeAccount,
+    },
+    getDisplayEmail: (account) => getTraeAccountDisplayEmail(account),
+  });
+
+  const {
+    t,
+    maskAccountText,
+    privacyModeEnabled,
+    togglePrivacyMode,
+    viewMode,
+    setViewMode,
+    searchQuery,
+    setSearchQuery,
+    filterType,
+    setFilterType,
+    sortBy,
+    setSortBy,
+    sortDirection,
+    setSortDirection,
+    selected,
+    toggleSelect,
+    toggleSelectAll,
+    tagFilter,
+    groupByTag,
+    setGroupByTag,
+    showTagFilter,
+    setShowTagFilter,
+    showTagModal,
+    setShowTagModal,
+    tagFilterRef,
+    availableTags,
+    toggleTagFilterValue,
+    clearTagFilter,
+    tagDeleteConfirm,
+    setTagDeleteConfirm,
+    deletingTag,
+    requestDeleteTag,
+    confirmDeleteTag,
+    openTagModal,
+    handleSaveTags,
+    refreshing,
+    refreshingAll,
+    injecting,
+    handleRefresh,
+    handleRefreshAll,
+    handleDelete,
+    handleBatchDelete,
+    deleteConfirm,
+    setDeleteConfirm,
+    deleting,
+    confirmDelete,
+    message,
+    setMessage,
+    exporting,
+    handleExport,
+    handleExportByIds,
+    showExportModal,
+    closeExportModal,
+    exportJsonContent,
+    exportJsonHidden,
+    toggleExportJsonHidden,
+    exportJsonCopied,
+    copyExportJson,
+    savingExportJson,
+    saveExportJson,
+    exportSavedPath,
+    canOpenExportSavedDirectory,
+    openExportSavedDirectory,
+    copyExportSavedPath,
+    exportPathCopied,
+    showAddModal,
+    addTab,
+    addStatus,
+    addMessage,
+    tokenInput,
+    setTokenInput,
+    importing,
+    openAddModal,
+    closeAddModal,
+    handleTokenImport,
+    handleImportJsonFile,
+    handleImportFromLocal,
+    handlePickImportFile,
+    importFileInputRef,
+    handleInjectToVSCode,
+    oauthUrl,
+    oauthUrlCopied,
+    oauthMeta,
+    oauthPrepareError,
+    oauthCompleteError,
+    oauthPolling,
+    oauthTimedOut,
+    handleCopyOauthUrl,
+    handleRetryOauth,
+    handleOpenOauthUrl,
+    isFlowNoticeCollapsed,
+    setIsFlowNoticeCollapsed,
+    currentAccountId,
+    formatDate,
+    normalizeTag,
+  } = page;
+
+  const accounts = store.accounts;
+  const loading = store.loading;
+
+  const tierSummary = useMemo(() => {
+    const counts = new Map<string, number>();
+    accounts.forEach((account) => {
+      const plan = getTraePlanBadge(account);
+      counts.set(plan, (counts.get(plan) ?? 0) + 1);
+    });
+
+    return {
+      all: accounts.length,
+      entries: Array.from(counts.entries()).sort(([left], [right]) => left.localeCompare(right)),
+    };
+  }, [accounts]);
+
+  useEffect(() => {
+    if (filterType === 'all') return;
+    if (tierSummary.entries.some(([plan]) => plan === filterType)) return;
+    setFilterType('all');
+  }, [filterType, setFilterType, tierSummary.entries]);
+
+  const compareAccountsBySort = useCallback(
+    (left: TraeAccount, right: TraeAccount) => {
+      if (sortBy === 'plan') {
+        const diff = getTraePlanBadge(left).localeCompare(getTraePlanBadge(right));
+        return sortDirection === 'desc' ? -diff : diff;
+      }
+
+      if (sortBy === 'quota') {
+        const leftPercent = getTraeUsage(left).usedPercent ?? -1;
+        const rightPercent = getTraeUsage(right).usedPercent ?? -1;
+        const diff = leftPercent - rightPercent;
+        return sortDirection === 'desc' ? -diff : diff;
+      }
+
+      const diff = left.created_at - right.created_at;
+      return sortDirection === 'desc' ? -diff : diff;
+    },
+    [sortBy, sortDirection],
+  );
+
+  const sortedAccountsForInstances = useMemo(
+    () => [...accounts].sort(compareAccountsBySort),
+    [accounts, compareAccountsBySort],
+  );
+
+  const filteredAccounts = useMemo(() => {
+    let result = [...accounts];
+    const query = searchQuery.trim().toLowerCase();
+
+    if (query) {
+      result = result.filter((account) => {
+        const searchText = [
+          getTraeAccountDisplayEmail(account),
+          getTraeLoginProvider(account) ?? '',
+          account.user_id ?? '',
+          account.nickname ?? '',
+          account.id,
+          getTraePlanBadge(account),
+        ]
+          .join(' ')
+          .toLowerCase();
+        return searchText.includes(query);
+      });
+    }
+
+    if (filterType !== 'all') {
+      result = result.filter((account) => getTraePlanBadge(account) === filterType);
+    }
+
+    if (tagFilter.length > 0) {
+      const selectedTags = new Set(tagFilter.map(normalizeTag));
+      result = result.filter((account) =>
+        (account.tags || []).map(normalizeTag).some((tag) => selectedTags.has(tag)),
+      );
+    }
+
+    result.sort(compareAccountsBySort);
+    return result;
+  }, [accounts, compareAccountsBySort, filterType, normalizeTag, searchQuery, tagFilter]);
+
+  const groupedAccounts = useMemo(() => {
+    if (!groupByTag) return [] as Array<[string, TraeAccount[]]>;
+
+    const groups = new Map<string, TraeAccount[]>();
+    const selectedTags = new Set(tagFilter.map(normalizeTag));
+
+    filteredAccounts.forEach((account) => {
+      const normalizedTags = (account.tags || []).map(normalizeTag).filter(Boolean);
+      const matchedTags =
+        selectedTags.size > 0
+          ? normalizedTags.filter((tag) => selectedTags.has(tag))
+          : normalizedTags;
+
+      if (matchedTags.length === 0) {
+        if (!groups.has(untaggedKey)) groups.set(untaggedKey, []);
+        groups.get(untaggedKey)?.push(account);
+        return;
+      }
+
+      matchedTags.forEach((tag) => {
+        if (!groups.has(tag)) groups.set(tag, []);
+        groups.get(tag)?.push(account);
+      });
+    });
+
+    return Array.from(groups.entries()).sort(([left], [right]) => {
+      if (left === untaggedKey) return 1;
+      if (right === untaggedKey) return -1;
+      return left.localeCompare(right);
+    });
+  }, [filteredAccounts, groupByTag, normalizeTag, tagFilter]);
+
+  const resolveGroupLabel = useCallback(
+    (groupKey: string) =>
+      groupKey === untaggedKey ? t('accounts.defaultGroup', '默认分组') : groupKey,
+    [t],
+  );
+
+  const resolveQuotaSummary = useCallback(
+    (account: TraeAccount) => {
+      const usage = getTraeUsage(account);
+      const percentage =
+        typeof usage.usedPercent === 'number' && Number.isFinite(usage.usedPercent)
+          ? Math.max(0, Math.min(100, Math.round(usage.usedPercent)))
+          : null;
+
+      return {
+        percentage,
+        percentageText: percentage == null ? '--' : `${percentage}%`,
+        quotaClass: computeQuotaClass(percentage),
+        costText:
+          usage.spentUsd != null && usage.totalUsd != null
+            ? t('trae.quota.usedOfTotal', {
+                used: formatNumber(usage.spentUsd),
+                total: formatNumber(usage.totalUsd),
+                defaultValue: '${{used}} / ${{total}}',
+              })
+            : t('instances.quota.empty', '暂无配额缓存'),
+        resetText:
+          usage.resetAt != null
+            ? t('trae.quota.resetAt', {
+                date: formatTraeResetAt(usage.resetAt),
+                defaultValue: '重置时间：{{date}}',
+              })
+            : t('trae.quota.resetUnknown', '重置时间未知'),
+      };
+    },
+    [t],
+  );
+
+  const resolveDisplayEmail = useCallback(
+    (account: TraeAccount) => getTraeAccountDisplayEmail(account),
+    [],
+  );
+
+  const resolveSignedInWithText = useCallback(
+    (account: TraeAccount) => {
+      const provider = getTraeLoginProvider(account) ?? t('kiro.account.providerUnknown', 'Unknown');
+      return t('kiro.account.signedInWith', {
+        provider,
+        defaultValue: 'Signed in with {{provider}}',
+      });
+    },
+    [t],
+  );
+
+  const resolveSingleExportBaseName = useCallback(
+    (account: TraeAccount) => {
+      const display = resolveDisplayEmail(account);
+      const atIndex = display.indexOf('@');
+      return atIndex > 0 ? display.slice(0, atIndex) : display;
+    },
+    [resolveDisplayEmail],
+  );
+
+  const resolvePlanLabel = useCallback(
+    (account: TraeAccount) => getTraePlanDisplayName(account),
+    [],
+  );
+
+  const renderGridCards = useCallback(
+    (items: TraeAccount[], groupKey?: string) =>
+      items.map((account) => {
+        const displayEmail = resolveDisplayEmail(account);
+        const quota = resolveQuotaSummary(account);
+        const planLabel = resolvePlanLabel(account);
+        const planClass = getTraePlanBadgeClass(planLabel);
+        const accountTags = (account.tags || []).map((tag) => tag.trim()).filter(Boolean);
+        const visibleTags = accountTags.slice(0, 2);
+        const moreTagCount = Math.max(0, accountTags.length - visibleTags.length);
+        const isSelected = selected.has(account.id);
+        const isCurrent = currentAccountId === account.id;
+        const hasStatusError = (account.status || '').toLowerCase() === 'error';
+        const statusTitle = account.status_reason || t('accounts.status.refreshFailed', '刷新失败');
+        const signedInWithText = resolveSignedInWithText(account);
+        const userIdText = account.user_id || '--';
+
+        return (
+          <div
+            key={groupKey ? `${groupKey}-${account.id}` : account.id}
+            className={`ghcp-account-card ${isCurrent ? 'current' : ''} ${isSelected ? 'selected' : ''}`}
+          >
+            <div className="card-top">
+              <div className="card-select">
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => toggleSelect(account.id)}
+                />
+              </div>
+              <span className="account-email" title={maskAccountText(displayEmail)}>
+                {maskAccountText(displayEmail)}
+              </span>
+              {planLabel && planLabel !== 'UNKNOWN' && (
+                <span className={`tier-badge ${planClass} raw-value`}>{planLabel}</span>
+              )}
+              {isCurrent && (
+                <span className="current-tag">{t('accounts.status.current', '当前')}</span>
+              )}
+              {hasStatusError && (
+                <span className="status-pill warning" title={statusTitle}>
+                  <CircleAlert size={12} />
+                  {t('accounts.status.refreshFailed', '刷新失败')}
+                </span>
+              )}
+            </div>
+
+            <div className="account-sub-line">
+              <span className="kiro-table-subline">
+                {signedInWithText} | {t('kiro.account.userId', 'User ID')}: {maskAccountText(userIdText)}
+              </span>
+            </div>
+
+            {accountTags.length > 0 && (
+              <div className="card-tags">
+                {visibleTags.map((tag, index) => (
+                  <span key={`${account.id}-${tag}-${index}`} className="tag-pill">
+                    {tag}
+                  </span>
+                ))}
+                {moreTagCount > 0 && <span className="tag-pill more">+{moreTagCount}</span>}
+              </div>
+            )}
+
+            <div className="ghcp-quota-section">
+              <div className="quota-item">
+                <div className="quota-header">
+                  <span className="quota-label">{t('instances.labels.quota', '配额')}</span>
+                  <span className={`quota-pct ${quota.quotaClass}`}>{quota.percentageText}</span>
+                </div>
+                <div className="quota-bar-track">
+                  <div
+                    className={`quota-bar ${quota.quotaClass}`}
+                    style={{ width: `${Math.min(quota.percentage ?? 0, 100)}%` }}
+                  />
+                </div>
+                <div className="quota-reset">{quota.costText}</div>
+                <div className="quota-reset">{quota.resetText}</div>
+              </div>
+            </div>
+
+            <div className="card-footer">
+              <span className="card-date">{formatDate(account.created_at)}</span>
+              <div className="card-actions">
+                <button
+                  className="card-action-btn success"
+                  onClick={() => handleInjectToVSCode?.(account.id)}
+                  disabled={injecting === account.id}
+                  title={t('dashboard.switch', '切换')}
+                >
+                  {injecting === account.id ? (
+                    <RefreshCw size={14} className="loading-spinner" />
+                  ) : (
+                    <Play size={14} />
+                  )}
+                </button>
+                <button
+                  className="card-action-btn"
+                  onClick={() => openTagModal(account.id)}
+                  title={t('accounts.editTags', '编辑标签')}
+                >
+                  <Tag size={14} />
+                </button>
+                <button
+                  className="card-action-btn"
+                  onClick={() => handleRefresh(account.id)}
+                  disabled={refreshing === account.id}
+                  title={t('common.refresh', '刷新')}
+                >
+                  <RotateCw
+                    size={14}
+                    className={refreshing === account.id ? 'loading-spinner' : ''}
+                  />
+                </button>
+                <button
+                  className="card-action-btn export-btn"
+                  onClick={() =>
+                    handleExportByIds([account.id], resolveSingleExportBaseName(account))
+                  }
+                  title={t('common.shared.export', '导出')}
+                >
+                  <Upload size={14} />
+                </button>
+                <button
+                  className="card-action-btn danger"
+                  onClick={() => handleDelete(account.id)}
+                  title={t('common.delete', '删除')}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }),
+    [
+      currentAccountId,
+      formatDate,
+      handleDelete,
+      handleExportByIds,
+      handleInjectToVSCode,
+      handleRefresh,
+      injecting,
+      maskAccountText,
+      openTagModal,
+      refreshing,
+      resolveDisplayEmail,
+      resolveSignedInWithText,
+      resolvePlanLabel,
+      resolveQuotaSummary,
+      resolveSingleExportBaseName,
+      selected,
+      t,
+      toggleSelect,
+    ],
+  );
+
+  const renderTableRows = useCallback(
+    (items: TraeAccount[], groupKey?: string) =>
+      items.map((account) => {
+        const displayEmail = resolveDisplayEmail(account);
+        const quota = resolveQuotaSummary(account);
+        const planLabel = resolvePlanLabel(account);
+        const planClass = getTraePlanBadgeClass(planLabel);
+        const accountTags = (account.tags || []).map((tag) => tag.trim()).filter(Boolean);
+        const visibleTags = accountTags.slice(0, 3);
+        const moreTagCount = Math.max(0, accountTags.length - visibleTags.length);
+        const isCurrent = currentAccountId === account.id;
+        const hasStatusError = (account.status || '').toLowerCase() === 'error';
+        const statusTitle = account.status_reason || t('accounts.status.refreshFailed', '刷新失败');
+        const signedInWithText = resolveSignedInWithText(account);
+        const userIdText = account.user_id || '--';
+
+        return (
+          <tr key={groupKey ? `${groupKey}-${account.id}` : account.id} className={isCurrent ? 'current' : ''}>
+            <td>
+              <input
+                type="checkbox"
+                checked={selected.has(account.id)}
+                onChange={() => toggleSelect(account.id)}
+              />
+            </td>
+            <td>
+              <div className="account-cell">
+                <div className="account-main-line">
+                  <span className="account-email-text" title={maskAccountText(displayEmail)}>
+                    {maskAccountText(displayEmail)}
+                  </span>
+                  {planLabel && planLabel !== 'UNKNOWN' && (
+                    <span className={`tier-badge ${planClass} raw-value`}>{planLabel}</span>
+                  )}
+                  {isCurrent && (
+                    <span className="mini-tag current">{t('accounts.status.current', '当前')}</span>
+                  )}
+                </div>
+                {hasStatusError && (
+                  <div className="account-sub-line">
+                    <span className="status-pill warning" title={statusTitle}>
+                      <CircleAlert size={12} />
+                      {t('accounts.status.refreshFailed', '刷新失败')}
+                    </span>
+                  </div>
+                )}
+                <div className="account-sub-line">
+                  <span className="kiro-table-subline">
+                    {signedInWithText} | {t('kiro.account.userId', 'User ID')}: {maskAccountText(userIdText)}
+                  </span>
+                </div>
+                {accountTags.length > 0 && (
+                  <div className="account-tags-inline">
+                    {visibleTags.map((tag, index) => (
+                      <span key={`${account.id}-tag-${tag}-${index}`} className="tag-pill">
+                        {tag}
+                      </span>
+                    ))}
+                    {moreTagCount > 0 && <span className="tag-pill more">+{moreTagCount}</span>}
+                  </div>
+                )}
+              </div>
+            </td>
+            <td>
+              <div className="quota-item windsurf-table-credit-item">
+                <div className="quota-header">
+                  <span className="quota-name">{t('instances.labels.quota', '配额')}</span>
+                  <span className={`quota-value ${quota.quotaClass}`}>{quota.percentageText}</span>
+                </div>
+                <div className="windsurf-credit-meta-row table">
+                  <span className="windsurf-credit-left">{quota.costText}</span>
+                </div>
+                <div className="windsurf-credit-meta-row table">
+                  <span className="windsurf-credit-used">{quota.resetText}</span>
+                </div>
+                <div className="quota-progress-track">
+                  <div
+                    className={`quota-progress-bar ${quota.quotaClass}`}
+                    style={{ width: `${Math.min(quota.percentage ?? 0, 100)}%` }}
+                  />
+                </div>
+              </div>
+            </td>
+            <td>{formatDate(account.created_at)}</td>
+            <td className="sticky-action-cell table-action-cell">
+              <div className="action-buttons">
+                <button
+                  className="action-btn success"
+                  onClick={() => handleInjectToVSCode?.(account.id)}
+                  disabled={injecting === account.id}
+                  title={t('dashboard.switch', '切换')}
+                >
+                  {injecting === account.id ? (
+                    <RefreshCw size={14} className="loading-spinner" />
+                  ) : (
+                    <Play size={14} />
+                  )}
+                </button>
+                <button
+                  className="action-btn"
+                  onClick={() => openTagModal(account.id)}
+                  title={t('accounts.editTags', '编辑标签')}
+                >
+                  <Tag size={14} />
+                </button>
+                <button
+                  className="action-btn"
+                  onClick={() => handleRefresh(account.id)}
+                  disabled={refreshing === account.id}
+                  title={t('common.refresh', '刷新')}
+                >
+                  <RotateCw
+                    size={14}
+                    className={refreshing === account.id ? 'loading-spinner' : ''}
+                  />
+                </button>
+                <button
+                  className="action-btn"
+                  onClick={() =>
+                    handleExportByIds([account.id], resolveSingleExportBaseName(account))
+                  }
+                  title={t('common.shared.export', '导出')}
+                >
+                  <Upload size={14} />
+                </button>
+                <button
+                  className="action-btn danger"
+                  onClick={() => handleDelete(account.id)}
+                  title={t('common.delete', '删除')}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </td>
+          </tr>
+        );
+      }),
+    [
+      currentAccountId,
+      formatDate,
+      handleDelete,
+      handleExportByIds,
+      handleInjectToVSCode,
+      handleRefresh,
+      injecting,
+      maskAccountText,
+      openTagModal,
+      refreshing,
+      resolveDisplayEmail,
+      resolveSignedInWithText,
+      resolvePlanLabel,
+      resolveQuotaSummary,
+      resolveSingleExportBaseName,
+      selected,
+      t,
+      toggleSelect,
+    ],
+  );
+
+  return (
+    <div className="ghcp-accounts-page trae-accounts-page">
+      <PlatformOverviewTabsHeader platform="trae" active={activeTab} onTabChange={setActiveTab} />
+
+      <div
+        className={`ghcp-flow-notice ${isFlowNoticeCollapsed ? 'collapsed' : ''}`}
+        role="note"
+        aria-live="polite"
+      >
+        <button
+          type="button"
+          className="ghcp-flow-notice-toggle"
+          onClick={() => setIsFlowNoticeCollapsed((prev) => !prev)}
+          aria-expanded={!isFlowNoticeCollapsed}
+        >
+          <div className="ghcp-flow-notice-title">
+            <CircleAlert size={16} />
+            <span>{t('trae.flowNotice.title', 'Trae 账号接入说明（点击展开/收起）')}</span>
+          </div>
+          <ChevronDown
+            size={16}
+            className={`ghcp-flow-notice-arrow ${isFlowNoticeCollapsed ? 'collapsed' : ''}`}
+          />
+        </button>
+        {!isFlowNoticeCollapsed && (
+          <div className="ghcp-flow-notice-body">
+            <div className="ghcp-flow-notice-desc">
+              {t(
+                'trae.flowNotice.desc',
+                '支持官方 OAuth 授权、本机导入、JSON 导入与本地注入切号；切号过程按 Trae 客户端真实落盘规则写回。',
+              )}
+            </div>
+            <ul className="ghcp-flow-notice-list">
+              <li>
+                {t(
+                  'trae.flowNotice.permission',
+                  '权限范围：读取并写入本机 Trae 配置目录中的 storage.json 登录相关字段，用于账号导入、切号注入与套餐信息展示；所有数据仅在本机处理。',
+                )}
+              </li>
+              <li>
+                {t(
+                  'trae.flowNotice.network',
+                  '网络范围：OAuth 登录、令牌刷新和套餐查询会请求 Trae 官方接口；不会向第三方服务上传本地账号文件或原始存储内容。',
+                )}
+              </li>
+            </ul>
+          </div>
+        )}
+      </div>
+
+      {activeTab === 'overview' && (
+        <>
+          {message && (
+            <div className={`message-bar ${message.tone === 'error' ? 'error' : 'success'}`}>
+              {message.text}
+              <button onClick={() => setMessage(null)} aria-label={t('common.close', '关闭')}>
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
+          <div className="toolbar">
+            <div className="toolbar-left">
+              <div className="search-box">
+                <Search size={16} className="search-icon" />
+                <input
+                  type="text"
+                  placeholder={t(
+                    'common.shared.actions.searchAccountPlaceholder',
+                    '搜索账号 / 用户 ID / 套餐',
+                  )}
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                />
+              </div>
+
+              <div className="view-switcher">
+                <button
+                  className={`view-btn ${viewMode === 'list' ? 'active' : ''}`}
+                  onClick={() => setViewMode('list')}
+                  title={t('common.shared.view.list', '列表视图')}
+                >
+                  <List size={16} />
+                </button>
+                <button
+                  className={`view-btn ${viewMode === 'grid' ? 'active' : ''}`}
+                  onClick={() => setViewMode('grid')}
+                  title={t('common.shared.view.grid', '卡片视图')}
+                >
+                  <LayoutGrid size={16} />
+                </button>
+              </div>
+
+              <div className="filter-select">
+                <select
+                  value={filterType}
+                  onChange={(event) => setFilterType(event.target.value)}
+                  aria-label={t('common.shared.filterLabel', '筛选')}
+                >
+                  <option value="all">
+                    {t('common.shared.filter.all', '全部 ({{count}})', {
+                      count: tierSummary.all,
+                    })}
+                  </option>
+                  {tierSummary.entries.map(([plan, count]) => (
+                    <option key={plan} value={plan}>
+                      {`${plan} (${count})`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="tag-filter" ref={tagFilterRef}>
+                <button
+                  type="button"
+                  className={`tag-filter-btn ${tagFilter.length > 0 ? 'active' : ''}`}
+                  onClick={() => setShowTagFilter((prev) => !prev)}
+                  aria-label={t('accounts.filterTags', '标签筛选')}
+                >
+                  <Tag size={14} />
+                  {tagFilter.length > 0
+                    ? `${t('accounts.filterTagsCount', '标签')}(${tagFilter.length})`
+                    : t('accounts.filterTags', '标签筛选')}
+                </button>
+                {showTagFilter && (
+                  <div className="tag-filter-panel">
+                    {availableTags.length === 0 ? (
+                      <div className="tag-filter-empty">
+                        {t('accounts.noAvailableTags', '暂无可用标签')}
+                      </div>
+                    ) : (
+                      <div className="tag-filter-options">
+                        {availableTags.map((tag) => (
+                          <label
+                            key={tag}
+                            className={`tag-filter-option ${tagFilter.includes(tag) ? 'selected' : ''}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={tagFilter.includes(tag)}
+                              onChange={() => toggleTagFilterValue(tag)}
+                            />
+                            <span className="tag-filter-name">{tag}</span>
+                            <button
+                              type="button"
+                              className="tag-filter-delete"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                requestDeleteTag(tag);
+                              }}
+                              aria-label={t('accounts.deleteTagAria', {
+                                tag,
+                                defaultValue: '删除标签 {{tag}}',
+                              })}
+                            >
+                              <X size={12} />
+                            </button>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    <div className="tag-filter-divider" />
+                    <label className="tag-filter-group-toggle">
+                      <input
+                        type="checkbox"
+                        checked={groupByTag}
+                        onChange={(event) => setGroupByTag(event.target.checked)}
+                      />
+                      <span>{t('accounts.groupByTag', '按标签分组展示')}</span>
+                    </label>
+                    {tagFilter.length > 0 && (
+                      <button type="button" className="tag-filter-clear" onClick={clearTagFilter}>
+                        {t('accounts.clearFilter', '清空筛选')}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="sort-select">
+                <ArrowDownWideNarrow size={14} className="sort-icon" />
+                <select
+                  value={TRAE_KNOWN_SORT_KEYS.includes(sortBy as (typeof TRAE_KNOWN_SORT_KEYS)[number]) ? sortBy : 'created_at'}
+                  onChange={(event) => setSortBy(event.target.value)}
+                  aria-label={t('common.shared.sortLabel', '排序')}
+                >
+                  <option value="created_at">{t('accounts.sort.createdAt', '按创建时间')}</option>
+                  <option value="plan">{t('accounts.sort.plan', '按套餐')}</option>
+                  <option value="quota">{t('accounts.sort.quota', '按配额')}</option>
+                </select>
+              </div>
+
+              <button
+                className="sort-direction-btn"
+                onClick={() => setSortDirection((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
+                title={
+                  sortDirection === 'desc'
+                    ? t('common.shared.sort.descTooltip', '当前：降序，点击切换为升序')
+                    : t('common.shared.sort.ascTooltip', '当前：升序，点击切换为降序')
+                }
+                aria-label={t('common.shared.sort.toggleDirection', '切换排序方向')}
+              >
+                {sortDirection === 'desc' ? '⬇' : '⬆'}
+              </button>
+            </div>
+
+            <div className="toolbar-right">
+              <button
+                className="btn btn-primary icon-only"
+                onClick={() => openAddModal('oauth')}
+                title={t('common.shared.actions.addAccount', '添加账号')}
+                aria-label={t('common.shared.actions.addAccount', '添加账号')}
+              >
+                <Plus size={14} />
+              </button>
+              <button
+                className="btn btn-secondary icon-only"
+                onClick={handleRefreshAll}
+                disabled={refreshingAll || accounts.length === 0}
+                title={t('common.shared.refreshAll', '刷新全部')}
+                aria-label={t('common.shared.refreshAll', '刷新全部')}
+              >
+                <RefreshCw size={14} className={refreshingAll ? 'loading-spinner' : ''} />
+              </button>
+              <button
+                className="btn btn-secondary icon-only"
+                onClick={togglePrivacyMode}
+                title={
+                  privacyModeEnabled
+                    ? t('privacy.showSensitive', '显示邮箱')
+                    : t('privacy.hideSensitive', '隐藏邮箱')
+                }
+                aria-label={
+                  privacyModeEnabled
+                    ? t('privacy.showSensitive', '显示邮箱')
+                    : t('privacy.hideSensitive', '隐藏邮箱')
+                }
+              >
+                {privacyModeEnabled ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+              <button
+                className="btn btn-secondary icon-only"
+                onClick={() => openAddModal('import')}
+                disabled={importing}
+                title={t('common.shared.import.label', '导入')}
+                aria-label={t('common.shared.import.label', '导入')}
+              >
+                <Download size={14} />
+              </button>
+              <button
+                className="btn btn-secondary export-btn icon-only"
+                onClick={handleExport}
+                disabled={exporting || accounts.length === 0}
+                title={
+                  selected.size > 0
+                    ? `${t('common.shared.export', '导出')} (${selected.size})`
+                    : t('common.shared.export', '导出')
+                }
+                aria-label={
+                  selected.size > 0
+                    ? `${t('common.shared.export', '导出')} (${selected.size})`
+                    : t('common.shared.export', '导出')
+                }
+              >
+                <Upload size={14} />
+              </button>
+              {selected.size > 0 && (
+                <button
+                  className="btn btn-danger icon-only"
+                  onClick={handleBatchDelete}
+                  title={`${t('common.delete', '删除')} (${selected.size})`}
+                  aria-label={`${t('common.delete', '删除')} (${selected.size})`}
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
+              <QuickSettingsPopover type="trae" />
+            </div>
+          </div>
+
+          {loading && accounts.length === 0 ? (
+            <div className="loading-container">
+              <RefreshCw size={24} className="loading-spinner" />
+              <p>{t('common.loading', '加载中...')}</p>
+            </div>
+          ) : accounts.length === 0 ? (
+            <div className="empty-state">
+              <Globe size={48} />
+              <h3>{t('common.shared.empty.title', '暂无账号')}</h3>
+              <p>
+                {t(
+                  'trae.empty.description',
+                  '点击“添加账号”开始管理您的 Trae 账号，也可以从本机或 JSON 文件导入。',
+                )}
+              </p>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '16px' }}>
+                <button className="btn btn-primary" onClick={() => openAddModal('oauth')}>
+                  <Plus size={16} />
+                  {t('common.shared.actions.addAccount', '添加账号')}
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() =>
+                    window.dispatchEvent(
+                      new CustomEvent('app-request-navigate', { detail: 'manual' }),
+                    )
+                  }
+                >
+                  <BookOpen size={16} />
+                  {t('manual.navTitle', '功能使用手册')}
+                </button>
+              </div>
+            </div>
+          ) : filteredAccounts.length === 0 ? (
+            <div className="empty-state">
+              <h3>{t('common.shared.noMatch.title', '没有匹配的账号')}</h3>
+              <p>{t('common.shared.noMatch.desc', '请尝试调整搜索或筛选条件')}</p>
+            </div>
+          ) : viewMode === 'grid' ? (
+            groupByTag ? (
+              <div className="tag-group-list">
+                {groupedAccounts.map(([groupKey, groupAccounts]) => (
+                  <div key={groupKey} className="tag-group-section">
+                    <div className="tag-group-header">
+                      <span className="tag-group-title">{resolveGroupLabel(groupKey)}</span>
+                      <span className="tag-group-count">{groupAccounts.length}</span>
+                    </div>
+                    <div className="tag-group-grid ghcp-accounts-grid">
+                      {renderGridCards(groupAccounts, groupKey)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="ghcp-accounts-grid">{renderGridCards(filteredAccounts)}</div>
+            )
+          ) : groupByTag ? (
+            <div className="account-table-container grouped">
+              <table className="account-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 40 }}>
+                      <input
+                        type="checkbox"
+                        checked={selected.size === filteredAccounts.length && filteredAccounts.length > 0}
+                        onChange={() => toggleSelectAll(filteredAccounts.map((account) => account.id))}
+                      />
+                    </th>
+                    <th style={{ width: 260 }}>{t('common.shared.columns.account', '账号')}</th>
+                    <th>{t('instances.labels.quota', '配额')}</th>
+                    <th style={{ width: 160 }}>{t('accounts.createdAt', '创建时间')}</th>
+                    <th className="sticky-action-header table-action-header">
+                      {t('common.shared.columns.actions', '操作')}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {groupedAccounts.map(([groupKey, groupAccounts]) => (
+                    <Fragment key={groupKey}>
+                      <tr className="tag-group-row">
+                        <td colSpan={5}>
+                          <div className="tag-group-header">
+                            <span className="tag-group-title">{resolveGroupLabel(groupKey)}</span>
+                            <span className="tag-group-count">{groupAccounts.length}</span>
+                          </div>
+                        </td>
+                      </tr>
+                      {renderTableRows(groupAccounts, groupKey)}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="account-table-container">
+              <table className="account-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 40 }}>
+                      <input
+                        type="checkbox"
+                        checked={selected.size === filteredAccounts.length && filteredAccounts.length > 0}
+                        onChange={() => toggleSelectAll(filteredAccounts.map((account) => account.id))}
+                      />
+                    </th>
+                    <th style={{ width: 260 }}>{t('common.shared.columns.account', '账号')}</th>
+                    <th>{t('instances.labels.quota', '配额')}</th>
+                    <th style={{ width: 160 }}>{t('accounts.createdAt', '创建时间')}</th>
+                    <th className="sticky-action-header table-action-header">
+                      {t('common.shared.columns.actions', '操作')}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>{renderTableRows(filteredAccounts)}</tbody>
+              </table>
+            </div>
+          )}
+
+          {showAddModal && (
+            <div className="modal-overlay" onClick={closeAddModal}>
+              <div className="modal-content ghcp-add-modal" onClick={(event) => event.stopPropagation()}>
+                <div className="modal-header">
+                  <h2>{t('trae.addModal.title', '添加 Trae 账号')}</h2>
+                  <button
+                    className="modal-close"
+                    onClick={closeAddModal}
+                    aria-label={t('common.close', '关闭')}
+                  >
+                    <X />
+                  </button>
+                </div>
+
+                <div className="modal-tabs">
+                  <button
+                    className={`modal-tab ${addTab === 'oauth' ? 'active' : ''}`}
+                    onClick={() => openAddModal('oauth')}
+                  >
+                    <Globe size={14} />
+                    {t('common.shared.addModal.oauth', 'OAuth 授权')}
+                  </button>
+                  <button
+                    className={`modal-tab ${addTab === 'token' ? 'active' : ''}`}
+                    onClick={() => openAddModal('token')}
+                  >
+                    <KeyRound size={14} />
+                    {t('common.shared.addModal.token', 'Token / JSON')}
+                  </button>
+                  <button
+                    className={`modal-tab ${addTab === 'import' ? 'active' : ''}`}
+                    onClick={() => openAddModal('import')}
+                  >
+                    <Database size={14} />
+                    {t('accounts.tabs.import', '导入')}
+                  </button>
+                </div>
+
+                <div className="modal-body">
+                  {addTab === 'oauth' ? (
+                    <div className="add-section">
+                      <p className="section-desc">
+                        {t('trae.oauth.desc', '点击下方按钮，在浏览器中完成 Trae OAuth 授权登录。')}
+                      </p>
+
+                      {oauthPrepareError ? (
+                        <div className="add-status error">
+                          <CircleAlert size={16} />
+                          <span>{oauthPrepareError}</span>
+                          <button className="btn btn-sm btn-outline" onClick={handleRetryOauth}>
+                            {t('common.shared.oauth.retry', '重新生成授权信息')}
+                          </button>
+                        </div>
+                      ) : oauthUrl ? (
+                        <div className="oauth-url-section">
+                          <div className="oauth-url-box">
+                            <input type="text" value={oauthUrl} readOnly />
+                            <button onClick={handleCopyOauthUrl}>
+                              {oauthUrlCopied ? <Check size={16} /> : <Copy size={16} />}
+                            </button>
+                          </div>
+                          {oauthMeta && (
+                            <p className="oauth-hint">
+                              {t('common.shared.oauth.meta', '授权有效期：{{expires}}s；轮询间隔：{{interval}}s', {
+                                expires: oauthMeta.expiresIn,
+                                interval: oauthMeta.intervalSeconds,
+                              })}
+                            </p>
+                          )}
+                          <button className="btn btn-primary btn-full" onClick={handleOpenOauthUrl}>
+                            <Globe size={16} />
+                            {t('common.shared.oauth.openBrowser', '在浏览器中打开')}
+                          </button>
+                          {oauthPolling && (
+                            <div className="add-status loading">
+                              <RefreshCw size={16} className="loading-spinner" />
+                              <span>{t('common.shared.oauth.waiting', '等待授权完成...')}</span>
+                            </div>
+                          )}
+                          {oauthCompleteError && (
+                            <div className="add-status error">
+                              <CircleAlert size={16} />
+                              <span>{oauthCompleteError}</span>
+                              <button className="btn btn-sm btn-outline" onClick={handleRetryOauth}>
+                                {oauthTimedOut
+                                  ? t('common.shared.oauth.timeoutRetry', '刷新授权链接')
+                                  : t('common.shared.oauth.retry', '重新生成授权信息')}
+                              </button>
+                            </div>
+                          )}
+                          <p className="oauth-hint">
+                            {t(
+                              'common.shared.oauth.hint',
+                              'Once authorized, this window will update automatically',
+                            )}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="oauth-loading">
+                          <RefreshCw size={24} className="loading-spinner" />
+                          <span>{t('common.shared.oauth.preparing', '正在准备授权信息...')}</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : addTab === 'token' ? (
+                    <div className="add-section">
+                      <p className="section-desc">
+                        {t('accounts.importJsonHint', '导入由本工具导出的 Trae JSON 文件。')}
+                      </p>
+                      <textarea
+                        className="token-input"
+                        value={tokenInput}
+                        onChange={(event) => setTokenInput(event.target.value)}
+                        placeholder={t('common.shared.token.placeholder', '粘贴 Token 或 JSON...')}
+                      />
+                      <button
+                        className="btn btn-primary btn-full"
+                        onClick={() => void handleTokenImport()}
+                        disabled={addStatus === 'loading' || !tokenInput.trim()}
+                      >
+                        {addStatus === 'loading' ? (
+                          <RefreshCw size={16} className="loading-spinner" />
+                        ) : (
+                          <Download size={16} />
+                        )}
+                        {t('common.shared.token.import', '导入')}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="add-section">
+                      <p className="section-desc">
+                        {t(
+                          'trae.import.localDesc',
+                          '支持从本机 Trae 配置目录读取当前登录账号、套餐信息和配额缓存数据。',
+                        )}
+                      </p>
+                      <button
+                        className="btn btn-secondary btn-full"
+                        onClick={() => handleImportFromLocal?.()}
+                        disabled={importing}
+                      >
+                        {importing ? (
+                          <RefreshCw size={16} className="loading-spinner" />
+                        ) : (
+                          <Database size={16} />
+                        )}
+                        {t('accounts.add.importLocal', '从本机导入')}
+                      </button>
+                      <div className="oauth-hint" style={{ margin: '8px 0 4px' }}>
+                        {t('common.shared.import.orJson', '或从 JSON 文件导入')}
+                      </div>
+                      <input
+                        ref={importFileInputRef}
+                        type="file"
+                        accept=".json,application/json"
+                        style={{ display: 'none' }}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          event.target.value = '';
+                          if (!file) return;
+                          void handleImportJsonFile(file);
+                        }}
+                      />
+                      <button
+                        className="btn btn-primary btn-full"
+                        onClick={handlePickImportFile}
+                        disabled={importing}
+                      >
+                        {importing ? (
+                          <RefreshCw size={16} className="loading-spinner" />
+                        ) : (
+                          <Upload size={16} />
+                        )}
+                        {t('common.shared.import.pickFile', '选择 JSON 文件导入')}
+                      </button>
+                    </div>
+                  )}
+
+                  {addStatus !== 'idle' && addMessage && (
+                    <div className={`add-status ${addStatus}`}>
+                      {addStatus === 'success' ? (
+                        <Check size={16} />
+                      ) : addStatus === 'loading' ? (
+                        <RefreshCw size={16} className="loading-spinner" />
+                      ) : (
+                        <CircleAlert size={16} />
+                      )}
+                      <span>{addMessage}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <ExportJsonModal
+            isOpen={showExportModal}
+            title={`${t('common.shared.export', '导出')} JSON`}
+            jsonContent={exportJsonContent}
+            hidden={exportJsonHidden}
+            copied={exportJsonCopied}
+            saving={savingExportJson}
+            savedPath={exportSavedPath}
+            canOpenSavedDirectory={canOpenExportSavedDirectory}
+            pathCopied={exportPathCopied}
+            onClose={closeExportModal}
+            onToggleHidden={toggleExportJsonHidden}
+            onCopyJson={copyExportJson}
+            onSaveJson={saveExportJson}
+            onOpenSavedDirectory={openExportSavedDirectory}
+            onCopySavedPath={copyExportSavedPath}
+          />
+
+          {deleteConfirm && (
+            <div className="modal-overlay" onClick={() => !deleting && setDeleteConfirm(null)}>
+              <div className="modal" onClick={(event) => event.stopPropagation()}>
+                <div className="modal-header">
+                  <h2>{t('common.confirm', '确认')}</h2>
+                  <button
+                    className="modal-close"
+                    onClick={() => !deleting && setDeleteConfirm(null)}
+                    aria-label={t('common.close', '关闭')}
+                  >
+                    <X />
+                  </button>
+                </div>
+                <div className="modal-body">
+                  <p>{deleteConfirm.message}</p>
+                </div>
+                <div className="modal-footer">
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => setDeleteConfirm(null)}
+                    disabled={deleting}
+                  >
+                    {t('common.cancel', '取消')}
+                  </button>
+                  <button className="btn btn-danger" onClick={confirmDelete} disabled={deleting}>
+                    {t('common.confirm', '确认')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {tagDeleteConfirm && (
+            <div className="modal-overlay" onClick={() => !deletingTag && setTagDeleteConfirm(null)}>
+              <div className="modal" onClick={(event) => event.stopPropagation()}>
+                <div className="modal-header">
+                  <h2>{t('common.confirm', '确认')}</h2>
+                  <button
+                    className="modal-close"
+                    onClick={() => !deletingTag && setTagDeleteConfirm(null)}
+                    aria-label={t('common.close', '关闭')}
+                  >
+                    <X />
+                  </button>
+                </div>
+                <div className="modal-body">
+                  <p>
+                    {t(
+                      'accounts.confirmDeleteTag',
+                      'Delete tag "{{tag}}"? This tag will be removed from {{count}} accounts.',
+                      {
+                        tag: tagDeleteConfirm.tag,
+                        count: tagDeleteConfirm.count,
+                      },
+                    )}
+                  </p>
+                </div>
+                <div className="modal-footer">
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => setTagDeleteConfirm(null)}
+                    disabled={deletingTag}
+                  >
+                    {t('common.cancel', '取消')}
+                  </button>
+                  <button className="btn btn-danger" onClick={confirmDeleteTag} disabled={deletingTag}>
+                    {deletingTag ? t('common.processing', '处理中...') : t('common.confirm', '确认')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <TagEditModal
+            isOpen={!!showTagModal}
+            initialTags={accounts.find((account) => account.id === showTagModal)?.tags || []}
+            availableTags={availableTags}
+            onClose={() => setShowTagModal(null)}
+            onSave={handleSaveTags}
+          />
+        </>
+      )}
+
+      {activeTab === 'instances' && (
+        <TraeInstancesContent accountsForSelect={sortedAccountsForInstances} />
+      )}
+    </div>
+  );
+}

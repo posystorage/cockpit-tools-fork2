@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use sysinfo::{Pid, ProcessRefreshKind, System, UpdateKind};
 
 const OPENCODE_APP_NAME: &str = "OpenCode";
+const TRAE_APP_NAME: &str = "Trae";
 #[cfg(target_os = "macos")]
 const CODEX_APP_PATH: &str = "/Applications/Codex.app/Contents/MacOS/Codex";
 #[cfg(target_os = "macos")]
@@ -1095,6 +1096,20 @@ fn update_app_path_in_config(app: &str, path: &Path) {
                 return;
             }
         }
+        "qoder" => {
+            if current.qoder_app_path != normalized {
+                current.qoder_app_path = normalized;
+            } else {
+                return;
+            }
+        }
+        "trae" => {
+            if current.trae_app_path != normalized {
+                current.trae_app_path = normalized;
+            } else {
+                return;
+            }
+        }
         _ => return,
     }
     let _ = config::save_user_config(&current);
@@ -1604,6 +1619,116 @@ fn detect_codebuddy_exec_path() -> Option<std::path::PathBuf> {
     None
 }
 
+fn detect_qoder_exec_path() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let candidates = [
+            "/Applications/Qoder.app/Contents/MacOS/Qoder",
+            "/Applications/Qoder.app/Contents/MacOS/Electron",
+            "/Applications/Qoder.app",
+        ];
+        for candidate in candidates {
+            let path = std::path::PathBuf::from(candidate);
+            if path.exists() {
+                return Some(path);
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+        if let Ok(local_appdata) = std::env::var("LOCALAPPDATA") {
+            candidates.push(
+                std::path::PathBuf::from(&local_appdata)
+                    .join("Programs")
+                    .join("Qoder")
+                    .join("Qoder.exe"),
+            );
+        }
+        if let Ok(program_files) = std::env::var("PROGRAMFILES") {
+            candidates.push(
+                std::path::PathBuf::from(program_files)
+                    .join("Qoder")
+                    .join("Qoder.exe"),
+            );
+        }
+        for candidate in candidates {
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let candidates = ["/usr/bin/qoder", "/usr/local/bin/qoder", "/opt/qoder/qoder"];
+        for candidate in candidates {
+            let path = std::path::PathBuf::from(candidate);
+            if path.exists() {
+                return Some(path);
+            }
+        }
+    }
+
+    None
+}
+
+fn detect_trae_exec_path() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let candidates = [
+            "/Applications/Trae.app/Contents/MacOS/Trae",
+            "/Applications/Trae.app/Contents/MacOS/Electron",
+            "/Applications/Trae.app",
+        ];
+        for candidate in candidates {
+            let path = std::path::PathBuf::from(candidate);
+            if path.exists() {
+                return Some(path);
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+        if let Ok(local_appdata) = std::env::var("LOCALAPPDATA") {
+            candidates.push(
+                std::path::PathBuf::from(&local_appdata)
+                    .join("Programs")
+                    .join("Trae")
+                    .join("Trae.exe"),
+            );
+        }
+        if let Ok(program_files) = std::env::var("PROGRAMFILES") {
+            candidates.push(
+                std::path::PathBuf::from(program_files)
+                    .join("Trae")
+                    .join("Trae.exe"),
+            );
+        }
+        for candidate in candidates {
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let candidates = ["/usr/bin/trae", "/usr/local/bin/trae", "/opt/trae/trae"];
+        for candidate in candidates {
+            let path = std::path::PathBuf::from(candidate);
+            if path.exists() {
+                return Some(path);
+            }
+        }
+    }
+
+    None
+}
+
 #[cfg(target_os = "macos")]
 fn resolve_codebuddy_macos_exec_path(path_str: &str) -> Option<std::path::PathBuf> {
     let path = std::path::PathBuf::from(path_str);
@@ -1650,6 +1775,112 @@ fn resolve_codebuddy_macos_exec_path(path_str: &str) -> Option<std::path::PathBu
         return Some(path);
     }
     None
+}
+
+#[cfg(target_os = "macos")]
+fn resolve_qoder_macos_exec_path(path_str: &str) -> Option<std::path::PathBuf> {
+    let path = std::path::PathBuf::from(path_str);
+    if let Some(app_root) = normalize_macos_app_root(&path) {
+        let app_root_path = std::path::PathBuf::from(&app_root);
+        let macos_dir = app_root_path.join("Contents").join("MacOS");
+
+        for binary_name in ["Qoder", "Electron"] {
+            let candidate = macos_dir.join(binary_name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+
+        if let Ok(entries) = std::fs::read_dir(&macos_dir) {
+            let mut fallback: Option<std::path::PathBuf> = None;
+            for entry in entries.flatten() {
+                let candidate = entry.path();
+                if !candidate.is_file() {
+                    continue;
+                }
+                let file_name = candidate
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+                if file_name.contains("crashpad") || file_name.contains("helper") {
+                    continue;
+                }
+                if file_name.contains("qoder") || file_name == "electron" {
+                    return Some(candidate);
+                }
+                if fallback.is_none() {
+                    fallback = Some(candidate);
+                }
+            }
+            if let Some(candidate) = fallback {
+                return Some(candidate);
+            }
+        }
+    }
+
+    if path.is_file() {
+        return Some(path);
+    }
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn resolve_trae_macos_exec_path(path_str: &str) -> Option<std::path::PathBuf> {
+    let path = std::path::PathBuf::from(path_str);
+    if let Some(app_root) = normalize_macos_app_root(&path) {
+        let app_root_path = std::path::PathBuf::from(&app_root);
+        let macos_dir = app_root_path.join("Contents").join("MacOS");
+
+        for binary_name in ["Trae", "Electron"] {
+            let candidate = macos_dir.join(binary_name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+
+        if let Ok(entries) = std::fs::read_dir(&macos_dir) {
+            let mut fallback: Option<std::path::PathBuf> = None;
+            for entry in entries.flatten() {
+                let candidate = entry.path();
+                if !candidate.is_file() {
+                    continue;
+                }
+                let file_name = candidate
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+                if file_name.contains("crashpad") || file_name.contains("helper") {
+                    continue;
+                }
+                if file_name.contains("trae") || file_name == "electron" {
+                    return Some(candidate);
+                }
+                if fallback.is_none() {
+                    fallback = Some(candidate);
+                }
+            }
+            if let Some(candidate) = fallback {
+                return Some(candidate);
+            }
+        }
+    }
+
+    if path.is_file() {
+        return Some(path);
+    }
+    None
+}
+
+#[cfg(not(target_os = "macos"))]
+fn resolve_qoder_macos_exec_path(path_str: &str) -> Option<std::path::PathBuf> {
+    resolve_macos_exec_path(path_str, "Qoder")
+}
+
+#[cfg(not(target_os = "macos"))]
+fn resolve_trae_macos_exec_path(path_str: &str) -> Option<std::path::PathBuf> {
+    resolve_macos_exec_path(path_str, "Trae")
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -1906,6 +2137,14 @@ pub fn ensure_codebuddy_launch_path_configured() -> Result<(), String> {
     resolve_codebuddy_launch_path().map(|_| ())
 }
 
+pub fn ensure_qoder_launch_path_configured() -> Result<(), String> {
+    resolve_qoder_launch_path().map(|_| ())
+}
+
+pub fn ensure_trae_launch_path_configured() -> Result<(), String> {
+    resolve_trae_launch_path().map(|_| ())
+}
+
 fn resolve_vscode_launch_path() -> Result<std::path::PathBuf, String> {
     if let Some(custom) = normalize_custom_path(Some(&config::get_user_config().vscode_app_path)) {
         #[cfg(target_os = "macos")]
@@ -1951,6 +2190,58 @@ fn resolve_codebuddy_launch_path() -> Result<std::path::PathBuf, String> {
     }
 
     Err(app_path_missing_error("codebuddy"))
+}
+
+fn resolve_qoder_launch_path() -> Result<std::path::PathBuf, String> {
+    if let Some(custom) = normalize_custom_path(Some(&config::get_user_config().qoder_app_path)) {
+        if let Some(exec) = resolve_qoder_macos_exec_path(&custom) {
+            return Ok(exec);
+        }
+        return Err(app_path_missing_error("qoder"));
+    }
+
+    if let Some(detected) = detect_qoder_exec_path() {
+        let detected_str = detected.to_string_lossy();
+        if let Some(exec) = resolve_qoder_macos_exec_path(&detected_str) {
+            return Ok(exec);
+        }
+        #[cfg(target_os = "macos")]
+        if detected.is_file() {
+            return Ok(detected);
+        }
+        #[cfg(not(target_os = "macos"))]
+        if detected.exists() {
+            return Ok(detected);
+        }
+    }
+
+    Err(app_path_missing_error("qoder"))
+}
+
+fn resolve_trae_launch_path() -> Result<std::path::PathBuf, String> {
+    if let Some(custom) = normalize_custom_path(Some(&config::get_user_config().trae_app_path)) {
+        if let Some(exec) = resolve_trae_macos_exec_path(&custom) {
+            return Ok(exec);
+        }
+        return Err(app_path_missing_error("trae"));
+    }
+
+    if let Some(detected) = detect_trae_exec_path() {
+        let detected_str = detected.to_string_lossy();
+        if let Some(exec) = resolve_trae_macos_exec_path(&detected_str) {
+            return Ok(exec);
+        }
+        #[cfg(target_os = "macos")]
+        if detected.is_file() {
+            return Ok(detected);
+        }
+        #[cfg(not(target_os = "macos"))]
+        if detected.exists() {
+            return Ok(detected);
+        }
+    }
+
+    Err(app_path_missing_error("trae"))
 }
 
 #[cfg(target_os = "macos")]
@@ -2014,6 +2305,24 @@ pub fn detect_and_save_app_path(app: &str, force: bool) -> Option<String> {
             if let Some(detected) = detect_codebuddy_exec_path() {
                 update_app_path_in_config("codebuddy", &detected);
                 return Some(config::get_user_config().codebuddy_app_path);
+            }
+        }
+        "qoder" => {
+            if !force && !current.qoder_app_path.trim().is_empty() {
+                return Some(current.qoder_app_path);
+            }
+            if let Some(detected) = detect_qoder_exec_path() {
+                update_app_path_in_config("qoder", &detected);
+                return Some(config::get_user_config().qoder_app_path);
+            }
+        }
+        "trae" => {
+            if !force && !current.trae_app_path.trim().is_empty() {
+                return Some(current.trae_app_path);
+            }
+            if let Some(detected) = detect_trae_exec_path() {
+                update_app_path_in_config("trae", &detected);
+                return Some(config::get_user_config().trae_app_path);
             }
         }
         "opencode" => {
@@ -5645,16 +5954,14 @@ pub fn start_codex_with_args(codex_home: &str, extra_args: &[String]) -> Result<
                 for arg in &args {
                     cmd.arg(arg);
                 }
-                let child = spawn_detached_unix(&mut cmd)
-                    .map_err(|e| format!("启动 Codex 失败: {}", e))?;
+                let child =
+                    spawn_detached_unix(&mut cmd).map_err(|e| format!("启动 Codex 失败: {}", e))?;
                 crate::modules::logger::log_info("Codex 启动命令已发送（直接执行，带 CODEX_HOME）");
                 // 轮询获取真实 PID
                 let probe_started = Instant::now();
                 let timeout = Duration::from_secs(6);
                 while probe_started.elapsed() < timeout {
-                    if let Some(resolved_pid) =
-                        resolve_codex_pid(None, Some(codex_home_trimmed))
-                    {
+                    if let Some(resolved_pid) = resolve_codex_pid(None, Some(codex_home_trimmed)) {
                         return Ok(resolved_pid);
                     }
                     thread::sleep(Duration::from_millis(200));
@@ -5664,8 +5971,8 @@ pub fn start_codex_with_args(codex_home: &str, extra_args: &[String]) -> Result<
             return Err(app_path_missing_error("codex"));
         }
 
-        let open_pid = spawn_open_app(&app_root, &args)
-            .map_err(|e| format!("启动 Codex 失败: {}", e))?;
+        let open_pid =
+            spawn_open_app(&app_root, &args).map_err(|e| format!("启动 Codex 失败: {}", e))?;
         crate::modules::logger::log_info("Codex 启动命令已发送（open -a）");
         // 轮询获取真实 PID
         let probe_started = Instant::now();
@@ -5702,8 +6009,8 @@ pub fn start_codex_default() -> Result<u32, String> {
         let app_root = app_root.ok_or_else(|| app_path_missing_error("codex"))?;
 
         // 使用 open -a 启动，避免 macOS Responsible Process 归因
-        let open_pid = spawn_open_app(&app_root, &[])
-            .map_err(|e| format!("启动 Codex 失败: {}", e))?;
+        let open_pid =
+            spawn_open_app(&app_root, &[]).map_err(|e| format!("启动 Codex 失败: {}", e))?;
         crate::modules::logger::log_info("Codex 启动命令已发送（open -a）");
         // 轮询获取真实 PID
         let probe_started = Instant::now();
@@ -5881,6 +6188,131 @@ pub fn close_codex_instance(codex_home: &str, timeout_secs: u64) -> Result<(), S
         let _ = (codex_home, timeout_secs);
         Err("Codex 多开实例仅支持 macOS".to_string())
     }
+}
+
+fn get_trae_pids() -> Vec<u32> {
+    let mut pids = Vec::new();
+
+    #[cfg(target_os = "macos")]
+    {
+        // Use ps to avoid sysinfo TCC dialogs on macOS
+        let app_lower = TRAE_APP_NAME.to_lowercase();
+        let bundle_pattern = format!("{}.app/contents/", app_lower);
+        if let Ok(output) = Command::new("ps")
+            .args(["-axww", "-o", "pid=,command="])
+            .output()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                let mut parts = line.splitn(2, |ch: char| ch.is_whitespace());
+                let pid_str = parts.next().unwrap_or("").trim();
+                let cmdline = parts.next().unwrap_or("").trim();
+                let pid = match pid_str.parse::<u32>() {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                let lower = cmdline.to_lowercase();
+                if lower.contains(&bundle_pattern)
+                    && !lower.contains("--type=")
+                    && !lower.contains("crashpad_handler")
+                {
+                    pids.push(pid);
+                }
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let mut system = System::new();
+        system.refresh_processes_specifics(
+            sysinfo::ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing()
+                .with_exe(UpdateKind::OnlyIfNotSet)
+                .with_cmd(UpdateKind::OnlyIfNotSet),
+        );
+
+        let current_pid = std::process::id();
+
+        for (pid, process) in system.processes() {
+            let pid_u32 = pid.as_u32();
+            if pid_u32 == current_pid {
+                continue;
+            }
+
+            let name = process.name().to_string_lossy().to_lowercase();
+            let exe_path = process
+                .exe()
+                .and_then(|p| p.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+
+            let args = process.cmd();
+            let args_str = args
+                .iter()
+                .map(|arg| arg.to_string_lossy().to_lowercase())
+                .collect::<Vec<String>>()
+                .join(" ");
+
+            let is_helper = args_str.contains("--type=")
+                || name.contains("helper")
+                || name.contains("plugin")
+                || name.contains("renderer")
+                || name.contains("gpu")
+                || name.contains("crashpad")
+                || name.contains("utility")
+                || name.contains("audio")
+                || name.contains("sandbox")
+                || exe_path.contains("crashpad");
+
+            #[cfg(target_os = "windows")]
+            {
+                if (name.contains("trae") || exe_path.contains("trae")) && !is_helper {
+                    pids.push(pid_u32);
+                }
+            }
+
+            #[cfg(target_os = "linux")]
+            {
+                if (name.contains("trae") || exe_path.contains("/trae")) && !is_helper {
+                    pids.push(pid_u32);
+                }
+            }
+        }
+    }
+
+    if !pids.is_empty() {
+        crate::modules::logger::log_info(&format!("找到 {} 个 Trae 进程: {:?}", pids.len(), pids));
+    }
+
+    pids
+}
+
+pub fn close_trae(timeout_secs: u64) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    let _ = timeout_secs;
+
+    crate::modules::logger::log_info("正在关闭 Trae...");
+    let pids = get_trae_pids();
+    if pids.is_empty() {
+        crate::modules::logger::log_info("Trae 未在运行，无需关闭");
+        return Ok(());
+    }
+
+    crate::modules::logger::log_info(&format!("准备关闭 {} 个 Trae 进程...", pids.len()));
+    let _ = close_pids(&pids, timeout_secs);
+
+    if !get_trae_pids().is_empty() {
+        return Err("无法关闭 Trae 进程，请手动关闭后重试".to_string());
+    }
+
+    crate::modules::logger::log_info("Trae 已成功关闭");
+    Ok(())
 }
 
 /// 检查 OpenCode（桌面端）是否在运行
@@ -6715,8 +7147,8 @@ pub fn start_codebuddy_default_with_args_with_new_window(
             }
         }
 
-        let open_pid = spawn_open_app(&app_root, &args)
-            .map_err(|e| format!("启动 CodeBuddy 失败: {}", e))?;
+        let open_pid =
+            spawn_open_app(&app_root, &args).map_err(|e| format!("启动 CodeBuddy 失败: {}", e))?;
         crate::modules::logger::log_info("CodeBuddy 默认实例启动命令已发送（open -a）");
         // 轮询获取真实 PID
         let probe_started = Instant::now();
@@ -6798,6 +7230,402 @@ pub fn start_codebuddy_default_with_args_with_new_window(
     }
 }
 
+pub fn start_qoder_with_args_with_new_window(
+    user_data_dir: &str,
+    extra_args: &[String],
+    use_new_window: bool,
+) -> Result<u32, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let target = user_data_dir.trim();
+        if target.is_empty() {
+            return Err("实例目录为空，无法启动".to_string());
+        }
+        let launch_path = resolve_qoder_launch_path()?;
+
+        let mut cmd = Command::new(&launch_path);
+        sanitize_macos_gui_launch_env(&mut cmd);
+        cmd.arg("--user-data-dir").arg(target);
+        if use_new_window {
+            cmd.arg("--new-window");
+        } else {
+            cmd.arg("--reuse-window");
+        }
+        for arg in extra_args {
+            let trimmed = arg.trim();
+            if !trimmed.is_empty() {
+                cmd.arg(trimmed);
+            }
+        }
+
+        let child = spawn_detached_unix(&mut cmd).map_err(|e| format!("启动 Qoder 失败: {}", e))?;
+        crate::modules::logger::log_info("Qoder 启动命令已发送");
+        return Ok(child.id());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+
+        let target = user_data_dir.trim();
+        if target.is_empty() {
+            return Err("实例目录为空，无法启动".to_string());
+        }
+        let launch_path = resolve_qoder_launch_path()?;
+
+        let mut cmd = Command::new(&launch_path);
+        if should_detach_child() {
+            cmd.creation_flags(0x08000000 | CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS);
+            cmd.stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+        } else {
+            cmd.creation_flags(0x08000000);
+        }
+        cmd.arg("--user-data-dir").arg(target);
+        if use_new_window {
+            cmd.arg("--new-window");
+        } else {
+            cmd.arg("--reuse-window");
+        }
+        for arg in extra_args {
+            let trimmed = arg.trim();
+            if !trimmed.is_empty() {
+                cmd.arg(trimmed);
+            }
+        }
+
+        let child =
+            spawn_command_with_trace(&mut cmd).map_err(|e| format!("启动 Qoder 失败: {}", e))?;
+        crate::modules::logger::log_info("Qoder 启动命令已发送");
+        return Ok(child.id());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let target = user_data_dir.trim();
+        if target.is_empty() {
+            return Err("实例目录为空，无法启动".to_string());
+        }
+        let launch_path = resolve_qoder_launch_path()?;
+
+        let mut cmd = Command::new(&launch_path);
+        if should_detach_child() {
+            cmd.stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+        }
+        cmd.arg("--user-data-dir").arg(target);
+        if use_new_window {
+            cmd.arg("--new-window");
+        } else {
+            cmd.arg("--reuse-window");
+        }
+        for arg in extra_args {
+            let trimmed = arg.trim();
+            if !trimmed.is_empty() {
+                cmd.arg(trimmed);
+            }
+        }
+
+        let child = spawn_detached_unix(&mut cmd).map_err(|e| format!("启动 Qoder 失败: {}", e))?;
+        crate::modules::logger::log_info("Qoder 启动命令已发送");
+        return Ok(child.id());
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        let _ = (user_data_dir, extra_args, use_new_window);
+        Err("Qoder 多开实例仅支持 macOS、Windows 和 Linux".to_string())
+    }
+}
+
+pub fn start_qoder_default_with_args_with_new_window(
+    extra_args: &[String],
+    use_new_window: bool,
+) -> Result<u32, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let launch_path = resolve_qoder_launch_path()?;
+        let mut cmd = Command::new(&launch_path);
+        sanitize_macos_gui_launch_env(&mut cmd);
+        if use_new_window {
+            cmd.arg("--new-window");
+        } else {
+            cmd.arg("--reuse-window");
+        }
+        for arg in extra_args {
+            let trimmed = arg.trim();
+            if !trimmed.is_empty() {
+                cmd.arg(trimmed);
+            }
+        }
+        let child = spawn_detached_unix(&mut cmd).map_err(|e| format!("启动 Qoder 失败: {}", e))?;
+        crate::modules::logger::log_info("Qoder 默认实例启动命令已发送");
+        return Ok(child.id());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+
+        let launch_path = resolve_qoder_launch_path()?;
+        let mut cmd = Command::new(&launch_path);
+        if should_detach_child() {
+            cmd.creation_flags(0x08000000 | CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS);
+            cmd.stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+        } else {
+            cmd.creation_flags(0x08000000);
+        }
+        if use_new_window {
+            cmd.arg("--new-window");
+        } else {
+            cmd.arg("--reuse-window");
+        }
+        for arg in extra_args {
+            let trimmed = arg.trim();
+            if !trimmed.is_empty() {
+                cmd.arg(trimmed);
+            }
+        }
+        let child =
+            spawn_command_with_trace(&mut cmd).map_err(|e| format!("启动 Qoder 失败: {}", e))?;
+        crate::modules::logger::log_info("Qoder 默认实例启动命令已发送");
+        return Ok(child.id());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let launch_path = resolve_qoder_launch_path()?;
+        let mut cmd = Command::new(&launch_path);
+        if should_detach_child() {
+            cmd.stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+        }
+        if use_new_window {
+            cmd.arg("--new-window");
+        } else {
+            cmd.arg("--reuse-window");
+        }
+        for arg in extra_args {
+            let trimmed = arg.trim();
+            if !trimmed.is_empty() {
+                cmd.arg(trimmed);
+            }
+        }
+        let child = spawn_detached_unix(&mut cmd).map_err(|e| format!("启动 Qoder 失败: {}", e))?;
+        crate::modules::logger::log_info("Qoder 默认实例启动命令已发送");
+        return Ok(child.id());
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        let _ = (extra_args, use_new_window);
+        Err("Qoder 多开实例仅支持 macOS、Windows 和 Linux".to_string())
+    }
+}
+
+pub fn start_trae_with_args_with_new_window(
+    user_data_dir: &str,
+    extra_args: &[String],
+    use_new_window: bool,
+) -> Result<u32, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let target = user_data_dir.trim();
+        if target.is_empty() {
+            return Err("实例目录为空，无法启动".to_string());
+        }
+        let launch_path = resolve_trae_launch_path()?;
+
+        let mut cmd = Command::new(&launch_path);
+        sanitize_macos_gui_launch_env(&mut cmd);
+        cmd.arg("--user-data-dir").arg(target);
+        if use_new_window {
+            cmd.arg("--new-window");
+        } else {
+            cmd.arg("--reuse-window");
+        }
+        for arg in extra_args {
+            let trimmed = arg.trim();
+            if !trimmed.is_empty() {
+                cmd.arg(trimmed);
+            }
+        }
+
+        let child = spawn_detached_unix(&mut cmd).map_err(|e| format!("启动 Trae 失败: {}", e))?;
+        crate::modules::logger::log_info("Trae 启动命令已发送");
+        return Ok(child.id());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+
+        let target = user_data_dir.trim();
+        if target.is_empty() {
+            return Err("实例目录为空，无法启动".to_string());
+        }
+        let launch_path = resolve_trae_launch_path()?;
+
+        let mut cmd = Command::new(&launch_path);
+        if should_detach_child() {
+            cmd.creation_flags(0x08000000 | CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS);
+            cmd.stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+        } else {
+            cmd.creation_flags(0x08000000);
+        }
+        cmd.arg("--user-data-dir").arg(target);
+        if use_new_window {
+            cmd.arg("--new-window");
+        } else {
+            cmd.arg("--reuse-window");
+        }
+        for arg in extra_args {
+            let trimmed = arg.trim();
+            if !trimmed.is_empty() {
+                cmd.arg(trimmed);
+            }
+        }
+
+        let child =
+            spawn_command_with_trace(&mut cmd).map_err(|e| format!("启动 Trae 失败: {}", e))?;
+        crate::modules::logger::log_info("Trae 启动命令已发送");
+        return Ok(child.id());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let target = user_data_dir.trim();
+        if target.is_empty() {
+            return Err("实例目录为空，无法启动".to_string());
+        }
+        let launch_path = resolve_trae_launch_path()?;
+
+        let mut cmd = Command::new(&launch_path);
+        if should_detach_child() {
+            cmd.stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+        }
+        cmd.arg("--user-data-dir").arg(target);
+        if use_new_window {
+            cmd.arg("--new-window");
+        } else {
+            cmd.arg("--reuse-window");
+        }
+        for arg in extra_args {
+            let trimmed = arg.trim();
+            if !trimmed.is_empty() {
+                cmd.arg(trimmed);
+            }
+        }
+
+        let child = spawn_detached_unix(&mut cmd).map_err(|e| format!("启动 Trae 失败: {}", e))?;
+        crate::modules::logger::log_info("Trae 启动命令已发送");
+        return Ok(child.id());
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        let _ = (user_data_dir, extra_args, use_new_window);
+        Err("Trae 多开实例仅支持 macOS、Windows 和 Linux".to_string())
+    }
+}
+
+pub fn start_trae_default_with_args_with_new_window(
+    extra_args: &[String],
+    use_new_window: bool,
+) -> Result<u32, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let launch_path = resolve_trae_launch_path()?;
+        let mut cmd = Command::new(&launch_path);
+        sanitize_macos_gui_launch_env(&mut cmd);
+        if use_new_window {
+            cmd.arg("--new-window");
+        } else {
+            cmd.arg("--reuse-window");
+        }
+        for arg in extra_args {
+            let trimmed = arg.trim();
+            if !trimmed.is_empty() {
+                cmd.arg(trimmed);
+            }
+        }
+        let child = spawn_detached_unix(&mut cmd).map_err(|e| format!("启动 Trae 失败: {}", e))?;
+        crate::modules::logger::log_info("Trae 默认实例启动命令已发送");
+        return Ok(child.id());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+
+        let launch_path = resolve_trae_launch_path()?;
+        let mut cmd = Command::new(&launch_path);
+        if should_detach_child() {
+            cmd.creation_flags(0x08000000 | CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS);
+            cmd.stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+        } else {
+            cmd.creation_flags(0x08000000);
+        }
+        if use_new_window {
+            cmd.arg("--new-window");
+        } else {
+            cmd.arg("--reuse-window");
+        }
+        for arg in extra_args {
+            let trimmed = arg.trim();
+            if !trimmed.is_empty() {
+                cmd.arg(trimmed);
+            }
+        }
+        let child =
+            spawn_command_with_trace(&mut cmd).map_err(|e| format!("启动 Trae 失败: {}", e))?;
+        crate::modules::logger::log_info("Trae 默认实例启动命令已发送");
+        return Ok(child.id());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let launch_path = resolve_trae_launch_path()?;
+        let mut cmd = Command::new(&launch_path);
+        if should_detach_child() {
+            cmd.stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+        }
+        if use_new_window {
+            cmd.arg("--new-window");
+        } else {
+            cmd.arg("--reuse-window");
+        }
+        for arg in extra_args {
+            let trimmed = arg.trim();
+            if !trimmed.is_empty() {
+                cmd.arg(trimmed);
+            }
+        }
+        let child = spawn_detached_unix(&mut cmd).map_err(|e| format!("启动 Trae 失败: {}", e))?;
+        crate::modules::logger::log_info("Trae 默认实例启动命令已发送");
+        return Ok(child.id());
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        let _ = (extra_args, use_new_window);
+        Err("Trae 多开实例仅支持 macOS、Windows 和 Linux".to_string())
+    }
+}
+
 #[allow(dead_code)]
 pub fn start_vscode_with_args(user_data_dir: &str, extra_args: &[String]) -> Result<u32, String> {
     start_vscode_with_args_with_new_window(user_data_dir, extra_args, false)
@@ -6830,8 +7658,8 @@ pub fn start_vscode_default_with_args_with_new_window(
             }
         }
 
-        let open_pid = spawn_open_app(&app_root, &args)
-            .map_err(|e| format!("启动 VS Code 失败: {}", e))?;
+        let open_pid =
+            spawn_open_app(&app_root, &args).map_err(|e| format!("启动 VS Code 失败: {}", e))?;
         crate::modules::logger::log_info("VS Code 默认实例启动命令已发送（open -a）");
         // 轮询获取真实 PID
         let probe_started = Instant::now();

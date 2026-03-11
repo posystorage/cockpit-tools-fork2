@@ -163,7 +163,9 @@
       "installing": "Instalace"
     },
     "gemini": "Účty Gemini",
-    "codebuddy": "Účty CodeBuddy"
+    "codebuddy": "Účty CodeBuddy",
+    "qoder": "Účty Qoder",
+    "trae": "Trae"
   },
   "platformLayout": {
     "title": "Rozložení platforem",
@@ -469,7 +471,15 @@
       "codebuddyAppPathDesc": "Pro výchozí cestu ponechte prázdné",
       "codebuddyAppPathPlaceholder": "Výchozí cesta",
       "codebuddyPathSelect": "Vybrat",
-      "codebuddyPathReset": "Obnovit výchozí"
+      "codebuddyPathReset": "Obnovit výchozí",
+      "qoderPathReset": "Obnovit výchozí",
+      "traeAutoRefresh": "Automatické obnovení kvóty Trae",
+      "traeAutoRefreshDesc": "Interval automatického obnovení na pozadí",
+      "traeAppPath": "Spouštěcí cesta Trae",
+      "traeAppPathDesc": "Pro výchozí cestu ponechte prázdné",
+      "traeAppPathPlaceholder": "Výchozí cesta",
+      "traePathSelect": "Vybrat",
+      "traePathReset": "Obnovit výchozí"
     },
     "network": {
       "apiTitle": "Antigravity Cockpit API",
@@ -505,7 +515,21 @@
       "download": "Stáhnout",
       "checkFailed": "Kontrola aktualizací selhala"
     },
-    "saveSettings": "Uložit nastavení"
+    "saveSettings": "Uložit nastavení",
+    "storage": {
+      "category": {
+        "accountData": "Data účtu",
+        "logs": "Protokoly",
+        "cacheQuota": "Mezipaměť a kvóty",
+        "systemConfig": "Konfigurace systému",
+        "other": "Ostatní"
+      },
+      "primarySource": "Hlavní zdroj",
+      "instancePlatforms": "Platformy instancí",
+      "rootEntries": "Přehled adresářů",
+      "categoriesTitle": "Obchodní kategorie",
+      "scanTime": "Poslední sken: {{time}}"
+    }
   },
   "appPath": {
     "missing": {
@@ -1399,6 +1423,14 @@
       "saveFailed": "Nepodařilo se uložit konfiguraci: {{error}}",
       "pickPathFailed": "Nepodařilo se vybrat cestu: {{error}}",
       "resetPathFailed": "Nepodařilo se resetovat cestu: {{error}}"
+    },
+    "qoder": {
+      "title": "Nastavení Qoder",
+      "appPath": "Cesta Qoder"
+    },
+    "trae": {
+      "title": "Nastavení Trae",
+      "appPath": "Cesta Trae"
     }
   },
   "quotaAlert": {
@@ -2120,6 +2152,64 @@
       "status": {
         "loginConfirm": "Na této stránce dokončete přihlášení a autorizaci."
       }
+    }
+  },
+  "qoder": {
+    "title": "Správa účtů Qoder",
+    "comingSoon": {
+      "title": "Funkce více instancí již brzy",
+      "desc": "Spusťte více instancí Qoder.app s různými účty současně, zůstaňte naladěni."
+    },
+    "instances": {
+      "unsupported": {
+        "descPlatform": "Více instancí Qoder je podporováno pouze na macOS, Windows a Linuxu."
+      }
+    },
+    "oauth": {
+      "hint": "Dokončete přihlášení v otevřené stránce prohlížeče: pokud se přihlašovací stránka neotevřela automaticky, klikněte na „Kopírovat odkaz pro přihlášení“, zkopírujte odkaz a vložte jej do prohlížeče.",
+      "copyLoginUrl": "Kopírovat odkaz pro přihlášení"
+    },
+    "usageOverview": {
+      "title": "Přehled využití",
+      "viewDetails": "Zobrazit podrobnosti",
+      "includedCredits": "Kredity v rámci tarifu",
+      "usedOfTotal": "{{used}} / {{total}}",
+      "usedEmpty": "-- / --",
+      "upgradeHint": "Upgradujte tarif pro navýšení měsíčního limitu",
+      "upgradeAction": "Upgradovat"
+    },
+    "flowNotice": {
+      "title": "Prirucka k uctu Qoder (kliknutim rozbalit/sbalit)",
+      "desc": "Podporuje oficialni prihlaseni pres OAuth (callback), mistni import, import JSON, injekci pro prepnuti uctu, navazani vice instanci a prehled kvot. Prihlasovaci tok vychazi ze skutecnych ulozenych dat klienta Qoder.",
+      "permission": "Rozsah opravneni: cte mistni autentizacni uloziste Qoderu (prihlasovaci udaje auth a informace o uzivateli) pro prepinani uctu a injekci relace; vsechna data se zpracovavaji pouze lokalne na vasem zarizeni.",
+      "network": "Sitovy rozsah: prihlaseni pres OAuth vyzaduje spojeni s oficialnimi sluzbami Qoderu pro callback; dotazy na kvotu pouzivaji Qoder API. Mistni klice ani povereni se neodesilaji."
+    }
+  },
+  "trae": {
+    "title": "Sprava uctu Trae",
+    "empty": {
+      "description": "Kliknete na „Pridat ucet“ a zacnete spravovat ucty Trae, nebo je importujte z mistnich dat Trae ci ze souboru JSON."
+    },
+    "addModal": {
+      "title": "Pridat ucet Trae"
+    },
+    "oauth": {
+      "desc": "Kliknete na tlacitko nize a dokoncete autorizaci Trae OAuth v prohlizeci."
+    },
+    "import": {
+      "localDesc": "Importuje aktualne prihlaseny ucet, informace o tarifu a cache kvoty z mistniho konfiguracniho adresare Trae.",
+      "jsonTab": "Soubor JSON"
+    },
+    "quota": {
+      "usedOfTotal": "Vyuzito $ {{used}} z $ {{total}}",
+      "resetAt": "Cas resetu: {{date}}",
+      "resetUnknown": "Cas resetu neni znam"
+    },
+    "flowNotice": {
+      "title": "Prirucka k uctu Trae (kliknutim rozbalit/sbalit)",
+      "desc": "Podporuje oficialni prihlaseni OAuth, mistni import, import JSON a prepinani uctu pomoci lokalni injekce. Pri prepnuti zapisuje data podle skutecnych pravidel klienta Trae.",
+      "permission": "Rozsah opravneni: cte a zapisuje prihlasovaci pole v mistnim souboru Trae storage.json pro import uctu, injekci prepnuti uctu a zobrazeni tarifu. Vsechna data se zpracovavaji pouze lokalne na vasem zarizeni.",
+      "network": "Sitovy rozsah: prihlaseni OAuth, obnoveni tokenu a dotazy na tarif volaji oficialni API Trae. Mistni soubory uctu ani puvodni obsah uloziste se neodesilaji sluzbam tretich stran."
     }
   }
 }

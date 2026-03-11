@@ -41,7 +41,17 @@ interface InstancesManagerProps<TAccount extends AccountLike> {
   renderAccountQuotaPreview: (account: TAccount) => ReactNode;
   renderAccountBadge?: (account: TAccount) => ReactNode;
   getAccountSearchText?: (account: TAccount) => string;
-  appType?: 'antigravity' | 'codex' | 'vscode' | 'windsurf' | 'kiro' | 'cursor' | 'gemini' | 'codebuddy';
+  appType?:
+    | 'antigravity'
+    | 'codex'
+    | 'vscode'
+    | 'windsurf'
+    | 'kiro'
+    | 'cursor'
+    | 'gemini'
+    | 'codebuddy'
+    | 'qoder'
+    | 'trae';
   onInstanceStarted?: (instance: InstanceProfile) => void | Promise<void>;
   resolveStartSuccessMessage?: (instance: InstanceProfile) => string;
 }
@@ -476,7 +486,9 @@ export function InstancesManager<TAccount extends AccountLike>({
       rawApp === 'windsurf' ||
       rawApp === 'kiro' ||
       rawApp === 'cursor' ||
-      rawApp === 'gemini'
+      rawApp === 'gemini' ||
+      rawApp === 'codebuddy' ||
+      rawApp === 'qoder'
         ? rawApp
         : appType;
     const retry = instanceId

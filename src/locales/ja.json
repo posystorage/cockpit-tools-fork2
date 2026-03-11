@@ -163,7 +163,9 @@
       "installing": "インストール中"
     },
     "gemini": "Geminiアカウント",
-    "codebuddy": "CodeBuddyアカウント"
+    "codebuddy": "CodeBuddyアカウント",
+    "qoder": "Qoderアカウント",
+    "trae": "Trae"
   },
   "platformLayout": {
     "title": "プラットフォームレイアウト",
@@ -469,7 +471,15 @@
       "codebuddyAppPathDesc": "空欄の場合はデフォルトパスを使用します",
       "codebuddyAppPathPlaceholder": "デフォルトパス",
       "codebuddyPathSelect": "選択",
-      "codebuddyPathReset": "デフォルトに戻す"
+      "codebuddyPathReset": "デフォルトに戻す",
+      "qoderPathReset": "デフォルトに戻す",
+      "traeAutoRefresh": "Trae クォータ自動更新",
+      "traeAutoRefreshDesc": "バックグラウンドでの自動更新頻度",
+      "traeAppPath": "Trae 起動パス",
+      "traeAppPathDesc": "空欄の場合はデフォルトパスを使用します",
+      "traeAppPathPlaceholder": "デフォルトパス",
+      "traePathSelect": "選択",
+      "traePathReset": "デフォルトに戻す"
     },
     "network": {
       "apiTitle": "反重力コックピット API",
@@ -505,7 +515,21 @@
       "download": "ダウンロード",
       "checkFailed": "アップデートの確認に失敗しました。後でもう一度お試しください"
     },
-    "saveSettings": "設定を保存"
+    "saveSettings": "設定を保存",
+    "storage": {
+      "category": {
+        "accountData": "アカウントデータ",
+        "logs": "ログ",
+        "cacheQuota": "キャッシュとクォータ",
+        "systemConfig": "システム設定",
+        "other": "その他"
+      },
+      "primarySource": "主な占有元",
+      "instancePlatforms": "インスタンスプラットフォーム",
+      "rootEntries": "ディレクトリ内訳",
+      "categoriesTitle": "業務カテゴリ",
+      "scanTime": "最終スキャン: {{time}}"
+    }
   },
   "appPath": {
     "missing": {
@@ -1399,6 +1423,14 @@
       "saveFailed": "設定の保存に失敗しました：{{error}}",
       "pickPathFailed": "パスの選択に失敗しました：{{error}}",
       "resetPathFailed": "パスのリセットに失敗しました：{{error}}"
+    },
+    "qoder": {
+      "title": "Qoder 設定",
+      "appPath": "Qoder パス"
+    },
+    "trae": {
+      "title": "Trae 設定",
+      "appPath": "Trae パス"
     }
   },
   "quotaAlert": {
@@ -2120,6 +2152,64 @@
       "status": {
         "loginConfirm": "このページでサインインと認可を完了してください。"
       }
+    }
+  },
+  "qoder": {
+    "title": "Qoderアカウント管理",
+    "comingSoon": {
+      "title": "マルチインスタンス機能は近日公開",
+      "desc": "異なるアカウントで複数のQoder.appインスタンスを同時に実行できます。お楽しみに。"
+    },
+    "instances": {
+      "unsupported": {
+        "descPlatform": "Qoder のマルチインスタンスは macOS、Windows、Linux のみ対応しています。"
+      }
+    },
+    "oauth": {
+      "hint": "開いたブラウザページでログインを完了してください。ログインページが自動的に開かない場合は、「ログインリンクをコピー」をクリックし、リンクをコピーしてブラウザに貼り付けてログインを完了してください。",
+      "copyLoginUrl": "ログインリンクをコピー"
+    },
+    "usageOverview": {
+      "title": "利用状況の概要",
+      "viewDetails": "詳細を見る",
+      "includedCredits": "プラン内クレジット",
+      "usedOfTotal": "{{used}} / {{total}}",
+      "usedEmpty": "-- / --",
+      "upgradeHint": "プランをアップグレードして月間上限を増やす",
+      "upgradeAction": "アップグレード"
+    },
+    "flowNotice": {
+      "title": "Qoder アカウントガイド（クリックで展開/折りたたみ）",
+      "desc": "公式 OAuth ログイン（コールバック）、ローカルインポート、JSON インポート、アカウント切り替え注入、マルチインスタンス関連付け、クォータ概要に対応しています。ログインフローは Qoder クライアントの実際の保存データ形式に従います。",
+      "permission": "権限範囲: Qoder のローカル認証ストレージ（auth 資格情報とユーザー情報）を読み取り、アカウント切り替えとセッション注入に使用します。すべてのデータはローカル端末上で処理されます。",
+      "network": "ネットワーク範囲: OAuth ログインではコールバック処理のために Qoder 公式サービスへの接続が必要です。クォータ照会は Qoder API を使用します。ローカルの鍵や資格情報はアップロードされません。"
+    }
+  },
+  "trae": {
+    "title": "Trae アカウント管理",
+    "empty": {
+      "description": "「アカウント追加」をクリックして Trae アカウント管理を開始するか、ローカル Trae データまたは JSON ファイルからインポートできます。"
+    },
+    "addModal": {
+      "title": "Trae アカウントを追加"
+    },
+    "oauth": {
+      "desc": "下のボタンをクリックし、ブラウザで Trae OAuth 認証を完了してください。"
+    },
+    "import": {
+      "localDesc": "ローカルの Trae 設定ディレクトリから、現在ログイン中のアカウント、プラン情報、キャッシュ済みクォーターデータを読み込みます。",
+      "jsonTab": "JSON ファイル"
+    },
+    "quota": {
+      "usedOfTotal": "使用済み $ {{used}} / $ {{total}}",
+      "resetAt": "リセット時刻: {{date}}",
+      "resetUnknown": "リセット時刻不明"
+    },
+    "flowNotice": {
+      "title": "Trae アカウントガイド（クリックで展開/折りたたみ）",
+      "desc": "公式 OAuth ログイン、ローカルインポート、JSON インポート、ローカル注入によるアカウント切り替えに対応しています。切り替え時は Trae クライアントの実際の保存ルールに従って書き戻します。",
+      "permission": "権限範囲: ローカルの Trae storage.json 内のログイン関連フィールドを読み書きし、アカウントのインポート、切り替え注入、プラン表示に使用します。すべてのデータはローカル端末上で処理されます。",
+      "network": "ネットワーク範囲: OAuth ログイン、トークン更新、プラン照会では Trae 公式 API を呼び出します。ローカルのアカウントファイルや生の保存内容を第三者サービスへアップロードすることはありません。"
     }
   }
 }

@@ -8,6 +8,8 @@ import { useKiroAccountStore } from '../stores/useKiroAccountStore';
 import { useCursorAccountStore } from '../stores/useCursorAccountStore';
 import { useGeminiAccountStore } from '../stores/useGeminiAccountStore';
 import { useCodebuddyAccountStore } from '../stores/useCodebuddyAccountStore';
+import { useQoderAccountStore } from '../stores/useQoderAccountStore';
+import { useTraeAccountStore } from '../stores/useTraeAccountStore';
 import { usePlatformLayoutStore } from '../stores/usePlatformLayoutStore';
 import { Page } from '../types/navigation';
 import { Users, CheckCircle2, Sparkles, RotateCw, Play, Github, HelpCircle } from 'lucide-react';
@@ -165,6 +167,16 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
     fetchAccounts: fetchCodebuddyAccounts,
   } = useCodebuddyAccountStore();
 
+  const {
+    accounts: qoderAccounts,
+    fetchAccounts: fetchQoderAccounts,
+  } = useQoderAccountStore();
+
+  const {
+    accounts: traeAccounts,
+    fetchAccounts: fetchTraeAccounts,
+  } = useTraeAccountStore();
+
   const agCurrentId = agCurrent?.id;
   const codexCurrentId = codexCurrent?.id;
 
@@ -211,6 +223,8 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
         fetchCursorAccounts(),
         fetchGeminiAccounts(),
         fetchCodebuddyAccounts(),
+        fetchQoderAccounts(),
+        fetchTraeAccounts(),
       ]);
     };
 
@@ -240,7 +254,9 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
         kiroAccounts.length +
         cursorAccounts.length +
         geminiAccounts.length +
-        codebuddyAccounts.length,
+        codebuddyAccounts.length +
+        qoderAccounts.length +
+        traeAccounts.length,
       antigravity: agAccounts.length,
       codex: codexAccounts.length,
       githubCopilot: githubCopilotAccounts.length,
@@ -249,8 +265,10 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
       cursor: cursorAccounts.length,
       gemini: geminiAccounts.length,
       codebuddy: codebuddyAccounts.length,
+      qoder: qoderAccounts.length,
+      trae: traeAccounts.length,
     };
-  }, [agAccounts, codexAccounts, githubCopilotAccounts, windsurfAccounts, kiroAccounts, cursorAccounts, geminiAccounts, codebuddyAccounts]);
+  }, [agAccounts, codexAccounts, githubCopilotAccounts, windsurfAccounts, kiroAccounts, cursorAccounts, geminiAccounts, codebuddyAccounts, qoderAccounts, traeAccounts]);
 
   // Refresh States
   const [refreshing, setRefreshing] = React.useState<Set<string>>(new Set());
@@ -1574,6 +1592,8 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
     cursor: stats.cursor,
     gemini: stats.gemini,
     codebuddy: stats.codebuddy,
+    qoder: stats.qoder,
+    trae: stats.trae,
   };
 
   const visibleCardPlatformIds = visiblePlatformOrder;
@@ -1895,7 +1915,44 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
       );
     }
 
-    return null;
+    return (
+      <div className="main-card windsurf-card" key={platformId}>
+        <div className="main-card-header">
+          <div className="header-title">
+            {renderPlatformIcon(platformId, 18)}
+            <h3>{getPlatformLabel(platformId, t)}</h3>
+          </div>
+        </div>
+
+        <div className="split-content">
+          <div className="split-half current-half">
+            <span className="half-label"><CheckCircle2 size={12} /> {t('dashboard.current', '当前账户')}</span>
+            <div className="empty-slot-text">
+              {platformId === 'qoder'
+                ? (qoderAccounts.length > 0
+                  ? t('dashboard.qoderDataReady', '已接入 Qoder 账号数据，点击查看详情。')
+                  : t('dashboard.noData', '暂无数据'))
+                : platformId === 'trae'
+                  ? (traeAccounts.length > 0
+                    ? t('dashboard.traeDataReady', '已接入 Trae 账号数据，点击查看详情。')
+                    : t('dashboard.noData', '暂无数据'))
+                : t('dashboard.noData', '暂无数据')}
+            </div>
+          </div>
+
+          <div className="split-divider"></div>
+
+          <div className="split-half recommend-half">
+            <span className="half-label"><Sparkles size={12} /> {t('dashboard.recommended', '推荐账号')}</span>
+            <div className="empty-slot-text">{t('dashboard.noRecommendation', '暂无更好推荐')}</div>
+          </div>
+        </div>
+
+        <button className="card-footer-action" onClick={() => onNavigate(PLATFORM_PAGE_MAP[platformId])}>
+          {t('dashboard.viewAllAccounts', '查看所有账号')}
+        </button>
+      </div>
+    );
   };
 
   return (

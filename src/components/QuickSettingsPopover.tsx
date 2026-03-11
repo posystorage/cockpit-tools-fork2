@@ -21,6 +21,8 @@ interface GeneralConfig {
   kiro_auto_refresh_minutes: number;
   cursor_auto_refresh_minutes: number;
   gemini_auto_refresh_minutes: number;
+  qoder_auto_refresh_minutes: number;
+  trae_auto_refresh_minutes: number;
   close_behavior: string;
   opencode_app_path: string;
   antigravity_app_path: string;
@@ -29,6 +31,8 @@ interface GeneralConfig {
   windsurf_app_path: string;
   kiro_app_path: string;
   cursor_app_path: string;
+  qoder_app_path: string;
+  trae_app_path: string;
   opencode_sync_on_switch: boolean;
   opencode_auth_overwrite_on_switch: boolean;
   codex_launch_on_switch: boolean;
@@ -52,9 +56,23 @@ interface GeneralConfig {
   codebuddy_app_path: string;
   codebuddy_quota_alert_enabled: boolean;
   codebuddy_quota_alert_threshold: number;
+  qoder_quota_alert_enabled: boolean;
+  qoder_quota_alert_threshold: number;
+  trae_quota_alert_enabled: boolean;
+  trae_quota_alert_threshold: number;
 }
 
-export type QuickSettingsType = 'antigravity' | 'codex' | 'github_copilot' | 'windsurf' | 'kiro' | 'cursor' | 'gemini' | 'codebuddy';
+export type QuickSettingsType =
+  | 'antigravity'
+  | 'codex'
+  | 'github_copilot'
+  | 'windsurf'
+  | 'kiro'
+  | 'cursor'
+  | 'gemini'
+  | 'codebuddy'
+  | 'qoder'
+  | 'trae';
 
 type QuotaAlertEnabledKey =
   | 'quota_alert_enabled'
@@ -64,7 +82,9 @@ type QuotaAlertEnabledKey =
   | 'kiro_quota_alert_enabled'
   | 'cursor_quota_alert_enabled'
   | 'gemini_quota_alert_enabled'
-  | 'codebuddy_quota_alert_enabled';
+  | 'codebuddy_quota_alert_enabled'
+  | 'qoder_quota_alert_enabled'
+  | 'trae_quota_alert_enabled';
 type QuotaAlertThresholdKey =
   | 'quota_alert_threshold'
   | 'codex_quota_alert_threshold'
@@ -73,7 +93,9 @@ type QuotaAlertThresholdKey =
   | 'kiro_quota_alert_threshold'
   | 'cursor_quota_alert_threshold'
   | 'gemini_quota_alert_threshold'
-  | 'codebuddy_quota_alert_threshold';
+  | 'codebuddy_quota_alert_threshold'
+  | 'qoder_quota_alert_threshold'
+  | 'trae_quota_alert_threshold';
 
 interface QuickSettingsPopoverProps {
   type: QuickSettingsType;
@@ -168,6 +190,8 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
       case 'cursor': return 'cursor_auto_refresh_minutes';
       case 'gemini': return 'gemini_auto_refresh_minutes';
       case 'codebuddy': return 'codebuddy_auto_refresh_minutes';
+      case 'qoder': return 'qoder_auto_refresh_minutes';
+      case 'trae': return 'trae_auto_refresh_minutes';
     }
   };
 
@@ -188,6 +212,8 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
           kiroAutoRefreshMinutes: merged.kiro_auto_refresh_minutes,
           cursorAutoRefreshMinutes: merged.cursor_auto_refresh_minutes,
           geminiAutoRefreshMinutes: merged.gemini_auto_refresh_minutes,
+          qoderAutoRefreshMinutes: merged.qoder_auto_refresh_minutes,
+          traeAutoRefreshMinutes: merged.trae_auto_refresh_minutes,
           closeBehavior: merged.close_behavior,
           opencodeAppPath: merged.opencode_app_path,
           antigravityAppPath: merged.antigravity_app_path,
@@ -196,6 +222,8 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
           windsurfAppPath: merged.windsurf_app_path,
           kiroAppPath: merged.kiro_app_path,
           cursorAppPath: merged.cursor_app_path,
+          qoderAppPath: merged.qoder_app_path,
+          traeAppPath: merged.trae_app_path,
           opencodeSyncOnSwitch: merged.opencode_sync_on_switch,
           opencodeAuthOverwriteOnSwitch: merged.opencode_auth_overwrite_on_switch,
           codexLaunchOnSwitch: merged.codex_launch_on_switch,
@@ -219,6 +247,10 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
           codebuddyAppPath: merged.codebuddy_app_path,
           codebuddyQuotaAlertEnabled: merged.codebuddy_quota_alert_enabled,
           codebuddyQuotaAlertThreshold: merged.codebuddy_quota_alert_threshold,
+          qoderQuotaAlertEnabled: merged.qoder_quota_alert_enabled,
+          qoderQuotaAlertThreshold: merged.qoder_quota_alert_threshold,
+          traeQuotaAlertEnabled: merged.trae_quota_alert_enabled,
+          traeQuotaAlertThreshold: merged.trae_quota_alert_threshold,
         });
         window.dispatchEvent(new Event('config-updated'));
       } catch (err) {
@@ -234,7 +266,18 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
     [config, saving]
   );
 
-  const handlePickAppPath = async (target: 'antigravity' | 'codex' | 'vscode' | 'windsurf' | 'kiro' | 'cursor' | 'codebuddy') => {
+  const handlePickAppPath = async (
+    target:
+      | 'antigravity'
+      | 'codex'
+      | 'vscode'
+      | 'windsurf'
+      | 'kiro'
+      | 'cursor'
+      | 'codebuddy'
+      | 'qoder'
+      | 'trae',
+  ) => {
     try {
       const selected = await open({ multiple: false, directory: false });
       const path = Array.isArray(selected) ? selected[0] : selected;
@@ -253,6 +296,10 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
                   ? 'cursor_app_path'
                   : target === 'codebuddy'
                     ? 'codebuddy_app_path'
+                    : target === 'qoder'
+                      ? 'qoder_app_path'
+                    : target === 'trae'
+                      ? 'trae_app_path'
                   : 'kiro_app_path';
 
       saveConfig({ [key]: path });
@@ -265,7 +312,18 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
     }
   };
 
-  const handleResetAppPath = async (target: 'antigravity' | 'codex' | 'vscode' | 'windsurf' | 'kiro' | 'cursor' | 'codebuddy') => {
+  const handleResetAppPath = async (
+    target:
+      | 'antigravity'
+      | 'codex'
+      | 'vscode'
+      | 'windsurf'
+      | 'kiro'
+      | 'cursor'
+      | 'codebuddy'
+      | 'qoder'
+      | 'trae',
+  ) => {
     if (pathDetecting) return;
     setPathDetecting(true);
     try {
@@ -284,6 +342,10 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
                   ? 'cursor_app_path'
                   : target === 'codebuddy'
                     ? 'codebuddy_app_path'
+                    : target === 'qoder'
+                      ? 'qoder_app_path'
+                    : target === 'trae'
+                      ? 'trae_app_path'
                   : 'kiro_app_path';
       saveConfig({ [key]: path });
     } catch (err) {
@@ -315,6 +377,10 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
         return t('quickSettings.gemini.title', 'Gemini 设置');
       case 'codebuddy':
         return t('settings.general.codebuddySettingsTitle', 'CodeBuddy 设置');
+      case 'qoder':
+        return t('quickSettings.qoder.title', 'Qoder 设置');
+      case 'trae':
+        return t('quickSettings.trae.title', 'Trae 设置');
     }
   };
 
@@ -338,6 +404,10 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
         return 'gemini_quota_alert_enabled';
       case 'codebuddy':
         return 'codebuddy_quota_alert_enabled';
+      case 'qoder':
+        return 'qoder_quota_alert_enabled';
+      case 'trae':
+        return 'trae_quota_alert_enabled';
       default:
         return 'quota_alert_enabled';
     }
@@ -359,6 +429,10 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
         return 'gemini_quota_alert_threshold';
       case 'codebuddy':
         return 'codebuddy_quota_alert_threshold';
+      case 'qoder':
+        return 'qoder_quota_alert_threshold';
+      case 'trae':
+        return 'trae_quota_alert_threshold';
       default:
         return 'quota_alert_threshold';
     }
@@ -381,6 +455,10 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
       case 'gemini':
         return t('quickSettings.geminiRefreshInterval', '配额自动刷新');
       case 'codebuddy':
+        return t('quickSettings.refreshInterval', '配额自动刷新');
+      case 'qoder':
+        return t('quickSettings.refreshInterval', '配额自动刷新');
+      case 'trae':
         return t('quickSettings.refreshInterval', '配额自动刷新');
     }
   };
@@ -406,6 +484,10 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
         return '';
       case 'codebuddy':
         return config.codebuddy_app_path;
+      case 'qoder':
+        return config.qoder_app_path;
+      case 'trae':
+        return config.trae_app_path;
     }
   };
 
@@ -427,10 +509,23 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
         return t('quickSettings.gemini.appPath', 'Gemini CLI 路径');
       case 'codebuddy':
         return t('quickSettings.codebuddy.appPath', 'CodeBuddy 路径');
+      case 'qoder':
+        return t('quickSettings.qoder.appPath', 'Qoder 路径');
+      case 'trae':
+        return t('quickSettings.trae.appPath', 'Trae 路径');
     }
   };
 
-  const getAppTarget = (): 'antigravity' | 'codex' | 'vscode' | 'windsurf' | 'kiro' | 'cursor' | 'codebuddy' => {
+  const getAppTarget = ():
+    | 'antigravity'
+    | 'codex'
+    | 'vscode'
+    | 'windsurf'
+    | 'kiro'
+    | 'cursor'
+    | 'codebuddy'
+    | 'qoder'
+    | 'trae' => {
     switch (type) {
       case 'antigravity':
         return 'antigravity';
@@ -448,6 +543,10 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
         return 'antigravity';
       case 'codebuddy':
         return 'codebuddy';
+      case 'qoder':
+        return 'qoder';
+      case 'trae':
+        return 'trae';
     }
   };
 
@@ -715,6 +814,10 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
                                   ? 'cursor_app_path'
                                   : type === 'codebuddy'
                                     ? 'codebuddy_app_path'
+                                    : type === 'qoder'
+                                      ? 'qoder_app_path'
+                                    : type === 'trae'
+                                      ? 'trae_app_path'
                                   : 'kiro_app_path';
                       saveConfig({ [key]: e.target.value });
                     }}

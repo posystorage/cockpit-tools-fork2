@@ -163,7 +163,9 @@
       "installing": "Installation"
     },
     "gemini": "Gemini-Konten",
-    "codebuddy": "CodeBuddy-Konten"
+    "codebuddy": "CodeBuddy-Konten",
+    "qoder": "Qoder-Konten",
+    "trae": "Trae"
   },
   "platformLayout": {
     "title": "Plattformlayout",
@@ -469,7 +471,15 @@
       "codebuddyAppPathDesc": "Leer lassen, um den Standardpfad zu verwenden",
       "codebuddyAppPathPlaceholder": "Standardpfad",
       "codebuddyPathSelect": "Auswählen",
-      "codebuddyPathReset": "Auf Standard zurücksetzen"
+      "codebuddyPathReset": "Auf Standard zurücksetzen",
+      "qoderPathReset": "Auf Standard zurücksetzen",
+      "traeAutoRefresh": "Trae-Kontingent automatisch aktualisieren",
+      "traeAutoRefreshDesc": "Aktualisierungsintervall im Hintergrund",
+      "traeAppPath": "Trae-Startpfad",
+      "traeAppPathDesc": "Leer lassen, um den Standardpfad zu verwenden",
+      "traeAppPathPlaceholder": "Standardpfad",
+      "traePathSelect": "Auswählen",
+      "traePathReset": "Auf Standard zurücksetzen"
     },
     "network": {
       "apiTitle": "Antigravity-Cockpit-API",
@@ -505,7 +515,21 @@
       "download": "Herunterladen",
       "checkFailed": "Fehler bei der Update-Suche"
     },
-    "saveSettings": "Einstellungen speichern"
+    "saveSettings": "Einstellungen speichern",
+    "storage": {
+      "category": {
+        "accountData": "Kontodaten",
+        "logs": "Protokolle",
+        "cacheQuota": "Cache und Kontingente",
+        "systemConfig": "Systemkonfiguration",
+        "other": "Sonstiges"
+      },
+      "primarySource": "Hauptquelle",
+      "instancePlatforms": "Instanz-Plattformen",
+      "rootEntries": "Verzeichnisübersicht",
+      "categoriesTitle": "Geschäftskategorien",
+      "scanTime": "Letzter Scan: {{time}}"
+    }
   },
   "appPath": {
     "missing": {
@@ -1399,6 +1423,14 @@
       "saveFailed": "Konfiguration konnte nicht gespeichert werden: {{error}}",
       "pickPathFailed": "Pfadauswahl fehlgeschlagen: {{error}}",
       "resetPathFailed": "Pfad konnte nicht zurückgesetzt werden: {{error}}"
+    },
+    "qoder": {
+      "title": "Qoder-Einstellungen",
+      "appPath": "Qoder-Pfad"
+    },
+    "trae": {
+      "title": "Trae-Einstellungen",
+      "appPath": "Trae-Pfad"
     }
   },
   "quotaAlert": {
@@ -2120,6 +2152,64 @@
       "status": {
         "loginConfirm": "Bitte schließen Sie die Anmeldung und Autorisierung auf dieser Seite ab."
       }
+    }
+  },
+  "qoder": {
+    "title": "Qoder-Kontenverwaltung",
+    "comingSoon": {
+      "title": "Multi-Instanz kommt bald",
+      "desc": "Führen Sie mehrere Qoder.app-Instanzen mit verschiedenen Konten gleichzeitig aus."
+    },
+    "instances": {
+      "unsupported": {
+        "descPlatform": "Mehrere Qoder-Instanzen werden nur unter macOS, Windows und Linux unterstützt."
+      }
+    },
+    "oauth": {
+      "hint": "Bitte schließen Sie die Anmeldung auf der geöffneten Browserseite ab: Wenn sich die Anmeldeseite nicht automatisch geöffnet hat, klicken Sie auf „Anmeldelink kopieren“, kopieren Sie den Link und fügen Sie ihn in Ihren Browser ein, um die Anmeldung abzuschließen.",
+      "copyLoginUrl": "Anmeldelink kopieren"
+    },
+    "usageOverview": {
+      "title": "Nutzungsübersicht",
+      "viewDetails": "Details anzeigen",
+      "includedCredits": "Im Tarif enthaltene Credits",
+      "usedOfTotal": "{{used}} / {{total}}",
+      "usedEmpty": "-- / --",
+      "upgradeHint": "Upgrade des Tarifs erhöht das monatliche Kontingent",
+      "upgradeAction": "Tarif erhöhen"
+    },
+    "flowNotice": {
+      "title": "Qoder-Kontoleitfaden (zum Auf- und Zuklappen klicken)",
+      "desc": "Unterstutzt offizielle OAuth-Anmeldung (mit Callback), lokalen Import, JSON-Import, Kontowechsel-Injektion, Multi-Instance-Bindung und Kontingentuebersicht. Der Login-Ablauf folgt den tatsaechlichen On-Disk-Daten des Qoder-Clients.",
+      "permission": "Berechtigungsumfang: liest den lokalen Qoder-Auth-Speicher (Auth-Anmeldedaten und Benutzerinformationen) fuer Kontowechsel und Sitzungsinjektion; alle Daten werden ausschliesslich lokal auf Ihrem Geraet verarbeitet.",
+      "network": "Netzwerkumfang: OAuth-Anmeldung benoetigt eine Verbindung zu offiziellen Qoder-Diensten fuer den Callback-Ablauf; Kontingentabfragen verwenden die Qoder API. Lokale Schluessel oder Zugangsdaten werden nicht hochgeladen."
+    }
+  },
+  "trae": {
+    "title": "Trae-Kontenverwaltung",
+    "empty": {
+      "description": "Klicken Sie auf „Konto hinzufugen“, um Ihre Trae-Konten zu verwalten, oder importieren Sie sie aus lokalen Trae-Daten oder einer JSON-Datei."
+    },
+    "addModal": {
+      "title": "Trae-Konto hinzufugen"
+    },
+    "oauth": {
+      "desc": "Klicken Sie unten auf die Schaltflache und schliessen Sie die Trae-OAuth-Anmeldung im Browser ab."
+    },
+    "import": {
+      "localDesc": "Importiert das aktuell angemeldete Konto, Tarifinformationen und zwischengespeicherte Kontingentdaten aus dem lokalen Trae-Konfigurationsverzeichnis.",
+      "jsonTab": "JSON-Datei"
+    },
+    "quota": {
+      "usedOfTotal": "Verbraucht $ {{used}} von $ {{total}}",
+      "resetAt": "Zurucksetzung: {{date}}",
+      "resetUnknown": "Zeit der Zurucksetzung unbekannt"
+    },
+    "flowNotice": {
+      "title": "Trae-Kontoleitfaden (zum Auf- und Zuklappen klicken)",
+      "desc": "Unterstutzt offizielle OAuth-Anmeldung, lokalen Import, JSON-Import und kontowechsel per lokaler Injektion. Beim Wechsel wird gemaess den realen Speicherregeln des Trae-Clients zuruckgeschrieben.",
+      "permission": "Berechtigungsumfang: liest und schreibt anmeldungsbezogene Felder in der lokalen Trae-storage.json fur Kontoimport, Kontowechsel-Injektion und Tarifanzeige. Alle Daten werden ausschliesslich lokal auf Ihrem Gerat verarbeitet.",
+      "network": "Netzwerkumfang: OAuth-Anmeldung, Token-Aktualisierung und Tarifabfragen rufen offizielle Trae-APIs auf. Lokale Kontodateien und rohe Speicherinhalte werden nicht an Drittanbieter hochgeladen."
     }
   }
 }

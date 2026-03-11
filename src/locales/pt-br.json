@@ -163,7 +163,9 @@
       "installing": "Instalando"
     },
     "gemini": "Gêmeos",
-    "codebuddy": "Contas CodeBuddy"
+    "codebuddy": "Contas CodeBuddy",
+    "qoder": "Contas Qoder",
+    "trae": "Trae"
   },
   "platformLayout": {
     "title": "Layout de plataformas",
@@ -469,7 +471,15 @@
       "codebuddyAppPathDesc": "Deixe em branco para usar o caminho padrao",
       "codebuddyAppPathPlaceholder": "Caminho padrao",
       "codebuddyPathSelect": "Selecionar",
-      "codebuddyPathReset": "Redefinir para o padrao"
+      "codebuddyPathReset": "Redefinir para o padrao",
+      "qoderPathReset": "Redefinir para o padrao",
+      "traeAutoRefresh": "Atualizacao automatica de cota do Trae",
+      "traeAutoRefreshDesc": "Intervalo de atualizacao automatica em segundo plano",
+      "traeAppPath": "Caminho de inicializacao do Trae",
+      "traeAppPathDesc": "Deixe em branco para usar o caminho padrao",
+      "traeAppPathPlaceholder": "Caminho padrao",
+      "traePathSelect": "Selecionar",
+      "traePathReset": "Redefinir para o padrao"
     },
     "network": {
       "apiTitle": "API de cockpit antigravidade",
@@ -505,7 +515,21 @@
       "download": "Baixar",
       "checkFailed": "Falha ao verificar atualizações"
     },
-    "saveSettings": "Salvar Configurações"
+    "saveSettings": "Salvar Configurações",
+    "storage": {
+      "category": {
+        "accountData": "Dados da conta",
+        "logs": "Logs",
+        "cacheQuota": "Cache e cota",
+        "systemConfig": "Configuração do sistema",
+        "other": "Outros"
+      },
+      "primarySource": "Origem principal",
+      "instancePlatforms": "Plataformas de instância",
+      "rootEntries": "Detalhamento do diretório",
+      "categoriesTitle": "Categorias de negócio",
+      "scanTime": "Última varredura: {{time}}"
+    }
   },
   "appPath": {
     "missing": {
@@ -1399,6 +1423,14 @@
       "saveFailed": "Falha ao salvar configuração: {{error}}",
       "pickPathFailed": "Falha ao selecionar caminho: {{error}}",
       "resetPathFailed": "Falha ao redefinir caminho: {{error}}"
+    },
+    "qoder": {
+      "title": "Configuracoes do Qoder",
+      "appPath": "Caminho do Qoder"
+    },
+    "trae": {
+      "title": "Configuracoes do Trae",
+      "appPath": "Caminho do Trae"
     }
   },
   "quotaAlert": {
@@ -2120,6 +2152,64 @@
       "status": {
         "loginConfirm": "Conclua o login e a autorização nesta página."
       }
+    }
+  },
+  "qoder": {
+    "title": "Gerenciamento de contas do Qoder",
+    "comingSoon": {
+      "title": "Multi-Instância Em Breve",
+      "desc": "Execute várias instâncias do Qoder.app com diferentes contas simultaneamente."
+    },
+    "instances": {
+      "unsupported": {
+        "descPlatform": "Múltiplas instâncias do Qoder são compatíveis apenas com macOS, Windows e Linux."
+      }
+    },
+    "oauth": {
+      "hint": "Conclua o login na página do navegador que foi aberta: se a página de login não abrir automaticamente, clique em \"Copiar link de login\", copie o link e cole-o no navegador para concluir o login.",
+      "copyLoginUrl": "Copiar link de login"
+    },
+    "usageOverview": {
+      "title": "Visão geral de uso",
+      "viewDetails": "Ver detalhes",
+      "includedCredits": "Créditos incluídos no plano",
+      "usedOfTotal": "{{used}} / {{total}}",
+      "usedEmpty": "-- / --",
+      "upgradeHint": "Faça upgrade do plano para aumentar a cota mensal",
+      "upgradeAction": "Atualizar plano"
+    },
+    "flowNotice": {
+      "title": "Guia de contas Qoder (clique para expandir/recolher)",
+      "desc": "Suporta login oficial via OAuth (callback), importacao local, importacao JSON, injecao para troca de conta, vinculacao multi-instancia e visao geral de cota. O fluxo de login segue os dados reais gravados pelo cliente Qoder.",
+      "permission": "Escopo de permissao: le o armazenamento local de autenticacao do Qoder (credenciais auth e informacoes do usuario) para troca de conta e injecao de sessao; todos os dados sao processados localmente no seu dispositivo.",
+      "network": "Escopo de rede: o login OAuth requer acesso aos servicos oficiais do Qoder para concluir o callback; as consultas de cota usam a API do Qoder. Nenhuma chave ou credencial local e enviada."
+    }
+  },
+  "trae": {
+    "title": "Gerenciamento de contas Trae",
+    "empty": {
+      "description": "Clique em \"Adicionar conta\" para comecar a gerenciar suas contas Trae ou importe-as dos dados locais do Trae ou de um arquivo JSON."
+    },
+    "addModal": {
+      "title": "Adicionar conta Trae"
+    },
+    "oauth": {
+      "desc": "Clique no botao abaixo e conclua a autorizacao OAuth do Trae no navegador."
+    },
+    "import": {
+      "localDesc": "Importa a conta conectada no momento, as informacoes do plano e os dados de cota em cache do diretorio local de configuracao do Trae.",
+      "jsonTab": "Arquivo JSON"
+    },
+    "quota": {
+      "usedOfTotal": "Usado $ {{used}} de $ {{total}}",
+      "resetAt": "Redefinicao: {{date}}",
+      "resetUnknown": "Horario de redefinicao desconhecido"
+    },
+    "flowNotice": {
+      "title": "Guia de contas Trae (clique para expandir/recolher)",
+      "desc": "Suporta login oficial via OAuth, importacao local, importacao JSON e troca de conta por injecao local. Ao trocar a conta, os dados sao regravados seguindo as regras reais de persistencia do cliente Trae.",
+      "permission": "Escopo de permissao: le e grava campos relacionados ao login no storage.json local do Trae para importacao de conta, injecao de troca de conta e exibicao do plano. Todos os dados sao processados localmente no seu dispositivo.",
+      "network": "Escopo de rede: login OAuth, renovacao de token e consultas de plano chamam as APIs oficiais do Trae. Os arquivos locais de conta e o conteudo bruto do armazenamento nao sao enviados para servicos de terceiros."
     }
   }
 }

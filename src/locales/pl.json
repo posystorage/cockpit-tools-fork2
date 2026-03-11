@@ -163,7 +163,9 @@
       "installing": "Instalowanie"
     },
     "gemini": "Konta Gemini",
-    "codebuddy": "Konta CodeBuddy"
+    "codebuddy": "Konta CodeBuddy",
+    "qoder": "Konta Qoder",
+    "trae": "Trae"
   },
   "platformLayout": {
     "title": "Układ platform",
@@ -469,7 +471,15 @@
       "codebuddyAppPathDesc": "Pozostaw puste, aby użyć domyślnej ścieżki",
       "codebuddyAppPathPlaceholder": "Domyślna ścieżka",
       "codebuddyPathSelect": "Wybierz",
-      "codebuddyPathReset": "Przywróć domyślne"
+      "codebuddyPathReset": "Przywróć domyślne",
+      "qoderPathReset": "Przywróć domyślne",
+      "traeAutoRefresh": "Automatyczne odświeżanie limitu Trae",
+      "traeAutoRefreshDesc": "Interwał automatycznego odświeżania w tle",
+      "traeAppPath": "Ścieżka uruchamiania Trae",
+      "traeAppPathDesc": "Pozostaw puste, aby użyć domyślnej ścieżki",
+      "traeAppPathPlaceholder": "Domyślna ścieżka",
+      "traePathSelect": "Wybierz",
+      "traePathReset": "Przywróć domyślne"
     },
     "network": {
       "apiTitle": "API kokpitu antygrawitacyjnego",
@@ -505,7 +515,21 @@
       "download": "Pobierz",
       "checkFailed": "Błąd sprawdzania aktualizacji"
     },
-    "saveSettings": "Zapisz ustawienia"
+    "saveSettings": "Zapisz ustawienia",
+    "storage": {
+      "category": {
+        "accountData": "Dane konta",
+        "logs": "Logi",
+        "cacheQuota": "Pamięć podręczna i limity",
+        "systemConfig": "Konfiguracja systemu",
+        "other": "Inne"
+      },
+      "primarySource": "Główne źródło",
+      "instancePlatforms": "Platformy instancji",
+      "rootEntries": "Szczegóły katalogów",
+      "categoriesTitle": "Kategorie operacyjne",
+      "scanTime": "Ostatnie skanowanie: {{time}}"
+    }
   },
   "appPath": {
     "missing": {
@@ -1399,6 +1423,14 @@
       "saveFailed": "Nie udało się zapisać konfiguracji: {{error}}",
       "pickPathFailed": "Nie udało się wybrać ścieżki: {{error}}",
       "resetPathFailed": "Nie udało się zresetować ścieżki: {{error}}"
+    },
+    "qoder": {
+      "title": "Ustawienia Qoder",
+      "appPath": "Ścieżka Qoder"
+    },
+    "trae": {
+      "title": "Ustawienia Trae",
+      "appPath": "Ścieżka Trae"
     }
   },
   "quotaAlert": {
@@ -2120,6 +2152,64 @@
       "status": {
         "loginConfirm": "Na tej stronie dokończ logowanie i autoryzację."
       }
+    }
+  },
+  "qoder": {
+    "title": "Zarządzanie kontami Qoder",
+    "comingSoon": {
+      "title": "Multi-Instancja Wkrótce",
+      "desc": "Uruchamiaj wiele instancji Qoder.app z różnymi kontami jednocześnie."
+    },
+    "instances": {
+      "unsupported": {
+        "descPlatform": "Wiele instancji Qoder jest obsługiwanych tylko w systemach macOS, Windows i Linux."
+      }
+    },
+    "oauth": {
+      "hint": "Dokończ logowanie na otwartej stronie w przeglądarce: jeśli strona logowania nie otworzyła się automatycznie, kliknij „Kopiuj link logowania”, skopiuj link i wklej go do przeglądarki, aby zakończyć logowanie.",
+      "copyLoginUrl": "Kopiuj link logowania"
+    },
+    "usageOverview": {
+      "title": "Przegląd użycia",
+      "viewDetails": "Zobacz szczegóły",
+      "includedCredits": "Kredyty w ramach planu",
+      "usedOfTotal": "{{used}} / {{total}}",
+      "usedEmpty": "-- / --",
+      "upgradeHint": "Ulepsz plan, aby zwiększyć miesięczny limit",
+      "upgradeAction": "Ulepsz"
+    },
+    "flowNotice": {
+      "title": "Przewodnik po kontach Qoder (kliknij, aby rozwinac/zwinac)",
+      "desc": "Obsluguje oficjalne logowanie OAuth (callback), import lokalny, import JSON, iniekcje przelaczania konta, powiazanie wielu instancji oraz przeglad limitu. Przeplyw logowania korzysta z rzeczywistych danych zapisywanych przez klienta Qoder.",
+      "permission": "Zakres uprawnien: odczytuje lokalny magazyn uwierzytelniania Qoder (dane auth i informacje uzytkownika) na potrzeby przelaczania konta i iniekcji sesji; wszystkie dane sa przetwarzane lokalnie na Twoim urzadzeniu.",
+      "network": "Zakres sieci: logowanie OAuth wymaga polaczenia z oficjalnymi uslugami Qoder do obslugi callbacku; zapytania o limit korzystaja z API Qoder. Lokalne klucze i dane uwierzytelniajace nie sa przesylane."
+    }
+  },
+  "trae": {
+    "title": "Zarzadzanie kontami Trae",
+    "empty": {
+      "description": "Kliknij „Dodaj konto”, aby zaczac zarzadzac kontami Trae, albo zaimportuj je z lokalnych danych Trae lub pliku JSON."
+    },
+    "addModal": {
+      "title": "Dodaj konto Trae"
+    },
+    "oauth": {
+      "desc": "Kliknij przycisk ponizej i zakoncz autoryzacje OAuth Trae w przegladarce."
+    },
+    "import": {
+      "localDesc": "Importuje aktualnie zalogowane konto, informacje o planie i dane limitu z pamieci podrecznej z lokalnego katalogu konfiguracji Trae.",
+      "jsonTab": "Plik JSON"
+    },
+    "quota": {
+      "usedOfTotal": "Wykorzystano $ {{used}} z $ {{total}}",
+      "resetAt": "Reset: {{date}}",
+      "resetUnknown": "Nieznany czas resetu"
+    },
+    "flowNotice": {
+      "title": "Przewodnik po kontach Trae (kliknij, aby rozwinac/zwinac)",
+      "desc": "Obsluguje oficjalne logowanie OAuth, import lokalny, import JSON oraz przelaczanie kont przez lokalna iniekcje. Podczas przelaczania dane sa zapisywane zgodnie z rzeczywistymi zasadami zapisu klienta Trae.",
+      "permission": "Zakres uprawnien: odczytuje i zapisuje pola zwiazane z logowaniem w lokalnym pliku Trae storage.json na potrzeby importu konta, iniekcji przelaczenia konta i wyswietlania planu. Wszystkie dane sa przetwarzane lokalnie na Twoim urzadzeniu.",
+      "network": "Zakres sieci: logowanie OAuth, odswiezanie tokenu i zapytania o plan wywoluja oficjalne API Trae. Lokalne pliki kont i surowa zawartosc magazynu nie sa przesylane do uslug zewnetrznych."
     }
   }
 }

@@ -161,6 +161,7 @@ function isAllowedEnglishReuse(key, value) {
     'WeChat',
     'WeChat Pay',
     'Windsurf',
+    'Trae',
     'Crontab',
     '🧩 Crontab',
     'min',

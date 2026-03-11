@@ -769,6 +769,8 @@ fn handle_set_language(language: &str, source: Option<&str>) -> Result<String, S
         cursor_auto_refresh_minutes: current.cursor_auto_refresh_minutes,
         gemini_auto_refresh_minutes: current.gemini_auto_refresh_minutes,
         codebuddy_auto_refresh_minutes: current.codebuddy_auto_refresh_minutes,
+        qoder_auto_refresh_minutes: current.qoder_auto_refresh_minutes,
+        trae_auto_refresh_minutes: current.trae_auto_refresh_minutes,
         close_behavior: current.close_behavior,
         minimize_behavior: current.minimize_behavior,
         hide_dock_icon: current.hide_dock_icon,
@@ -780,6 +782,8 @@ fn handle_set_language(language: &str, source: Option<&str>) -> Result<String, S
         kiro_app_path: current.kiro_app_path,
         cursor_app_path: current.cursor_app_path,
         codebuddy_app_path: current.codebuddy_app_path,
+        qoder_app_path: current.qoder_app_path,
+        trae_app_path: current.trae_app_path,
         opencode_sync_on_switch: current.opencode_sync_on_switch,
         opencode_auth_overwrite_on_switch: current.opencode_auth_overwrite_on_switch,
         codex_launch_on_switch: current.codex_launch_on_switch,
@@ -801,6 +805,10 @@ fn handle_set_language(language: &str, source: Option<&str>) -> Result<String, S
         gemini_quota_alert_threshold: current.gemini_quota_alert_threshold,
         codebuddy_quota_alert_enabled: current.codebuddy_quota_alert_enabled,
         codebuddy_quota_alert_threshold: current.codebuddy_quota_alert_threshold,
+        qoder_quota_alert_enabled: current.qoder_quota_alert_enabled,
+        qoder_quota_alert_threshold: current.qoder_quota_alert_threshold,
+        trae_quota_alert_enabled: current.trae_quota_alert_enabled,
+        trae_quota_alert_threshold: current.trae_quota_alert_threshold,
     };
 
     config::save_user_config(&new_config)?;

@@ -163,7 +163,9 @@
       "installing": "Installation"
     },
     "gemini": "Comptes Gemini",
-    "codebuddy": "Comptes CodeBuddy"
+    "codebuddy": "Comptes CodeBuddy",
+    "qoder": "Comptes Qoder",
+    "trae": "Trae"
   },
   "platformLayout": {
     "title": "Disposition des plateformes",
@@ -469,7 +471,15 @@
       "codebuddyAppPathDesc": "Laisser vide pour utiliser le chemin par defaut",
       "codebuddyAppPathPlaceholder": "Chemin par defaut",
       "codebuddyPathSelect": "Selectionner",
-      "codebuddyPathReset": "Reinitialiser par defaut"
+      "codebuddyPathReset": "Reinitialiser par defaut",
+      "qoderPathReset": "Reinitialiser par defaut",
+      "traeAutoRefresh": "Actualisation automatique du quota Trae",
+      "traeAutoRefreshDesc": "Intervalle d'actualisation en arriere-plan",
+      "traeAppPath": "Chemin de lancement de Trae",
+      "traeAppPathDesc": "Laisser vide pour utiliser le chemin par defaut",
+      "traeAppPathPlaceholder": "Chemin par defaut",
+      "traePathSelect": "Selectionner",
+      "traePathReset": "Reinitialiser par defaut"
     },
     "network": {
       "apiTitle": "API du cockpit antigravité",
@@ -505,7 +515,21 @@
       "download": "Télécharger",
       "checkFailed": "Échec de la vérification"
     },
-    "saveSettings": "Enregistrer les paramètres"
+    "saveSettings": "Enregistrer les paramètres",
+    "storage": {
+      "category": {
+        "accountData": "Données du compte",
+        "logs": "Journaux",
+        "cacheQuota": "Cache et quotas",
+        "systemConfig": "Configuration système",
+        "other": "Autres"
+      },
+      "primarySource": "Source principale",
+      "instancePlatforms": "Plateformes d'instance",
+      "rootEntries": "Répartition des répertoires",
+      "categoriesTitle": "Catégories métier",
+      "scanTime": "Dernière analyse : {{time}}"
+    }
   },
   "appPath": {
     "missing": {
@@ -1399,6 +1423,14 @@
       "saveFailed": "Échec de la sauvegarde de la configuration : {{error}}",
       "pickPathFailed": "Échec de la sélection du chemin : {{error}}",
       "resetPathFailed": "Échec de la réinitialisation du chemin : {{error}}"
+    },
+    "qoder": {
+      "title": "Parametres Qoder",
+      "appPath": "Chemin Qoder"
+    },
+    "trae": {
+      "title": "Parametres Trae",
+      "appPath": "Chemin Trae"
     }
   },
   "quotaAlert": {
@@ -2120,6 +2152,64 @@
       "status": {
         "loginConfirm": "Veuillez terminer la connexion et l'autorisation sur cette page."
       }
+    }
+  },
+  "qoder": {
+    "title": "Gestion des comptes Qoder",
+    "comingSoon": {
+      "title": "Multi-Instance Bientôt Disponible",
+      "desc": "Exécutez plusieurs instances Qoder.app avec différents comptes simultanément."
+    },
+    "instances": {
+      "unsupported": {
+        "descPlatform": "Les instances multiples de Qoder sont prises en charge uniquement sur macOS, Windows et Linux."
+      }
+    },
+    "oauth": {
+      "hint": "Veuillez terminer la connexion dans la page du navigateur ouverte : si la page de connexion ne s’est pas ouverte automatiquement, cliquez sur « Copier le lien de connexion », copiez le lien puis collez-le dans votre navigateur pour terminer la connexion.",
+      "copyLoginUrl": "Copier le lien de connexion"
+    },
+    "usageOverview": {
+      "title": "Aperçu de l'utilisation",
+      "viewDetails": "Voir les détails",
+      "includedCredits": "Crédits inclus dans l'abonnement",
+      "usedOfTotal": "{{used}} / {{total}}",
+      "usedEmpty": "-- / --",
+      "upgradeHint": "Passez à une offre supérieure pour augmenter le quota mensuel",
+      "upgradeAction": "Mettre à niveau"
+    },
+    "flowNotice": {
+      "title": "Guide du compte Qoder (cliquez pour developper/reduire)",
+      "desc": "Prend en charge la connexion OAuth officielle (callback), l'import local, l'import JSON, l'injection pour changer de compte, l'association multi-instance et la vue d'ensemble du quota. Le flux de connexion suit les donnees reellement stockees par le client Qoder.",
+      "permission": "Portee des autorisations : lit le stockage d'authentification local de Qoder (identifiants auth et informations utilisateur) pour le changement de compte et l'injection de session ; toutes les donnees sont traitees localement sur votre machine.",
+      "network": "Portee reseau : la connexion OAuth requiert l'acces aux services officiels de Qoder pour terminer le callback ; les requetes de quota utilisent l'API Qoder. Aucune cle ni aucun identifiant local n'est televerse."
+    }
+  },
+  "trae": {
+    "title": "Gestion des comptes Trae",
+    "empty": {
+      "description": "Cliquez sur \"Ajouter un compte\" pour commencer a gerer vos comptes Trae, ou importez-les depuis les donnees locales de Trae ou un fichier JSON."
+    },
+    "addModal": {
+      "title": "Ajouter un compte Trae"
+    },
+    "oauth": {
+      "desc": "Cliquez sur le bouton ci-dessous et terminez l'autorisation OAuth de Trae dans votre navigateur."
+    },
+    "import": {
+      "localDesc": "Importe le compte actuellement connecte, les informations de forfait et les donnees de quota en cache depuis le dossier de configuration local de Trae.",
+      "jsonTab": "Fichier JSON"
+    },
+    "quota": {
+      "usedOfTotal": "Utilise $ {{used}} sur $ {{total}}",
+      "resetAt": "Reinitialisation : {{date}}",
+      "resetUnknown": "Heure de reinitialisation inconnue"
+    },
+    "flowNotice": {
+      "title": "Guide du compte Trae (cliquez pour developper/reduire)",
+      "desc": "Prend en charge la connexion OAuth officielle, l'import local, l'import JSON et le changement de compte par injection locale. Lors du changement, les donnees sont reecrites selon les regles reelles de stockage du client Trae.",
+      "permission": "Portee des autorisations : lit et ecrit les champs lies a la connexion dans le storage.json local de Trae pour l'import de compte, l'injection de changement de compte et l'affichage du forfait. Toutes les donnees sont traitees localement sur votre machine.",
+      "network": "Portee reseau : la connexion OAuth, l'actualisation du jeton et les requetes de forfait appellent les API officielles de Trae. Les fichiers de compte locaux et le contenu brut du stockage ne sont pas televerses vers des services tiers."
     }
   }
 }

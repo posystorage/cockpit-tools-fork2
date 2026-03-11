@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { HardDrive } from 'lucide-react';
 import { InstancesManager } from '../components/InstancesManager';
 import { OverviewTabsHeader } from '../components/OverviewTabsHeader';
 import { useAccountStore } from '../stores/useAccountStore';
@@ -83,6 +84,14 @@ export function InstancesPage({ onNavigate }: InstancesPageProps) {
     );
   };
 
+  const handleOpenStorage = () => {
+    if (onNavigate) {
+      onNavigate('storage');
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('app-request-navigate', { detail: 'storage' }));
+  };
+
   return (
     <div className="instances-page">
       <OverviewTabsHeader
@@ -90,6 +99,12 @@ export function InstancesPage({ onNavigate }: InstancesPageProps) {
         onNavigate={onNavigate}
         subtitle={t('instances.subtitle', '多实例独立配置，多账号并行运行。')}
       />
+      <div className="instances-page-actions">
+        <button className="btn btn-secondary" onClick={handleOpenStorage}>
+          <HardDrive size={16} />
+          {t('settings.general.storageTitle')}
+        </button>
+      </div>
       <InstancesManager
         instanceStore={instanceStore}
         accounts={sortedAccountsForSelect}

@@ -163,7 +163,9 @@
       "installing": "Đang cài đặt"
     },
     "gemini": "Song Tử",
-    "codebuddy": "Tài khoản CodeBuddy"
+    "codebuddy": "Tài khoản CodeBuddy",
+    "qoder": "Tài khoản Qoder",
+    "trae": "Trae"
   },
   "platformLayout": {
     "title": "Bố cục nền tảng",
@@ -469,7 +471,15 @@
       "codebuddyAppPathDesc": "Để trống để dùng đường dẫn mặc định",
       "codebuddyAppPathPlaceholder": "Đường dẫn mặc định",
       "codebuddyPathSelect": "Chọn",
-      "codebuddyPathReset": "Đặt lại mặc định"
+      "codebuddyPathReset": "Đặt lại mặc định",
+      "qoderPathReset": "Đặt lại mặc định",
+      "traeAutoRefresh": "Tự động làm mới hạn ngạch Trae",
+      "traeAutoRefreshDesc": "Tần suất tự động cập nhật nền",
+      "traeAppPath": "Đường dẫn khởi động Trae",
+      "traeAppPathDesc": "Để trống để dùng đường dẫn mặc định",
+      "traeAppPathPlaceholder": "Đường dẫn mặc định",
+      "traePathSelect": "Chọn",
+      "traePathReset": "Đặt lại mặc định"
     },
     "network": {
       "apiTitle": "API Antigravity Cockpit",
@@ -505,7 +515,21 @@
       "download": "Tải về",
       "checkFailed": "Kiểm tra cập nhật thất bại, vui lòng thử lại sau"
     },
-    "saveSettings": "Lưu cài đặt"
+    "saveSettings": "Lưu cài đặt",
+    "storage": {
+      "category": {
+        "accountData": "Dữ liệu tài khoản",
+        "logs": "Nhật ký",
+        "cacheQuota": "Bộ đệm và hạn mức",
+        "systemConfig": "Cấu hình hệ thống",
+        "other": "Khác"
+      },
+      "primarySource": "Nguồn chính",
+      "instancePlatforms": "Nền tảng phiên bản",
+      "rootEntries": "Chi tiết thư mục",
+      "categoriesTitle": "Danh mục nghiệp vụ",
+      "scanTime": "Lần quét gần nhất: {{time}}"
+    }
   },
   "appPath": {
     "missing": {
@@ -1399,6 +1423,14 @@
       "saveFailed": "Lưu cấu hình thất bại: {{error}}",
       "pickPathFailed": "Chọn đường dẫn thất bại: {{error}}",
       "resetPathFailed": "Đặt lại đường dẫn thất bại: {{error}}"
+    },
+    "qoder": {
+      "title": "Cài đặt Qoder",
+      "appPath": "Đường dẫn Qoder"
+    },
+    "trae": {
+      "title": "Cài đặt Trae",
+      "appPath": "Đường dẫn Trae"
     }
   },
   "quotaAlert": {
@@ -2120,6 +2152,64 @@
       "status": {
         "loginConfirm": "Vui lòng hoàn tất đăng nhập và ủy quyền trên trang này."
       }
+    }
+  },
+  "qoder": {
+    "title": "Quản lý tài khoản Qoder",
+    "comingSoon": {
+      "title": "Đa Phiên Bản Sắp Ra Mắt",
+      "desc": "Chạy nhiều phiên bản Qoder.app với các tài khoản khác nhau cùng lúc."
+    },
+    "instances": {
+      "unsupported": {
+        "descPlatform": "Đa phiên bản Qoder chỉ được hỗ trợ trên macOS, Windows và Linux."
+      }
+    },
+    "oauth": {
+      "hint": "Hãy hoàn tất đăng nhập trên trang trình duyệt đã mở: nếu trang đăng nhập không tự động mở, hãy nhấp vào \"Sao chép liên kết đăng nhập\", sao chép liên kết rồi dán vào trình duyệt để hoàn tất đăng nhập.",
+      "copyLoginUrl": "Sao chép liên kết đăng nhập"
+    },
+    "usageOverview": {
+      "title": "Tổng quan sử dụng",
+      "viewDetails": "Xem chi tiết",
+      "includedCredits": "Credits trong gói",
+      "usedOfTotal": "{{used}} / {{total}}",
+      "usedEmpty": "-- / --",
+      "upgradeHint": "Nâng cấp gói để tăng hạn mức hàng tháng",
+      "upgradeAction": "Nâng cấp"
+    },
+    "flowNotice": {
+      "title": "Huong dan tai khoan Qoder (nhan de mo rong/thu gon)",
+      "desc": "Ho tro dang nhap OAuth chinh thuc (callback), nhap cuc bo, nhap JSON, tiem chuyen tai khoan, gan nhieu instance va tong quan han muc. Luong dang nhap su dung dung du lieu luu tru thuc te cua Qoder client.",
+      "permission": "Pham vi quyen: doc kho xac thuc cuc bo cua Qoder (thong tin auth va thong tin nguoi dung) de phuc vu chuyen tai khoan va tiem phien; moi du lieu deu duoc xu ly cuc bo tren may cua ban.",
+      "network": "Pham vi mang: dang nhap OAuth can truy cap dich vu chinh thuc cua Qoder de hoan tat callback; truy van han muc su dung Qoder API. Khong tai len khoa hay thong tin xac thuc cuc bo."
+    }
+  },
+  "trae": {
+    "title": "Quan ly tai khoan Trae",
+    "empty": {
+      "description": "Nhan \"Them tai khoan\" de bat dau quan ly cac tai khoan Trae, hoac nhap tu du lieu Trae cuc bo hay tep JSON."
+    },
+    "addModal": {
+      "title": "Them tai khoan Trae"
+    },
+    "oauth": {
+      "desc": "Nhan nut ben duoi va hoan tat uy quyen OAuth cua Trae trong trinh duyet."
+    },
+    "import": {
+      "localDesc": "Nhap tai khoan dang dang nhap, thong tin goi va du lieu han muc da luu cache tu thu muc cau hinh Trae cuc bo.",
+      "jsonTab": "Tep JSON"
+    },
+    "quota": {
+      "usedOfTotal": "Da dung $ {{used}} / $ {{total}}",
+      "resetAt": "Thoi gian dat lai: {{date}}",
+      "resetUnknown": "Khong ro thoi gian dat lai"
+    },
+    "flowNotice": {
+      "title": "Huong dan tai khoan Trae (nhan de mo rong/thu gon)",
+      "desc": "Ho tro dang nhap OAuth chinh thuc, nhap cuc bo, nhap JSON va chuyen tai khoan bang cach tiem du lieu cuc bo. Khi chuyen tai khoan, du lieu duoc ghi lai theo dung quy tac luu tru thuc te cua Trae client.",
+      "permission": "Pham vi quyen: doc va ghi cac truong lien quan den dang nhap trong storage.json cuc bo cua Trae de phuc vu viec nhap tai khoan, tiem chuyen tai khoan va hien thi goi. Moi du lieu deu duoc xu ly cuc bo tren may cua ban.",
+      "network": "Pham vi mang: dang nhap OAuth, lam moi token va truy van goi se goi cac API chinh thuc cua Trae. Tep tai khoan cuc bo va noi dung luu tru thuan khong duoc tai len dich vu ben thu ba."
     }
   }
 }

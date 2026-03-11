@@ -9,6 +9,159 @@
   animation: fadeUp 0.5s ease;
 }
 
+.ghcp-accounts-page .flow-notice {
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ghcp-accounts-page .flow-notice-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ghcp-accounts-page .flow-notice-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.ghcp-accounts-page .flow-notice-close {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.ghcp-accounts-page .flow-notice-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+}
+
+.ghcp-accounts-page .flow-notice-content {
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.ghcp-accounts-page .status-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(14, 165, 233, 0.28);
+  background: rgba(125, 211, 252, 0.12);
+  color: #0f172a;
+}
+
+.ghcp-accounts-page .status-banner.error {
+  border-color: rgba(239, 68, 68, 0.38);
+  background: rgba(239, 68, 68, 0.12);
+  color: #b91c1c;
+}
+
+.ghcp-accounts-page .toolbar-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ghcp-accounts-page .toolbar-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ghcp-accounts-page .toolbar-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ghcp-accounts-page .search-input-wrap {
+  min-width: min(320px, 100%);
+  width: clamp(220px, 26vw, 360px);
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-tertiary);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  color: var(--text-muted);
+}
+
+.ghcp-accounts-page .search-input-wrap input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+}
+
+.ghcp-accounts-page .search-input-wrap:focus-within {
+  border-color: rgba(59, 130, 246, 0.45);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.ghcp-accounts-page .settings-select {
+  height: 34px;
+  min-width: 128px;
+  max-width: 220px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  padding: 0 28px 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  appearance: none;
+}
+
+.ghcp-accounts-page .settings-select:focus {
+  outline: none;
+  border-color: rgba(59, 130, 246, 0.45);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.ghcp-accounts-page .toolbar-filters .btn.icon-only {
+  width: 34px;
+  min-height: 34px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 10px;
+}
+
+.ghcp-accounts-page .toolbar-filters .btn.icon-only svg {
+  width: 15px;
+  height: 15px;
+}
+
 /* 使用通用的 page-header 样式，不再覆盖 */
 
 .ghcp-flow-notice {
@@ -304,6 +457,12 @@
   letter-spacing: 0.05em;
 }
 
+.ghcp-account-card .tier-badge.raw-value,
+.ghcp-accounts-page .account-table .tier-badge.raw-value {
+  text-transform: none;
+  letter-spacing: normal;
+}
+
 .cursor-accounts-page .ghcp-account-card .tier-badge,
 .cursor-accounts-page .account-table .tier-badge {
   text-transform: none;
@@ -500,6 +659,155 @@
   padding: 12px;
   background: var(--bg-tertiary);
   border-radius: var(--radius-sm);
+}
+
+.qoder-accounts-page .qoder-account-subline {
+  margin-top: -2px;
+}
+
+.qoder-accounts-page .qoder-card-created-at {
+  font-family: var(--font-mono);
+  letter-spacing: -0.2px;
+}
+
+.qoder-accounts-page .qoder-usage-overview {
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--bg-tertiary);
+}
+
+.qoder-accounts-page .qoder-usage-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.qoder-accounts-page .qoder-usage-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.qoder-accounts-page .qoder-usage-link {
+  height: 22px;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 8px;
+}
+
+.qoder-accounts-page .qoder-usage-link:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.qoder-accounts-page .qoder-usage-item {
+  gap: 8px;
+}
+
+.qoder-accounts-page .qoder-usage-summary-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.qoder-accounts-page .qoder-usage-label-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.qoder-accounts-page .qoder-usage-label {
+  font-size: 12px;
+  color: var(--text-primary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.qoder-accounts-page .qoder-inline-plan-badge {
+  padding: 2px 8px;
+  font-size: 10px;
+}
+
+.qoder-accounts-page .qoder-usage-total {
+  font-size: 12px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+}
+
+.qoder-accounts-page .qoder-usage-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.qoder-accounts-page .qoder-usage-upgrade-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.qoder-accounts-page .qoder-usage-upgrade-btn {
+  min-width: 50px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.qoder-accounts-page .qoder-usage-upgrade-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.qoder-accounts-page .qoder-table-quota {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.qoder-accounts-page .qoder-table-quota-pct {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.qoder-accounts-page .qoder-table-quota-pct.high {
+  color: var(--success);
+}
+
+.qoder-accounts-page .qoder-table-quota-pct.medium {
+  color: #f59e0b;
+}
+
+.qoder-accounts-page .qoder-table-quota-pct.critical {
+  color: var(--danger);
+}
+
+.qoder-accounts-page .qoder-table-quota-total {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
 }
 
 .ghcp-accounts-page .windsurf-credit-item {
@@ -1331,6 +1639,13 @@
   transition: all 0.2s;
 }
 
+.ghcp-add-modal .oauth-url-box button.oauth-copy-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
 .ghcp-add-modal .oauth-url-box button:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
@@ -1433,13 +1748,30 @@
 
 .ghcp-add-modal .add-status {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  justify-content: flex-start;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 12px;
   border-radius: var(--radius-md);
   font-size: 14px;
+  line-height: 1.45;
+  text-align: left;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   animation: fadeUp 0.3s ease;
+}
+
+.ghcp-add-modal .add-status > span {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ghcp-add-modal .add-status > .btn {
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .ghcp-add-modal .add-status.loading {
@@ -1511,6 +1843,22 @@
 
 [data-theme="dark"] .ghcp-flow-notice-title {
   color: #93c5fd;
+}
+
+[data-theme="dark"] .qoder-accounts-page .qoder-usage-overview {
+  border-color: rgba(148, 163, 184, 0.24);
+  background: rgba(2, 6, 23, 0.45);
+}
+
+[data-theme="dark"] .qoder-accounts-page .qoder-usage-link {
+  border-color: rgba(148, 163, 184, 0.32);
+  background: rgba(15, 23, 42, 0.65);
+  color: rgba(226, 232, 240, 0.76);
+}
+
+[data-theme="dark"] .qoder-accounts-page .qoder-usage-upgrade-btn {
+  border-color: rgba(148, 163, 184, 0.32);
+  background: rgba(15, 23, 42, 0.72);
 }
 
 @keyframes fadeUp {

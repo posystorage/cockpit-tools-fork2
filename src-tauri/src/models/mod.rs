@@ -6,8 +6,10 @@ pub mod gemini;
 pub mod github_copilot;
 pub mod instance;
 pub mod kiro;
+pub mod qoder;
 pub mod quota;
 pub mod token;
+pub mod trae;
 pub mod windsurf;
 
 pub use account::{

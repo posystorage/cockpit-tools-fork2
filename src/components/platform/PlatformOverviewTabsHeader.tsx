@@ -1,15 +1,25 @@
 import { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Github, Layers, HelpCircle } from 'lucide-react';
+import { Bot, Github, Layers, HelpCircle } from 'lucide-react';
 import { CodexIcon } from '../icons/CodexIcon';
 import { WindsurfIcon } from '../icons/WindsurfIcon';
 import { KiroIcon } from '../icons/KiroIcon';
 import { CursorIcon } from '../icons/CursorIcon';
 import { GeminiIcon } from '../icons/GeminiIcon';
 import { CodebuddyIcon } from '../icons/CodebuddyIcon';
+import { QoderIcon } from '../icons/QoderIcon';
 
 export type PlatformOverviewTab = 'overview' | 'instances';
-export type PlatformOverviewHeaderId = 'codex' | 'github-copilot' | 'windsurf' | 'kiro' | 'cursor' | 'gemini' | 'codebuddy';
+export type PlatformOverviewHeaderId =
+  | 'codex'
+  | 'github-copilot'
+  | 'windsurf'
+  | 'kiro'
+  | 'cursor'
+  | 'gemini'
+  | 'codebuddy'
+  | 'qoder'
+  | 'trae';
 
 interface PlatformOverviewTabsHeaderProps {
   platform: PlatformOverviewHeaderId;
@@ -64,6 +74,16 @@ const CONFIGS: Record<PlatformOverviewHeaderId, PlatformOverviewConfig> = {
     titleKey: 'codebuddy.title',
     titleDefault: 'CodeBuddy 账号管理',
     overviewIcon: <CodebuddyIcon className="tab-icon" />,
+  },
+  qoder: {
+    titleKey: 'qoder.title',
+    titleDefault: 'Qoder 账号管理',
+    overviewIcon: <QoderIcon className="tab-icon" />,
+  },
+  trae: {
+    titleKey: 'trae.title',
+    titleDefault: 'Trae 账号管理',
+    overviewIcon: <Bot className="tab-icon" />,
   },
 };
 

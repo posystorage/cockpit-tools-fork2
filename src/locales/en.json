@@ -163,7 +163,9 @@
       "update": "Update",
       "restart": "Restart",
       "installing": "Installing"
-    }
+    },
+    "qoder": "Qoder",
+    "trae": "Trae"
   },
   "platformLayout": {
     "title": "Platform Layout",
@@ -469,7 +471,15 @@
       "autoUpdate": "Background Auto Update",
       "autoUpdateDesc": "When a new version is detected, update in the background and prompt for restart when ready.",
       "autoUpdateOff": "Off (manual update)",
-      "autoUpdateOn": "On (silent update)"
+      "autoUpdateOn": "On (silent update)",
+      "qoderPathReset": "Reset to default",
+      "traeAutoRefresh": "Trae Auto Refresh Quota",
+      "traeAutoRefreshDesc": "Background auto-refresh interval",
+      "traeAppPath": "Trae Launch Path",
+      "traeAppPathDesc": "Leave empty for default path",
+      "traeAppPathPlaceholder": "Default path",
+      "traePathSelect": "Select",
+      "traePathReset": "Reset to default"
     },
     "network": {
       "apiTitle": "Antigravity Cockpit API",
@@ -505,7 +515,21 @@
       "download": "Download",
       "checkFailed": "Failed to check updates, please try again"
     },
-    "saveSettings": "Save Settings"
+    "saveSettings": "Save Settings",
+    "storage": {
+      "category": {
+        "accountData": "Account Data",
+        "logs": "Logs",
+        "cacheQuota": "Cache & Quota",
+        "systemConfig": "System Config",
+        "other": "Other"
+      },
+      "primarySource": "Primary source",
+      "instancePlatforms": "Instance platforms",
+      "rootEntries": "Directory breakdown",
+      "categoriesTitle": "Business categories",
+      "scanTime": "Last scan: {{time}}"
+    }
   },
   "appPath": {
     "missing": {
@@ -1567,6 +1591,14 @@
       "saveFailed": "Failed to save config: {{error}}",
       "pickPathFailed": "Failed to pick path: {{error}}",
       "resetPathFailed": "Failed to reset path: {{error}}"
+    },
+    "qoder": {
+      "title": "Qoder Settings",
+      "appPath": "Qoder Path"
+    },
+    "trae": {
+      "title": "Trae Settings",
+      "appPath": "Trae Path"
     }
   },
   "quotaAlert": {
@@ -2120,6 +2152,64 @@
       },
       "summary": "Used for scheduled wakeup tasks and batch verification, helping continuous tracking of account availability and status.",
       "title": "Wakeup Tasks & Verification"
+    }
+  },
+  "qoder": {
+    "title": "Qoder Account Management",
+    "flowNotice": {
+      "title": "Qoder account guide (click to expand/collapse)",
+      "desc": "Supports official CLI device login authorization, local import, JSON import, account switching injection, multi-instance binding, and quota overview. Browser authorization does not require Qoder to stay running; injection writes back using Qoder client's actual on-disk rules.",
+      "permission": "Permission scope: reads Qoder local auth storage, user info, and machine identity caches such as machine_token.json and cache/id for official authorization, local import, account switching, and session injection. All data is processed locally on your machine.",
+      "network": "Network scope: OAuth authorization opens Qoder's official device login page in your browser and polls Qoder official OpenAPI to finish authorization. Quota queries call Qoder APIs for usage data. No local keys, credentials, or raw storage contents are uploaded."
+    },
+    "oauth": {
+      "hint": "Click the button below to complete Qoder authorization in your browser. This uses the official CLI device login flow and does not require Qoder to stay running.",
+      "copyLoginUrl": "Copy Sign In URL"
+    },
+    "usageOverview": {
+      "title": "Usage Overview",
+      "viewDetails": "View Details",
+      "includedCredits": "Included Credits",
+      "usedOfTotal": "{{used}} / {{total}}",
+      "usedEmpty": "-- / --",
+      "upgradeHint": "Upgrade your plan to increase monthly quota",
+      "upgradeAction": "Upgrade"
+    },
+    "comingSoon": {
+      "title": "Qoder Account Integration In Progress",
+      "desc": "This release supports Qoder multi-instance, platform management, and tray entry. Account login and quota panels will arrive in a later release."
+    },
+    "instances": {
+      "unsupported": {
+        "descPlatform": "Qoder multi-instance is available only on macOS, Windows, and Linux."
+      }
+    }
+  },
+  "trae": {
+    "title": "Trae Account Management",
+    "empty": {
+      "description": "Click \"Add Account\" to start managing your Trae accounts, or import from local Trae data or a JSON file."
+    },
+    "addModal": {
+      "title": "Add Trae Account"
+    },
+    "oauth": {
+      "desc": "Click the button below and complete Trae OAuth authorization in your browser."
+    },
+    "import": {
+      "localDesc": "Import the current signed-in account, plan information, and cached quota data from the local Trae configuration directory.",
+      "jsonTab": "JSON File"
+    },
+    "quota": {
+      "usedOfTotal": "${{used}} / ${{total}}",
+      "resetAt": "Subscription reset: {{date}}",
+      "resetUnknown": "Reset time unknown"
+    },
+    "flowNotice": {
+      "title": "Trae account guide (click to expand/collapse)",
+      "desc": "Supports official OAuth sign-in, local import, JSON import, and local injection-based account switching. Account switching writes back using Trae client's actual on-disk rules.",
+      "permission": "Permission scope: read and write login-related fields in the local Trae storage.json for account import, account switching injection, and plan display. All data is processed locally on your machine.",
+      "network": "Network scope: OAuth sign-in, token refresh, and plan queries call official Trae APIs. Local account files and raw storage contents are not uploaded to third-party services."
     }
   }
 }

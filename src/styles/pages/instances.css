@@ -8,6 +8,11 @@
   margin-bottom: 6px;
 }
 
+.instances-page-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .instances-toolbar {
   width: 100%;
 }

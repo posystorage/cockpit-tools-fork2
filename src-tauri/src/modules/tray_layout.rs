@@ -15,8 +15,10 @@ pub const PLATFORM_KIRO: &str = "kiro";
 pub const PLATFORM_CURSOR: &str = "cursor";
 pub const PLATFORM_GEMINI: &str = "gemini";
 pub const PLATFORM_CODEBUDDY: &str = "codebuddy";
+pub const PLATFORM_QODER: &str = "qoder";
+pub const PLATFORM_TRAE: &str = "trae";
 
-pub const SUPPORTED_PLATFORM_IDS: [&str; 8] = [
+pub const SUPPORTED_PLATFORM_IDS: [&str; 10] = [
     PLATFORM_ANTIGRAVITY,
     PLATFORM_CODEX,
     PLATFORM_GITHUB_COPILOT,
@@ -25,6 +27,8 @@ pub const SUPPORTED_PLATFORM_IDS: [&str; 8] = [
     PLATFORM_CURSOR,
     PLATFORM_GEMINI,
     PLATFORM_CODEBUDDY,
+    PLATFORM_QODER,
+    PLATFORM_TRAE,
 ];
 
 pub const SORT_MODE_AUTO: &str = "auto";
@@ -111,10 +115,18 @@ fn normalize_tray_platforms(ids: &[String], raw_order_has_new: &[&str]) -> Vec<S
         && contains_platform(&sanitized, PLATFORM_GITHUB_COPILOT)
         && contains_platform(&sanitized, PLATFORM_WINDSURF);
 
-    for &new_platform in &[PLATFORM_KIRO, PLATFORM_CURSOR, PLATFORM_GEMINI] {
+    for &new_platform in &[
+        PLATFORM_KIRO,
+        PLATFORM_CURSOR,
+        PLATFORM_GEMINI,
+        PLATFORM_QODER,
+        PLATFORM_TRAE,
+    ] {
         let already_present = contains_platform(&sanitized, new_platform);
         let was_in_raw_order = raw_order_has_new.contains(&new_platform);
-        let looks_like_old_default = !already_present && has_legacy_all && sanitized.len() <= 6;
+        let looks_like_old_default = !already_present
+            && has_legacy_all
+            && sanitized.len() <= SUPPORTED_PLATFORM_IDS.len().saturating_sub(1);
 
         if !was_in_raw_order && !already_present && looks_like_old_default {
             sanitized.push(new_platform.to_string());
@@ -132,11 +144,17 @@ fn normalize_sort_mode(raw: &str) -> String {
 }
 
 fn normalize_config(config: TrayLayoutConfig) -> TrayLayoutConfig {
-    let raw_order_new_platforms: Vec<&str> = [PLATFORM_KIRO, PLATFORM_CURSOR, PLATFORM_GEMINI]
-        .iter()
-        .filter(|&&p| config.ordered_platform_ids.iter().any(|id| id.trim() == p))
-        .copied()
-        .collect();
+    let raw_order_new_platforms: Vec<&str> = [
+        PLATFORM_KIRO,
+        PLATFORM_CURSOR,
+        PLATFORM_GEMINI,
+        PLATFORM_QODER,
+        PLATFORM_TRAE,
+    ]
+    .iter()
+    .filter(|&&p| config.ordered_platform_ids.iter().any(|id| id.trim() == p))
+    .copied()
+    .collect();
     TrayLayoutConfig {
         sort_mode: normalize_sort_mode(&config.sort_mode),
         ordered_platform_ids: normalize_order(&config.ordered_platform_ids),

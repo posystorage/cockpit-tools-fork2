@@ -163,7 +163,9 @@
       "installing": "安裝中"
     },
     "gemini": "雙子座",
-    "codebuddy": "CodeBuddy 帳號"
+    "codebuddy": "CodeBuddy 帳號",
+    "qoder": "Qoder 帳號",
+    "trae": "Trae"
   },
   "platformLayout": {
     "title": "平台佈局",
@@ -469,7 +471,15 @@
       "codebuddyAppPathDesc": "留空則使用預設路徑",
       "codebuddyAppPathPlaceholder": "預設路徑",
       "codebuddyPathSelect": "選擇",
-      "codebuddyPathReset": "重設預設"
+      "codebuddyPathReset": "重設預設",
+      "qoderPathReset": "重設預設",
+      "traeAutoRefresh": "Trae 自動刷新配額",
+      "traeAutoRefreshDesc": "背景自動更新頻率",
+      "traeAppPath": "Trae 啟動路徑",
+      "traeAppPathDesc": "留空則使用預設路徑",
+      "traeAppPathPlaceholder": "預設路徑",
+      "traePathSelect": "選擇",
+      "traePathReset": "重設預設"
     },
     "network": {
       "apiTitle": "反重力駕駛艙 API",
@@ -505,7 +515,21 @@
       "download": "下載",
       "checkFailed": "檢查更新失敗，請稍後重試"
     },
-    "saveSettings": "儲存設定"
+    "saveSettings": "儲存設定",
+    "storage": {
+      "category": {
+        "accountData": "帳號資料",
+        "logs": "日誌",
+        "cacheQuota": "快取與配額",
+        "systemConfig": "系統設定",
+        "other": "其他"
+      },
+      "primarySource": "主要占用來源",
+      "instancePlatforms": "實例平台",
+      "rootEntries": "目錄明細",
+      "categoriesTitle": "業務分類",
+      "scanTime": "最近掃描：{{time}}"
+    }
   },
   "appPath": {
     "missing": {
@@ -1399,6 +1423,14 @@
       "saveFailed": "儲存設定失敗：{{error}}",
       "pickPathFailed": "選擇路徑失敗：{{error}}",
       "resetPathFailed": "重設路徑失敗：{{error}}"
+    },
+    "qoder": {
+      "title": "Qoder 設定",
+      "appPath": "Qoder 路徑"
+    },
+    "trae": {
+      "title": "Trae 設定",
+      "appPath": "Trae 路徑"
     }
   },
   "quotaAlert": {
@@ -2120,6 +2152,64 @@
       "status": {
         "loginConfirm": "請在此頁面完成登入與授權。"
       }
+    }
+  },
+  "qoder": {
+    "title": "Qoder 帳號管理",
+    "comingSoon": {
+      "title": "多開實例功能即將上線",
+      "desc": "支援以不同帳號同時運行多個 Qoder.app 實例，敬請期待。"
+    },
+    "instances": {
+      "unsupported": {
+        "descPlatform": "Qoder 多開實例僅支援 macOS、Windows 和 Linux。"
+      }
+    },
+    "oauth": {
+      "hint": "請在開啟的瀏覽器頁面中完成登入：如果登入頁面未自動開啟，請點擊「複製登入連結」按鈕複製連結並貼到瀏覽器中完成登入。",
+      "copyLoginUrl": "複製登入連結"
+    },
+    "usageOverview": {
+      "title": "用量總覽",
+      "viewDetails": "查看詳情",
+      "includedCredits": "方案內 Credits",
+      "usedOfTotal": "{{used}} / {{total}}",
+      "usedEmpty": "-- / --",
+      "upgradeHint": "升級方案以提升每月額度",
+      "upgradeAction": "升級"
+    },
+    "flowNotice": {
+      "title": "Qoder 帳號接入說明（點擊展開/收起）",
+      "desc": "目前支援官方授權登入（回調）、本機匯入、JSON 匯入、切號注入、多開實例綁定與配額概覽。登入流程沿用 Qoder 用戶端真實落盤資料。",
+      "permission": "權限範圍：讀取 Qoder 本地認證儲存（auth 憑證與使用者資訊），用於帳號切換與工作階段注入；所有資料僅在本機處理。",
+      "network": "網路範圍：OAuth 授權登入需連網請求 Qoder 官方服務完成回調；配額查詢透過 Qoder API 取得用量資料。不會上傳本地金鑰或憑證。"
+    }
+  },
+  "trae": {
+    "title": "Trae 帳號管理",
+    "empty": {
+      "description": "點擊「新增帳號」開始管理您的 Trae 帳號，也可以從本機 Trae 資料或 JSON 檔案匯入。"
+    },
+    "addModal": {
+      "title": "新增 Trae 帳號"
+    },
+    "oauth": {
+      "desc": "點擊下方按鈕，在瀏覽器中完成 Trae OAuth 授權登入。"
+    },
+    "import": {
+      "localDesc": "支援從本機 Trae 設定目錄讀取目前登入帳號、方案資訊與配額快取資料。",
+      "jsonTab": "JSON 檔案"
+    },
+    "quota": {
+      "usedOfTotal": "已用 $ {{used}} / $ {{total}}",
+      "resetAt": "重設時間：{{date}}",
+      "resetUnknown": "重設時間未知"
+    },
+    "flowNotice": {
+      "title": "Trae 帳號接入說明（點擊展開/收起）",
+      "desc": "支援官方 OAuth 授權、本機匯入、JSON 匯入與本地注入切號；切號流程會依 Trae 用戶端的實際落盤規則寫回。",
+      "permission": "權限範圍：讀取並寫入本機 Trae 設定目錄中的 storage.json 登入相關欄位，用於帳號匯入、切號注入與方案資訊顯示；所有資料僅在本機處理。",
+      "network": "網路範圍：OAuth 登入、權杖刷新與方案查詢會請求 Trae 官方 API；不會將本機帳號檔案或原始儲存內容上傳到第三方服務。"
     }
   }
 }

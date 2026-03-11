@@ -163,7 +163,9 @@
       "installing": "설치 중"
     },
     "gemini": "Gemini 계정",
-    "codebuddy": "CodeBuddy 계정"
+    "codebuddy": "CodeBuddy 계정",
+    "qoder": "Qoder 계정",
+    "trae": "Trae"
   },
   "platformLayout": {
     "title": "플랫폼 레이아웃",
@@ -469,7 +471,15 @@
       "codebuddyAppPathDesc": "비워 두면 기본 경로를 사용합니다",
       "codebuddyAppPathPlaceholder": "기본 경로",
       "codebuddyPathSelect": "선택",
-      "codebuddyPathReset": "기본값으로 재설정"
+      "codebuddyPathReset": "기본값으로 재설정",
+      "qoderPathReset": "기본값으로 재설정",
+      "traeAutoRefresh": "Trae 자동 할당량 새로고침",
+      "traeAutoRefreshDesc": "백그라운드 자동 업데이트 주기",
+      "traeAppPath": "Trae 실행 경로",
+      "traeAppPathDesc": "비워 두면 기본 경로를 사용합니다",
+      "traeAppPathPlaceholder": "기본 경로",
+      "traePathSelect": "선택",
+      "traePathReset": "기본값으로 재설정"
     },
     "network": {
       "apiTitle": "반중력 조종석 API",
@@ -505,7 +515,21 @@
       "download": "다운로드",
       "checkFailed": "업데이트 확인에 실패했습니다. 나중에 다시 시도해 주세요."
     },
-    "saveSettings": "설정 저장"
+    "saveSettings": "설정 저장",
+    "storage": {
+      "category": {
+        "accountData": "계정 데이터",
+        "logs": "로그",
+        "cacheQuota": "캐시 및 할당량",
+        "systemConfig": "시스템 설정",
+        "other": "기타"
+      },
+      "primarySource": "주요 점유 원인",
+      "instancePlatforms": "인스턴스 플랫폼",
+      "rootEntries": "디렉터리 상세",
+      "categoriesTitle": "업무 카테고리",
+      "scanTime": "최근 스캔: {{time}}"
+    }
   },
   "appPath": {
     "missing": {
@@ -1399,6 +1423,14 @@
       "saveFailed": "설정 저장 실패: {{error}}",
       "pickPathFailed": "경로 선택 실패: {{error}}",
       "resetPathFailed": "경로 초기화 실패: {{error}}"
+    },
+    "qoder": {
+      "title": "Qoder 설정",
+      "appPath": "Qoder 경로"
+    },
+    "trae": {
+      "title": "Trae 설정",
+      "appPath": "Trae 경로"
     }
   },
   "quotaAlert": {
@@ -2120,6 +2152,64 @@
       "status": {
         "loginConfirm": "이 페이지에서 로그인 및 권한 부여를 완료하세요."
       }
+    }
+  },
+  "qoder": {
+    "title": "Qoder 계정 관리",
+    "comingSoon": {
+      "title": "멀티 인스턴스 곧 출시",
+      "desc": "다른 계정으로 여러 Qoder.app 인스턴스를 동시에 실행할 수 있습니다."
+    },
+    "instances": {
+      "unsupported": {
+        "descPlatform": "Qoder 다중 인스턴스는 macOS, Windows, Linux에서만 지원됩니다."
+      }
+    },
+    "oauth": {
+      "hint": "열린 브라우저 페이지에서 로그인을 완료하세요. 로그인 페이지가 자동으로 열리지 않으면 \"로그인 링크 복사\"를 클릭해 링크를 복사한 뒤 브라우저에 붙여 넣어 로그인을 완료하세요.",
+      "copyLoginUrl": "로그인 링크 복사"
+    },
+    "usageOverview": {
+      "title": "사용량 개요",
+      "viewDetails": "자세히 보기",
+      "includedCredits": "플랜 포함 크레딧",
+      "usedOfTotal": "{{used}} / {{total}}",
+      "usedEmpty": "-- / --",
+      "upgradeHint": "월간 한도를 늘리려면 플랜을 업그레이드하세요",
+      "upgradeAction": "업그레이드"
+    },
+    "flowNotice": {
+      "title": "Qoder 계정 안내 (클릭하여 펼치기/접기)",
+      "desc": "공식 OAuth 로그인(콜백), 로컬 가져오기, JSON 가져오기, 계정 전환 주입, 멀티 인스턴스 바인딩 및 할당량 개요를 지원합니다. 로그인 흐름은 Qoder 클라이언트의 실제 저장 데이터 형식을 따릅니다.",
+      "permission": "권한 범위: 계정 전환과 세션 주입을 위해 Qoder 로컬 인증 저장소(auth 자격 증명 및 사용자 정보)를 읽습니다. 모든 데이터는 사용자 기기에서만 처리됩니다.",
+      "network": "네트워크 범위: OAuth 로그인은 콜백 처리를 위해 Qoder 공식 서비스 연결이 필요하며, 할당량 조회는 Qoder API 를 사용합니다. 로컬 키나 자격 증명은 업로드되지 않습니다."
+    }
+  },
+  "trae": {
+    "title": "Trae 계정 관리",
+    "empty": {
+      "description": "\"계정 추가\"를 클릭해 Trae 계정 관리를 시작하거나 로컬 Trae 데이터 또는 JSON 파일에서 가져올 수 있습니다."
+    },
+    "addModal": {
+      "title": "Trae 계정 추가"
+    },
+    "oauth": {
+      "desc": "아래 버튼을 눌러 브라우저에서 Trae OAuth 인증을 완료하세요."
+    },
+    "import": {
+      "localDesc": "로컬 Trae 설정 디렉터리에서 현재 로그인된 계정, 요금제 정보, 캐시된 할당량 데이터를 가져옵니다.",
+      "jsonTab": "JSON 파일"
+    },
+    "quota": {
+      "usedOfTotal": "사용량 $ {{used}} / $ {{total}}",
+      "resetAt": "재설정 시간: {{date}}",
+      "resetUnknown": "재설정 시간 알 수 없음"
+    },
+    "flowNotice": {
+      "title": "Trae 계정 안내 (클릭하여 펼치기/접기)",
+      "desc": "공식 OAuth 로그인, 로컬 가져오기, JSON 가져오기, 로컬 주입 방식의 계정 전환을 지원합니다. 계정 전환 시 Trae 클라이언트의 실제 디스크 기록 규칙에 따라 다시 저장합니다.",
+      "permission": "권한 범위: 로컬 Trae storage.json 의 로그인 관련 필드를 읽고 써서 계정 가져오기, 계정 전환 주입, 요금제 표시에 사용합니다. 모든 데이터는 사용자 기기에서만 처리됩니다.",
+      "network": "네트워크 범위: OAuth 로그인, 토큰 갱신, 요금제 조회는 Trae 공식 API 를 호출합니다. 로컬 계정 파일이나 원본 저장 데이터는 제3자 서비스로 업로드되지 않습니다."
     }
   }
 }

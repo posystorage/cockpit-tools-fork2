@@ -11,7 +11,7 @@ import { usePlatformLayoutStore } from '../stores/usePlatformLayoutStore';
 import { ALL_PLATFORM_IDS, PlatformId } from '../types/platform';
 import './settings/Settings.css';
 import { 
-  Github, User, Rocket, Save, FolderOpen,
+  Github, User, Rocket, Save, FolderOpen, HardDrive,
   AlertCircle, RefreshCw, Heart, MessageSquare
 } from 'lucide-react';
 
@@ -47,9 +47,17 @@ interface GeneralConfig {
   kiro_app_path: string;
   cursor_app_path: string;
   codebuddy_app_path: string;
+  qoder_app_path: string;
+  trae_app_path: string;
   codebuddy_auto_refresh_minutes: number;
+  qoder_auto_refresh_minutes: number;
+  trae_auto_refresh_minutes: number;
   codebuddy_quota_alert_enabled: boolean;
   codebuddy_quota_alert_threshold: number;
+  qoder_quota_alert_enabled: boolean;
+  qoder_quota_alert_threshold: number;
+  trae_quota_alert_enabled: boolean;
+  trae_quota_alert_threshold: number;
   opencode_sync_on_switch: boolean;
   opencode_auth_overwrite_on_switch: boolean;
   codex_launch_on_switch: boolean;
@@ -71,7 +79,17 @@ interface GeneralConfig {
   gemini_quota_alert_threshold: number;
 }
 
-type AppPathTarget = 'antigravity' | 'codex' | 'vscode' | 'opencode' | 'windsurf' | 'kiro' | 'cursor' | 'codebuddy';
+type AppPathTarget =
+  | 'antigravity'
+  | 'codex'
+  | 'vscode'
+  | 'opencode'
+  | 'windsurf'
+  | 'kiro'
+  | 'cursor'
+  | 'codebuddy'
+  | 'qoder'
+  | 'trae';
 const REFRESH_PRESET_VALUES = ['-1', '2', '5', '10', '15'];
 const THRESHOLD_PRESET_VALUES = ['0', '20', '40', '60'];
 const FALLBACK_PLATFORM_SETTINGS_ORDER: Record<PlatformId, number> = {
@@ -83,6 +101,8 @@ const FALLBACK_PLATFORM_SETTINGS_ORDER: Record<PlatformId, number> = {
   cursor: 5,
   gemini: 6,
   codebuddy: 7,
+  qoder: 8,
+  trae: 9,
 };
 type UpdateCheckSource = 'auto' | 'manual';
 type UpdateCheckFinishedDetail = {
@@ -148,11 +168,23 @@ export function SettingsPage() {
   const [kiroAppPath, setKiroAppPath] = useState('');
   const [cursorAppPath, setCursorAppPath] = useState('');
   const [codebuddyAppPath, setCodebuddyAppPath] = useState('');
+  const [qoderAppPath, setQoderAppPath] = useState('');
+  const [traeAppPath, setTraeAppPath] = useState('');
   const [codebuddyAutoRefresh, setCodebuddyAutoRefresh] = useState('10');
+  const [qoderAutoRefresh, setQoderAutoRefresh] = useState('10');
+  const [traeAutoRefresh, setTraeAutoRefresh] = useState('10');
   const [codebuddyQuotaAlertEnabled, setCodebuddyQuotaAlertEnabled] = useState(false);
   const [codebuddyQuotaAlertThreshold, setCodebuddyQuotaAlertThreshold] = useState('20');
+  const [qoderQuotaAlertEnabled, setQoderQuotaAlertEnabled] = useState(false);
+  const [qoderQuotaAlertThreshold, setQoderQuotaAlertThreshold] = useState('20');
+  const [traeQuotaAlertEnabled, setTraeQuotaAlertEnabled] = useState(false);
+  const [traeQuotaAlertThreshold, setTraeQuotaAlertThreshold] = useState('20');
   const [codebuddyAutoRefreshCustomMode, setCodebuddyAutoRefreshCustomMode] = useState(false);
   const [codebuddyQuotaAlertThresholdCustomMode, setCodebuddyQuotaAlertThresholdCustomMode] = useState(false);
+  const [qoderAutoRefreshCustomMode, setQoderAutoRefreshCustomMode] = useState(false);
+  const [qoderQuotaAlertThresholdCustomMode, setQoderQuotaAlertThresholdCustomMode] = useState(false);
+  const [traeAutoRefreshCustomMode, setTraeAutoRefreshCustomMode] = useState(false);
+  const [traeQuotaAlertThresholdCustomMode, setTraeQuotaAlertThresholdCustomMode] = useState(false);
   const [appPathResetDetectingTargets, setAppPathResetDetectingTargets] = useState<Set<AppPathTarget>>(new Set());
   const [opencodeSyncOnSwitch, setOpencodeSyncOnSwitch] = useState(true);
   const [opencodeAuthOverwriteOnSwitch, setOpencodeAuthOverwriteOnSwitch] = useState(true);
@@ -309,6 +341,8 @@ export function SettingsPage() {
       !windsurfAutoRefresh.trim() ||
       !kiroAutoRefresh.trim() ||
       !codebuddyAutoRefresh.trim() ||
+      !qoderAutoRefresh.trim() ||
+      !traeAutoRefresh.trim() ||
       !cursorAutoRefresh.trim() ||
       !geminiAutoRefresh.trim()
     ) {
@@ -321,6 +355,8 @@ export function SettingsPage() {
     const windsurfAutoRefreshNum = parseInt(windsurfAutoRefresh, 10) || -1;
     const kiroAutoRefreshNum = parseInt(kiroAutoRefresh, 10) || -1;
     const codebuddyAutoRefreshNum = parseInt(codebuddyAutoRefresh, 10) || -1;
+    const qoderAutoRefreshNum = parseInt(qoderAutoRefresh, 10) || -1;
+    const traeAutoRefreshNum = parseInt(traeAutoRefresh, 10) || -1;
     const cursorAutoRefreshNum = parseInt(cursorAutoRefresh, 10) || -1;
     const geminiAutoRefreshNum = parseInt(geminiAutoRefresh, 10) || -1;
     const parsedAutoSwitchThreshold = Number.parseInt(autoSwitchThreshold, 10);
@@ -330,6 +366,8 @@ export function SettingsPage() {
     const parsedWindsurfQuotaAlertThreshold = Number.parseInt(windsurfQuotaAlertThreshold, 10);
     const parsedKiroQuotaAlertThreshold = Number.parseInt(kiroQuotaAlertThreshold, 10);
     const parsedCodebuddyQuotaAlertThreshold = Number.parseInt(codebuddyQuotaAlertThreshold, 10);
+    const parsedQoderQuotaAlertThreshold = Number.parseInt(qoderQuotaAlertThreshold, 10);
+    const parsedTraeQuotaAlertThreshold = Number.parseInt(traeQuotaAlertThreshold, 10);
     const parsedCursorQuotaAlertThreshold = Number.parseInt(cursorQuotaAlertThreshold, 10);
     const parsedGeminiQuotaAlertThreshold = Number.parseInt(geminiQuotaAlertThreshold, 10);
 
@@ -349,6 +387,8 @@ export function SettingsPage() {
           windsurfAutoRefreshMinutes: windsurfAutoRefreshNum,
           kiroAutoRefreshMinutes: kiroAutoRefreshNum,
           codebuddyAutoRefreshMinutes: codebuddyAutoRefreshNum,
+          qoderAutoRefreshMinutes: qoderAutoRefreshNum,
+          traeAutoRefreshMinutes: traeAutoRefreshNum,
           cursorAutoRefreshMinutes: cursorAutoRefreshNum,
           geminiAutoRefreshMinutes: geminiAutoRefreshNum,
           closeBehavior,
@@ -361,6 +401,8 @@ export function SettingsPage() {
           kiroAppPath,
           cursorAppPath,
           codebuddyAppPath,
+          qoderAppPath,
+          traeAppPath,
           opencodeSyncOnSwitch,
           opencodeAuthOverwriteOnSwitch,
           codexLaunchOnSwitch,
@@ -388,6 +430,14 @@ export function SettingsPage() {
           codebuddyQuotaAlertThreshold: Number.isNaN(parsedCodebuddyQuotaAlertThreshold)
             ? 20
             : parsedCodebuddyQuotaAlertThreshold,
+          qoderQuotaAlertEnabled,
+          qoderQuotaAlertThreshold: Number.isNaN(parsedQoderQuotaAlertThreshold)
+            ? 20
+            : parsedQoderQuotaAlertThreshold,
+          traeQuotaAlertEnabled,
+          traeQuotaAlertThreshold: Number.isNaN(parsedTraeQuotaAlertThreshold)
+            ? 20
+            : parsedTraeQuotaAlertThreshold,
           cursorQuotaAlertEnabled,
           cursorQuotaAlertThreshold: Number.isNaN(parsedCursorQuotaAlertThreshold)
             ? 20
@@ -415,6 +465,8 @@ export function SettingsPage() {
     ghcpAutoRefresh,
     windsurfAutoRefresh,
     kiroAutoRefresh,
+    traeAutoRefresh,
+    qoderAutoRefresh,
     cursorAutoRefresh,
     geminiAutoRefresh,
     closeBehavior,
@@ -430,6 +482,8 @@ export function SettingsPage() {
     kiroAppPath,
     cursorAppPath,
     codebuddyAppPath,
+    qoderAppPath,
+    traeAppPath,
     opencodeSyncOnSwitch,
     opencodeAuthOverwriteOnSwitch,
     codexLaunchOnSwitch,
@@ -448,6 +502,10 @@ export function SettingsPage() {
     codebuddyAutoRefresh,
     codebuddyQuotaAlertEnabled,
     codebuddyQuotaAlertThreshold,
+    qoderQuotaAlertEnabled,
+    qoderQuotaAlertThreshold,
+    traeQuotaAlertEnabled,
+    traeQuotaAlertThreshold,
     cursorQuotaAlertEnabled,
     cursorQuotaAlertThreshold,
     geminiQuotaAlertEnabled,
@@ -617,9 +675,17 @@ export function SettingsPage() {
       setKiroAppPath(config.kiro_app_path || '');
       setCursorAppPath(config.cursor_app_path || '');
       setCodebuddyAppPath(config.codebuddy_app_path || '');
+      setQoderAppPath(config.qoder_app_path || '');
+      setTraeAppPath(config.trae_app_path || '');
       setCodebuddyAutoRefresh(String(config.codebuddy_auto_refresh_minutes ?? 10));
+      setQoderAutoRefresh(String(config.qoder_auto_refresh_minutes ?? 10));
+      setTraeAutoRefresh(String(config.trae_auto_refresh_minutes ?? 10));
       setCodebuddyQuotaAlertEnabled(config.codebuddy_quota_alert_enabled ?? false);
       setCodebuddyQuotaAlertThreshold(String(config.codebuddy_quota_alert_threshold ?? 20));
+      setQoderQuotaAlertEnabled(config.qoder_quota_alert_enabled ?? false);
+      setQoderQuotaAlertThreshold(String(config.qoder_quota_alert_threshold ?? 20));
+      setTraeQuotaAlertEnabled(config.trae_quota_alert_enabled ?? false);
+      setTraeQuotaAlertThreshold(String(config.trae_quota_alert_threshold ?? 20));
       setOpencodeSyncOnSwitch(config.opencode_sync_on_switch ?? true);
       setOpencodeAuthOverwriteOnSwitch(config.opencode_auth_overwrite_on_switch ?? true);
       setCodexLaunchOnSwitch(config.codex_launch_on_switch ?? true);
@@ -645,6 +711,8 @@ export function SettingsPage() {
       setWindsurfAutoRefreshCustomMode(false);
       setKiroAutoRefreshCustomMode(false);
       setCodebuddyAutoRefreshCustomMode(false);
+      setQoderAutoRefreshCustomMode(false);
+      setTraeAutoRefreshCustomMode(false);
       setCursorAutoRefreshCustomMode(false);
       setGeminiAutoRefreshCustomMode(false);
       setAutoSwitchThresholdCustomMode(false);
@@ -654,6 +722,8 @@ export function SettingsPage() {
       setWindsurfQuotaAlertThresholdCustomMode(false);
       setKiroQuotaAlertThresholdCustomMode(false);
       setCodebuddyQuotaAlertThresholdCustomMode(false);
+      setQoderQuotaAlertThresholdCustomMode(false);
+      setTraeQuotaAlertThresholdCustomMode(false);
       setCursorQuotaAlertThresholdCustomMode(false);
       setGeminiQuotaAlertThresholdCustomMode(false);
       // 同步语言
@@ -722,6 +792,10 @@ export function SettingsPage() {
       setCursorAppPath(path);
     } else if (target === 'codebuddy') {
       setCodebuddyAppPath(path);
+    } else if (target === 'qoder') {
+      setQoderAppPath(path);
+    } else if (target === 'trae') {
+      setTraeAppPath(path);
     } else {
       setOpencodeAppPath(path);
     }
@@ -742,6 +816,12 @@ export function SettingsPage() {
     }
     if (target === 'codebuddy') {
       return t('settings.general.codebuddyPathReset', '重置默认');
+    }
+    if (target === 'qoder') {
+      return t('settings.general.qoderPathReset', '重置默认');
+    }
+    if (target === 'trae') {
+      return t('settings.general.traePathReset', '重置默认');
     }
     if (target === 'opencode') {
       return t('settings.general.opencodePathReset', '重置默认');
@@ -804,6 +884,8 @@ export function SettingsPage() {
   const windsurfAutoRefreshIsPreset = REFRESH_PRESET_VALUES.includes(windsurfAutoRefresh);
   const kiroAutoRefreshIsPreset = REFRESH_PRESET_VALUES.includes(kiroAutoRefresh);
   const codebuddyAutoRefreshIsPreset = REFRESH_PRESET_VALUES.includes(codebuddyAutoRefresh);
+  const qoderAutoRefreshIsPreset = REFRESH_PRESET_VALUES.includes(qoderAutoRefresh);
+  const traeAutoRefreshIsPreset = REFRESH_PRESET_VALUES.includes(traeAutoRefresh);
   const cursorAutoRefreshIsPreset = REFRESH_PRESET_VALUES.includes(cursorAutoRefresh);
   const geminiAutoRefreshIsPreset = REFRESH_PRESET_VALUES.includes(geminiAutoRefresh);
   const autoSwitchThresholdIsPreset = THRESHOLD_PRESET_VALUES.includes(autoSwitchThreshold);
@@ -813,6 +895,8 @@ export function SettingsPage() {
   const windsurfQuotaAlertThresholdIsPreset = THRESHOLD_PRESET_VALUES.includes(windsurfQuotaAlertThreshold);
   const kiroQuotaAlertThresholdIsPreset = THRESHOLD_PRESET_VALUES.includes(kiroQuotaAlertThreshold);
   const codebuddyQuotaAlertThresholdIsPreset = THRESHOLD_PRESET_VALUES.includes(codebuddyQuotaAlertThreshold);
+  const qoderQuotaAlertThresholdIsPreset = THRESHOLD_PRESET_VALUES.includes(qoderQuotaAlertThreshold);
+  const traeQuotaAlertThresholdIsPreset = THRESHOLD_PRESET_VALUES.includes(traeQuotaAlertThreshold);
   const cursorQuotaAlertThresholdIsPreset = THRESHOLD_PRESET_VALUES.includes(cursorQuotaAlertThreshold);
   const geminiQuotaAlertThresholdIsPreset = THRESHOLD_PRESET_VALUES.includes(geminiQuotaAlertThreshold);
 
@@ -974,6 +1058,12 @@ export function SettingsPage() {
                 <div className="row-control">
                   <button className="btn btn-secondary" onClick={() => accountService.openDataFolder()}>
                     <FolderOpen size={16} />{t('common.open')}
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => window.dispatchEvent(new CustomEvent('app-request-navigate', { detail: 'storage' }))}
+                  >
+                    <HardDrive size={16} />{t('settings.general.storageTitle')}
                   </button>
                 </div>
               </div>
@@ -2291,6 +2381,382 @@ export function SettingsPage() {
                 </div>
               )}
             </div>
+              </div>
+
+              <div style={{ order: platformSettingsOrder.qoder }}>
+                <div className="group-title">{t('quickSettings.qoder.title', 'Qoder 设置')}</div>
+                <div className="settings-group">
+                  <div className="settings-row">
+                    <div className="row-label">
+                      <div className="row-title">{t('settings.general.qoderAutoRefresh', 'Qoder 自动刷新配额')}</div>
+                      <div className="row-desc">{t('settings.general.qoderAutoRefreshDesc', '后台自动更新频率')}</div>
+                    </div>
+                    <div className="row-control">
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        {qoderAutoRefreshCustomMode ? (
+                          <div className="settings-inline-input" style={{ minWidth: '120px', width: 'auto' }}>
+                            <input
+                              type="number"
+                              min={1}
+                              max={999}
+                              className="settings-select settings-select--input-mode settings-select--with-unit"
+                              value={qoderAutoRefresh}
+                              placeholder={t('quickSettings.inputMinutes', '输入分钟数')}
+                              onChange={(e) => setQoderAutoRefresh(sanitizeNumberInput(e.target.value))}
+                              onBlur={() => {
+                                const normalized = normalizeNumberInput(qoderAutoRefresh, 1, 999);
+                                if (REFRESH_PRESET_VALUES.includes(normalized)) {
+                                  setQoderAutoRefreshCustomMode(false);
+                                }
+                                setQoderAutoRefresh(normalized);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  const normalized = normalizeNumberInput(qoderAutoRefresh, 1, 999);
+                                  setQoderAutoRefreshCustomMode(false);
+                                  setQoderAutoRefresh(normalized);
+                                }
+                              }}
+                            />
+                            <span className="settings-input-unit">{t('settings.general.minutes')}</span>
+                          </div>
+                        ) : (
+                          <select
+                            className="settings-select"
+                            style={{ minWidth: '120px', width: 'auto' }}
+                            value={qoderAutoRefresh}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === 'custom') {
+                                setQoderAutoRefreshCustomMode(true);
+                                setQoderAutoRefresh(qoderAutoRefresh !== '-1' ? qoderAutoRefresh : '1');
+                                return;
+                              }
+                              setQoderAutoRefreshCustomMode(false);
+                              setQoderAutoRefresh(val);
+                            }}
+                          >
+                            {!qoderAutoRefreshIsPreset && (
+                              <option value={qoderAutoRefresh}>
+                                {qoderAutoRefresh} {t('settings.general.minutes')}
+                              </option>
+                            )}
+                            <option value="-1">{t('settings.general.autoRefreshDisabled')}</option>
+                            <option value="2">2 {t('settings.general.minutes')}</option>
+                            <option value="5">5 {t('settings.general.minutes')}</option>
+                            <option value="10">10 {t('settings.general.minutes')}</option>
+                            <option value="15">15 {t('settings.general.minutes')}</option>
+                            <option value="custom">{t('settings.general.autoRefreshCustom')}</option>
+                          </select>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="settings-row">
+                    <div className="row-label">
+                      <div className="row-title">{t('settings.general.qoderAppPath', 'Qoder 启动路径')}</div>
+                      <div className="row-desc">{t('settings.general.qoderAppPathDesc', '留空则使用默认路径')}</div>
+                    </div>
+                    <div className="row-control row-control--grow">
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1 }}>
+                        <input
+                          type="text"
+                          className="settings-input settings-input--path"
+                          value={qoderAppPath}
+                          placeholder={t('settings.general.qoderAppPathPlaceholder', '默认路径')}
+                          onChange={(e) => setQoderAppPath(e.target.value)}
+                        />
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => handlePickAppPath('qoder')}
+                          disabled={isAppPathResetDetecting('qoder')}
+                        >
+                          {t('settings.general.qoderPathSelect', '选择')}
+                        </button>
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => handleResetAppPath('qoder')}
+                          disabled={isAppPathResetDetecting('qoder')}
+                        >
+                          <RefreshCw size={16} className={isAppPathResetDetecting('qoder') ? 'spin' : undefined} />
+                          {isAppPathResetDetecting('qoder')
+                            ? t('common.loading', '加载中...')
+                            : getResetLabelByTarget('qoder')}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="settings-row">
+                    <div className="row-label">
+                      <div className="row-title">{t('quickSettings.quotaAlert.enable', '超额预警')}</div>
+                      <div className="row-desc">{t('quickSettings.quotaAlert.hint', '当当前账号任意模型配额低于阈值时，发送原生通知并在页面提示快捷切号。')}</div>
+                    </div>
+                    <div className="row-control">
+                      <label className="switch">
+                        <input
+                          type="checkbox"
+                          checked={qoderQuotaAlertEnabled}
+                          onChange={(e) => setQoderQuotaAlertEnabled(e.target.checked)}
+                        />
+                        <span className="slider"></span>
+                      </label>
+                    </div>
+                  </div>
+                  {qoderQuotaAlertEnabled && (
+                    <div className="settings-row" style={{ animation: 'fadeUp 0.3s ease both' }}>
+                      <div className="row-label">
+                        <div className="row-title">{t('quickSettings.quotaAlert.threshold', '预警阈值')}</div>
+                        <div className="row-desc">{t('quickSettings.quotaAlert.thresholdDesc', '任意模型配额低于此百分比时触发预警')}</div>
+                      </div>
+                      <div className="row-control">
+                        {qoderQuotaAlertThresholdCustomMode ? (
+                          <div className="settings-inline-input">
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              className="settings-select settings-select--input-mode settings-select--with-unit"
+                              value={qoderQuotaAlertThreshold}
+                              placeholder={t('quickSettings.inputPercent', '输入百分比')}
+                              onChange={(e) => setQoderQuotaAlertThreshold(sanitizeNumberInput(e.target.value))}
+                              onBlur={() => {
+                                const normalized = normalizeNumberInput(qoderQuotaAlertThreshold, 0, 100);
+                                if (THRESHOLD_PRESET_VALUES.includes(normalized)) {
+                                  setQoderQuotaAlertThresholdCustomMode(false);
+                                }
+                                setQoderQuotaAlertThreshold(normalized);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  const normalized = normalizeNumberInput(qoderQuotaAlertThreshold, 0, 100);
+                                  setQoderQuotaAlertThresholdCustomMode(false);
+                                  setQoderQuotaAlertThreshold(normalized);
+                                }
+                              }}
+                            />
+                            <span className="settings-input-unit">%</span>
+                          </div>
+                        ) : (
+                          <select
+                            className="settings-select"
+                            value={qoderQuotaAlertThreshold}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === 'custom') {
+                                setQoderQuotaAlertThresholdCustomMode(true);
+                                setQoderQuotaAlertThreshold(qoderQuotaAlertThreshold || '20');
+                                return;
+                              }
+                              setQoderQuotaAlertThresholdCustomMode(false);
+                              setQoderQuotaAlertThreshold(val);
+                            }}
+                          >
+                            {!qoderQuotaAlertThresholdIsPreset && (
+                              <option value={qoderQuotaAlertThreshold}>{qoderQuotaAlertThreshold}%</option>
+                            )}
+                            <option value="0">0%</option>
+                            <option value="20">20%</option>
+                            <option value="40">40%</option>
+                            <option value="60">60%</option>
+                            <option value="custom">{t('settings.general.autoRefreshCustom')}</option>
+                          </select>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ order: platformSettingsOrder.trae }}>
+                <div className="group-title">{t('quickSettings.trae.title', 'Trae 设置')}</div>
+                <div className="settings-group">
+                  <div className="settings-row">
+                    <div className="row-label">
+                      <div className="row-title">{t('settings.general.traeAutoRefresh', 'Trae 自动刷新配额')}</div>
+                      <div className="row-desc">{t('settings.general.traeAutoRefreshDesc', '后台自动更新频率')}</div>
+                    </div>
+                    <div className="row-control">
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        {traeAutoRefreshCustomMode ? (
+                          <div className="settings-inline-input" style={{ minWidth: '120px', width: 'auto' }}>
+                            <input
+                              type="number"
+                              min={1}
+                              max={999}
+                              className="settings-select settings-select--input-mode settings-select--with-unit"
+                              value={traeAutoRefresh}
+                              placeholder={t('quickSettings.inputMinutes', '输入分钟数')}
+                              onChange={(e) => setTraeAutoRefresh(sanitizeNumberInput(e.target.value))}
+                              onBlur={() => {
+                                const normalized = normalizeNumberInput(traeAutoRefresh, 1, 999);
+                                if (REFRESH_PRESET_VALUES.includes(normalized)) {
+                                  setTraeAutoRefreshCustomMode(false);
+                                }
+                                setTraeAutoRefresh(normalized);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  const normalized = normalizeNumberInput(traeAutoRefresh, 1, 999);
+                                  setTraeAutoRefreshCustomMode(false);
+                                  setTraeAutoRefresh(normalized);
+                                }
+                              }}
+                            />
+                            <span className="settings-input-unit">{t('settings.general.minutes')}</span>
+                          </div>
+                        ) : (
+                          <select
+                            className="settings-select"
+                            style={{ minWidth: '120px', width: 'auto' }}
+                            value={traeAutoRefresh}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === 'custom') {
+                                setTraeAutoRefreshCustomMode(true);
+                                setTraeAutoRefresh(traeAutoRefresh !== '-1' ? traeAutoRefresh : '1');
+                                return;
+                              }
+                              setTraeAutoRefreshCustomMode(false);
+                              setTraeAutoRefresh(val);
+                            }}
+                          >
+                            {!traeAutoRefreshIsPreset && (
+                              <option value={traeAutoRefresh}>
+                                {traeAutoRefresh} {t('settings.general.minutes')}
+                              </option>
+                            )}
+                            <option value="-1">{t('settings.general.autoRefreshDisabled')}</option>
+                            <option value="2">2 {t('settings.general.minutes')}</option>
+                            <option value="5">5 {t('settings.general.minutes')}</option>
+                            <option value="10">10 {t('settings.general.minutes')}</option>
+                            <option value="15">15 {t('settings.general.minutes')}</option>
+                            <option value="custom">{t('settings.general.autoRefreshCustom')}</option>
+                          </select>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="settings-row">
+                    <div className="row-label">
+                      <div className="row-title">{t('settings.general.traeAppPath', 'Trae 启动路径')}</div>
+                      <div className="row-desc">{t('settings.general.traeAppPathDesc', '留空则使用默认路径')}</div>
+                    </div>
+                    <div className="row-control row-control--grow">
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1 }}>
+                        <input
+                          type="text"
+                          className="settings-input settings-input--path"
+                          value={traeAppPath}
+                          placeholder={t('settings.general.traeAppPathPlaceholder', '默认路径')}
+                          onChange={(e) => setTraeAppPath(e.target.value)}
+                        />
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => handlePickAppPath('trae')}
+                          disabled={isAppPathResetDetecting('trae')}
+                        >
+                          {t('settings.general.traePathSelect', '选择')}
+                        </button>
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => handleResetAppPath('trae')}
+                          disabled={isAppPathResetDetecting('trae')}
+                        >
+                          <RefreshCw size={16} className={isAppPathResetDetecting('trae') ? 'spin' : undefined} />
+                          {isAppPathResetDetecting('trae')
+                            ? t('common.loading', '加载中...')
+                            : getResetLabelByTarget('trae')}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="settings-row">
+                    <div className="row-label">
+                      <div className="row-title">{t('quickSettings.quotaAlert.enable', '超额预警')}</div>
+                      <div className="row-desc">{t('quickSettings.quotaAlert.hint', '当当前账号任意模型配额低于阈值时，发送原生通知并在页面提示快捷切号。')}</div>
+                    </div>
+                    <div className="row-control">
+                      <label className="switch">
+                        <input
+                          type="checkbox"
+                          checked={traeQuotaAlertEnabled}
+                          onChange={(e) => setTraeQuotaAlertEnabled(e.target.checked)}
+                        />
+                        <span className="slider"></span>
+                      </label>
+                    </div>
+                  </div>
+                  {traeQuotaAlertEnabled && (
+                    <div className="settings-row" style={{ animation: 'fadeUp 0.3s ease both' }}>
+                      <div className="row-label">
+                        <div className="row-title">{t('quickSettings.quotaAlert.threshold', '预警阈值')}</div>
+                        <div className="row-desc">{t('quickSettings.quotaAlert.thresholdDesc', '任意模型配额低于此百分比时触发预警')}</div>
+                      </div>
+                      <div className="row-control">
+                        {traeQuotaAlertThresholdCustomMode ? (
+                          <div className="settings-inline-input">
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              className="settings-select settings-select--input-mode settings-select--with-unit"
+                              value={traeQuotaAlertThreshold}
+                              placeholder={t('quickSettings.inputPercent', '输入百分比')}
+                              onChange={(e) => setTraeQuotaAlertThreshold(sanitizeNumberInput(e.target.value))}
+                              onBlur={() => {
+                                const normalized = normalizeNumberInput(traeQuotaAlertThreshold, 0, 100);
+                                if (THRESHOLD_PRESET_VALUES.includes(normalized)) {
+                                  setTraeQuotaAlertThresholdCustomMode(false);
+                                }
+                                setTraeQuotaAlertThreshold(normalized);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  const normalized = normalizeNumberInput(traeQuotaAlertThreshold, 0, 100);
+                                  setTraeQuotaAlertThresholdCustomMode(false);
+                                  setTraeQuotaAlertThreshold(normalized);
+                                }
+                              }}
+                            />
+                            <span className="settings-input-unit">%</span>
+                          </div>
+                        ) : (
+                          <select
+                            className="settings-select"
+                            value={traeQuotaAlertThreshold}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === 'custom') {
+                                setTraeQuotaAlertThresholdCustomMode(true);
+                                setTraeQuotaAlertThreshold(traeQuotaAlertThreshold || '20');
+                                return;
+                              }
+                              setTraeQuotaAlertThresholdCustomMode(false);
+                              setTraeQuotaAlertThreshold(val);
+                            }}
+                          >
+                            {!traeQuotaAlertThresholdIsPreset && (
+                              <option value={traeQuotaAlertThreshold}>{traeQuotaAlertThreshold}%</option>
+                            )}
+                            <option value="0">0%</option>
+                            <option value="20">20%</option>
+                            <option value="40">40%</option>
+                            <option value="60">60%</option>
+                            <option value="custom">{t('settings.general.autoRefreshCustom')}</option>
+                          </select>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div style={{ order: platformSettingsOrder.cursor }}>

@@ -28,10 +28,12 @@ enum PlatformId {
     Cursor,
     Gemini,
     Codebuddy,
+    Qoder,
+    Trae,
 }
 
 impl PlatformId {
-    fn default_order() -> [Self; 8] {
+    fn default_order() -> [Self; 10] {
         [
             Self::Antigravity,
             Self::Codex,
@@ -41,6 +43,8 @@ impl PlatformId {
             Self::Cursor,
             Self::Gemini,
             Self::Codebuddy,
+            Self::Qoder,
+            Self::Trae,
         ]
     }
 
@@ -54,6 +58,8 @@ impl PlatformId {
             crate::modules::tray_layout::PLATFORM_CURSOR => Some(Self::Cursor),
             crate::modules::tray_layout::PLATFORM_GEMINI => Some(Self::Gemini),
             crate::modules::tray_layout::PLATFORM_CODEBUDDY => Some(Self::Codebuddy),
+            crate::modules::tray_layout::PLATFORM_QODER => Some(Self::Qoder),
+            crate::modules::tray_layout::PLATFORM_TRAE => Some(Self::Trae),
             _ => None,
         }
     }
@@ -68,6 +74,8 @@ impl PlatformId {
             Self::Cursor => crate::modules::tray_layout::PLATFORM_CURSOR,
             Self::Gemini => crate::modules::tray_layout::PLATFORM_GEMINI,
             Self::Codebuddy => crate::modules::tray_layout::PLATFORM_CODEBUDDY,
+            Self::Qoder => crate::modules::tray_layout::PLATFORM_QODER,
+            Self::Trae => crate::modules::tray_layout::PLATFORM_TRAE,
         }
     }
 
@@ -81,6 +89,8 @@ impl PlatformId {
             Self::Cursor => "Cursor",
             Self::Gemini => "Gemini",
             Self::Codebuddy => "CodeBuddy",
+            Self::Qoder => "Qoder",
+            Self::Trae => "Trae",
         }
     }
 
@@ -94,6 +104,8 @@ impl PlatformId {
             Self::Cursor => "cursor",
             Self::Gemini => "gemini",
             Self::Codebuddy => "codebuddy",
+            Self::Qoder => "qoder",
+            Self::Trae => "trae",
         }
     }
 }
@@ -408,6 +420,8 @@ fn get_account_display_info(platform: PlatformId, lang: &str) -> AccountDisplayI
         PlatformId::Cursor => build_cursor_display_info(lang),
         PlatformId::Gemini => build_gemini_display_info(lang),
         PlatformId::Codebuddy => build_codebuddy_display_info(lang),
+        PlatformId::Qoder => build_qoder_display_info(lang),
+        PlatformId::Trae => build_trae_display_info(lang),
     }
 }
 
@@ -1017,6 +1031,117 @@ fn build_codebuddy_display_info(lang: &str) -> AccountDisplayInfo {
     }
 }
 
+fn build_qoder_display_info(lang: &str) -> AccountDisplayInfo {
+    let accounts = crate::modules::qoder_account::list_accounts();
+    let bound_id = crate::modules::qoder_instance::load_default_settings()
+        .ok()
+        .and_then(|settings| settings.bind_account_id);
+
+    let account = bound_id
+        .as_deref()
+        .and_then(|id| {
+            let trimmed = id.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                accounts.iter().find(|item| item.id == trimmed).cloned()
+            }
+        })
+        .or_else(|| accounts.iter().max_by_key(|item| item.last_used).cloned());
+
+    let Some(account) = account else {
+        return AccountDisplayInfo {
+            account: format!("📧 {}", get_text("not_logged_in", lang)),
+            quota_lines: vec!["—".to_string()],
+        };
+    };
+
+    let mut quota_lines = Vec::new();
+    if let Some(plan) = account.plan_type.as_deref() {
+        let trimmed = plan.trim();
+        if !trimmed.is_empty() {
+            quota_lines.push(format!("Plan: {}", trimmed));
+        }
+    }
+
+    if let Some(pct) = account.credits_usage_percent {
+        let used_text = account
+            .credits_used
+            .map(|v| format!("{:.0}", v))
+            .unwrap_or_else(|| "--".to_string());
+        let total_text = account
+            .credits_total
+            .map(|v| format!("{:.0}", v))
+            .unwrap_or_else(|| "--".to_string());
+        quota_lines.push(format!(
+            "Credits: {:.0}% ({} / {})",
+            pct, used_text, total_text
+        ));
+    } else if let (Some(remaining), Some(total)) =
+        (account.credits_remaining, account.credits_total)
+    {
+        quota_lines.push(format!("Credits: {:.0} / {:.0}", remaining, total));
+    } else {
+        quota_lines.push(get_text("loading", lang));
+    }
+
+    let display_email = first_non_empty(&[
+        Some(account.email.as_str()),
+        account.display_name.as_deref(),
+        account.user_id.as_deref(),
+        Some(account.id.as_str()),
+    ])
+    .unwrap_or("—");
+
+    AccountDisplayInfo {
+        account: format!("📧 {}", display_email),
+        quota_lines,
+    }
+}
+
+fn build_trae_display_info(lang: &str) -> AccountDisplayInfo {
+    let accounts = crate::modules::trae_account::list_accounts();
+    let Some(account) = resolve_trae_current_account(&accounts) else {
+        return AccountDisplayInfo {
+            account: format!("📧 {}", get_text("not_logged_in", lang)),
+            quota_lines: vec!["—".to_string()],
+        };
+    };
+
+    let mut quota_lines = Vec::new();
+    if let Some(plan) = account.plan_type.as_deref() {
+        let trimmed = plan.trim();
+        if !trimmed.is_empty() {
+            quota_lines.push(format!("Plan: {}", trimmed));
+        }
+    }
+
+    if let Some(reset_ts) = account.plan_reset_at {
+        quota_lines.push(format!(
+            "{} {}",
+            get_text("subscription_reset", lang),
+            format_reset_time_from_ts(lang, Some(reset_ts))
+        ));
+    }
+
+    if quota_lines.is_empty() {
+        quota_lines.push(get_text("loading", lang));
+    }
+
+    let display_email = first_non_empty(&[
+        Some(account.email.as_str()),
+        account.nickname.as_deref(),
+        account.user_id.as_deref(),
+        Some(account.id.as_str()),
+    ])
+    .unwrap_or("—");
+
+    AccountDisplayInfo {
+        account: format!("📧 {}", display_email),
+        quota_lines,
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 struct CursorTrayUsage {
     total_used_percent: Option<i32>,
@@ -1292,6 +1417,26 @@ fn resolve_cursor_current_account(
     accounts: &[crate::models::cursor::CursorAccount],
 ) -> Option<crate::models::cursor::CursorAccount> {
     if let Ok(settings) = crate::modules::cursor_instance::load_default_settings() {
+        if let Some(bind_id) = settings.bind_account_id {
+            let bind_id = bind_id.trim();
+            if !bind_id.is_empty() {
+                if let Some(account) = accounts.iter().find(|account| account.id == bind_id) {
+                    return Some(account.clone());
+                }
+            }
+        }
+    }
+
+    accounts
+        .iter()
+        .max_by_key(|account| account.last_used)
+        .cloned()
+}
+
+fn resolve_trae_current_account(
+    accounts: &[crate::models::trae::TraeAccount],
+) -> Option<crate::models::trae::TraeAccount> {
+    if let Ok(settings) = crate::modules::trae_instance::load_default_settings() {
         if let Some(bind_id) = settings.bind_account_id {
             let bind_id = bind_id.trim();
             if !bind_id.is_empty() {

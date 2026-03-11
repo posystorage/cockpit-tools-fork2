@@ -163,7 +163,9 @@
       "installing": "Yükleniyor"
     },
     "gemini": "İkizler burcu",
-    "codebuddy": "CodeBuddy Hesapları"
+    "codebuddy": "CodeBuddy Hesapları",
+    "qoder": "Qoder Hesapları",
+    "trae": "Trae"
   },
   "platformLayout": {
     "title": "Platform Düzeni",
@@ -469,7 +471,15 @@
       "codebuddyAppPathDesc": "Varsayılan yol için boş bırakın",
       "codebuddyAppPathPlaceholder": "Varsayılan yol",
       "codebuddyPathSelect": "Seç",
-      "codebuddyPathReset": "Varsayılana sıfırla"
+      "codebuddyPathReset": "Varsayılana sıfırla",
+      "qoderPathReset": "Varsayılana sıfırla",
+      "traeAutoRefresh": "Trae Kota Otomatik Yenileme",
+      "traeAutoRefreshDesc": "Arka plan otomatik yenileme aralığı",
+      "traeAppPath": "Trae Başlatma Yolu",
+      "traeAppPathDesc": "Varsayılan yol için boş bırakın",
+      "traeAppPathPlaceholder": "Varsayılan yol",
+      "traePathSelect": "Seç",
+      "traePathReset": "Varsayılana sıfırla"
     },
     "network": {
       "apiTitle": "Yerçekimine Karşı Kokpit API'si",
@@ -505,7 +515,21 @@
       "download": "İndir",
       "checkFailed": "Güncelleme kontrolü başarısız oldu"
     },
-    "saveSettings": "Ayarları Kaydet"
+    "saveSettings": "Ayarları Kaydet",
+    "storage": {
+      "category": {
+        "accountData": "Hesap verileri",
+        "logs": "Günlükler",
+        "cacheQuota": "Önbellek ve kota",
+        "systemConfig": "Sistem yapılandırması",
+        "other": "Diğer"
+      },
+      "primarySource": "Ana kaynak",
+      "instancePlatforms": "Örnek platformları",
+      "rootEntries": "Dizin dökümü",
+      "categoriesTitle": "İş kategorileri",
+      "scanTime": "Son tarama: {{time}}"
+    }
   },
   "appPath": {
     "missing": {
@@ -1399,6 +1423,14 @@
       "saveFailed": "Yapılandırma kaydedilemedi: {{error}}",
       "pickPathFailed": "Yol seçilemedi: {{error}}",
       "resetPathFailed": "Yol sıfırlanamadı: {{error}}"
+    },
+    "qoder": {
+      "title": "Qoder Ayarları",
+      "appPath": "Qoder Yolu"
+    },
+    "trae": {
+      "title": "Trae Ayarları",
+      "appPath": "Trae Yolu"
     }
   },
   "quotaAlert": {
@@ -2120,6 +2152,64 @@
       "status": {
         "loginConfirm": "Lütfen bu sayfada giriş ve yetkilendirmeyi tamamlayın."
       }
+    }
+  },
+  "qoder": {
+    "title": "Qoder Hesap Yönetimi",
+    "comingSoon": {
+      "title": "Çoklu Örnek Yakında",
+      "desc": "Farklı hesaplarla birden fazla Qoder.app örneğini aynı anda çalıştırın."
+    },
+    "instances": {
+      "unsupported": {
+        "descPlatform": "Qoder çoklu örnek yalnızca macOS, Windows ve Linux'ta desteklenir."
+      }
+    },
+    "oauth": {
+      "hint": "Açılan tarayıcı sayfasında oturum açmayı tamamlayın: oturum açma sayfası otomatik olarak açılmazsa “Giriş bağlantısını kopyala” seçeneğine tıklayın, bağlantıyı kopyalayıp tarayıcıya yapıştırarak oturum açmayı tamamlayın.",
+      "copyLoginUrl": "Giriş bağlantısını kopyala"
+    },
+    "usageOverview": {
+      "title": "Kullanım özeti",
+      "viewDetails": "Ayrıntıları görüntüle",
+      "includedCredits": "Plana dahil krediler",
+      "usedOfTotal": "{{used}} / {{total}}",
+      "usedEmpty": "-- / --",
+      "upgradeHint": "Aylık kotayı artırmak için planı yükseltin",
+      "upgradeAction": "Yükselt"
+    },
+    "flowNotice": {
+      "title": "Qoder hesap kilavuzu (genisletmek/daraltmak icin tiklayin)",
+      "desc": "Resmi OAuth girisini (callback), yerel ice aktarmayi, JSON ice aktarmayi, hesap degistirme enjeksiyonunu, coklu ornek baglamayi ve kota genel gorunumunu destekler. Giris akisi Qoder istemcisinin gercek disk verilerini izler.",
+      "permission": "Izin kapsami: hesap degistirme ve oturum enjeksiyonu icin Qoder yerel kimlik dogrulama depolamasini (auth kimlik bilgileri ve kullanici bilgileri) okur; tum veriler cihazinizda yerel olarak islenir.",
+      "network": "Ag kapsami: OAuth girisi, callback akisini tamamlamak icin resmi Qoder hizmetlerine erisim gerektirir; kota sorgulari Qoder API kullanir. Yerel anahtarlar veya kimlik bilgileri yuklenmez."
+    }
+  },
+  "trae": {
+    "title": "Trae hesap yonetimi",
+    "empty": {
+      "description": "Trae hesaplarinizi yonetmeye baslamak icin \"Hesap ekle\" dugmesine tiklayin veya yerel Trae verilerinden ya da bir JSON dosyasindan ice aktarın."
+    },
+    "addModal": {
+      "title": "Trae hesabi ekle"
+    },
+    "oauth": {
+      "desc": "Asagidaki dugmeye tiklayin ve tarayicida Trae OAuth yetkilendirmesini tamamlayin."
+    },
+    "import": {
+      "localDesc": "Yerel Trae yapilandirma dizininden oturum acik hesabi, plan bilgilerini ve onbellekteki kota verilerini ice aktarir.",
+      "jsonTab": "JSON dosyasi"
+    },
+    "quota": {
+      "usedOfTotal": "Kullanilan $ {{used}} / $ {{total}}",
+      "resetAt": "Sifirlama zamani: {{date}}",
+      "resetUnknown": "Sifirlama zamani bilinmiyor"
+    },
+    "flowNotice": {
+      "title": "Trae hesap kilavuzu (genisletmek/daraltmak icin tiklayin)",
+      "desc": "Resmi OAuth girisini, yerel ice aktarmayi, JSON ice aktarmayi ve yerel enjeksiyonla hesap degistirmeyi destekler. Hesap degisiminde veriler Trae istemcisinin gercek disk kurallarina gore yeniden yazilir.",
+      "permission": "Izin kapsami: hesap ice aktarma, hesap degistirme enjeksiyonu ve plan gosterimi icin yerel Trae storage.json icindeki girisle ilgili alanlari okur ve yazar. Tum veriler cihazinizda yerel olarak islenir.",
+      "network": "Ag kapsami: OAuth girisi, belirtec yenileme ve plan sorgulari resmi Trae API'lerini cagirir. Yerel hesap dosyalari ve ham depolama icerigi ucuncu taraf hizmetlere yuklenmez."
     }
   }
 }

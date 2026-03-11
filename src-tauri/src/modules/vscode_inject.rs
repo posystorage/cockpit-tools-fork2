@@ -60,6 +60,7 @@ enum SafeStorageReadMode {
     Default,
     AntigravityOnly,
     CodeBuddyOnly,
+    QoderOnly,
 }
 
 // PBKDF2-HMAC-SHA1(1 iteration, key = "peanuts", salt = "saltysalt")
@@ -374,6 +375,18 @@ fn build_macos_safe_storage_candidates(
         ];
     }
 
+    if matches!(mode, SafeStorageReadMode::QoderOnly) {
+        return vec![
+            ("Qoder Safe Storage".to_string(), Some("Qoder".to_string())),
+            ("Qoder Safe Storage".to_string(), Some("qoder".to_string())),
+            ("Qoder Safe Storage".to_string(), None),
+            (
+                "Qoder Safe Storage".to_string(),
+                Some("Qoder Safe Storage".to_string()),
+            ),
+        ];
+    }
+
     let mut app_names: Vec<String> = Vec::new();
     if let Some(root) = data_root {
         if let Some(name) = root.file_name().and_then(|value| value.to_str()) {
@@ -462,6 +475,7 @@ fn run_command_get_trimmed(program: &str, args: &[&str]) -> Option<String> {
 fn get_linux_v11_key(mode: SafeStorageReadMode) -> Option<[u8; 16]> {
     let app_names: &[&str] = match mode {
         SafeStorageReadMode::CodeBuddyOnly => &["CodeBuddy", "codebuddy"],
+        SafeStorageReadMode::QoderOnly => &["Qoder", "qoder"],
         _ => &["code", "Code", "code-oss", "Code - OSS", "VSCodium"],
     };
 
@@ -814,6 +828,67 @@ pub fn read_codebuddy_secret_storage_value(
     )
 }
 
+fn resolve_data_root_from_state_db_path(db_path: &Path) -> Result<&Path, String> {
+    db_path
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.parent())
+        .ok_or_else(|| {
+            format!(
+                "Cannot determine data root from db path: {}",
+                db_path.display()
+            )
+        })
+}
+
+fn read_secret_storage_value_by_db_path_and_mode(
+    db_path: &Path,
+    db_key: &str,
+    mode: SafeStorageReadMode,
+) -> Result<Option<String>, String> {
+    if !db_path.exists() {
+        return Ok(None);
+    }
+
+    let data_root = resolve_data_root_from_state_db_path(db_path)?;
+    let conn = Connection::open(db_path).map_err(|e| {
+        format!(
+            "Failed to open VS Code database {}: {}",
+            db_path.display(),
+            e
+        )
+    })?;
+
+    let raw_value: Option<String> = match conn.query_row(
+        "SELECT value FROM ItemTable WHERE key = ?1",
+        [db_key],
+        |row| row.get(0),
+    ) {
+        Ok(value) => Some(value),
+        Err(rusqlite::Error::QueryReturnedNoRows) => None,
+        Err(err) => {
+            return Err(format!(
+                "Failed to query VS Code secret key '{}': {}",
+                db_key, err
+            ))
+        }
+    };
+
+    match raw_value {
+        Some(value) => {
+            decode_secret_storage_value_with_mode(&value, Some(data_root), mode).map(Some)
+        }
+        None => Ok(None),
+    }
+}
+
+pub fn read_qoder_secret_storage_value_by_db_path(
+    db_path: &Path,
+    db_key: &str,
+) -> Result<Option<String>, String> {
+    read_secret_storage_value_by_db_path_and_mode(db_path, db_key, SafeStorageReadMode::QoderOnly)
+}
+
 fn load_existing_sessions(
     existing_encrypted_value: Option<&str>,
     data_root: Option<&Path>,
@@ -915,6 +990,14 @@ pub fn inject_secret_to_state_db_for_codebuddy(
         plaintext,
         SafeStorageReadMode::CodeBuddyOnly,
     )
+}
+
+pub fn inject_secret_to_state_db_for_qoder(
+    db_path: &std::path::Path,
+    db_key: &str,
+    plaintext: &str,
+) -> Result<(), String> {
+    inject_secret_to_state_db_with_mode(db_path, db_key, plaintext, SafeStorageReadMode::QoderOnly)
 }
 
 fn inject_secret_to_state_db_with_mode(

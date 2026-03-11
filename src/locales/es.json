@@ -163,7 +163,9 @@
       "installing": "Instalando"
     },
     "gemini": "Cuentas Gemini",
-    "codebuddy": "Cuentas de CodeBuddy"
+    "codebuddy": "Cuentas de CodeBuddy",
+    "qoder": "Cuentas de Qoder",
+    "trae": "Trae"
   },
   "platformLayout": {
     "title": "Diseño de plataformas",
@@ -469,7 +471,15 @@
       "codebuddyAppPathDesc": "Déjelo vacío para usar la ruta predeterminada",
       "codebuddyAppPathPlaceholder": "Ruta predeterminada",
       "codebuddyPathSelect": "Seleccionar",
-      "codebuddyPathReset": "Restablecer por defecto"
+      "codebuddyPathReset": "Restablecer por defecto",
+      "qoderPathReset": "Restablecer por defecto",
+      "traeAutoRefresh": "Actualización automática de cuota de Trae",
+      "traeAutoRefreshDesc": "Frecuencia de actualización en segundo plano",
+      "traeAppPath": "Ruta de inicio de Trae",
+      "traeAppPathDesc": "Déjelo vacío para usar la ruta predeterminada",
+      "traeAppPathPlaceholder": "Ruta predeterminada",
+      "traePathSelect": "Seleccionar",
+      "traePathReset": "Restablecer por defecto"
     },
     "network": {
       "apiTitle": "API de cabina antigravedad",
@@ -505,7 +515,21 @@
       "download": "Descargar",
       "checkFailed": "Error al buscar actualizaciones"
     },
-    "saveSettings": "Guardar Ajustes"
+    "saveSettings": "Guardar Ajustes",
+    "storage": {
+      "category": {
+        "accountData": "Datos de cuenta",
+        "logs": "Registros",
+        "cacheQuota": "Caché y cuota",
+        "systemConfig": "Configuración del sistema",
+        "other": "Otros"
+      },
+      "primarySource": "Origen principal",
+      "instancePlatforms": "Plataformas de instancias",
+      "rootEntries": "Desglose del directorio",
+      "categoriesTitle": "Categorías operativas",
+      "scanTime": "Último escaneo: {{time}}"
+    }
   },
   "appPath": {
     "missing": {
@@ -1399,6 +1423,14 @@
       "saveFailed": "Error al guardar la configuración: {{error}}",
       "pickPathFailed": "Error al seleccionar la ruta: {{error}}",
       "resetPathFailed": "Error al restablecer la ruta: {{error}}"
+    },
+    "qoder": {
+      "title": "Configuración de Qoder",
+      "appPath": "Ruta de Qoder"
+    },
+    "trae": {
+      "title": "Configuración de Trae",
+      "appPath": "Ruta de Trae"
     }
   },
   "quotaAlert": {
@@ -2120,6 +2152,64 @@
       "status": {
         "loginConfirm": "Completa el inicio de sesión y la autorización en esta página."
       }
+    }
+  },
+  "qoder": {
+    "title": "Gestión de cuentas de Qoder",
+    "comingSoon": {
+      "title": "Multi-Instancia Próximamente",
+      "desc": "Ejecute múltiples instancias de Qoder.app con diferentes cuentas simultáneamente."
+    },
+    "instances": {
+      "unsupported": {
+        "descPlatform": "Las múltiples instancias de Qoder solo son compatibles con macOS, Windows y Linux."
+      }
+    },
+    "oauth": {
+      "hint": "Completa el inicio de sesión en la página del navegador abierta: si la página de inicio de sesión no se abrió automáticamente, haz clic en «Copiar enlace de inicio de sesión», copia el enlace y pégalo en el navegador para completar el inicio de sesión.",
+      "copyLoginUrl": "Copiar enlace de inicio de sesión"
+    },
+    "usageOverview": {
+      "title": "Resumen de uso",
+      "viewDetails": "Ver detalles",
+      "includedCredits": "Créditos incluidos en el plan",
+      "usedOfTotal": "{{used}} / {{total}}",
+      "usedEmpty": "-- / --",
+      "upgradeHint": "Mejora el plan para aumentar la cuota mensual",
+      "upgradeAction": "Mejorar"
+    },
+    "flowNotice": {
+      "title": "Guia de cuentas de Qoder (haz clic para expandir o contraer)",
+      "desc": "Admite inicio de sesion oficial por OAuth (callback), importacion local, importacion JSON, inyeccion para cambio de cuenta, vinculacion multiinstancia y vista general de cuota. El flujo de inicio de sesion sigue los datos reales almacenados por el cliente de Qoder.",
+      "permission": "Alcance de permisos: lee el almacenamiento local de autenticacion de Qoder (credenciales auth e informacion del usuario) para cambio de cuenta e inyeccion de sesion; todos los datos se procesan localmente en tu equipo.",
+      "network": "Alcance de red: el inicio de sesion OAuth requiere acceso a los servicios oficiales de Qoder para completar el callback; las consultas de cuota usan la API de Qoder. No se suben claves ni credenciales locales."
+    }
+  },
+  "trae": {
+    "title": "Gestion de cuentas de Trae",
+    "empty": {
+      "description": "Haz clic en \"Agregar cuenta\" para empezar a gestionar tus cuentas de Trae, o importalas desde datos locales de Trae o desde un archivo JSON."
+    },
+    "addModal": {
+      "title": "Agregar cuenta de Trae"
+    },
+    "oauth": {
+      "desc": "Haz clic en el boton inferior y completa la autorizacion OAuth de Trae en el navegador."
+    },
+    "import": {
+      "localDesc": "Importa la cuenta conectada actualmente, la informacion del plan y los datos de cuota en cache desde el directorio de configuracion local de Trae.",
+      "jsonTab": "Archivo JSON"
+    },
+    "quota": {
+      "usedOfTotal": "Usado $ {{used}} de $ {{total}}",
+      "resetAt": "Reinicio: {{date}}",
+      "resetUnknown": "Hora de reinicio desconocida"
+    },
+    "flowNotice": {
+      "title": "Guia de cuentas de Trae (haz clic para expandir o contraer)",
+      "desc": "Admite inicio de sesion oficial por OAuth, importacion local, importacion JSON y cambio de cuenta mediante inyeccion local. Al cambiar de cuenta, se reescribe siguiendo las reglas reales de almacenamiento del cliente Trae.",
+      "permission": "Alcance de permisos: lee y escribe campos relacionados con el inicio de sesion en el storage.json local de Trae para importar cuentas, inyectar el cambio de cuenta y mostrar el plan. Todos los datos se procesan localmente en tu equipo.",
+      "network": "Alcance de red: el inicio de sesion OAuth, la renovacion del token y las consultas del plan llaman a las API oficiales de Trae. Los archivos locales de cuenta y el contenido bruto del almacenamiento no se suben a servicios de terceros."
     }
   }
 }

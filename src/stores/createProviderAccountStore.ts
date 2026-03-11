@@ -15,8 +15,8 @@ type ProviderUsage = {
 };
 
 type ProviderAccountAugmentation = {
-  email?: string;
-  plan_type?: string;
+  email?: string | null;
+  plan_type?: string | null;
   quota?: unknown;
 };
 

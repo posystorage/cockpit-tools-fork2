@@ -32,6 +32,8 @@ const PAGE_PLATFORM_MAP: Partial<Record<Page, PlatformId>> = {
   cursor: 'cursor',
   gemini: 'gemini',
   codebuddy: 'codebuddy',
+  qoder: 'qoder',
+  trae: 'trae',
 };
 
 export function SideNav({
@@ -251,7 +253,7 @@ export function SideNav({
 
       <div className="nav-footer">
         <button
-          className={`nav-item ${page === 'settings' ? 'active' : ''}`}
+          className={`nav-item ${page === 'settings' || page === 'storage' ? 'active' : ''}`}
           onClick={() => setPage('settings')}
           title={t('nav.settings')}
         >
