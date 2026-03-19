@@ -7,6 +7,17 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [0.16.3] - 2026-03-19
+
+### Added
+- **Kiro Enterprise/IdC local-import accounts now support AWS IAM Identity Center OIDC refresh path**: the refresh flow now prefers OIDC token refresh with local IdC context and falls back to Kiro `refreshToken` endpoint for compatibility.
+
+### Changed
+- **Kiro plan/tier badge text now follows raw subscription values first**: account and instance views now prioritize `plan_name`/`plan_tier`/usage raw labels to stay aligned with official client naming.
+- **Kiro import parser now keeps Enterprise refresh context fields**: JSON import now carries `authMethod`, `login_option`, `startUrl`, `client_secret`, and related IdC fields for post-import refresh continuity.
+- **Kiro flow-notice localization now reflects actual Enterprise refresh network scope across all supported languages**: wording now explicitly covers AWS OIDC calls and required OIDC auth fields.
+
+---
 ## [0.16.2] - 2026-03-19
 
 ### Added

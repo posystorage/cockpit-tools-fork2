@@ -1709,9 +1709,9 @@
     },
     "flowNotice": {
       "title": "Kiro 账号管理说明（点击展开/收起）",
-      "desc": "账号切换会在本机读写 Kiro 登录文件与实例配置；OAuth 授权与配额刷新会调用 Kiro 官方接口。",
+      "desc": "账号切换会在本机读写 Kiro 登录文件与实例配置；OAuth 授权与配额刷新会调用 Kiro 官方接口。对于 Enterprise/IdC 账号，刷新还会调用 AWS IAM Identity Center OIDC 接口。",
       "reason": "处理路径包括 ~/.aws/sso/cache/kiro-auth-token.json、实例目录 profile.json，以及 state.vscdb 中 kiro.kiroAgent 条目。",
-      "storage": "处理数据包括 Kiro 登录会话与配额信息；请求 Kiro 官方接口时会发送必要认证字段（如 code、refreshToken、accessToken、profileArn）。"
+      "storage": "处理数据包括 Kiro 登录会话与配额信息；请求 Kiro 官方接口时会发送必要认证字段（如 code、refreshToken、accessToken、profileArn）。Enterprise/IdC 刷新会额外发送 OIDC 必要字段（如 client_id、client_secret、refresh_token）。"
     },
     "title": "Kiro 账号管理",
     "instances": {

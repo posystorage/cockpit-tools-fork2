@@ -1616,9 +1616,9 @@
     },
     "flowNotice": {
       "title": "دليل إدارة حساب Kiro (انقر للتوسيع/الطي)",
-      "desc": "يقرأ تبديل الحساب ويكتب ملفات مصادقة Kiro المحلية وإعدادات المثيل على هذا الجهاز؛ كما يستدعي واجهات Kiro الرسمية أثناء تسجيل الدخول عبر OAuth أو تحديث الحصص.",
+      "desc": "يقرأ تبديل الحساب ويكتب ملفات مصادقة Kiro المحلية وإعدادات المثيل على هذا الجهاز؛ كما يستدعي واجهات Kiro الرسمية أثناء تسجيل الدخول عبر OAuth أو تحديث الحصص. وبالنسبة لحسابات Enterprise/IdC، فإن عملية التحديث تستدعي أيضًا واجهات OIDC الخاصة بـ AWS IAM Identity Center.",
       "reason": "تشمل مسارات المعالجة: ~/.aws/sso/cache/kiro-auth-token.json، وملف profile.json الخاص بالمثيل، والبند kiro.kiroAgent داخل state.vscdb.",
-      "storage": "تشمل البيانات المعالجة معلومات جلسة Kiro والحصة؛ وعند طلب واجهات Kiro الرسمية تُرسل حقول مصادقة لازمة (مثل code وrefreshToken وaccessToken وprofileArn)."
+      "storage": "تشمل البيانات المعالجة معلومات جلسة Kiro والحصة؛ وعند طلب واجهات Kiro الرسمية تُرسل حقول مصادقة لازمة (مثل code وrefreshToken وaccessToken وprofileArn). كما أن تحديث Enterprise/IdC يرسل حقول OIDC اللازمة (مثل client_id وclient_secret وrefresh_token)."
     },
     "title": "إدارة حسابات Kiro",
     "instances": {

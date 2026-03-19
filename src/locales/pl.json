@@ -1616,9 +1616,9 @@
     },
     "flowNotice": {
       "title": "Przewodnik konta Kiro (kliknij, aby rozwinąć/zwinąć)",
-      "desc": "Przełączanie konta odczytuje i zapisuje lokalne pliki uwierzytelniania Kiro oraz ustawienia instancji na tym urządzeniu; logowanie OAuth i odświeżanie limitów wywołują oficjalne API Kiro.",
+      "desc": "Przełączanie konta odczytuje i zapisuje lokalne pliki uwierzytelniania Kiro oraz ustawienia instancji na tym urządzeniu; logowanie OAuth i odświeżanie limitów wywołują oficjalne API Kiro. W przypadku kont Enterprise/IdC odświeżanie dodatkowo wywołuje interfejsy OIDC AWS IAM Identity Center.",
       "reason": "Przetwarzane ścieżki obejmują ~/.aws/sso/cache/kiro-auth-token.json, plik profile.json instancji oraz wpis kiro.kiroAgent w state.vscdb.",
-      "storage": "Przetwarzane dane obejmują informacje o sesji i limitach Kiro; żądania do oficjalnych API Kiro wysyłają wymagane pola uwierzytelniające (np. code, refreshToken, accessToken i profileArn)."
+      "storage": "Przetwarzane dane obejmują informacje o sesji i limitach Kiro; żądania do oficjalnych API Kiro wysyłają wymagane pola uwierzytelniające (np. code, refreshToken, accessToken i profileArn). Odświeżanie Enterprise/IdC dodatkowo wysyła wymagane pola OIDC (np. client_id, client_secret i refresh_token)."
     },
     "title": "Zarządzanie kontem Kiro",
     "instances": {

@@ -1709,9 +1709,9 @@
     },
     "flowNotice": {
       "title": "Kiro account guide (click to expand/collapse)",
-      "desc": "Account switching reads and writes local Kiro auth files and instance settings on this device; OAuth login and quota refresh call Kiro official APIs.",
+      "desc": "Account switching reads and writes local Kiro auth files and instance settings on this device; OAuth login and quota refresh call Kiro official APIs. For Enterprise/IdC accounts, refresh also calls AWS IAM Identity Center OIDC APIs.",
       "reason": "Processing paths include ~/.aws/sso/cache/kiro-auth-token.json, instance profile.json, and the kiro.kiroAgent entry in state.vscdb.",
-      "storage": "Processed data includes Kiro session and quota information; requests to Kiro official APIs send required auth fields (such as code, refreshToken, accessToken, and profileArn)."
+      "storage": "Processed data includes Kiro session and quota information; requests to Kiro official APIs send required auth fields (such as code, refreshToken, accessToken, and profileArn). Enterprise/IdC refresh additionally sends required OIDC fields (such as client_id, client_secret, and refresh_token)."
     },
     "title": "Kiro Account Management",
     "instances": {

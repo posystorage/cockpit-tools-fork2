@@ -1616,9 +1616,9 @@
     },
     "flowNotice": {
       "title": "Kiro 帳號管理說明（點擊展開/收起）",
-      "desc": "帳號切換會在本機讀寫 Kiro 登入檔與實例設定；OAuth 登入與配額刷新會呼叫 Kiro 官方介面。",
+      "desc": "帳號切換會在本機讀寫 Kiro 登入檔與實例設定；OAuth 登入與配額刷新會呼叫 Kiro 官方介面。對於 Enterprise/IdC 帳號，刷新也會呼叫 AWS IAM Identity Center OIDC 介面。",
       "reason": "處理路徑包含 ~/.aws/sso/cache/kiro-auth-token.json、實例目錄 profile.json，以及 state.vscdb 中的 kiro.kiroAgent 條目。",
-      "storage": "處理資料包含 Kiro 登入會話與配額資訊；請求 Kiro 官方介面時會傳送必要認證欄位（如 code、refreshToken、accessToken、profileArn）。"
+      "storage": "處理資料包含 Kiro 登入會話與配額資訊；請求 Kiro 官方介面時會傳送必要認證欄位（如 code、refreshToken、accessToken、profileArn）。Enterprise/IdC 刷新也會額外傳送 OIDC 必要欄位（如 client_id、client_secret、refresh_token）。"
     },
     "title": "Kiro 帳戶管理",
     "instances": {

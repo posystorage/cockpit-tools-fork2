@@ -1616,9 +1616,9 @@
     },
     "flowNotice": {
       "title": "Průvodce správou účtu Kiro (kliknutím rozbalit/sbalit)",
-      "desc": "Přepnutí účtu čte a zapisuje místní autorizační soubory Kiro a nastavení instance na tomto zařízení; při OAuth přihlášení a obnovení kvót volá oficiální API Kiro.",
+      "desc": "Přepnutí účtu čte a zapisuje místní autorizační soubory Kiro a nastavení instance na tomto zařízení; při OAuth přihlášení a obnovení kvót volá oficiální API Kiro. U účtů Enterprise/IdC obnovení navíc volá i rozhraní AWS IAM Identity Center OIDC.",
       "reason": "Zpracovávané cesty zahrnují ~/.aws/sso/cache/kiro-auth-token.json, soubor profile.json instance a položku kiro.kiroAgent v state.vscdb.",
-      "storage": "Zpracovávaná data zahrnují informace o relaci a kvótách Kiro; při volání oficiálních API Kiro se odesílají nezbytná autentizační pole (např. code, refreshToken, accessToken a profileArn)."
+      "storage": "Zpracovávaná data zahrnují informace o relaci a kvótách Kiro; při volání oficiálních API Kiro se odesílají nezbytná autentizační pole (např. code, refreshToken, accessToken a profileArn). Obnovení Enterprise/IdC navíc odesílá nezbytná pole OIDC (např. client_id, client_secret a refresh_token)."
     },
     "title": "Správa účtu Kiro",
     "instances": {

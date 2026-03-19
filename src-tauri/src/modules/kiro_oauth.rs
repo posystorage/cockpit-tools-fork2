@@ -15,6 +15,7 @@ use crate::modules::{kiro_account, logger};
 const KIRO_AUTH_PORTAL_URL: &str = "https://app.kiro.dev/signin";
 const KIRO_TOKEN_ENDPOINT: &str = "https://prod.us-east-1.auth.desktop.kiro.dev/oauth/token";
 const KIRO_REFRESH_ENDPOINT: &str = "https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken";
+const KIRO_AWS_OIDC_TOKEN_ENDPOINT_FMT: &str = "https://oidc.{region}.amazonaws.com/token";
 const KIRO_RUNTIME_DEFAULT_ENDPOINT: &str = "https://q.us-east-1.amazonaws.com";
 const KIRO_ACCOUNT_STATUS_NORMAL: &str = "normal";
 const KIRO_ACCOUNT_STATUS_BANNED: &str = "banned";
@@ -556,6 +557,125 @@ fn provider_from_login_option(login_option: &str) -> Option<String> {
     }
 }
 
+fn ensure_expires_at_from_expires_in(token: &mut Value) {
+    let Some(obj) = token.as_object_mut() else {
+        return;
+    };
+    if obj.contains_key("expiresAt") || obj.contains_key("expires_at") {
+        return;
+    }
+
+    let expires_in_seconds = obj
+        .get("expiresIn")
+        .or_else(|| obj.get("expires_in"))
+        .and_then(|value| {
+            value
+                .as_i64()
+                .or_else(|| value.as_u64().map(|n| n as i64))
+                .or_else(|| value.as_str().and_then(|raw| raw.trim().parse::<i64>().ok()))
+        })
+        .unwrap_or(0);
+    if expires_in_seconds <= 0 {
+        return;
+    }
+
+    let expires_at = chrono::Utc::now() + chrono::Duration::seconds(expires_in_seconds);
+    obj.insert(
+        "expiresAt".to_string(),
+        Value::String(expires_at.to_rfc3339()),
+    );
+}
+
+fn normalize_ascii_lower(value: Option<&str>) -> Option<String> {
+    normalize_non_empty(value).map(|raw| raw.to_ascii_lowercase())
+}
+
+fn resolve_idc_region(auth_token: &Value, account: &KiroAccount) -> Option<String> {
+    pick_string(
+        Some(auth_token),
+        &[&["idc_region"], &["idcRegion"], &["region"]],
+    )
+    .and_then(|value| normalize_non_empty(Some(value.as_str())))
+    .or_else(|| {
+        account
+            .idc_region
+            .as_deref()
+            .and_then(|value| normalize_non_empty(Some(value)))
+    })
+    .or_else(|| {
+        extract_profile_arn(Some(auth_token), account.kiro_profile_raw.as_ref())
+            .and_then(|profile_arn| parse_profile_arn_region(profile_arn.as_str()))
+    })
+}
+
+fn resolve_idc_client_id(auth_token: &Value, account: &KiroAccount) -> Option<String> {
+    pick_string(
+        Some(auth_token),
+        &[
+            &["client_id"],
+            &["clientId"],
+            &["clientRegistration", "clientId"],
+            &["registration", "clientId"],
+            &["oidcClient", "clientId"],
+        ],
+    )
+    .and_then(|value| normalize_non_empty(Some(value.as_str())))
+    .or_else(|| {
+        account
+            .client_id
+            .as_deref()
+            .and_then(|value| normalize_non_empty(Some(value)))
+    })
+}
+
+fn resolve_idc_client_secret(auth_token: &Value) -> Option<String> {
+    pick_string(
+        Some(auth_token),
+        &[
+            &["client_secret"],
+            &["clientSecret"],
+            &["clientRegistration", "clientSecret"],
+            &["clientRegistration", "client_secret"],
+            &["registration", "clientSecret"],
+            &["oidcClient", "clientSecret"],
+        ],
+    )
+    .and_then(|value| normalize_non_empty(Some(value.as_str())))
+}
+
+fn should_prefer_idc_refresh(auth_token: &Value, account: &KiroAccount) -> bool {
+    let auth_method_is_idc = normalize_ascii_lower(
+        pick_string(Some(auth_token), &[&["authMethod"], &["auth_method"]]).as_deref(),
+    )
+    .map(|value| value == "idc")
+    .unwrap_or(false);
+
+    let provider_is_idc = normalize_ascii_lower(
+        pick_string(
+            Some(auth_token),
+            &[&["provider"], &["loginProvider"], &["login_option"]],
+        )
+        .as_deref(),
+    )
+    .map(|value| {
+        matches!(
+            value.as_str(),
+            "enterprise" | "builderid" | "internal" | "awsidc" | "external_idp"
+        )
+    })
+    .unwrap_or(false);
+
+    let login_provider_is_idc = normalize_ascii_lower(account.login_provider.as_deref())
+        .map(|value| matches!(value.as_str(), "enterprise" | "builderid" | "internal" | "awsidc"))
+        .unwrap_or(false);
+
+    let has_idc_material = resolve_idc_region(auth_token, account).is_some()
+        && resolve_idc_client_id(auth_token, account).is_some()
+        && resolve_idc_client_secret(auth_token).is_some();
+
+    auth_method_is_idc || provider_is_idc || login_provider_is_idc || has_idc_material
+}
+
 fn build_token_exchange_redirect_uri(
     base_callback_url: &str,
     callback: &OAuthCallbackData,
@@ -621,29 +741,7 @@ fn inject_callback_context_into_token(token: &mut Value, callback: &OAuthCallbac
     }
 
     // Auth service returns expiresIn; convert to expiresAt to match Kiro local cache shape.
-    let has_expires_at = obj.contains_key("expiresAt") || obj.contains_key("expires_at");
-    if !has_expires_at {
-        let expires_in_seconds = obj
-            .get("expiresIn")
-            .and_then(|value| {
-                value
-                    .as_i64()
-                    .or_else(|| value.as_u64().map(|n| n as i64))
-                    .or_else(|| {
-                        value
-                            .as_str()
-                            .and_then(|raw| raw.trim().parse::<i64>().ok())
-                    })
-            })
-            .unwrap_or(0);
-        if expires_in_seconds > 0 {
-            let expires_at = chrono::Utc::now() + chrono::Duration::seconds(expires_in_seconds);
-            obj.insert(
-                "expiresAt".to_string(),
-                Value::String(expires_at.to_rfc3339()),
-            );
-        }
-    }
+    ensure_expires_at_from_expires_in(token);
 }
 
 fn unwrap_token_response(mut response: Value) -> Value {
@@ -1388,8 +1486,103 @@ async fn refresh_token_via_remote(refresh_token: &str) -> Result<Value, String> 
         ));
     }
 
-    serde_json::from_str::<Value>(&body)
-        .map_err(|e| format!("解析 Kiro refreshToken 响应失败: {}", e))
+    let mut token = unwrap_token_response(
+        serde_json::from_str::<Value>(&body)
+            .map_err(|e| format!("解析 Kiro refreshToken 响应失败: {}", e))?,
+    );
+    ensure_expires_at_from_expires_in(&mut token);
+    Ok(token)
+}
+
+async fn refresh_token_via_idc_oidc(
+    refresh_token: &str,
+    auth_token: &Value,
+    account: &KiroAccount,
+) -> Result<Value, String> {
+    let region = resolve_idc_region(auth_token, account)
+        .ok_or_else(|| "缺少 idc_region，无法执行 AWS IAM Identity Center 刷新".to_string())?;
+    let client_id = resolve_idc_client_id(auth_token, account)
+        .ok_or_else(|| "缺少 client_id，无法执行 AWS IAM Identity Center 刷新".to_string())?;
+    let client_secret = resolve_idc_client_secret(auth_token)
+        .ok_or_else(|| "缺少 client_secret，无法执行 AWS IAM Identity Center 刷新".to_string())?;
+
+    let endpoint = KIRO_AWS_OIDC_TOKEN_ENDPOINT_FMT.replace("{region}", region.as_str());
+    let response = reqwest::Client::new()
+        .post(endpoint.as_str())
+        .form(&[
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh_token),
+            ("client_id", client_id.as_str()),
+            ("client_secret", client_secret.as_str()),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("请求 AWS IAM Identity Center OIDC 刷新接口失败: {}", e))?;
+
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .unwrap_or_else(|_| "<no-body>".to_string());
+    if !status.is_success() {
+        return Err(format!(
+            "AWS IAM Identity Center OIDC 刷新接口返回异常: status={}, body={}",
+            status, body
+        ));
+    }
+
+    let mut token = unwrap_token_response(
+        serde_json::from_str::<Value>(&body)
+            .map_err(|e| format!("解析 AWS IAM Identity Center OIDC 刷新响应失败: {}", e))?,
+    );
+    if !token.is_object() {
+        token = json!({});
+    }
+    if let Some(obj) = token.as_object_mut() {
+        obj.entry("refreshToken".to_string())
+            .or_insert_with(|| Value::String(refresh_token.to_string()));
+        obj.entry("idc_region".to_string())
+            .or_insert_with(|| Value::String(region.clone()));
+        obj.entry("idcRegion".to_string())
+            .or_insert_with(|| Value::String(region.clone()));
+        obj.entry("region".to_string())
+            .or_insert_with(|| Value::String(region.clone()));
+        obj.entry("client_id".to_string())
+            .or_insert_with(|| Value::String(client_id.clone()));
+        obj.entry("clientId".to_string())
+            .or_insert_with(|| Value::String(client_id));
+        obj.entry("client_secret".to_string())
+            .or_insert_with(|| Value::String(client_secret.clone()));
+        obj.entry("clientSecret".to_string())
+            .or_insert_with(|| Value::String(client_secret));
+        obj.entry("authMethod".to_string())
+            .or_insert_with(|| Value::String("IdC".to_string()));
+
+        if let Some(provider) = pick_string(
+            Some(auth_token),
+            &[&["provider"], &["loginProvider"], &["login_option"]],
+        )
+        .and_then(|value| normalize_non_empty(Some(value.as_str())))
+        {
+            obj.entry("provider".to_string())
+                .or_insert_with(|| Value::String(provider.clone()));
+            obj.entry("loginProvider".to_string())
+                .or_insert_with(|| Value::String(provider));
+        }
+        if let Some(issuer_url) = pick_string(
+            Some(auth_token),
+            &[&["issuer_url"], &["issuerUrl"], &["issuer"]],
+        )
+        .and_then(|value| normalize_non_empty(Some(value.as_str())))
+        {
+            obj.entry("issuer_url".to_string())
+                .or_insert_with(|| Value::String(issuer_url.clone()));
+            obj.entry("issuerUrl".to_string())
+                .or_insert_with(|| Value::String(issuer_url));
+        }
+    }
+    ensure_expires_at_from_expires_in(&mut token);
+    Ok(token)
 }
 
 async fn fetch_usage_limits_via_runtime(
@@ -1878,18 +2071,57 @@ pub async fn refresh_payload_for_account(
         .as_deref()
         .and_then(|value| normalize_non_empty(Some(value)))
     {
-        match refresh_token_via_remote(&refresh_token).await {
-            Ok(mut auth_token) => {
-                merge_account_context_into_auth_token(&mut auth_token, account);
-                let (profile, usage) = pick_profile_and_usage_for_refresh(account, &auth_token);
-                let payload = build_payload_from_snapshot(auth_token, profile, usage)?;
-                return Ok(enrich_payload_with_runtime_usage(payload).await);
-            }
-            Err(err) => {
-                logger::log_warn(&format!("[Kiro Refresh] refreshToken 接口失败: {}", err));
-                return Err(format!("刷新 Kiro 登录态失败: {}", err));
+        let mut account_auth_token = account
+            .kiro_auth_token_raw
+            .clone()
+            .unwrap_or_else(|| json!({}));
+        merge_account_context_into_auth_token(&mut account_auth_token, account);
+
+        let prefer_idc = should_prefer_idc_refresh(&account_auth_token, account);
+        let mut refresh_error_messages: Vec<String> = Vec::new();
+        let mut refreshed_auth_token: Option<Value> = None;
+
+        if prefer_idc {
+            match refresh_token_via_idc_oidc(&refresh_token, &account_auth_token, account).await {
+                Ok(token) => {
+                    refreshed_auth_token = Some(token);
+                }
+                Err(err) => {
+                    logger::log_warn(&format!(
+                        "[Kiro Refresh] AWS IAM Identity Center OIDC 刷新失败: {}",
+                        err
+                    ));
+                    refresh_error_messages.push(format!("AWS IAM Identity Center OIDC 刷新失败: {}", err));
+                }
             }
         }
+
+        if refreshed_auth_token.is_none() {
+            match refresh_token_via_remote(&refresh_token).await {
+                Ok(token) => {
+                    refreshed_auth_token = Some(token);
+                }
+                Err(err) => {
+                    logger::log_warn(&format!("[Kiro Refresh] refreshToken 接口失败: {}", err));
+                    refresh_error_messages.push(format!("Kiro refreshToken 接口失败: {}", err));
+                }
+            }
+        }
+
+        if let Some(mut auth_token) = refreshed_auth_token {
+            merge_account_context_into_auth_token(&mut auth_token, account);
+            let (profile, usage) = pick_profile_and_usage_for_refresh(account, &auth_token);
+            let payload = build_payload_from_snapshot(auth_token, profile, usage)?;
+            return Ok(enrich_payload_with_runtime_usage(payload).await);
+        }
+
+        if refresh_error_messages.is_empty() {
+            return Err("刷新 Kiro 登录态失败: 未命中可用刷新策略".to_string());
+        }
+        return Err(format!(
+            "刷新 Kiro 登录态失败: {}",
+            refresh_error_messages.join("；")
+        ));
     }
 
     Err("账号缺少 refresh_token，无法刷新 Kiro 登录态".to_string())
@@ -2261,6 +2493,73 @@ mod tests {
         assert!(
             payload.bonus_expire_days.unwrap_or(-1) > 0,
             "bonus_expire_days should derive from freeTrialExpiry"
+        );
+    }
+
+    #[test]
+    fn ensure_expires_at_from_expires_in_should_fill_rfc3339() {
+        let mut token = json!({
+            "accessToken": "token",
+            "expiresIn": 3600
+        });
+        ensure_expires_at_from_expires_in(&mut token);
+        let expires_at = token
+            .get("expiresAt")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        assert!(
+            chrono::DateTime::parse_from_rfc3339(expires_at).is_ok(),
+            "expiresAt should be valid rfc3339"
+        );
+    }
+
+    #[test]
+    fn should_prefer_idc_refresh_for_enterprise_account() {
+        let account = KiroAccount {
+            id: "kiro_test".to_string(),
+            email: "tester@example.com".to_string(),
+            user_id: None,
+            login_provider: Some("Enterprise".to_string()),
+            tags: None,
+            access_token: "access".to_string(),
+            refresh_token: Some("refresh".to_string()),
+            token_type: Some("Bearer".to_string()),
+            expires_at: None,
+            idc_region: Some("us-east-1".to_string()),
+            issuer_url: Some("https://example.awsapps.com/start".to_string()),
+            client_id: Some("client-id".to_string()),
+            scopes: None,
+            login_hint: None,
+            plan_name: None,
+            plan_tier: None,
+            credits_total: None,
+            credits_used: None,
+            bonus_total: None,
+            bonus_used: None,
+            usage_reset_at: None,
+            bonus_expire_days: None,
+            kiro_auth_token_raw: Some(json!({
+                "authMethod": "IdC",
+                "provider": "Enterprise",
+                "idc_region": "us-east-1",
+                "client_id": "client-id",
+                "client_secret": "client-secret"
+            })),
+            kiro_profile_raw: None,
+            kiro_usage_raw: None,
+            status: None,
+            status_reason: None,
+            created_at: 0,
+            last_used: 0,
+        };
+        let auth_token = account
+            .kiro_auth_token_raw
+            .clone()
+            .unwrap_or_else(|| json!({}));
+        assert!(should_prefer_idc_refresh(&auth_token, &account));
+        assert_eq!(
+            resolve_idc_client_secret(&auth_token).as_deref(),
+            Some("client-secret")
         );
     }
 }

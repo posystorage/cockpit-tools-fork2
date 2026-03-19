@@ -932,6 +932,8 @@ fn build_import_auth_token(raw: &Value) -> Result<Value, String> {
         "user_id",
         "provider",
         "loginProvider",
+        "authMethod",
+        "login_option",
         "profileArn",
         "profile_arn",
         "arn",
@@ -945,8 +947,12 @@ fn build_import_auth_token(raw: &Value) -> Result<Value, String> {
         "issuer",
         "client_id",
         "clientId",
+        "client_secret",
+        "clientSecret",
         "scope",
         "scopes",
+        "startUrl",
+        "start_url",
     ] {
         if auth_obj.contains_key(key) {
             continue;

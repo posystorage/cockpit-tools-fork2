@@ -1616,9 +1616,9 @@
     },
     "flowNotice": {
       "title": "Kiro アカウント管理ガイド（クリックで展開/折りたたみ）",
-      "desc": "アカウント切り替えでは、この端末上で Kiro のローカル認証ファイルとインスタンス設定を読み書きします。OAuth ログインとクォータ更新では Kiro 公式 API を呼び出します。",
+      "desc": "アカウント切り替えでは、この端末上で Kiro のローカル認証ファイルとインスタンス設定を読み書きします。OAuth ログインとクォータ更新では Kiro 公式 API を呼び出します。Enterprise/IdC アカウントでは、更新時に AWS IAM Identity Center の OIDC API も呼び出します。",
       "reason": "処理対象パスには、~/.aws/sso/cache/kiro-auth-token.json、インスタンスの profile.json、state.vscdb 内の kiro.kiroAgent エントリが含まれます。",
-      "storage": "処理されるデータには Kiro のセッション情報とクォータ情報が含まれます。Kiro 公式 API へのリクエスト時には、必要な認証フィールド（code、refreshToken、accessToken、profileArn など）を送信します。"
+      "storage": "処理されるデータには Kiro のセッション情報とクォータ情報が含まれます。Kiro 公式 API へのリクエスト時には、必要な認証フィールド（code、refreshToken、accessToken、profileArn など）を送信します。Enterprise/IdC の更新では、OIDC に必要なフィールド（client_id、client_secret、refresh_token など）も追加で送信します。"
     },
     "title": "キロアカウント管理",
     "instances": {

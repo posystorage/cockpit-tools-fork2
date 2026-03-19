@@ -1616,9 +1616,9 @@
     },
     "flowNotice": {
       "title": "Kiro 계정 안내 (클릭하여 펼치기/접기)",
-      "desc": "계정 전환 시 이 기기에서 Kiro 로컬 인증 파일과 인스턴스 설정을 읽고 씁니다. OAuth 로그인 및 할당량 새로고침 시 Kiro 공식 API를 호출합니다.",
+      "desc": "계정 전환 시 이 기기에서 Kiro 로컬 인증 파일과 인스턴스 설정을 읽고 씁니다. OAuth 로그인 및 할당량 새로고침 시 Kiro 공식 API를 호출합니다. Enterprise/IdC 계정의 경우 새로고침 시 AWS IAM Identity Center OIDC API도 호출합니다.",
       "reason": "처리 경로에는 ~/.aws/sso/cache/kiro-auth-token.json, 인스턴스 profile.json, state.vscdb의 kiro.kiroAgent 항목이 포함됩니다.",
-      "storage": "처리 데이터에는 Kiro 세션 및 할당량 정보가 포함됩니다. Kiro 공식 API 요청 시 필요한 인증 필드(code, refreshToken, accessToken, profileArn 등)가 전송됩니다."
+      "storage": "처리 데이터에는 Kiro 세션 및 할당량 정보가 포함됩니다. Kiro 공식 API 요청 시 필요한 인증 필드(code, refreshToken, accessToken, profileArn 등)가 전송됩니다. Enterprise/IdC 새로고침에서는 OIDC에 필요한 필드(client_id, client_secret, refresh_token 등)도 추가로 전송됩니다."
     },
     "title": "키로 계정 관리",
     "instances": {

@@ -1616,9 +1616,9 @@
     },
     "flowNotice": {
       "title": "Kiro-Kontoverwaltung (zum Ausklappen/Einklappen klicken)",
-      "desc": "Beim Kontowechsel werden lokale Kiro-Auth-Dateien und Instanzeinstellungen auf diesem Gerät gelesen und geschrieben; bei OAuth-Anmeldung und Quotenaktualisierung werden offizielle Kiro-APIs aufgerufen.",
+      "desc": "Beim Kontowechsel werden lokale Kiro-Auth-Dateien und Instanzeinstellungen auf diesem Gerät gelesen und geschrieben; bei OAuth-Anmeldung und Quotenaktualisierung werden offizielle Kiro-APIs aufgerufen. Bei Enterprise/IdC-Konten ruft die Aktualisierung zusätzlich die AWS IAM Identity Center OIDC-APIs auf.",
       "reason": "Verarbeitete Pfade umfassen ~/.aws/sso/cache/kiro-auth-token.json, die Instanzdatei profile.json sowie den Eintrag kiro.kiroAgent in state.vscdb.",
-      "storage": "Verarbeitete Daten umfassen Kiro-Sitzungs- und Quoteninformationen; bei Aufrufen der offiziellen Kiro-APIs werden erforderliche Auth-Felder gesendet (z. B. code, refreshToken, accessToken und profileArn)."
+      "storage": "Verarbeitete Daten umfassen Kiro-Sitzungs- und Quoteninformationen; bei Aufrufen der offiziellen Kiro-APIs werden erforderliche Auth-Felder gesendet (z. B. code, refreshToken, accessToken und profileArn). Bei Enterprise/IdC-Aktualisierung werden zusätzlich erforderliche OIDC-Felder gesendet (z. B. client_id, client_secret und refresh_token)."
     },
     "title": "Kiro-Kontoverwaltung",
     "instances": {

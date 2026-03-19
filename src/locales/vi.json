@@ -1616,9 +1616,9 @@
     },
     "flowNotice": {
       "title": "Hướng dẫn tài khoản Kiro (bấm để mở rộng/thu gọn)",
-      "desc": "Chuyển tài khoản sẽ đọc/ghi các tệp xác thực Kiro cục bộ và cấu hình instance trên thiết bị này; đăng nhập OAuth và làm mới quota sẽ gọi các API chính thức của Kiro.",
+      "desc": "Chuyển tài khoản sẽ đọc/ghi các tệp xác thực Kiro cục bộ và cấu hình instance trên thiết bị này; đăng nhập OAuth và làm mới quota sẽ gọi các API chính thức của Kiro. Với tài khoản Enterprise/IdC, thao tác làm mới cũng gọi các API OIDC của AWS IAM Identity Center.",
       "reason": "Các đường dẫn được xử lý gồm ~/.aws/sso/cache/kiro-auth-token.json, profile.json của instance và mục kiro.kiroAgent trong state.vscdb.",
-      "storage": "Dữ liệu được xử lý gồm thông tin phiên và quota của Kiro; các yêu cầu tới API chính thức của Kiro sẽ gửi các trường xác thực cần thiết (như code, refreshToken, accessToken và profileArn)."
+      "storage": "Dữ liệu được xử lý gồm thông tin phiên và quota của Kiro; các yêu cầu tới API chính thức của Kiro sẽ gửi các trường xác thực cần thiết (như code, refreshToken, accessToken và profileArn). Làm mới Enterprise/IdC cũng gửi thêm các trường OIDC cần thiết (như client_id, client_secret và refresh_token)."
     },
     "title": "Quản lý tài khoản Kiro",
     "instances": {

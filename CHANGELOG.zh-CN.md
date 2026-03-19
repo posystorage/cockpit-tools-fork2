@@ -7,6 +7,17 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
 ---
+## [0.16.3] - 2026-03-19
+
+### 新增
+- **Kiro Enterprise/IdC 本机导入账号现已支持 AWS IAM Identity Center OIDC 刷新链路**：刷新时会优先走 OIDC token 刷新，并在失败时回退到 Kiro `refreshToken` 接口以保持兼容性。
+
+### 变更
+- **Kiro 套餐/订阅标签显示改为优先使用原始订阅值**：账号页与实例页优先展示 `plan_name`/`plan_tier`/usage 原始标签，保持与官方客户端命名一致。
+- **Kiro 导入解析器现保留 Enterprise 刷新上下文字段**：JSON 导入会保留 `authMethod`、`login_option`、`startUrl`、`client_secret` 及相关 IdC 字段，保证导入后可持续刷新。
+- **Kiro 流程说明多语言文案已按真实 Enterprise 刷新网络范围同步**：文案明确包含 AWS OIDC 调用及所需 OIDC 认证字段。
+
+---
 ## [0.16.2] - 2026-03-19
 
 ### 新增

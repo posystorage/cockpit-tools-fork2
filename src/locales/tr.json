@@ -1616,9 +1616,9 @@
     },
     "flowNotice": {
       "title": "Kiro hesap kılavuzu (genişletmek/daraltmak için tıklayın)",
-      "desc": "Hesap değiştirme bu cihazda Kiro yerel kimlik doğrulama dosyalarını ve örnek ayarlarını okur/yazar; OAuth girişi ve kota yenileme işlemleri Kiro resmi API’lerini çağırır.",
+      "desc": "Hesap değiştirme bu cihazda Kiro yerel kimlik doğrulama dosyalarını ve örnek ayarlarını okur/yazar; OAuth girişi ve kota yenileme işlemleri Kiro resmi API’lerini çağırır. Enterprise/IdC hesaplarında yenileme ayrıca AWS IAM Identity Center OIDC API’lerini de çağırır.",
       "reason": "İşlenen yollar arasında ~/.aws/sso/cache/kiro-auth-token.json, örnek profile.json dosyası ve state.vscdb içindeki kiro.kiroAgent girdisi bulunur.",
-      "storage": "İşlenen veriler Kiro oturum ve kota bilgilerini içerir; Kiro resmi API’lerine yapılan isteklerde gerekli kimlik doğrulama alanları gönderilir (ör. code, refreshToken, accessToken ve profileArn)."
+      "storage": "İşlenen veriler Kiro oturum ve kota bilgilerini içerir; Kiro resmi API’lerine yapılan isteklerde gerekli kimlik doğrulama alanları gönderilir (ör. code, refreshToken, accessToken ve profileArn). Enterprise/IdC yenilemesinde ayrıca gerekli OIDC alanları da gönderilir (ör. client_id, client_secret ve refresh_token)."
     },
     "title": "Kiro Hesap Yönetimi",
     "instances": {

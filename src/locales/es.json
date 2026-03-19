@@ -1616,9 +1616,9 @@
     },
     "flowNotice": {
       "title": "Guía de cuenta de Kiro (haz clic para expandir/contraer)",
-      "desc": "El cambio de cuenta lee y escribe archivos de autenticación local de Kiro y la configuración de la instancia en este dispositivo; el inicio de sesión OAuth y la actualización de cuota llaman a las API oficiales de Kiro.",
+      "desc": "El cambio de cuenta lee y escribe archivos de autenticación local de Kiro y la configuración de la instancia en este dispositivo; el inicio de sesión OAuth y la actualización de cuota llaman a las API oficiales de Kiro. Para cuentas Enterprise/IdC, la actualización también llama a las API OIDC de AWS IAM Identity Center.",
       "reason": "Las rutas procesadas incluyen ~/.aws/sso/cache/kiro-auth-token.json, el profile.json de la instancia y la entrada kiro.kiroAgent en state.vscdb.",
-      "storage": "Los datos procesados incluyen información de sesión y cuota de Kiro; las solicitudes a API oficiales de Kiro envían los campos de autenticación necesarios (como code, refreshToken, accessToken y profileArn)."
+      "storage": "Los datos procesados incluyen información de sesión y cuota de Kiro; las solicitudes a API oficiales de Kiro envían los campos de autenticación necesarios (como code, refreshToken, accessToken y profileArn). La actualización de Enterprise/IdC también envía campos OIDC necesarios (como client_id, client_secret y refresh_token)."
     },
     "title": "Gestión de cuentas Kiro",
     "instances": {

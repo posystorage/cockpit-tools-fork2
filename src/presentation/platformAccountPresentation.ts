@@ -491,10 +491,8 @@ export function buildKiroAccountPresentation(
   t: Translate,
 ): KiroAccountPresentation {
   const credits = getKiroCreditsSummary(account);
-  const normalizedPlan = getKiroPlanDisplayName(
-    account.plan_type ?? account.plan_name ?? account.plan_tier ?? credits.planName ?? null,
-  );
-  const rawPlan = account.plan_type?.trim() || account.plan_name?.trim() || account.plan_tier?.trim();
+  const rawPlan = account.plan_name?.trim() || account.plan_tier?.trim() || credits.planName?.trim() || '';
+  const normalizedPlan = getKiroPlanDisplayName(rawPlan || account.plan_type || null);
   const promptMetrics = buildCreditMetrics(
     credits.promptCreditsUsed,
     credits.promptCreditsTotal,
