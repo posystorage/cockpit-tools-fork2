@@ -22,7 +22,8 @@ import {
   usePlatformLayoutStore,
 } from '../stores/usePlatformLayoutStore';
 import { Page } from '../types/navigation';
-import { Users, CheckCircle2, Sparkles, RotateCw, Play, Github } from 'lucide-react';
+import { Users, CheckCircle2, Sparkles, RotateCw, Play, Github, Tag } from 'lucide-react';
+import { TagEditModal } from '../components/TagEditModal';
 import { Account } from '../types/account';
 import {
   CodebuddyAccount,
@@ -162,6 +163,60 @@ function getZedRecommendationScore(account: ZedAccount): { remainingPercent: num
 
 export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTriggerClick }: DashboardPageProps) {
   const { t } = useTranslation();
+  
+  const [tagModalState, setTagModalState] = React.useState<{ accountId: string; platform: PlatformId | 'codebuddy_cn'; tags: string[] } | null>(null);
+
+  const handleSaveTags = async (newTags: string[]) => {
+    if (!tagModalState) return;
+    try {
+      const accountId = tagModalState.accountId;
+      switch (tagModalState.platform) {
+        case 'antigravity':
+          await useAccountStore.getState().updateAccountTags(accountId, newTags);
+          break;
+        case 'codex':
+          await useCodexAccountStore.getState().updateAccountTags(accountId, newTags);
+          break;
+        case 'github-copilot':
+          await useGitHubCopilotAccountStore.getState().updateAccountTags(accountId, newTags);
+          break;
+        case 'windsurf':
+          await useWindsurfAccountStore.getState().updateAccountTags(accountId, newTags);
+          break;
+        case 'kiro':
+          await useKiroAccountStore.getState().updateAccountTags(accountId, newTags);
+          break;
+        case 'cursor':
+          await useCursorAccountStore.getState().updateAccountTags(accountId, newTags);
+          break;
+        case 'gemini':
+          await useGeminiAccountStore.getState().updateAccountTags(accountId, newTags);
+          break;
+        case 'codebuddy':
+          await useCodebuddyAccountStore.getState().updateAccountTags(accountId, newTags);
+          break;
+        case 'codebuddy_cn':
+          await useCodebuddyCnAccountStore.getState().updateAccountTags(accountId, newTags);
+          break;
+        case 'qoder':
+          await useQoderAccountStore.getState().updateAccountTags(accountId, newTags);
+          break;
+        case 'trae':
+          await useTraeAccountStore.getState().updateAccountTags(accountId, newTags);
+          break;
+        case 'workbuddy':
+          await useWorkbuddyAccountStore.getState().updateAccountTags(accountId, newTags);
+          break;
+        case 'zed':
+          await useZedAccountStore.getState().updateAccountTags(accountId, newTags);
+          break;
+      }
+      setTagModalState(null);
+    } catch (error) {
+      console.error('Save tags failed:', error);
+    }
+  };
+
   const { orderedEntryIds, hiddenEntryIds, platformGroups } = usePlatformLayoutStore();
   const hiddenEntrySet = useMemo(() => new Set(hiddenEntryIds), [hiddenEntryIds]);
   const visibleEntryOrder = useMemo(
@@ -440,6 +495,33 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
       trae: traeAccounts.length,
       workbuddy: workbuddyAccounts.length,
     };
+  }, [agAccounts, codexAccounts, zedAccounts, githubCopilotAccounts, windsurfAccounts, kiroAccounts, cursorAccounts, geminiAccounts, codebuddyAccounts, codebuddyCnAccounts, qoderAccounts, traeAccounts, workbuddyAccounts]);
+
+  const dashboardAvailableTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    const allAccounts = [
+      ...agAccounts,
+      ...codexAccounts,
+      ...zedAccounts,
+      ...githubCopilotAccounts,
+      ...windsurfAccounts,
+      ...kiroAccounts,
+      ...cursorAccounts,
+      ...geminiAccounts,
+      ...codebuddyAccounts,
+      ...codebuddyCnAccounts,
+      ...qoderAccounts,
+      ...traeAccounts,
+      ...workbuddyAccounts,
+    ];
+    for (const acc of allAccounts) {
+      if (acc.tags) {
+        for (const tag of acc.tags) {
+          tagSet.add(tag);
+        }
+      }
+    }
+    return Array.from(tagSet).sort((a, b) => a.localeCompare(b));
   }, [agAccounts, codexAccounts, zedAccounts, githubCopilotAccounts, windsurfAccounts, kiroAccounts, cursorAccounts, geminiAccounts, codebuddyAccounts, codebuddyCnAccounts, qoderAccounts, traeAccounts, workbuddyAccounts]);
 
   // Refresh States
@@ -1819,6 +1901,7 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
     sublineText,
     sublineTitle,
     maxMetrics = 3,
+    onEditTags,
   }: {
     presentation: UnifiedAccountPresentation;
     onRefresh: () => void;
@@ -1829,6 +1912,7 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
     sublineText?: string;
     sublineTitle?: string;
     maxMetrics?: number;
+    onEditTags?: () => void;
   }) => {
     const resolvedSublineText = sublineText || presentation.sublineText || '';
     const shouldShowPlan = Boolean(presentation.planLabel) && presentation.planLabel !== 'UNKNOWN';
@@ -1860,6 +1944,15 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
         </div>
 
         <div className="account-mini-actions icon-only-row">
+          {onEditTags && (
+            <button
+              className="mini-icon-btn"
+              onClick={onEditTags}
+              title={t('accounts.editTags', '编辑标签')}
+            >
+              <Tag size={14} />
+            </button>
+          )}
           <button
             className="mini-icon-btn"
             onClick={onRefresh}
@@ -1923,6 +2016,13 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
 
         <div className="account-mini-actions icon-only-row">
            <button 
+             className="mini-icon-btn"
+             onClick={() => setTagModalState({ accountId: account.id, platform: 'antigravity', tags: account.tags || [] })}
+             title={t('accounts.editTags', '编辑标签')}
+           >
+             <Tag size={14} />
+           </button>
+           <button 
              className="mini-icon-btn" 
              onClick={() => handleRefreshAg(account.id)}
              title={t('common.refresh', '刷新')}
@@ -1953,6 +2053,7 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
       isRefreshing: refreshing.has(account.id),
       isSwitching: false,
       maxMetrics: 4,
+      onEditTags: () => setTagModalState({ accountId: account.id, platform: 'codex', tags: account.tags || [] }),
     });
   };
 
@@ -1966,6 +2067,7 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
       onSwitch: () => handleSwitchZed(account.id),
       isRefreshing: refreshing.has(account.id),
       isSwitching: switching.has(account.id),
+      onEditTags: () => setTagModalState({ accountId: account.id, platform: 'zed', tags: account.tags || [] }),
     });
   };
 
@@ -1979,6 +2081,7 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
       onSwitch: () => handleSwitchGitHubCopilot(account.id),
       isRefreshing: refreshing.has(account.id),
       isSwitching: switching.has(account.id),
+      onEditTags: () => setTagModalState({ accountId: account.id, platform: 'github-copilot', tags: account.tags || [] }),
     });
   };
 
@@ -1992,6 +2095,7 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
       onSwitch: () => handleSwitchWindsurf(account.id),
       isRefreshing: refreshing.has(account.id),
       isSwitching: switching.has(account.id),
+      onEditTags: () => setTagModalState({ accountId: account.id, platform: 'windsurf', tags: account.tags || [] }),
     });
   };
 
@@ -2006,6 +2110,7 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
       isRefreshing: refreshing.has(account.id),
       isSwitching: switching.has(account.id),
       switchDisabled: presentation.isBanned,
+      onEditTags: () => setTagModalState({ accountId: account.id, platform: 'kiro', tags: account.tags || [] }),
     });
   };
 
@@ -2024,6 +2129,7 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
       switchDisabled: presentation.isBanned,
       sublineText: `Auth ID: ${maskedAuthIdText}`,
       sublineTitle: `Auth ID: ${maskedAuthIdText}`,
+      onEditTags: () => setTagModalState({ accountId: account.id, platform: 'cursor', tags: account.tags || [] }),
     });
   };
 
@@ -2067,6 +2173,7 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
       isRefreshing: refreshing.has(account.id),
       isSwitching: switching.has(account.id),
       sublineText: updatedText,
+      onEditTags: () => setTagModalState({ accountId: account.id, platform: 'gemini', tags: account.tags || [] }),
     });
   };
 
@@ -2080,6 +2187,7 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
       onSwitch: () => handleSwitchCodebuddy(account.id),
       isRefreshing: refreshing.has(account.id),
       isSwitching: switching.has(account.id),
+      onEditTags: () => setTagModalState({ accountId: account.id, platform: 'codebuddy', tags: account.tags || [] }),
     });
   };
 
@@ -2093,6 +2201,7 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
       onSwitch: () => handleSwitchCodebuddyCn(account.id),
       isRefreshing: refreshing.has(account.id),
       isSwitching: switching.has(account.id),
+      onEditTags: () => setTagModalState({ accountId: account.id, platform: 'codebuddy_cn', tags: account.tags || [] }),
     });
   };
 
@@ -2106,6 +2215,7 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
       onSwitch: () => handleSwitchQoder(account.id),
       isRefreshing: refreshing.has(account.id),
       isSwitching: switching.has(account.id),
+      onEditTags: () => setTagModalState({ accountId: account.id, platform: 'qoder', tags: account.tags || [] }),
     });
   };
 
@@ -2119,6 +2229,7 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
       onSwitch: () => handleSwitchTrae(account.id),
       isRefreshing: refreshing.has(account.id),
       isSwitching: switching.has(account.id),
+      onEditTags: () => setTagModalState({ accountId: account.id, platform: 'trae', tags: account.tags || [] }),
     });
   };
 
@@ -2132,6 +2243,7 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
       onSwitch: () => handleSwitchWorkbuddy(account.id),
       isRefreshing: refreshing.has(account.id),
       isSwitching: switching.has(account.id),
+      onEditTags: () => setTagModalState({ accountId: account.id, platform: 'workbuddy', tags: account.tags || [] }),
     });
   };
 
@@ -2889,6 +3001,16 @@ export function DashboardPage({ onNavigate, onOpenPlatformLayout, onEasterEggTri
           </div>
         ))}
       </div>
+
+      {tagModalState && (
+        <TagEditModal
+          isOpen={true}
+          onClose={() => setTagModalState(null)}
+          initialTags={tagModalState.tags}
+          availableTags={dashboardAvailableTags}
+          onSave={handleSaveTags}
+        />
+      )}
 
     </main>
   );
