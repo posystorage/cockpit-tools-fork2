@@ -677,6 +677,7 @@ struct RuntimeState {
 
 /// 全局运行时状态
 static RUNTIME_STATE: OnceLock<RwLock<RuntimeState>> = OnceLock::new();
+static INHERITED_PROXY_ENV: OnceLock<Vec<(&'static str, Option<String>)>> = OnceLock::new();
 
 fn get_runtime_state() -> &'static RwLock<RuntimeState> {
     RUNTIME_STATE.get_or_init(|| {
@@ -700,6 +701,16 @@ const MANAGED_PROXY_SET_KEYS: [&str; 6] = [
 ];
 
 const MANAGED_PROXY_NO_PROXY_KEYS: [&str; 2] = ["no_proxy", "NO_PROXY"];
+
+fn inherited_proxy_env() -> &'static Vec<(&'static str, Option<String>)> {
+    INHERITED_PROXY_ENV.get_or_init(|| {
+        MANAGED_PROXY_SET_KEYS
+            .iter()
+            .chain(MANAGED_PROXY_NO_PROXY_KEYS.iter())
+            .map(|key| (*key, std::env::var(key).ok()))
+            .collect()
+    })
+}
 
 fn managed_proxy_env_pairs(config: &UserConfig) -> Vec<(&'static str, String)> {
     if !config.global_proxy_enabled {
@@ -735,14 +746,38 @@ fn clear_managed_proxy_env() {
     }
 }
 
-pub fn sync_global_proxy_env(config: &UserConfig) {
+fn restore_inherited_proxy_env() {
     clear_managed_proxy_env();
 
-    let pairs = managed_proxy_env_pairs(config);
-    if pairs.is_empty() {
-        crate::modules::logger::log_info("[Proxy] 应用内全局代理环境已清空");
+    let mut restored_keys = Vec::new();
+    for (key, value) in inherited_proxy_env() {
+        if let Some(value) = value {
+            std::env::set_var(key, value);
+            restored_keys.push(*key);
+        }
+    }
+
+    if restored_keys.is_empty() {
+        crate::modules::logger::log_info(
+            "[Proxy] 应用内未启用全局代理，已恢复启动时继承环境（未携带代理变量）",
+        );
         return;
     }
+
+    crate::modules::logger::log_info(&format!(
+        "[Proxy] 应用内未启用全局代理，已恢复启动时继承环境 keys={}",
+        restored_keys.join(",")
+    ));
+}
+
+pub fn sync_global_proxy_env(config: &UserConfig) {
+    let pairs = managed_proxy_env_pairs(config);
+    if pairs.is_empty() {
+        restore_inherited_proxy_env();
+        return;
+    }
+
+    clear_managed_proxy_env();
 
     let mut applied_keys = Vec::with_capacity(pairs.len());
     for (key, value) in pairs {

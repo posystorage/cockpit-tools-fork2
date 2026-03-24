@@ -7,6 +7,12 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [0.20.8] - 2026-03-24
+
+### Fixed
+- **macOS shell-launched proxy environments now remain effective when Cockpit's in-app global proxy is not explicitly enabled**: app startup and config saves now restore the proxy variables inherited at launch instead of clearing them outright, so workflows such as `export http_proxy=... && open -a 'Cockpit Tools'` continue to work unless users intentionally override proxy settings inside the app.
+
+---
 ## [0.20.7] - 2026-03-24
 
 ### Changed
