@@ -712,7 +712,12 @@
       "qoderAutoRefreshDesc": "Frekuensi auto-refresh di latar belakang",
       "qoderPathSelect": "Pilih",
       "workbuddyAutoRefresh": "Auto Refresh Kuota WorkBuddy",
-      "workbuddyAutoRefreshDesc": "Frekuensi auto-refresh di latar belakang"
+      "workbuddyAutoRefreshDesc": "Frekuensi auto-refresh di latar belakang",
+      "codexLocalAccessEntryVisible": "Tampilkan entri Layanan API",
+      "codexLocalAccessEntryVisibleDesc": "Hanya mengatur apakah entri Layanan API ditampilkan di ringkasan Codex. Ini tidak menghentikan layanan API lokal; Anda bisa menyalakannya lagi di sini atau di Pengaturan Cepat.",
+      "codexLocalAccessEnabled": "Aktifkan Layanan API",
+      "codexLocalAccessEnabledDesc": "Mengatur apakah layanan API Codex lokal benar-benar berjalan.",
+      "codexLocalAccessEnabledRequiresCollection": "Tambahkan akun ke koleksi Layanan API terlebih dahulu sebelum mengaktifkan atau menonaktifkan layanan."
     },
     "network": {
       "apiTitle": "API Antigravity Cockpit",
@@ -1673,7 +1678,7 @@
       "activateSuccess": "Beralih ke layanan API",
       "dashboardAction": "Panel layanan",
       "manageDesc": "Kelola statistik layanan API, anggota, port, kunci, dan uji konektivitas di satu tempat.",
-      "memberOnlyLocal": "Hanya lokal",
+      "memberOnlyLocal": "Hanya Codex",
       "configTitle": "Konfigurasi layanan",
       "configEmpty": "Simpan setidaknya satu akun ke koleksi layanan API agar URL, kunci, dan port dibuat.",
       "portLabel": "Port layanan",
@@ -1683,6 +1688,8 @@
       "statsTitle": "Total",
       "accountStatsTitle": "Per akun",
       "statsEmpty": "Belum ada statistik",
+      "summaryMeta": "{{count}} akun · Hanya Codex",
+      "summaryMetaUnconfigured": "Belum dikonfigurasi · Hanya Codex",
       "memberTitle": "Anggota koleksi",
       "stats": {
         "requests": "Permintaan",
@@ -1716,6 +1723,20 @@
         "quotaLowFirst": "Kuota Rendah Dulu",
         "planHighFirst": "Paket Tinggi Dulu",
         "planLowFirst": "Paket Rendah Dulu"
+      },
+      "statusUnconfigured": "Belum dikonfigurasi",
+      "expandDetails": "Buka detail",
+      "collapseDetails": "Tutup detail",
+      "hideEntryAction": "Sembunyikan entri Layanan API",
+      "hideEntryConfirm": "Ini akan menyembunyikan entri Layanan API dari ringkasan dan sekaligus menonaktifkan layanan API saat ini. Anda bisa menyalakannya lagi nanti di Pengaturan Codex atau Pengaturan Cepat.",
+      "hideEntryEffectHide": "Sembunyikan entri Layanan API dari ringkasan",
+      "hideEntryEffectDisable": "Nonaktifkan layanan API saat ini",
+      "hideEntryEffectRestore": "Anda bisa menyalakannya lagi di Pengaturan Codex atau Pengaturan Cepat",
+      "statsRange": {
+        "label": "Rentang statistik",
+        "daily": "Hari",
+        "weekly": "Minggu",
+        "monthly": "Bulan"
       }
     },
     "api": {
@@ -2055,7 +2076,8 @@
         "expand": "Perluas",
         "collapse": "Ciutkan",
         "repairVisibility": "Perbaiki visibilitas",
-        "restoreSessions": "Pulihkan sesi"
+      "restoreSessions": "Pulihkan sesi",
+      "copySessionId": "Salin ID sesi"
       },
       "confirm": {
         "title": "Pindahkan ke Sampah",
@@ -2073,7 +2095,10 @@
         "pickRestoreOne": "Pilih setidaknya satu sesi untuk dipulihkan"
       },
       "groupCount": "{{count}} sesi",
-      "updatedAt": "Diperbarui",
+    "updatedAt": "Diperbarui",
+    "labels": {
+      "sessionId": "ID sesi"
+    },
       "locationRunning": " (berjalan)",
       "untitled": "Sesi tanpa judul",
       "restoreModal": {
@@ -2402,7 +2427,8 @@
       "appPath": "Launch Path",
       "configToml": "File konfigurasi Codex",
       "openConfigToml": "Buka file",
-      "openConfigHint": "Buka cepat file Codex config.toml yang sedang aktif."
+      "openConfigHint": "Buka cepat file Codex config.toml yang sedang aktif.",
+      "localAccessEntryVisible": "Tampilkan entri Layanan API"
     },
     "githubCopilot": {
       "title": "GitHub Copilot Settings",

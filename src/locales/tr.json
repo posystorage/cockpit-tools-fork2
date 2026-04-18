@@ -666,7 +666,12 @@
       "qoderAutoRefreshDesc": "Arka planda otomatik yenileme sıklığı",
       "qoderPathSelect": "Seç",
       "workbuddyAutoRefresh": "WorkBuddy Otomatik Kota Yenileme",
-      "workbuddyAutoRefreshDesc": "Arka planda otomatik yenileme sıklığı"
+      "workbuddyAutoRefreshDesc": "Arka planda otomatik yenileme sıklığı",
+      "codexLocalAccessEntryVisible": "API Hizmeti girişini göster",
+      "codexLocalAccessEntryVisibleDesc": "Yalnızca API Hizmeti girişinin Codex genel görünümünde gösterilip gösterilmeyeceğini kontrol eder. Yerel API hizmetini durdurmaz; buradan veya Hızlı Ayarlar'dan yeniden açabilirsiniz.",
+      "codexLocalAccessEnabled": "API Hizmetini etkinleştir",
+      "codexLocalAccessEnabledDesc": "Yerel Codex API hizmetinin gerçekten çalışıp çalışmayacağını kontrol eder.",
+      "codexLocalAccessEnabledRequiresCollection": "Hizmeti etkinleştirmeden veya devre dışı bırakmadan önce hesapları API Hizmeti koleksiyonuna ekleyin."
     },
     "network": {
       "apiTitle": "Yerçekimine Karşı Kokpit API'si",
@@ -1624,7 +1629,7 @@
       "activateSuccess": "API hizmetine geçildi",
       "dashboardAction": "Hizmet paneli",
       "manageDesc": "API hizmeti istatistiklerini, üyeleri, portu, anahtarı ve bağlantı testini tek yerden yönetin.",
-      "memberOnlyLocal": "Yalnızca yerel",
+      "memberOnlyLocal": "Yalnızca Codex",
       "configTitle": "Hizmet yapılandırması",
       "configEmpty": "URL, anahtar ve port oluşturulmadan önce en az bir hesabı API hizmeti koleksiyonuna kaydedin.",
       "portLabel": "Hizmet portu",
@@ -1634,6 +1639,8 @@
       "statsTitle": "Toplam",
       "accountStatsTitle": "Hesaba göre",
       "statsEmpty": "Henüz istatistik yok",
+      "summaryMeta": "{{count}} hesap · Yalnızca Codex",
+      "summaryMetaUnconfigured": "Yapılandırılmadı · Yalnızca Codex",
       "memberTitle": "Koleksiyon üyeleri",
       "stats": {
         "requests": "İstekler",
@@ -1667,6 +1674,20 @@
         "quotaLowFirst": "Önce düşük kota",
         "planHighFirst": "Önce yüksek plan",
         "planLowFirst": "Önce düşük plan"
+      },
+      "statusUnconfigured": "Yapılandırılmadı",
+      "expandDetails": "Ayrıntıları aç",
+      "collapseDetails": "Ayrıntıları kapat",
+      "hideEntryAction": "API Hizmeti girişini gizle",
+      "hideEntryConfirm": "Bu işlem API Hizmeti girişini genel görünümden gizler ve mevcut API hizmetini de devre dışı bırakır. Daha sonra Codex Ayarları veya Hızlı Ayarlar'dan yeniden açabilirsiniz.",
+      "hideEntryEffectHide": "API Hizmeti girişini genel görünümden gizle",
+      "hideEntryEffectDisable": "Mevcut API hizmetini devre dışı bırak",
+      "hideEntryEffectRestore": "Codex Ayarları veya Hızlı Ayarlar'dan yeniden açabilirsiniz",
+      "statsRange": {
+        "label": "İstatistik aralığı",
+        "daily": "Gün",
+        "weekly": "Hafta",
+        "monthly": "Ay"
       }
     },
     "local": {
@@ -1926,7 +1947,8 @@
         "expand": "Genişlet",
         "collapse": "Daralt",
         "repairVisibility": "Görünürlüğü düzelt",
-        "restoreSessions": "Oturumları geri yükle"
+      "restoreSessions": "Oturumları geri yükle",
+      "copySessionId": "Oturum kimliğini kopyala"
       },
       "confirm": {
         "title": "Çöp kutusuna taşı",
@@ -1944,7 +1966,10 @@
         "pickRestoreOne": "Lütfen geri yüklenecek en az bir oturum seçin"
       },
       "groupCount": "{{count}} oturum",
-      "updatedAt": "Güncellendi",
+    "updatedAt": "Güncellendi",
+    "labels": {
+      "sessionId": "Oturum kimliği"
+    },
       "locationRunning": " (çalışıyor)",
       "untitled": "Adsız oturum",
       "restoreModal": {
@@ -2256,7 +2281,8 @@
       "appPath": "Uygulama Yolu",
       "configToml": "Codex yapılandırma dosyası",
       "openConfigToml": "Dosyayı aç",
-      "openConfigHint": "Etkin Codex config.toml dosyasını hızla açın."
+      "openConfigHint": "Etkin Codex config.toml dosyasını hızla açın.",
+      "localAccessEntryVisible": "API Hizmeti girişini göster"
     },
     "githubCopilot": {
       "title": "GitHub Copilot Ayarları",

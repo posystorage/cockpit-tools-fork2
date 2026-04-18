@@ -734,6 +734,11 @@
       "antigravityStartupWakeupDesc": "Run enabled Antigravity wakeup tasks once after app startup",
       "codexLaunchOnSwitch": "Launch Codex App when switching Codex",
       "codexLaunchOnSwitchDesc": "Start or restart Codex App after switching accounts",
+      "codexLocalAccessEntryVisible": "Show API Service Entry",
+      "codexLocalAccessEntryVisibleDesc": "Only controls whether the API service entry is shown in the Codex overview. It does not stop the local API service; you can turn it back on here or in Quick Settings.",
+      "codexLocalAccessEnabled": "Enable API Service",
+      "codexLocalAccessEnabledDesc": "Control whether the local Codex API service is actually running.",
+      "codexLocalAccessEnabledRequiresCollection": "Add accounts to the API service collection before enabling or disabling the service.",
       "autoSwitchAccountScope": "Auto switch account scope",
       "autoSwitchAccountScopeDesc": "Only monitor and switch accounts within this scope.",
       "autoSwitchAccountScopeAll": "All accounts",
@@ -1643,9 +1648,10 @@
       "statusRunning": "Running",
       "statusStopped": "Stopped",
       "statusDisabled": "Disabled",
+      "statusUnconfigured": "Not Configured",
       "emptyMembers": "No accounts in the collection",
       "footerHint": "Listens on 127.0.0.1 only",
-      "memberOnlyLocal": "Local Only",
+      "memberOnlyLocal": "Codex Only",
       "manageAccounts": "Manage Accounts",
       "rotateKey": "Reset Key",
       "rotateConfirmMessage": "The current API service key will stop working immediately after reset, and in-flight requests may become unavailable. Continue?",
@@ -1687,6 +1693,21 @@
       "refreshStatsSuccess": "API service stats have been refreshed",
       "accountStatsTitle": "By Account",
       "statsEmpty": "No stats yet",
+      "summaryMeta": "{{count}} accounts · Codex only",
+      "summaryMetaUnconfigured": "Not configured · Codex only",
+      "expandDetails": "Expand details",
+      "collapseDetails": "Collapse details",
+      "hideEntryAction": "Hide API Service Entry",
+      "hideEntryConfirm": "This will hide the API service entry from the overview and also disable the current API service. You can turn it back on later in Codex Settings or Quick Settings.",
+      "hideEntryEffectHide": "Hide the API service entry from the overview",
+      "hideEntryEffectDisable": "Disable the current API service",
+      "hideEntryEffectRestore": "You can turn it back on in Codex Settings or Quick Settings",
+      "statsRange": {
+        "label": "Stats Range",
+        "daily": "Day",
+        "weekly": "Week",
+        "monthly": "Month"
+      },
       "memberTitle": "Collection Members",
       "routingStrategy": {
         "auto": "Auto (Recommended)",
@@ -2143,14 +2164,15 @@
     "sessionManager": {
       "title": "Session Manager",
       "desc": "Sync, visibility repair, cleanup, and restore live here together: use the top actions to sync sessions, repair history visibility, or restore from Trash, then expand each project to review and trash sessions.",
-      "actions": {
-        "moveToTrash": "Move to Trash",
-        "syncSessions": "Sync Sessions",
-        "repairVisibility": "Repair Visibility",
-        "restoreSessions": "Restore Sessions",
-        "expand": "Expand",
-        "collapse": "Collapse"
-      },
+    "actions": {
+      "moveToTrash": "Move to Trash",
+      "syncSessions": "Sync Sessions",
+      "repairVisibility": "Repair Visibility",
+      "restoreSessions": "Restore Sessions",
+      "copySessionId": "Copy Session ID",
+      "expand": "Expand",
+      "collapse": "Collapse"
+    },
       "confirm": {
         "title": "Move to Trash",
         "message": "Selected sessions will be moved to Trash from their instances so they can be restored later. Running instances may need a restart before the change appears. Continue?",
@@ -2166,10 +2188,13 @@
         "pickRestoreOne": "Please select at least one session to restore",
         "syncNeedTwo": "At least two instances are required to sync sessions"
       },
-      "groupCount": "{{count}} sessions",
-      "updatedAt": "Updated",
-      "locationRunning": " (running)",
-      "untitled": "Untitled session",
+    "groupCount": "{{count}} sessions",
+    "updatedAt": "Updated",
+    "labels": {
+      "sessionId": "Session ID"
+    },
+    "locationRunning": " (running)",
+    "untitled": "Untitled session",
       "restoreModal": {
         "title": "Restore Sessions",
         "hint": "Restoring puts the rollout file, SQLite thread row, and session_index entry back into the original instance together.",
@@ -2402,7 +2427,8 @@
       "appPath": "Launch Path",
       "configToml": "Codex Config File",
       "openConfigToml": "Open File",
-      "openConfigHint": "Quickly open the active Codex config.toml file."
+      "openConfigHint": "Quickly open the active Codex config.toml file.",
+      "localAccessEntryVisible": "Show API Service Entry"
     },
     "githubCopilot": {
       "title": "GitHub Copilot Settings",

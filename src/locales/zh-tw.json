@@ -666,7 +666,12 @@
       "qoderAutoRefreshDesc": "背景自動更新頻率",
       "qoderPathSelect": "選擇",
       "workbuddyAutoRefresh": "WorkBuddy 自動刷新配額",
-      "workbuddyAutoRefreshDesc": "背景自動更新頻率"
+      "workbuddyAutoRefreshDesc": "背景自動更新頻率",
+      "codexLocalAccessEntryVisible": "顯示 API 服務入口",
+      "codexLocalAccessEntryVisibleDesc": "僅控制 Codex 總覽中的 API 服務入口是否顯示，不會停止本機 API 服務；關閉後可在這裡或快速設定中重新開啟。",
+      "codexLocalAccessEnabled": "啟用 API 服務",
+      "codexLocalAccessEnabledDesc": "控制本機 Codex API 服務是否實際運行。",
+      "codexLocalAccessEnabledRequiresCollection": "需先將帳號加入 API 服務集合，才能啟用或停用服務。"
     },
     "network": {
       "apiTitle": "反重力駕駛艙 API",
@@ -1624,7 +1629,7 @@
       "activateSuccess": "已切換到 API 服務",
       "dashboardAction": "服務面板",
       "manageDesc": "在這裡統一管理 API 服務的統計、成員、連接埠、密鑰與連通性測試。",
-      "memberOnlyLocal": "僅限本機",
+      "memberOnlyLocal": "僅 Codex 存取",
       "configTitle": "服務設定",
       "configEmpty": "先將至少一個帳號儲存到 API 服務集合，之後才會產生位址、密鑰與連接埠。",
       "portLabel": "服務連接埠",
@@ -1634,6 +1639,8 @@
       "statsTitle": "總量統計",
       "accountStatsTitle": "依帳號統計",
       "statsEmpty": "目前還沒有統計資料",
+      "summaryMeta": "{{count}} 個帳號 · 僅 Codex 存取",
+      "summaryMetaUnconfigured": "未設定 · 僅 Codex 存取",
       "memberTitle": "集合成員",
       "stats": {
         "requests": "總請求數",
@@ -1667,6 +1674,20 @@
         "quotaLowFirst": "優先低配額",
         "planHighFirst": "優先高訂閱",
         "planLowFirst": "優先低訂閱"
+      },
+      "statusUnconfigured": "未設定",
+      "expandDetails": "展開詳情",
+      "collapseDetails": "收起詳情",
+      "hideEntryAction": "關閉 API 服務入口",
+      "hideEntryConfirm": "關閉後會同時隱藏總覽中的 API 服務入口，並停用目前的 API 服務。之後仍可在 Codex 設定或快速設定中重新開啟。",
+      "hideEntryEffectHide": "隱藏總覽中的 API 服務入口",
+      "hideEntryEffectDisable": "停用目前的 API 服務",
+      "hideEntryEffectRestore": "可在 Codex 設定或快速設定中重新開啟",
+      "statsRange": {
+        "label": "統計範圍",
+        "daily": "日",
+        "weekly": "週",
+        "monthly": "月"
       }
     },
     "api": {
@@ -2009,7 +2030,8 @@
         "expand": "展開",
         "collapse": "收起",
         "repairVisibility": "修復可見性",
-        "restoreSessions": "還原工作階段"
+      "restoreSessions": "還原工作階段",
+      "copySessionId": "複製會話 ID"
       },
       "confirm": {
         "title": "移到垃圾桶",
@@ -2027,7 +2049,10 @@
         "pickRestoreOne": "請至少選擇一個要還原的工作階段"
       },
       "groupCount": "{{count}} 條會話",
-      "updatedAt": "最近更新",
+    "updatedAt": "最近更新",
+    "labels": {
+      "sessionId": "會話 ID"
+    },
       "locationRunning": "（執行中）",
       "untitled": "未命名會話",
       "restoreModal": {
@@ -2256,7 +2281,8 @@
       "appPath": "啟動路徑",
       "configToml": "Codex 設定檔",
       "openConfigToml": "開啟檔案",
-      "openConfigHint": "快速開啟目前使用的 Codex config.toml 檔案。"
+      "openConfigHint": "快速開啟目前使用的 Codex config.toml 檔案。",
+      "localAccessEntryVisible": "顯示 API 服務入口"
     },
     "githubCopilot": {
       "title": "GitHub Copilot 設定",

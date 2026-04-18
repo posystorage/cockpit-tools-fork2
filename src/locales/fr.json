@@ -666,7 +666,12 @@
       "qoderAutoRefreshDesc": "Fréquence de l'actualisation automatique en arrière-plan",
       "qoderPathSelect": "Sélectionner",
       "workbuddyAutoRefresh": "Actualisation automatique du quota WorkBuddy",
-      "workbuddyAutoRefreshDesc": "Fréquence de l'actualisation automatique en arrière-plan"
+      "workbuddyAutoRefreshDesc": "Fréquence de l'actualisation automatique en arrière-plan",
+      "codexLocalAccessEntryVisible": "Afficher l'entrée du service API",
+      "codexLocalAccessEntryVisibleDesc": "Contrôle uniquement l'affichage de l'entrée du service API dans la vue d'ensemble Codex. Cela n'arrête pas le service API local ; vous pourrez le réactiver ici ou dans les réglages rapides.",
+      "codexLocalAccessEnabled": "Activer le service API",
+      "codexLocalAccessEnabledDesc": "Contrôle si le service API local de Codex est réellement en cours d'exécution.",
+      "codexLocalAccessEnabledRequiresCollection": "Ajoutez d'abord des comptes à la collection du service API avant d'activer ou de désactiver le service."
     },
     "network": {
       "apiTitle": "API du cockpit antigravité",
@@ -1624,7 +1629,7 @@
       "activateSuccess": "Basculé vers le service API",
       "dashboardAction": "Tableau service",
       "manageDesc": "Gérez au même endroit les statistiques du service API, les membres, le port, la clé et le test de connexion.",
-      "memberOnlyLocal": "Local seulement",
+      "memberOnlyLocal": "Codex uniquement",
       "configTitle": "Config du service",
       "configEmpty": "Enregistrez d'abord au moins un compte dans la collection du service API pour générer l'URL, la clé et le port.",
       "portLabel": "Port du service",
@@ -1634,6 +1639,8 @@
       "statsTitle": "Totaux",
       "accountStatsTitle": "Par compte",
       "statsEmpty": "Aucune statistique pour l'instant",
+      "summaryMeta": "{{count}} comptes · Codex uniquement",
+      "summaryMetaUnconfigured": "Non configuré · Codex uniquement",
       "memberTitle": "Membres de la collection",
       "stats": {
         "requests": "Requêtes",
@@ -1667,6 +1674,20 @@
         "quotaLowFirst": "Quota faible d'abord",
         "planHighFirst": "Forfait élevé d'abord",
         "planLowFirst": "Forfait faible d'abord"
+      },
+      "statusUnconfigured": "Non configuré",
+      "expandDetails": "Développer",
+      "collapseDetails": "Réduire",
+      "hideEntryAction": "Masquer l'entrée du service API",
+      "hideEntryConfirm": "Cela masquera l'entrée du service API dans la vue d'ensemble et désactivera aussi le service API actuel. Vous pourrez le réactiver plus tard dans les réglages Codex ou les réglages rapides.",
+      "hideEntryEffectHide": "Masquer l'entrée du service API dans la vue d'ensemble",
+      "hideEntryEffectDisable": "Désactiver le service API actuel",
+      "hideEntryEffectRestore": "Vous pourrez le réactiver dans les réglages Codex ou les réglages rapides",
+      "statsRange": {
+        "label": "Période",
+        "daily": "Jour",
+        "weekly": "Semaine",
+        "monthly": "Mois"
       }
     },
     "local": {
@@ -1926,7 +1947,8 @@
         "expand": "Développer",
         "collapse": "Réduire",
         "repairVisibility": "Réparer la visibilité",
-        "restoreSessions": "Restaurer les sessions"
+      "restoreSessions": "Restaurer les sessions",
+      "copySessionId": "Copier l'ID de session"
       },
       "confirm": {
         "title": "Déplacer vers la corbeille",
@@ -1944,7 +1966,10 @@
         "pickRestoreOne": "Veuillez sélectionner au moins une session à restaurer"
       },
       "groupCount": "{{count}} sessions",
-      "updatedAt": "Mis à jour",
+    "updatedAt": "Mis à jour",
+    "labels": {
+      "sessionId": "ID de session"
+    },
       "locationRunning": " (en cours d’exécution)",
       "untitled": "Session sans titre",
       "restoreModal": {
@@ -2256,7 +2281,8 @@
       "appPath": "Chemin de l'application",
       "configToml": "Fichier de configuration Codex",
       "openConfigToml": "Ouvrir le fichier",
-      "openConfigHint": "Ouvrez rapidement le fichier config.toml actif de Codex."
+      "openConfigHint": "Ouvrez rapidement le fichier config.toml actif de Codex.",
+      "localAccessEntryVisible": "Afficher l'entrée du service API"
     },
     "githubCopilot": {
       "title": "Paramètres GitHub Copilot",

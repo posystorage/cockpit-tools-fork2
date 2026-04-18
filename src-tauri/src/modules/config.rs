@@ -160,6 +160,9 @@ pub struct UserConfig {
     /// 自动备份保留天数
     #[serde(default = "default_auto_backup_retention_days")]
     pub auto_backup_retention_days: i32,
+    /// 自动备份保留天数是否已执行 v0.22.1 迁移（3 -> 15）
+    #[serde(default = "default_auto_backup_retention_days_migrated")]
+    pub auto_backup_retention_days_migrated: bool,
     /// 最近一次自动备份时间（ISO 8601）
     #[serde(default)]
     pub auto_backup_last_backup_at: Option<String>,
@@ -229,6 +232,9 @@ pub struct UserConfig {
     /// 切换 Codex 时是否自动启动/重启 Codex App
     #[serde(default = "default_codex_launch_on_switch")]
     pub codex_launch_on_switch: bool,
+    /// 是否在 Codex 总览中显示 API 服务入口
+    #[serde(default = "default_codex_local_access_entry_visible")]
+    pub codex_local_access_entry_visible: bool,
     /// Antigravity 切号是否启用“本地落盘 + 扩展无感”且不重启
     #[serde(default = "default_antigravity_dual_switch_no_restart_enabled")]
     pub antigravity_dual_switch_no_restart_enabled: bool,
@@ -509,7 +515,10 @@ pub fn default_auto_backup_include_config() -> bool {
     true
 }
 pub fn default_auto_backup_retention_days() -> i32 {
-    3
+    15
+}
+fn default_auto_backup_retention_days_migrated() -> bool {
+    true
 }
 pub fn sanitize_auto_backup_retention_days(raw: i32) -> i32 {
     raw.clamp(1, 365)
@@ -585,6 +594,9 @@ fn default_openclaw_auth_overwrite_on_switch() -> bool {
     false
 }
 fn default_codex_launch_on_switch() -> bool {
+    true
+}
+fn default_codex_local_access_entry_visible() -> bool {
     true
 }
 fn default_antigravity_dual_switch_no_restart_enabled() -> bool {
@@ -758,6 +770,7 @@ impl Default for UserConfig {
             auto_backup_include_accounts: default_auto_backup_include_accounts(),
             auto_backup_include_config: default_auto_backup_include_config(),
             auto_backup_retention_days: default_auto_backup_retention_days(),
+            auto_backup_retention_days_migrated: default_auto_backup_retention_days_migrated(),
             auto_backup_last_backup_at: None,
             floating_card_position_x: None,
             floating_card_position_y: None,
@@ -782,6 +795,7 @@ impl Default for UserConfig {
             ghcp_launch_on_switch: default_ghcp_launch_on_switch(),
             openclaw_auth_overwrite_on_switch: default_openclaw_auth_overwrite_on_switch(),
             codex_launch_on_switch: default_codex_launch_on_switch(),
+            codex_local_access_entry_visible: default_codex_local_access_entry_visible(),
             antigravity_dual_switch_no_restart_enabled:
                 default_antigravity_dual_switch_no_restart_enabled(),
             auto_switch_enabled: default_auto_switch_enabled(),
@@ -1150,6 +1164,13 @@ pub fn load_user_config() -> Result<UserConfig, String> {
             );
         }
 
+        if !obj.contains_key("codex_local_access_entry_visible") {
+            obj.insert(
+                "codex_local_access_entry_visible".to_string(),
+                json!(default_codex_local_access_entry_visible()),
+            );
+        }
+
         if !obj.contains_key("floating_card_confirm_on_close") {
             obj.insert(
                 "floating_card_confirm_on_close".to_string(),
@@ -1178,6 +1199,13 @@ pub fn load_user_config() -> Result<UserConfig, String> {
             obj.insert(
                 "auto_backup_retention_days".to_string(),
                 json!(default_auto_backup_retention_days()),
+            );
+        }
+        if !obj.contains_key("auto_backup_retention_days_migrated") {
+            // 老配置没有该标记时，默认视为“尚未迁移”，以便执行一次 3->15 升级。
+            obj.insert(
+                "auto_backup_retention_days_migrated".to_string(),
+                json!(false),
             );
         }
         if !obj.contains_key("auto_backup_last_backup_at") {
@@ -1477,6 +1505,13 @@ pub fn load_user_config() -> Result<UserConfig, String> {
     );
     config.auto_backup_include_accounts = include_accounts;
     config.auto_backup_include_config = include_config;
+    if !config.auto_backup_retention_days_migrated {
+        if config.auto_backup_retention_days == 3 {
+            // 兼容迁移：历史默认值为 3 天，统一升级为 15 天。
+            config.auto_backup_retention_days = 15;
+        }
+        config.auto_backup_retention_days_migrated = true;
+    }
     config.auto_backup_retention_days =
         sanitize_auto_backup_retention_days(config.auto_backup_retention_days);
     config.auto_backup_last_backup_at = config.auto_backup_last_backup_at.and_then(|value| {

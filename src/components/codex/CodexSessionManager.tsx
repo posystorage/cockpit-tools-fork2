@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { confirm as confirmDialog } from '@tauri-apps/plugin-dialog';
-import { ChevronDown, ChevronRight, Eye, Folder, RefreshCw, RotateCcw, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Copy, Eye, Folder, RefreshCw, RotateCcw, Trash2, X } from 'lucide-react';
 import { ModalErrorMessage, useModalErrorState } from '../ModalErrorMessage';
 import type { CodexSessionRecord, CodexTrashedSessionRecord } from '../../types/codex';
 import { useCodexInstanceStore } from '../../stores/useCodexInstanceStore';
@@ -70,6 +70,11 @@ function resolveGroupLabel(cwd: string): string {
   return parts[parts.length - 1] || cwd;
 }
 
+function formatSessionId(sessionId: string): string {
+  if (sessionId.length <= 18) return sessionId;
+  return `${sessionId.slice(0, 8)}...${sessionId.slice(-6)}`;
+}
+
 export function CodexSessionManager() {
   const { t, i18n } = useTranslation();
   const instances = useCodexInstanceStore((state) => state.instances);
@@ -101,6 +106,7 @@ export function CodexSessionManager() {
   const [loadingTrash, setLoadingTrash] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState<MessageState | null>(null);
+  const [copiedSessionId, setCopiedSessionId] = useState<string | null>(null);
   const {
     message: restoreModalError,
     scrollKey: restoreModalErrorScrollKey,
@@ -108,6 +114,7 @@ export function CodexSessionManager() {
   } = useModalErrorState();
   const hasInitializedExpandedGroupsRef = useRef(false);
   const loadSessionsPromiseRef = useRef<Promise<void> | null>(null);
+  const copyResetTimerRef = useRef<number | null>(null);
   const isZh = i18n.resolvedLanguage?.toLowerCase().startsWith('zh') ?? true;
 
   const groupedSessions = useMemo(() => buildGroups(sessions), [sessions]);
@@ -175,6 +182,14 @@ export function CodexSessionManager() {
   useEffect(() => {
     void loadSessions();
   }, [loadSessions]);
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimerRef.current !== null) {
+        window.clearTimeout(copyResetTimerRef.current);
+      }
+    };
+  }, []);
 
   const toggleSession = (sessionId: string) => {
     setSelectedIds((prev) =>
@@ -354,6 +369,29 @@ export function CodexSessionManager() {
     }
   };
 
+  const handleCopySessionId = async (event: MouseEvent<HTMLButtonElement>, sessionId: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    try {
+      await navigator.clipboard.writeText(sessionId);
+      setCopiedSessionId(sessionId);
+      if (copyResetTimerRef.current !== null) {
+        window.clearTimeout(copyResetTimerRef.current);
+      }
+      copyResetTimerRef.current = window.setTimeout(() => {
+        setCopiedSessionId((current) => (current === sessionId ? null : current));
+        copyResetTimerRef.current = null;
+      }, 1200);
+    } catch (error) {
+      console.error('Failed to copy session id:', error);
+      setMessage({
+        text: t('common.shared.export.copyFailed', '复制失败，请手动复制'),
+        tone: 'error',
+      });
+    }
+  };
+
   return (
     <section className="codex-session-manager">
       <div className="codex-session-manager__header">
@@ -476,8 +514,8 @@ export function CodexSessionManager() {
                     {group.sessions.map((session) => {
                       const hasRunningLocation = session.locations.some((location) => location.running);
                       return (
-                        <label className="codex-session-row" key={session.sessionId}>
-                          <div className="codex-session-row__left">
+                        <div className="codex-session-row" key={session.sessionId}>
+                          <label className="codex-session-row__left">
                             <input
                               className="codex-session-row__checkbox"
                               type="checkbox"
@@ -494,12 +532,26 @@ export function CodexSessionManager() {
                                   ? t('codex.sessionManager.locationRunning', '（运行中）')
                                   : ''}
                               </span>
+                              <span className="codex-session-row__meta codex-session-row__session-id" title={session.sessionId}>
+                                {t('codex.sessionManager.labels.sessionId', '会话 ID')}: {formatSessionId(session.sessionId)}
+                              </span>
                             </div>
+                          </label>
+                          <div className="codex-session-row__right">
+                            <button
+                              className={`codex-session-row__copy-button${copiedSessionId === session.sessionId ? ' is-copied' : ''}`}
+                              type="button"
+                              onClick={(event) => void handleCopySessionId(event, session.sessionId)}
+                              title={t('codex.sessionManager.actions.copySessionId', '复制会话 ID')}
+                              aria-label={t('codex.sessionManager.actions.copySessionId', '复制会话 ID')}
+                            >
+                              {copiedSessionId === session.sessionId ? <Check size={14} /> : <Copy size={14} />}
+                            </button>
+                            <span className="codex-session-row__time">
+                              {formatRelativeTime(session.updatedAt, isZh)}
+                            </span>
                           </div>
-                          <span className="codex-session-row__time">
-                            {formatRelativeTime(session.updatedAt, isZh)}
-                          </span>
-                        </label>
+                        </div>
                       );
                     })}
                   </div>

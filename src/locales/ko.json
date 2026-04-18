@@ -666,7 +666,12 @@
       "qoderAutoRefreshDesc": "백그라운드 자동 갱신 빈도",
       "qoderPathSelect": "선택",
       "workbuddyAutoRefresh": "WorkBuddy 자동 할당량 갱신",
-      "workbuddyAutoRefreshDesc": "백그라운드 자동 갱신 빈도"
+      "workbuddyAutoRefreshDesc": "백그라운드 자동 갱신 빈도",
+      "codexLocalAccessEntryVisible": "API 서비스 항목 표시",
+      "codexLocalAccessEntryVisibleDesc": "Codex 개요에서 API 서비스 항목을 표시할지만 제어합니다. 로컬 API 서비스 자체를 중지하지 않으며, 여기나 빠른 설정에서 다시 켤 수 있습니다.",
+      "codexLocalAccessEnabled": "API 서비스 사용",
+      "codexLocalAccessEnabledDesc": "로컬 Codex API 서비스가 실제로 실행될지 제어합니다.",
+      "codexLocalAccessEnabledRequiresCollection": "서비스를 켜거나 끄기 전에 먼저 API 서비스 컬렉션에 계정을 추가하세요."
     },
     "network": {
       "apiTitle": "반중력 조종석 API",
@@ -1624,7 +1629,7 @@
       "activateSuccess": "API 서비스로 전환했습니다",
       "dashboardAction": "서비스 패널",
       "manageDesc": "API 서비스 통계, 멤버, 포트, 키, 연결 테스트를 한곳에서 관리합니다.",
-      "memberOnlyLocal": "로컬 전용",
+      "memberOnlyLocal": "Codex 전용",
       "configTitle": "서비스 설정",
       "configEmpty": "URL, 키, 포트를 생성하려면 먼저 하나 이상의 계정을 API 서비스 컬렉션에 저장하세요.",
       "portLabel": "서비스 포트",
@@ -1634,6 +1639,8 @@
       "statsTitle": "전체",
       "accountStatsTitle": "계정별",
       "statsEmpty": "아직 통계가 없습니다",
+      "summaryMeta": "{{count}}개 계정 · Codex 전용",
+      "summaryMetaUnconfigured": "미설정 · Codex 전용",
       "memberTitle": "컬렉션 멤버",
       "stats": {
         "requests": "요청",
@@ -1667,6 +1674,20 @@
         "quotaLowFirst": "낮은 할당량 우선",
         "planHighFirst": "상위 요금제 우선",
         "planLowFirst": "하위 요금제 우선"
+      },
+      "statusUnconfigured": "미설정",
+      "expandDetails": "세부 정보 펼치기",
+      "collapseDetails": "세부 정보 접기",
+      "hideEntryAction": "API 서비스 항목 숨기기",
+      "hideEntryConfirm": "이 작업을 하면 개요에서 API 서비스 항목이 숨겨지고 현재 API 서비스도 비활성화됩니다. 나중에 Codex 설정이나 빠른 설정에서 다시 켤 수 있습니다.",
+      "hideEntryEffectHide": "개요에서 API 서비스 항목 숨기기",
+      "hideEntryEffectDisable": "현재 API 서비스 비활성화",
+      "hideEntryEffectRestore": "Codex 설정이나 빠른 설정에서 다시 켤 수 있습니다",
+      "statsRange": {
+        "label": "통계 범위",
+        "daily": "일",
+        "weekly": "주",
+        "monthly": "월"
       }
     },
     "local": {
@@ -1926,7 +1947,8 @@
         "expand": "펼치기",
         "collapse": "접기",
         "repairVisibility": "표시 정보 복구",
-        "restoreSessions": "세션 복원"
+      "restoreSessions": "세션 복원",
+      "copySessionId": "세션 ID 복사"
       },
       "confirm": {
         "title": "휴지통으로 이동",
@@ -1944,7 +1966,10 @@
         "pickRestoreOne": "복원할 세션을 하나 이상 선택하세요"
       },
       "groupCount": "{{count}}개 세션",
-      "updatedAt": "업데이트됨",
+    "updatedAt": "업데이트됨",
+    "labels": {
+      "sessionId": "세션 ID"
+    },
       "locationRunning": " (실행 중)",
       "untitled": "제목 없는 세션",
       "restoreModal": {
@@ -2256,7 +2281,8 @@
       "appPath": "앱 경로",
       "configToml": "Codex 구성 파일",
       "openConfigToml": "파일 열기",
-      "openConfigHint": "현재 활성화된 Codex config.toml 파일을 빠르게 엽니다."
+      "openConfigHint": "현재 활성화된 Codex config.toml 파일을 빠르게 엽니다.",
+      "localAccessEntryVisible": "API 서비스 항목 표시"
     },
     "githubCopilot": {
       "title": "GitHub Copilot 설정",

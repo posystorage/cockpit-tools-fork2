@@ -7,6 +7,14 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [0.22.2] - 2026-04-18
+
+### Changed
+- **Codex API Service now adds persisted overview controls and time-window stats**: the overview card can be collapsed in list mode, Settings and Quick Settings can hide or restore the entry, hiding the entry also disables the current local service, and the service panel now switches between daily, weekly, and monthly stats.
+- **Current-account resolution now follows Cockpit's explicit selection instead of fallback guessing**: provider injections persist the current-account mapping, GitHub Copilot is included in that flow, and account index repair/delete paths no longer silently repoint the current account to the first remaining record.
+- **Auto backup retention now defaults to 15 days with a one-time legacy migration**: existing configs using the historical default `3` are upgraded to `15` once, while later user-selected values (including `3`) are preserved and no longer auto-overwritten.
+
+---
 ## [0.22.1] - 2026-04-18
 
 ### Added

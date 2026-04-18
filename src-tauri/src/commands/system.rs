@@ -146,6 +146,8 @@ pub struct GeneralConfig {
     pub openclaw_auth_overwrite_on_switch: bool,
     /// 切换 Codex 时是否自动启动/重启 Codex App
     pub codex_launch_on_switch: bool,
+    /// 是否在 Codex 总览中显示 API 服务入口
+    pub codex_local_access_entry_visible: bool,
     /// Antigravity 切号是否启用“本地落盘 + 扩展无感”且不重启
     pub antigravity_dual_switch_no_restart_enabled: bool,
     /// 是否启用自动切号
@@ -701,6 +703,7 @@ pub fn save_network_config(
         auto_backup_include_accounts: current.auto_backup_include_accounts,
         auto_backup_include_config: current.auto_backup_include_config,
         auto_backup_retention_days: current.auto_backup_retention_days,
+        auto_backup_retention_days_migrated: current.auto_backup_retention_days_migrated,
         auto_backup_last_backup_at: current.auto_backup_last_backup_at,
         floating_card_position_x: current.floating_card_position_x,
         floating_card_position_y: current.floating_card_position_y,
@@ -724,6 +727,7 @@ pub fn save_network_config(
         ghcp_launch_on_switch: current.ghcp_launch_on_switch,
         openclaw_auth_overwrite_on_switch: current.openclaw_auth_overwrite_on_switch,
         codex_launch_on_switch: current.codex_launch_on_switch,
+        codex_local_access_entry_visible: current.codex_local_access_entry_visible,
         antigravity_dual_switch_no_restart_enabled: current
             .antigravity_dual_switch_no_restart_enabled,
         auto_switch_enabled: current.auto_switch_enabled,
@@ -981,6 +985,7 @@ pub fn get_general_config(app: tauri::AppHandle) -> Result<GeneralConfig, String
         ghcp_launch_on_switch: user_config.ghcp_launch_on_switch,
         openclaw_auth_overwrite_on_switch: user_config.openclaw_auth_overwrite_on_switch,
         codex_launch_on_switch: user_config.codex_launch_on_switch,
+        codex_local_access_entry_visible: user_config.codex_local_access_entry_visible,
         antigravity_dual_switch_no_restart_enabled: user_config
             .antigravity_dual_switch_no_restart_enabled,
         auto_switch_enabled: user_config.auto_switch_enabled,
@@ -1100,6 +1105,7 @@ pub fn save_general_config(
     ghcp_launch_on_switch: Option<bool>,
     openclaw_auth_overwrite_on_switch: Option<bool>,
     codex_launch_on_switch: bool,
+    codex_local_access_entry_visible: Option<bool>,
     antigravity_dual_switch_no_restart_enabled: Option<bool>,
     auto_switch_enabled: Option<bool>,
     auto_switch_threshold: Option<i32>,
@@ -1305,6 +1311,8 @@ pub fn save_general_config(
         openclaw_auth_overwrite_on_switch: openclaw_auth_overwrite_on_switch
             .unwrap_or(current.openclaw_auth_overwrite_on_switch),
         codex_launch_on_switch,
+        codex_local_access_entry_visible: codex_local_access_entry_visible
+            .unwrap_or(current.codex_local_access_entry_visible),
         antigravity_dual_switch_no_restart_enabled: antigravity_dual_switch_no_restart_enabled
             .unwrap_or(current.antigravity_dual_switch_no_restart_enabled),
         auto_switch_enabled: auto_switch_enabled.unwrap_or(current.auto_switch_enabled),
@@ -1401,6 +1409,7 @@ pub fn save_general_config(
         auto_backup_include_accounts: current.auto_backup_include_accounts,
         auto_backup_include_config: current.auto_backup_include_config,
         auto_backup_retention_days: current.auto_backup_retention_days,
+        auto_backup_retention_days_migrated: current.auto_backup_retention_days_migrated,
         auto_backup_last_backup_at: current.auto_backup_last_backup_at,
     };
 
@@ -1493,6 +1502,19 @@ pub fn set_codex_launch_on_switch(enabled: bool) -> Result<(), String> {
     }
     let new_config = UserConfig {
         codex_launch_on_switch: enabled,
+        ..current
+    };
+    config::save_user_config(&new_config)
+}
+
+#[tauri::command]
+pub fn set_codex_local_access_entry_visible(enabled: bool) -> Result<(), String> {
+    let current = config::get_user_config();
+    if current.codex_local_access_entry_visible == enabled {
+        return Ok(());
+    }
+    let new_config = UserConfig {
+        codex_local_access_entry_visible: enabled,
         ..current
     };
     config::save_user_config(&new_config)

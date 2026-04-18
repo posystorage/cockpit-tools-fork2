@@ -34,11 +34,21 @@ export interface CodexLocalAccessAccountStats {
   updatedAt: number;
 }
 
+export interface CodexLocalAccessStatsWindow {
+  since: number;
+  updatedAt: number;
+  totals: CodexLocalAccessUsageStats;
+  accounts: CodexLocalAccessAccountStats[];
+}
+
 export interface CodexLocalAccessStats {
   since: number;
   updatedAt: number;
   totals: CodexLocalAccessUsageStats;
   accounts: CodexLocalAccessAccountStats[];
+  daily: CodexLocalAccessStatsWindow;
+  weekly: CodexLocalAccessStatsWindow;
+  monthly: CodexLocalAccessStatsWindow;
 }
 
 export interface CodexLocalAccessState {

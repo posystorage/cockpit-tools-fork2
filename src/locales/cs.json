@@ -666,7 +666,12 @@
       "qoderAutoRefreshDesc": "Frekvence automatického obnovení na pozadí",
       "qoderPathSelect": "Vybrat",
       "workbuddyAutoRefresh": "Automatické obnovení kvóty WorkBuddy",
-      "workbuddyAutoRefreshDesc": "Frekvence automatického obnovení na pozadí"
+      "workbuddyAutoRefreshDesc": "Frekvence automatického obnovení na pozadí",
+      "codexLocalAccessEntryVisible": "Zobrazit položku služby API",
+      "codexLocalAccessEntryVisibleDesc": "Určuje pouze, zda se v přehledu Codex zobrazuje položka služby API. Místní službu API to nezastaví; můžete ji znovu zapnout zde nebo v rychlém nastavení.",
+      "codexLocalAccessEnabled": "Zapnout službu API",
+      "codexLocalAccessEnabledDesc": "Určuje, zda místní služba Codex API skutečně běží.",
+      "codexLocalAccessEnabledRequiresCollection": "Před zapnutím nebo vypnutím služby nejprve přidejte účty do kolekce služby API."
     },
     "network": {
       "apiTitle": "Antigravity Cockpit API",
@@ -1624,7 +1629,7 @@
       "activateSuccess": "Přepnuto na API službu",
       "dashboardAction": "Panel služby",
       "manageDesc": "Na jednom místě spravujte statistiky služby API, členy, port, klíč i test připojení.",
-      "memberOnlyLocal": "Jen lokálně",
+      "memberOnlyLocal": "Jen Codex",
       "configTitle": "Nastavení služby",
       "configEmpty": "Nejprve uložte alespoň jeden účet do kolekce API služby, pak se vygeneruje adresa, klíč a port.",
       "portLabel": "Port služby",
@@ -1634,6 +1639,8 @@
       "statsTitle": "Souhrn",
       "accountStatsTitle": "Podle účtu",
       "statsEmpty": "Zatím žádné statistiky",
+      "summaryMeta": "{{count}} účtů · Jen Codex",
+      "summaryMetaUnconfigured": "Nenastaveno · Jen Codex",
       "memberTitle": "Členové kolekce",
       "stats": {
         "requests": "Požadavky",
@@ -1667,6 +1674,20 @@
         "quotaLowFirst": "Nejnižší kvóta napřed",
         "planHighFirst": "Nejvyšší tarif napřed",
         "planLowFirst": "Nejnižší tarif napřed"
+      },
+      "statusUnconfigured": "Nenastaveno",
+      "expandDetails": "Rozbalit detail",
+      "collapseDetails": "Sbalit detail",
+      "hideEntryAction": "Skrýt položku služby API",
+      "hideEntryConfirm": "Tím se skryje položka služby API z přehledu a zároveň se vypne aktuální služba API. Později ji můžete znovu zapnout v nastavení Codex nebo v rychlém nastavení.",
+      "hideEntryEffectHide": "Skrýt položku služby API z přehledu",
+      "hideEntryEffectDisable": "Vypnout aktuální službu API",
+      "hideEntryEffectRestore": "Později ji lze znovu zapnout v nastavení Codex nebo v rychlém nastavení",
+      "statsRange": {
+        "label": "Rozsah statistik",
+        "daily": "Den",
+        "weekly": "Týden",
+        "monthly": "Měsíc"
       }
     },
     "local": {
@@ -1926,7 +1947,8 @@
         "expand": "Rozbalit",
         "collapse": "Sbalit",
         "repairVisibility": "Opravit viditelnost",
-        "restoreSessions": "Obnovit relace"
+      "restoreSessions": "Obnovit relace",
+      "copySessionId": "Kopírovat ID relace"
       },
       "confirm": {
         "title": "Přesunout do koše",
@@ -1944,7 +1966,10 @@
         "pickRestoreOne": "Vyberte prosím alespoň jednu relaci k obnovení"
       },
       "groupCount": "{{count}} relací",
-      "updatedAt": "Aktualizováno",
+    "updatedAt": "Aktualizováno",
+    "labels": {
+      "sessionId": "ID relace"
+    },
       "locationRunning": " (spuštěno)",
       "untitled": "Nepojmenovaná relace",
       "restoreModal": {
@@ -2256,7 +2281,8 @@
       "appPath": "Cesta k aplikaci",
       "configToml": "Konfigurační soubor Codex",
       "openConfigToml": "Otevřít soubor",
-      "openConfigHint": "Rychle otevře aktivní soubor Codex config.toml."
+      "openConfigHint": "Rychle otevře aktivní soubor Codex config.toml.",
+      "localAccessEntryVisible": "Zobrazit položku služby API"
     },
     "githubCopilot": {
       "title": "Nastavení GitHub Copilot",

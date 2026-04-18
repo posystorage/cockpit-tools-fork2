@@ -734,6 +734,11 @@
       "antigravityStartupWakeupDesc": "应用启动后按此策略触发一次已启用的 Antigravity 唤醒任务",
       "codexLaunchOnSwitch": "切换 Codex 时自动启动 Codex App",
       "codexLaunchOnSwitchDesc": "切换账号后自动启动或重启 Codex App",
+      "codexLocalAccessEntryVisible": "显示 API 服务入口",
+      "codexLocalAccessEntryVisibleDesc": "仅控制 Codex 总览中的 API 服务入口显示，不会停止本地 API 服务；关闭后可在这里或快捷设置中重新打开。",
+      "codexLocalAccessEnabled": "启用 API 服务",
+      "codexLocalAccessEnabledDesc": "控制本地 Codex API 服务是否实际运行。",
+      "codexLocalAccessEnabledRequiresCollection": "需先把账号加入 API 服务集合，才能启用或停用服务。",
       "autoSwitchAccountScope": "自动切号账号范围",
       "autoSwitchAccountScopeDesc": "仅在该范围内监控并切换账号。",
       "autoSwitchAccountScopeAll": "全部账号",
@@ -1643,9 +1648,10 @@
       "statusRunning": "运行中",
       "statusStopped": "未运行",
       "statusDisabled": "已停用",
+      "statusUnconfigured": "未配置",
       "emptyMembers": "当前集合暂无账号",
       "footerHint": "仅监听 127.0.0.1",
-      "memberOnlyLocal": "仅本地访问",
+      "memberOnlyLocal": "仅 Codex 访问",
       "manageAccounts": "管理账号",
       "rotateKey": "重置密钥",
       "rotateConfirmMessage": "重置后当前 API 服务密钥会立即失效，正在进行中的请求可能不可用。确认继续吗？",
@@ -1687,6 +1693,21 @@
       "refreshStatsSuccess": "API 服务统计已刷新",
       "accountStatsTitle": "按账号统计",
       "statsEmpty": "当前还没有统计数据",
+      "summaryMeta": "{{count}} 个账号 · 仅 Codex 访问",
+      "summaryMetaUnconfigured": "未配置 · 仅 Codex 访问",
+      "expandDetails": "展开详情",
+      "collapseDetails": "收起详情",
+      "hideEntryAction": "关闭 API 服务入口",
+      "hideEntryConfirm": "关闭后会同时隐藏总览中的 API 服务入口，并停用当前 API 服务。你仍可在 Codex 设置或快捷设置中重新打开。",
+      "hideEntryEffectHide": "隐藏总览中的 API 服务入口",
+      "hideEntryEffectDisable": "停用当前 API 服务",
+      "hideEntryEffectRestore": "可在 Codex 设置或快捷设置中重新开启",
+      "statsRange": {
+        "label": "统计范围",
+        "daily": "日",
+        "weekly": "周",
+        "monthly": "月"
+      },
       "memberTitle": "集合成员",
       "routingStrategy": {
         "auto": "自动（推荐）",
@@ -2143,14 +2164,15 @@
     "sessionManager": {
       "title": "会话管理",
       "desc": "同步、可见性修复、清理与恢复统一放在这里：顶部可一键同步会话、修复历史可见性或从废纸篓恢复，下面按项目展开查看会话并移到废纸篓。",
-      "actions": {
-        "moveToTrash": "移到废纸篓",
-        "syncSessions": "同步会话",
-        "repairVisibility": "修复可见性",
-        "restoreSessions": "恢复会话",
-        "expand": "展开",
-        "collapse": "收起"
-      },
+    "actions": {
+      "moveToTrash": "移到废纸篓",
+      "syncSessions": "同步会话",
+      "repairVisibility": "修复可见性",
+      "restoreSessions": "恢复会话",
+      "copySessionId": "复制会话 ID",
+      "expand": "展开",
+      "collapse": "收起"
+    },
       "confirm": {
         "title": "移到废纸篓",
         "message": "会将所选会话从对应实例中移到废纸篓，便于后续恢复；运行中的实例可能需要重启后才会反映。确认继续？",
@@ -2166,10 +2188,13 @@
         "pickRestoreOne": "请至少选择一条待恢复会话",
         "syncNeedTwo": "至少需要两个实例才能同步会话"
       },
-      "groupCount": "{{count}} 条会话",
-      "updatedAt": "最近更新",
-      "locationRunning": "（运行中）",
-      "untitled": "未命名会话",
+    "groupCount": "{{count}} 条会话",
+    "updatedAt": "最近更新",
+    "labels": {
+      "sessionId": "会话 ID"
+    },
+    "locationRunning": "（运行中）",
+    "untitled": "未命名会话",
       "restoreModal": {
         "title": "恢复会话",
         "hint": "恢复会把 rollout 文件、SQLite 线程记录和 session_index 条目一起放回原实例。",
@@ -2402,7 +2427,8 @@
       "appPath": "启动路径",
       "configToml": "Codex 配置文件",
       "openConfigToml": "打开文件",
-      "openConfigHint": "快速打开当前使用的 Codex config.toml 文件。"
+      "openConfigHint": "快速打开当前使用的 Codex config.toml 文件。",
+      "localAccessEntryVisible": "显示 API 服务入口"
     },
     "githubCopilot": {
       "title": "GitHub Copilot 设置",

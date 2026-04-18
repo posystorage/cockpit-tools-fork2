@@ -666,7 +666,12 @@
       "qoderAutoRefreshDesc": "Частота автоматического обновления в фоне",
       "qoderPathSelect": "Выбрать",
       "workbuddyAutoRefresh": "Автообновление квоты WorkBuddy",
-      "workbuddyAutoRefreshDesc": "Частота автоматического обновления в фоне"
+      "workbuddyAutoRefreshDesc": "Частота автоматического обновления в фоне",
+      "codexLocalAccessEntryVisible": "Показывать пункт API-сервиса",
+      "codexLocalAccessEntryVisibleDesc": "Управляет только отображением пункта API-сервиса в обзоре Codex. Это не останавливает локальный API-сервис; его можно снова включить здесь или в быстрых настройках.",
+      "codexLocalAccessEnabled": "Включить API-сервис",
+      "codexLocalAccessEnabledDesc": "Определяет, будет ли локальный API-сервис Codex действительно работать.",
+      "codexLocalAccessEnabledRequiresCollection": "Перед включением или отключением сервиса сначала добавьте аккаунты в коллекцию API-сервиса."
     },
     "network": {
       "apiTitle": "API антигравитационной кабины",
@@ -1624,7 +1629,7 @@
       "activateSuccess": "Переключено на API-сервис",
       "dashboardAction": "Панель сервиса",
       "manageDesc": "Здесь можно управлять статистикой API-сервиса, участниками, портом, ключом и проверкой соединения.",
-      "memberOnlyLocal": "Только локально",
+      "memberOnlyLocal": "Только Codex",
       "configTitle": "Настройки сервиса",
       "configEmpty": "Сначала сохраните хотя бы один аккаунт в коллекции API-сервиса, чтобы сгенерировать URL, ключ и порт.",
       "portLabel": "Порт сервиса",
@@ -1634,6 +1639,8 @@
       "statsTitle": "Итого",
       "accountStatsTitle": "По аккаунтам",
       "statsEmpty": "Статистики пока нет",
+      "summaryMeta": "{{count}} аккаунтов · Только Codex",
+      "summaryMetaUnconfigured": "Не настроено · Только Codex",
       "memberTitle": "Участники коллекции",
       "stats": {
         "requests": "Запросы",
@@ -1667,6 +1674,20 @@
         "quotaLowFirst": "Сначала низкая квота",
         "planHighFirst": "Сначала высокий тариф",
         "planLowFirst": "Сначала низкий тариф"
+      },
+      "statusUnconfigured": "Не настроено",
+      "expandDetails": "Развернуть",
+      "collapseDetails": "Свернуть",
+      "hideEntryAction": "Скрыть пункт API-сервиса",
+      "hideEntryConfirm": "Это скроет пункт API-сервиса в обзоре и одновременно отключит текущий API-сервис. Позже его можно снова включить в настройках Codex или в быстрых настройках.",
+      "hideEntryEffectHide": "Скрыть пункт API-сервиса в обзоре",
+      "hideEntryEffectDisable": "Отключить текущий API-сервис",
+      "hideEntryEffectRestore": "Позже его можно снова включить в настройках Codex или в быстрых настройках",
+      "statsRange": {
+        "label": "Период",
+        "daily": "День",
+        "weekly": "Неделя",
+        "monthly": "Месяц"
       }
     },
     "local": {
@@ -1926,7 +1947,8 @@
         "expand": "Развернуть",
         "collapse": "Свернуть",
         "repairVisibility": "Исправить видимость",
-        "restoreSessions": "Восстановить сессии"
+      "restoreSessions": "Восстановить сессии",
+      "copySessionId": "Копировать ID сессии"
       },
       "confirm": {
         "title": "Переместить в корзину",
@@ -1944,7 +1966,10 @@
         "pickRestoreOne": "Выберите хотя бы одну сессию для восстановления"
       },
       "groupCount": "{{count}} сессий",
-      "updatedAt": "Обновлено",
+    "updatedAt": "Обновлено",
+    "labels": {
+      "sessionId": "ID сессии"
+    },
       "locationRunning": " (запущено)",
       "untitled": "Сессия без названия",
       "restoreModal": {
@@ -2256,7 +2281,8 @@
       "appPath": "Путь к приложению",
       "configToml": "Файл конфигурации Codex",
       "openConfigToml": "Открыть файл",
-      "openConfigHint": "Быстро открыть активный файл Codex config.toml."
+      "openConfigHint": "Быстро открыть активный файл Codex config.toml.",
+      "localAccessEntryVisible": "Показывать пункт API-сервиса"
     },
     "githubCopilot": {
       "title": "Настройки GitHub Copilot",

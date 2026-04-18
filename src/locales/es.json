@@ -666,7 +666,12 @@
       "qoderAutoRefreshDesc": "Frecuencia de actualización automática en segundo plano",
       "qoderPathSelect": "Seleccionar",
       "workbuddyAutoRefresh": "Actualización automática de cuota WorkBuddy",
-      "workbuddyAutoRefreshDesc": "Frecuencia de actualización automática en segundo plano"
+      "workbuddyAutoRefreshDesc": "Frecuencia de actualización automática en segundo plano",
+      "codexLocalAccessEntryVisible": "Mostrar acceso del servicio API",
+      "codexLocalAccessEntryVisibleDesc": "Solo controla si el acceso del servicio API se muestra en la vista general de Codex. No detiene el servicio API local; puedes volver a mostrarlo aquí o en Ajustes rápidos.",
+      "codexLocalAccessEnabled": "Activar servicio API",
+      "codexLocalAccessEnabledDesc": "Controla si el servicio API local de Codex está realmente en ejecución.",
+      "codexLocalAccessEnabledRequiresCollection": "Añade cuentas a la colección del servicio API antes de activarlo o desactivarlo."
     },
     "network": {
       "apiTitle": "API de cabina antigravedad",
@@ -1624,7 +1629,7 @@
       "activateSuccess": "Se cambió al servicio API",
       "dashboardAction": "Panel del servicio",
       "manageDesc": "Gestiona en un solo lugar las estadísticas del servicio API, los miembros, el puerto, la clave y la prueba de conexión.",
-      "memberOnlyLocal": "Solo local",
+      "memberOnlyLocal": "Solo Codex",
       "configTitle": "Configuración del servicio",
       "configEmpty": "Guarda al menos una cuenta en la colección del servicio API para generar la URL, la clave y el puerto.",
       "portLabel": "Puerto del servicio",
@@ -1634,6 +1639,8 @@
       "statsTitle": "Totales",
       "accountStatsTitle": "Por cuenta",
       "statsEmpty": "Aún no hay estadísticas",
+      "summaryMeta": "{{count}} cuentas · Solo Codex",
+      "summaryMetaUnconfigured": "Sin configurar · Solo Codex",
       "memberTitle": "Miembros de la colección",
       "stats": {
         "requests": "Solicitudes",
@@ -1667,6 +1674,20 @@
         "quotaLowFirst": "Cuota baja primero",
         "planHighFirst": "Plan alto primero",
         "planLowFirst": "Plan bajo primero"
+      },
+      "statusUnconfigured": "Sin configurar",
+      "expandDetails": "Expandir detalles",
+      "collapseDetails": "Contraer detalles",
+      "hideEntryAction": "Ocultar acceso del servicio API",
+      "hideEntryConfirm": "Esto ocultará el acceso del servicio API en la vista general y también desactivará el servicio API actual. Puedes volver a activarlo después en Ajustes de Codex o en Ajustes rápidos.",
+      "hideEntryEffectHide": "Ocultar el acceso del servicio API en la vista general",
+      "hideEntryEffectDisable": "Desactivar el servicio API actual",
+      "hideEntryEffectRestore": "Puedes volver a activarlo en Ajustes de Codex o en Ajustes rápidos",
+      "statsRange": {
+        "label": "Rango",
+        "daily": "Día",
+        "weekly": "Semana",
+        "monthly": "Mes"
       }
     },
     "local": {
@@ -1926,7 +1947,8 @@
         "expand": "Expandir",
         "collapse": "Contraer",
         "repairVisibility": "Reparar visibilidad",
-        "restoreSessions": "Restaurar sesiones"
+      "restoreSessions": "Restaurar sesiones",
+      "copySessionId": "Copiar ID de sesión"
       },
       "confirm": {
         "title": "Mover a la papelera",
@@ -1944,7 +1966,10 @@
         "pickRestoreOne": "Selecciona al menos una sesión para restaurar"
       },
       "groupCount": "{{count}} sesiones",
-      "updatedAt": "Actualizado",
+    "updatedAt": "Actualizado",
+    "labels": {
+      "sessionId": "ID de sesión"
+    },
       "locationRunning": " (en ejecución)",
       "untitled": "Sesión sin título",
       "restoreModal": {
@@ -2256,7 +2281,8 @@
       "appPath": "Ruta de la aplicación",
       "configToml": "Archivo de configuración de Codex",
       "openConfigToml": "Abrir archivo",
-      "openConfigHint": "Abre rápidamente el archivo config.toml activo de Codex."
+      "openConfigHint": "Abre rápidamente el archivo config.toml activo de Codex.",
+      "localAccessEntryVisible": "Mostrar acceso del servicio API"
     },
     "githubCopilot": {
       "title": "Configuración de GitHub Copilot",

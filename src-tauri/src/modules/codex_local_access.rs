@@ -1,7 +1,8 @@
 use crate::models::codex::{CodexAccount, CodexApiProviderMode};
 use crate::models::codex_local_access::{
     CodexLocalAccessAccountStats, CodexLocalAccessCollection, CodexLocalAccessRoutingStrategy,
-    CodexLocalAccessState, CodexLocalAccessStats, CodexLocalAccessUsageStats,
+    CodexLocalAccessState, CodexLocalAccessStats, CodexLocalAccessStatsWindow,
+    CodexLocalAccessUsageEvent, CodexLocalAccessUsageStats,
 };
 use crate::modules::atomic_write::write_string_atomic;
 use crate::modules::{codex_account, codex_oauth, logger};
@@ -30,6 +31,10 @@ const MAX_REQUEST_RETRY_ATTEMPTS: usize = 1;
 const MAX_RETRY_CREDENTIALS_PER_REQUEST: usize = 8;
 const RESPONSE_AFFINITY_TTL_MS: i64 = 24 * 60 * 60 * 1000;
 const MAX_RESPONSE_AFFINITY_BINDINGS: usize = 4096;
+const DAY_WINDOW_MS: i64 = 24 * 60 * 60 * 1000;
+const WEEK_WINDOW_MS: i64 = 7 * DAY_WINDOW_MS;
+const MONTH_WINDOW_MS: i64 = 30 * DAY_WINDOW_MS;
+const MAX_RECENT_USAGE_EVENTS: usize = 5_000;
 const UPSTREAM_CODEX_BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
 const DEFAULT_CODEX_USER_AGENT: &str =
     "codex-tui/0.118.0 (Mac OS 26.3.1; arm64) iTerm.app/3.6.9 (codex-tui; 0.118.0)";
@@ -468,12 +473,148 @@ fn parse_codex_retry_after(status: StatusCode, error_body: &str) -> Option<Durat
 
 fn empty_stats_snapshot() -> CodexLocalAccessStats {
     let now = now_ms();
+    let day_since = now.saturating_sub(DAY_WINDOW_MS);
+    let week_since = now.saturating_sub(WEEK_WINDOW_MS);
+    let month_since = now.saturating_sub(MONTH_WINDOW_MS);
     CodexLocalAccessStats {
         since: now,
         updated_at: now,
         totals: CodexLocalAccessUsageStats::default(),
         accounts: Vec::new(),
+        daily: CodexLocalAccessStatsWindow {
+            since: day_since,
+            updated_at: now,
+            totals: CodexLocalAccessUsageStats::default(),
+            accounts: Vec::new(),
+        },
+        weekly: CodexLocalAccessStatsWindow {
+            since: week_since,
+            updated_at: now,
+            totals: CodexLocalAccessUsageStats::default(),
+            accounts: Vec::new(),
+        },
+        monthly: CodexLocalAccessStatsWindow {
+            since: month_since,
+            updated_at: now,
+            totals: CodexLocalAccessUsageStats::default(),
+            accounts: Vec::new(),
+        },
+        events: Vec::new(),
     }
+}
+
+fn empty_stats_window(since: i64, updated_at: i64) -> CodexLocalAccessStatsWindow {
+    CodexLocalAccessStatsWindow {
+        since,
+        updated_at,
+        totals: CodexLocalAccessUsageStats::default(),
+        accounts: Vec::new(),
+    }
+}
+
+fn sort_usage_accounts(accounts: &mut [CodexLocalAccessAccountStats]) {
+    accounts.sort_by(|left, right| {
+        right
+            .usage
+            .request_count
+            .cmp(&left.usage.request_count)
+            .then_with(|| right.updated_at.cmp(&left.updated_at))
+            .then_with(|| left.account_id.cmp(&right.account_id))
+    });
+}
+
+fn trim_recent_events(events: &mut Vec<CodexLocalAccessUsageEvent>, month_since: i64) {
+    events.retain(|event| event.timestamp > 0 && event.timestamp >= month_since);
+    events.sort_by_key(|event| event.timestamp);
+    if events.len() > MAX_RECENT_USAGE_EVENTS {
+        let remove = events.len().saturating_sub(MAX_RECENT_USAGE_EVENTS);
+        events.drain(0..remove);
+    }
+}
+
+fn append_usage_event(
+    events: &mut Vec<CodexLocalAccessUsageEvent>,
+    now: i64,
+    account_id: Option<&str>,
+    account_email: Option<&str>,
+    success: bool,
+    latency_ms: u64,
+    usage: Option<&UsageCapture>,
+) {
+    let usage = usage.cloned().unwrap_or_default();
+    events.push(CodexLocalAccessUsageEvent {
+        timestamp: now,
+        account_id: account_id.unwrap_or_default().trim().to_string(),
+        email: account_email.unwrap_or_default().trim().to_string(),
+        success,
+        latency_ms,
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+        total_tokens: usage.total_tokens,
+        cached_tokens: usage.cached_tokens,
+        reasoning_tokens: usage.reasoning_tokens,
+    });
+}
+
+fn apply_usage_event_to_window(
+    window: &mut CodexLocalAccessStatsWindow,
+    event: &CodexLocalAccessUsageEvent,
+) {
+    let usage = UsageCapture {
+        input_tokens: event.input_tokens,
+        output_tokens: event.output_tokens,
+        total_tokens: event.total_tokens,
+        cached_tokens: event.cached_tokens,
+        reasoning_tokens: event.reasoning_tokens,
+    };
+    apply_usage_stats(
+        &mut window.totals,
+        event.success,
+        event.latency_ms,
+        Some(&usage),
+    );
+    upsert_account_usage_stats(
+        &mut window.accounts,
+        Some(event.account_id.as_str()),
+        Some(event.email.as_str()),
+        event.success,
+        event.latency_ms,
+        Some(&usage),
+        event.timestamp,
+    );
+    window.updated_at = window.updated_at.max(event.timestamp);
+}
+
+fn recompute_time_windows(stats: &mut CodexLocalAccessStats, now: i64) {
+    let day_since = now.saturating_sub(DAY_WINDOW_MS);
+    let week_since = now.saturating_sub(WEEK_WINDOW_MS);
+    let month_since = now.saturating_sub(MONTH_WINDOW_MS);
+
+    trim_recent_events(&mut stats.events, month_since);
+
+    let mut daily = empty_stats_window(day_since, stats.updated_at.max(day_since));
+    let mut weekly = empty_stats_window(week_since, stats.updated_at.max(week_since));
+    let mut monthly = empty_stats_window(month_since, stats.updated_at.max(month_since));
+
+    for event in &stats.events {
+        if event.timestamp >= month_since {
+            apply_usage_event_to_window(&mut monthly, event);
+        }
+        if event.timestamp >= week_since {
+            apply_usage_event_to_window(&mut weekly, event);
+        }
+        if event.timestamp >= day_since {
+            apply_usage_event_to_window(&mut daily, event);
+        }
+    }
+
+    sort_usage_accounts(&mut daily.accounts);
+    sort_usage_accounts(&mut weekly.accounts);
+    sort_usage_accounts(&mut monthly.accounts);
+
+    stats.daily = daily;
+    stats.weekly = weekly;
+    stats.monthly = monthly;
 }
 
 fn build_base_url(port: u16) -> String {
@@ -540,13 +681,8 @@ fn normalize_stats(stats: &mut CodexLocalAccessStats) {
     if stats.updated_at <= 0 {
         stats.updated_at = stats.since;
     }
-    stats.accounts.sort_by(|left, right| {
-        right
-            .usage
-            .request_count
-            .cmp(&left.usage.request_count)
-            .then_with(|| right.updated_at.cmp(&left.updated_at))
-    });
+    sort_usage_accounts(&mut stats.accounts);
+    recompute_time_windows(stats, now);
 }
 
 fn load_stats_from_disk() -> Result<CodexLocalAccessStats, String> {
@@ -899,11 +1035,11 @@ fn apply_usage_stats(
     latency_ms: u64,
     usage: Option<&UsageCapture>,
 ) {
-    target.request_count += 1;
+    target.request_count = target.request_count.saturating_add(1);
     if success {
-        target.success_count += 1;
+        target.success_count = target.success_count.saturating_add(1);
     } else {
-        target.failure_count += 1;
+        target.failure_count = target.failure_count.saturating_add(1);
     }
     target.total_latency_ms = target.total_latency_ms.saturating_add(latency_ms);
 
@@ -918,6 +1054,46 @@ fn apply_usage_stats(
     }
 }
 
+fn upsert_account_usage_stats(
+    accounts: &mut Vec<CodexLocalAccessAccountStats>,
+    account_id: Option<&str>,
+    account_email: Option<&str>,
+    success: bool,
+    latency_ms: u64,
+    usage: Option<&UsageCapture>,
+    updated_at: i64,
+) {
+    let Some(account_id) = account_id.map(str::trim).filter(|value| !value.is_empty()) else {
+        return;
+    };
+    let normalized_email = account_email
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_default()
+        .to_string();
+
+    if let Some(account_stats) = accounts
+        .iter_mut()
+        .find(|item| item.account_id == account_id)
+    {
+        if !normalized_email.is_empty() {
+            account_stats.email = normalized_email;
+        }
+        account_stats.updated_at = updated_at;
+        apply_usage_stats(&mut account_stats.usage, success, latency_ms, usage);
+        return;
+    }
+
+    let mut account_stats = CodexLocalAccessAccountStats {
+        account_id: account_id.to_string(),
+        email: normalized_email,
+        usage: CodexLocalAccessUsageStats::default(),
+        updated_at,
+    };
+    apply_usage_stats(&mut account_stats.usage, success, latency_ms, usage);
+    accounts.push(account_stats);
+}
+
 async fn record_request_stats(
     account_id: Option<&str>,
     account_email: Option<&str>,
@@ -928,50 +1104,30 @@ async fn record_request_stats(
     let stats_snapshot = {
         let mut runtime = gateway_runtime().lock().await;
         let now = now_ms();
+        let usage_ref = usage.as_ref();
         if runtime.stats.since <= 0 {
             runtime.stats.since = now;
         }
         runtime.stats.updated_at = now;
-        apply_usage_stats(
-            &mut runtime.stats.totals,
+        apply_usage_stats(&mut runtime.stats.totals, success, latency_ms, usage_ref);
+        upsert_account_usage_stats(
+            &mut runtime.stats.accounts,
+            account_id,
+            account_email,
             success,
             latency_ms,
-            usage.as_ref(),
+            usage_ref,
+            now,
         );
-
-        if let Some(account_id) = account_id {
-            if let Some(account_stats) = runtime
-                .stats
-                .accounts
-                .iter_mut()
-                .find(|item| item.account_id == account_id)
-            {
-                if let Some(email) = account_email.filter(|value| !value.trim().is_empty()) {
-                    account_stats.email = email.to_string();
-                }
-                account_stats.updated_at = now;
-                apply_usage_stats(
-                    &mut account_stats.usage,
-                    success,
-                    latency_ms,
-                    usage.as_ref(),
-                );
-            } else {
-                let mut account_stats = CodexLocalAccessAccountStats {
-                    account_id: account_id.to_string(),
-                    email: account_email.unwrap_or_default().to_string(),
-                    usage: CodexLocalAccessUsageStats::default(),
-                    updated_at: now,
-                };
-                apply_usage_stats(
-                    &mut account_stats.usage,
-                    success,
-                    latency_ms,
-                    usage.as_ref(),
-                );
-                runtime.stats.accounts.push(account_stats);
-            }
-        }
+        append_usage_event(
+            &mut runtime.stats.events,
+            now,
+            account_id,
+            account_email,
+            success,
+            latency_ms,
+            usage_ref,
+        );
 
         normalize_stats(&mut runtime.stats);
         runtime.stats.clone()
@@ -987,6 +1143,8 @@ fn build_state_snapshot(runtime: &GatewayRuntime) -> CodexLocalAccessState {
         .map(|item| item.account_ids.len())
         .unwrap_or(0);
     let base_url = collection.as_ref().map(|item| build_base_url(item.port));
+    let mut stats = runtime.stats.clone();
+    stats.events.clear();
 
     CodexLocalAccessState {
         collection,
@@ -994,7 +1152,7 @@ fn build_state_snapshot(runtime: &GatewayRuntime) -> CodexLocalAccessState {
         base_url,
         last_error: runtime.last_error.clone(),
         member_count,
-        stats: runtime.stats.clone(),
+        stats,
     }
 }
 

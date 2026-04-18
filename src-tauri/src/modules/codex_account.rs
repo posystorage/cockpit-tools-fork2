@@ -1239,7 +1239,7 @@ fn repair_account_index_from_details(reason: &str) -> Option<CodexAccountIndex> 
             last_used: account.last_used,
         })
         .collect();
-    index.current_account_id = accounts.first().map(|account| account.id.clone());
+    index.current_account_id = None;
 
     logger::log_info(&format!(
         "[Codex Account][Repair] 索引重建完成，准备写回本地文件: recovered_accounts={}, current_account_id={}",
@@ -1790,18 +1790,35 @@ pub fn sync_account_from_auth_dir(
     Ok(account)
 }
 
-/// 获取当前激活的账号（基于 auth.json）
-pub fn get_current_account() -> Option<CodexAccount> {
-    let auth_path = get_auth_json_path();
-    if !auth_path.exists() {
-        return None;
+fn sync_api_key_account_from_local_state(account: &mut CodexAccount, base_dir: &Path) {
+    let auth_path = base_dir.join("auth.json");
+    if !auth_path.exists() || !account.is_api_key_auth() {
+        return;
     }
 
-    let content = fs::read_to_string(&auth_path).ok()?;
-    let auth_file: CodexAuthFile = serde_json::from_str(&content).ok()?;
+    let Ok(content) = fs::read_to_string(&auth_path) else {
+        return;
+    };
+    let Ok(auth_file) = serde_json::from_str::<CodexAuthFile>(&content) else {
+        return;
+    };
     let is_apikey_mode = is_auth_mode_apikey(auth_file.auth_mode.as_deref());
-    let api_key = extract_api_key_from_auth_file(&auth_file);
-    let config_provider = read_api_provider_from_config_toml(&get_codex_home());
+    let local_api_key = extract_api_key_from_auth_file(&auth_file);
+    if !(is_apikey_mode || (auth_file.tokens.is_none() && local_api_key.is_some())) {
+        return;
+    }
+
+    let Some(local_api_key) = normalize_optional_ref(local_api_key.as_deref()) else {
+        return;
+    };
+    let Some(account_api_key) = normalize_optional_ref(account.openai_api_key.as_deref()) else {
+        return;
+    };
+    if local_api_key != account_api_key {
+        return;
+    }
+
+    let config_provider = read_api_provider_from_config_toml(base_dir);
     let current_provider = infer_api_provider_config(
         extract_api_base_url_from_auth_file(&auth_file)
             .or_else(|| config_provider.base_url.clone())
@@ -1810,79 +1827,37 @@ pub fn get_current_account() -> Option<CodexAccount> {
         config_provider.provider_id.as_deref(),
         config_provider.provider_name.as_deref(),
     );
+    let account_provider = infer_api_provider_config(
+        account.api_base_url.as_deref(),
+        Some(account.api_provider_mode.clone()),
+        account.api_provider_id.as_deref(),
+        account.api_provider_name.as_deref(),
+    );
 
-    if is_apikey_mode || (auth_file.tokens.is_none() && api_key.is_some()) {
-        let api_key = api_key?;
-        let normalized_key = normalize_optional_ref(Some(api_key.as_str()))?;
-        let accounts = list_accounts();
-        if let Some(mut account) = accounts.into_iter().find(|account| {
-            account.is_api_key_auth()
-                && normalize_optional_ref(account.openai_api_key.as_deref())
-                    == Some(normalized_key.clone())
-        }) {
-            let account_provider = infer_api_provider_config(
-                account.api_base_url.as_deref(),
-                Some(account.api_provider_mode.clone()),
-                account.api_provider_id.as_deref(),
-                account.api_provider_name.as_deref(),
-            );
-            if account_provider != current_provider {
-                account.api_base_url = current_provider.base_url.clone();
-                account.api_provider_mode = current_provider.mode.clone();
-                account.api_provider_id = current_provider.provider_id.clone();
-                account.api_provider_name = current_provider.provider_name.clone();
-                let _ = save_account(&account);
-            }
-            return Some(account);
-        }
-        logger::log_info("当前 auth.json 为 API Key 模式，但本地账号库未命中，跳过自动补录");
-        return None;
+    if account_provider == current_provider {
+        return;
     }
 
-    let snapshot = build_local_oauth_snapshot(auth_file.tokens?)?;
+    account.api_base_url = current_provider.base_url.clone();
+    account.api_provider_mode = current_provider.mode.clone();
+    account.api_provider_id = current_provider.provider_id.clone();
+    account.api_provider_name = current_provider.provider_name.clone();
+    let _ = save_account(account);
+}
 
-    // 在我们的账号列表中查找
-    let accounts = list_accounts();
-    if let Some(account_id) = snapshot.account_id.as_deref() {
-        if let Some(account) = accounts.iter().find(|account| {
-            account.email.eq_ignore_ascii_case(&snapshot.email)
-                && normalize_optional_ref(account.account_id.as_deref())
-                    == Some(account_id.to_string())
-                && (snapshot.organization_id.is_none()
-                    || normalize_optional_ref(account.organization_id.as_deref())
-                        == snapshot.organization_id.clone())
-        }) {
-            let mut account = account.clone();
-            if apply_local_oauth_snapshot(&mut account, &snapshot) {
-                let _ = save_account(&account);
-            }
-            return Some(account);
-        }
+/// 获取当前激活的账号（基于 Tools 显式 current_account_id，并同步当前本地状态）
+pub fn get_current_account() -> Option<CodexAccount> {
+    let current_id = load_account_index().current_account_id?;
+    let mut account = load_account(&current_id)?;
+    let base_dir = get_codex_home();
+
+    if account.is_api_key_auth() {
+        sync_api_key_account_from_local_state(&mut account, &base_dir);
+        return Some(account);
     }
 
-    if let Some(organization_id) = snapshot.organization_id.as_deref() {
-        if let Some(account) = accounts.iter().find(|account| {
-            account.email.eq_ignore_ascii_case(&snapshot.email)
-                && normalize_optional_ref(account.organization_id.as_deref())
-                    == Some(organization_id.to_string())
-        }) {
-            let mut account = account.clone();
-            if apply_local_oauth_snapshot(&mut account, &snapshot) {
-                let _ = save_account(&account);
-            }
-            return Some(account);
-        }
-    }
-
-    accounts.into_iter().find_map(|mut account| {
-        if !account.email.eq_ignore_ascii_case(&snapshot.email) {
-            return None;
-        }
-        if apply_local_oauth_snapshot(&mut account, &snapshot) {
-            let _ = save_account(&account);
-        }
-        Some(account)
-    })
+    let _ = sync_account_from_auth_dir_if_current(&mut account, &base_dir);
+    Some(account)
 }
 
 fn build_auth_file_value(account: &CodexAccount) -> Result<serde_json::Value, String> {
@@ -3650,26 +3625,11 @@ fn clear_quota_alert_cooldown(account_id: &str, primary_threshold: i32, secondar
 }
 
 pub(crate) fn resolve_current_account_id(accounts: &[CodexAccount]) -> Option<String> {
-    if let Some(account) = get_current_account() {
-        return Some(account.id);
-    }
-
-    if let Ok(settings) = crate::modules::codex_instance::load_default_settings() {
-        if let Some(bind_id) = settings.bind_account_id {
-            let trimmed = bind_id.trim();
-            if crate::modules::codex_instance::is_api_service_bind_account_id(trimmed) {
-                return None;
-            }
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
-        }
-    }
-
+    let current_id = get_current_account()?.id;
     accounts
         .iter()
-        .max_by_key(|account| account.last_used)
-        .map(|account| account.id.clone())
+        .any(|account| account.id == current_id)
+        .then_some(current_id)
 }
 
 fn pick_quota_alert_recommendation(

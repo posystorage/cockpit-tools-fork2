@@ -666,7 +666,12 @@
       "qoderAutoRefreshDesc": "Częstotliwość automatycznego odświeżania w tle",
       "qoderPathSelect": "Wybierz",
       "workbuddyAutoRefresh": "Automatyczne odświeżanie limitu WorkBuddy",
-      "workbuddyAutoRefreshDesc": "Częstotliwość automatycznego odświeżania w tle"
+      "workbuddyAutoRefreshDesc": "Częstotliwość automatycznego odświeżania w tle",
+      "codexLocalAccessEntryVisible": "Pokaż wpis usługi API",
+      "codexLocalAccessEntryVisibleDesc": "Steruje tylko tym, czy wpis usługi API jest widoczny w przeglądzie Codex. Nie zatrzymuje lokalnej usługi API; możesz go ponownie włączyć tutaj lub w szybkich ustawieniach.",
+      "codexLocalAccessEnabled": "Włącz usługę API",
+      "codexLocalAccessEnabledDesc": "Określa, czy lokalna usługa Codex API faktycznie działa.",
+      "codexLocalAccessEnabledRequiresCollection": "Przed włączeniem lub wyłączeniem usługi najpierw dodaj konta do kolekcji usługi API."
     },
     "network": {
       "apiTitle": "API kokpitu antygrawitacyjnego",
@@ -1624,7 +1629,7 @@
       "activateSuccess": "Przełączono na usługę API",
       "dashboardAction": "Panel usługi",
       "manageDesc": "W jednym miejscu zarządzaj statystykami usługi API, członkami, portem, kluczem i testem połączenia.",
-      "memberOnlyLocal": "Tylko lokalnie",
+      "memberOnlyLocal": "Tylko Codex",
       "configTitle": "Konfiguracja usługi",
       "configEmpty": "Najpierw zapisz co najmniej jedno konto w kolekcji usługi API, aby wygenerować adres, klucz i port.",
       "portLabel": "Port usługi",
@@ -1634,6 +1639,8 @@
       "statsTitle": "Łącznie",
       "accountStatsTitle": "Według konta",
       "statsEmpty": "Brak statystyk",
+      "summaryMeta": "{{count}} kont · Tylko Codex",
+      "summaryMetaUnconfigured": "Nieskonfigurowane · Tylko Codex",
       "memberTitle": "Członkowie kolekcji",
       "stats": {
         "requests": "Żądania",
@@ -1667,6 +1674,20 @@
         "quotaLowFirst": "Najpierw niski limit",
         "planHighFirst": "Najpierw wyższy plan",
         "planLowFirst": "Najpierw niższy plan"
+      },
+      "statusUnconfigured": "Nieskonfigurowane",
+      "expandDetails": "Rozwiń szczegóły",
+      "collapseDetails": "Zwiń szczegóły",
+      "hideEntryAction": "Ukryj wpis usługi API",
+      "hideEntryConfirm": "Spowoduje to ukrycie wpisu usługi API w przeglądzie i jednocześnie wyłączy bieżącą usługę API. Później możesz go ponownie włączyć w ustawieniach Codex lub w szybkich ustawieniach.",
+      "hideEntryEffectHide": "Ukryj wpis usługi API w przeglądzie",
+      "hideEntryEffectDisable": "Wyłącz bieżącą usługę API",
+      "hideEntryEffectRestore": "Możesz go ponownie włączyć w ustawieniach Codex lub w szybkich ustawieniach",
+      "statsRange": {
+        "label": "Zakres statystyk",
+        "daily": "Dzień",
+        "weekly": "Tydzień",
+        "monthly": "Miesiąc"
       }
     },
     "local": {
@@ -1926,7 +1947,8 @@
         "expand": "Rozwiń",
         "collapse": "Zwiń",
         "repairVisibility": "Napraw widoczność",
-        "restoreSessions": "Przywróć sesje"
+      "restoreSessions": "Przywróć sesje",
+      "copySessionId": "Kopiuj ID sesji"
       },
       "confirm": {
         "title": "Przenieś do kosza",
@@ -1944,7 +1966,10 @@
         "pickRestoreOne": "Wybierz co najmniej jedną sesję do przywrócenia"
       },
       "groupCount": "{{count}} sesji",
-      "updatedAt": "Zaktualizowano",
+    "updatedAt": "Zaktualizowano",
+    "labels": {
+      "sessionId": "ID sesji"
+    },
       "locationRunning": " (uruchomiona)",
       "untitled": "Sesja bez tytułu",
       "restoreModal": {
@@ -2256,7 +2281,8 @@
       "appPath": "Ścieżka aplikacji",
       "configToml": "Plik konfiguracji Codex",
       "openConfigToml": "Otwórz plik",
-      "openConfigHint": "Szybko otwórz aktywny plik config.toml aplikacji Codex."
+      "openConfigHint": "Szybko otwórz aktywny plik config.toml aplikacji Codex.",
+      "localAccessEntryVisible": "Pokaż wpis usługi API"
     },
     "githubCopilot": {
       "title": "Ustawienia GitHub Copilot",

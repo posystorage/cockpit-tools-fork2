@@ -666,7 +666,12 @@
       "qoderAutoRefreshDesc": "Tần suất tự động làm mới nền",
       "qoderPathSelect": "Chọn",
       "workbuddyAutoRefresh": "Tự động làm mới hạn ngạch WorkBuddy",
-      "workbuddyAutoRefreshDesc": "Tần suất tự động làm mới nền"
+      "workbuddyAutoRefreshDesc": "Tần suất tự động làm mới nền",
+      "codexLocalAccessEntryVisible": "Hiển thị mục Dịch vụ API",
+      "codexLocalAccessEntryVisibleDesc": "Chỉ kiểm soát việc mục Dịch vụ API có hiển thị trong tổng quan Codex hay không. Thao tác này không dừng dịch vụ API cục bộ; bạn có thể bật lại tại đây hoặc trong Cài đặt nhanh.",
+      "codexLocalAccessEnabled": "Bật Dịch vụ API",
+      "codexLocalAccessEnabledDesc": "Kiểm soát việc dịch vụ Codex API cục bộ có thực sự chạy hay không.",
+      "codexLocalAccessEnabledRequiresCollection": "Hãy thêm tài khoản vào bộ sưu tập Dịch vụ API trước khi bật hoặc tắt dịch vụ."
     },
     "network": {
       "apiTitle": "API Antigravity Cockpit",
@@ -1624,7 +1629,7 @@
       "activateSuccess": "Đã chuyển sang dịch vụ API",
       "dashboardAction": "Bảng dịch vụ",
       "manageDesc": "Quản lý thống kê dịch vụ API, thành viên, cổng, khóa và kiểm tra kết nối tại một nơi.",
-      "memberOnlyLocal": "Chỉ cục bộ",
+      "memberOnlyLocal": "Chỉ Codex",
       "configTitle": "Cấu hình dịch vụ",
       "configEmpty": "Hãy lưu ít nhất một tài khoản vào bộ sưu tập dịch vụ API trước khi tạo URL, khóa và cổng.",
       "portLabel": "Cổng dịch vụ",
@@ -1634,6 +1639,8 @@
       "statsTitle": "Tổng quan",
       "accountStatsTitle": "Theo tài khoản",
       "statsEmpty": "Chưa có thống kê",
+      "summaryMeta": "{{count}} tài khoản · Chỉ Codex",
+      "summaryMetaUnconfigured": "Chưa cấu hình · Chỉ Codex",
       "memberTitle": "Thành viên bộ sưu tập",
       "stats": {
         "requests": "Yêu cầu",
@@ -1667,6 +1674,20 @@
         "quotaLowFirst": "Ưu tiên hạn mức thấp",
         "planHighFirst": "Ưu tiên gói cao",
         "planLowFirst": "Ưu tiên gói thấp"
+      },
+      "statusUnconfigured": "Chưa cấu hình",
+      "expandDetails": "Mở chi tiết",
+      "collapseDetails": "Thu gọn",
+      "hideEntryAction": "Ẩn mục Dịch vụ API",
+      "hideEntryConfirm": "Thao tác này sẽ ẩn mục Dịch vụ API khỏi phần tổng quan và đồng thời tắt dịch vụ API hiện tại. Bạn có thể bật lại sau trong Cài đặt Codex hoặc Cài đặt nhanh.",
+      "hideEntryEffectHide": "Ẩn mục Dịch vụ API khỏi phần tổng quan",
+      "hideEntryEffectDisable": "Tắt dịch vụ API hiện tại",
+      "hideEntryEffectRestore": "Bạn có thể bật lại trong Cài đặt Codex hoặc Cài đặt nhanh",
+      "statsRange": {
+        "label": "Khoảng thống kê",
+        "daily": "Ngày",
+        "weekly": "Tuần",
+        "monthly": "Tháng"
       }
     },
     "local": {
@@ -1926,7 +1947,8 @@
         "expand": "Mở rộng",
         "collapse": "Thu gọn",
         "repairVisibility": "Sửa hiển thị",
-        "restoreSessions": "Khôi phục phiên"
+      "restoreSessions": "Khôi phục phiên",
+      "copySessionId": "Sao chép ID phiên"
       },
       "confirm": {
         "title": "Chuyển vào thùng rác",
@@ -1944,7 +1966,10 @@
         "pickRestoreOne": "Hãy chọn ít nhất một phiên để khôi phục"
       },
       "groupCount": "{{count}} phiên",
-      "updatedAt": "Đã cập nhật",
+    "updatedAt": "Đã cập nhật",
+    "labels": {
+      "sessionId": "ID phiên"
+    },
       "locationRunning": " (đang chạy)",
       "untitled": "Phiên chưa đặt tên",
       "restoreModal": {
@@ -2256,7 +2281,8 @@
       "appPath": "Đường dẫn ứng dụng",
       "configToml": "Tệp cấu hình Codex",
       "openConfigToml": "Mở tệp",
-      "openConfigHint": "Mở nhanh tệp Codex config.toml đang hoạt động."
+      "openConfigHint": "Mở nhanh tệp Codex config.toml đang hoạt động.",
+      "localAccessEntryVisible": "Hiển thị mục Dịch vụ API"
     },
     "githubCopilot": {
       "title": "Cài đặt GitHub Copilot",

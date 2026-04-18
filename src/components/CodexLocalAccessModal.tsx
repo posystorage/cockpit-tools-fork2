@@ -24,6 +24,7 @@ import type { CodexAccountGroup } from '../services/codexAccountGroupService';
 import type {
   CodexLocalAccessRoutingStrategy,
   CodexLocalAccessState,
+  CodexLocalAccessStatsWindow,
 } from '../types/codexLocalAccess';
 import { isCodexApiKeyAccount } from '../types/codex';
 import {
@@ -63,6 +64,8 @@ interface CodexLocalAccessModalProps {
   testing: boolean;
   starting: boolean;
 }
+
+type StatsRangeKey = 'daily' | 'weekly' | 'monthly';
 
 function formatCompactNumber(value: number): string {
   return new Intl.NumberFormat('en', {
@@ -117,48 +120,68 @@ export function CodexLocalAccessModal({
   const [portInput, setPortInput] = useState('');
   const [keyVisible, setKeyVisible] = useState(false);
   const [copiedField, setCopiedField] = useState<'baseUrl' | 'apiKey' | null>(null);
+  const [statsRange, setStatsRange] = useState<StatsRangeKey>('daily');
   const selectAllCheckboxRef = useRef<HTMLInputElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   const collection = state?.collection ?? null;
   const baseUrl = state?.baseUrl || (collection ? `http://127.0.0.1:${collection.port}/v1` : '');
   const stats = state?.stats;
-  const totals = stats?.totals;
+  const statsRangeOptions = useMemo(
+    () =>
+      [
+        { key: 'daily', label: t('codex.localAccess.statsRange.daily', '日') },
+        { key: 'weekly', label: t('codex.localAccess.statsRange.weekly', '周') },
+        { key: 'monthly', label: t('codex.localAccess.statsRange.monthly', '月') },
+      ] satisfies Array<{ key: StatsRangeKey; label: string }>,
+    [t],
+  );
+  const selectedStatsWindow = useMemo<CodexLocalAccessStatsWindow | null>(() => {
+    if (!stats) return null;
+    return stats[statsRange];
+  }, [stats, statsRange]);
+  const selectedTotals = selectedStatsWindow?.totals;
   const routingStrategy = collection?.routingStrategy ?? 'auto';
   const avgLatencyMs =
-    totals && totals.requestCount > 0 ? totals.totalLatencyMs / totals.requestCount : 0;
+    selectedTotals && selectedTotals.requestCount > 0
+      ? selectedTotals.totalLatencyMs / selectedTotals.requestCount
+      : 0;
   const successRate =
-    totals && totals.requestCount > 0 ? Math.round((totals.successCount / totals.requestCount) * 100) : 0;
+    selectedTotals && selectedTotals.requestCount > 0
+      ? Math.round((selectedTotals.successCount / selectedTotals.requestCount) * 100)
+      : 0;
   const actionBusy = saving || testing || starting;
   const summaryStats = useMemo(
     () => [
       {
         key: 'requests',
         label: t('codex.localAccess.stats.requests', '总请求数'),
-        value: formatCompactNumber(totals?.requestCount ?? 0),
+        value: formatCompactNumber(selectedTotals?.requestCount ?? 0),
         detail: t('codex.localAccess.stats.requestsDetail', {
-          success: formatCompactNumber(totals?.successCount ?? 0),
-          failed: formatCompactNumber(totals?.failureCount ?? 0),
+          success: formatCompactNumber(selectedTotals?.successCount ?? 0),
+          failed: formatCompactNumber(selectedTotals?.failureCount ?? 0),
           defaultValue: '成功 {{success}} / 失败 {{failed}}',
         }),
       },
       {
         key: 'tokens',
         label: t('codex.localAccess.stats.tokens', '总 Token 数'),
-        value: formatCompactNumber(totals?.totalTokens ?? 0),
+        value: formatCompactNumber(selectedTotals?.totalTokens ?? 0),
         detail: t('codex.localAccess.stats.tokensDetail', {
-          input: formatCompactNumber(totals?.inputTokens ?? 0),
-          output: formatCompactNumber(totals?.outputTokens ?? 0),
+          input: formatCompactNumber(selectedTotals?.inputTokens ?? 0),
+          output: formatCompactNumber(selectedTotals?.outputTokens ?? 0),
           defaultValue: '输入 {{input}} / 输出 {{output}}',
         }),
       },
       {
         key: 'specialTokens',
         label: t('codex.localAccess.stats.specialTokens', '缓存 / 思考'),
-        value: formatCompactNumber((totals?.cachedTokens ?? 0) + (totals?.reasoningTokens ?? 0)),
+        value: formatCompactNumber(
+          (selectedTotals?.cachedTokens ?? 0) + (selectedTotals?.reasoningTokens ?? 0),
+        ),
         detail: t('codex.localAccess.stats.specialTokensDetail', {
-          cached: formatCompactNumber(totals?.cachedTokens ?? 0),
-          reasoning: formatCompactNumber(totals?.reasoningTokens ?? 0),
+          cached: formatCompactNumber(selectedTotals?.cachedTokens ?? 0),
+          reasoning: formatCompactNumber(selectedTotals?.reasoningTokens ?? 0),
           defaultValue: '缓存 {{cached}} / 思考 {{reasoning}}',
         }),
       },
@@ -172,7 +195,7 @@ export function CodexLocalAccessModal({
         }),
       },
     ],
-    [avgLatencyMs, successRate, t, totals],
+    [avgLatencyMs, selectedTotals, successRate, t],
   );
 
   useEffect(() => {
@@ -186,6 +209,7 @@ export function CodexLocalAccessModal({
     setNotice('');
     setKeyVisible(false);
     setCopiedField(null);
+    setStatsRange('daily');
     setPortInput(collection?.port ? String(collection.port) : '');
     if (mode === 'members') {
       window.setTimeout(() => {
@@ -352,11 +376,17 @@ export function CodexLocalAccessModal({
     [initialSelectedIds, selected],
   );
 
-  const statsByAccountId = useMemo(() => {
+  const allStatsByAccountId = useMemo(() => {
     const next = new Map<string, NonNullable<CodexLocalAccessState['stats']>['accounts'][number]>();
     stats?.accounts.forEach((item) => next.set(item.accountId, item));
     return next;
   }, [stats?.accounts]);
+
+  const windowStatsByAccountId = useMemo(() => {
+    const next = new Map<string, NonNullable<CodexLocalAccessState['stats']>['accounts'][number]>();
+    selectedStatsWindow?.accounts.forEach((item) => next.set(item.accountId, item));
+    return next;
+  }, [selectedStatsWindow?.accounts]);
 
   const currentMemberStats = useMemo(() => {
     const currentIds = collection?.accountIds ?? [];
@@ -365,7 +395,7 @@ export function CodexLocalAccessModal({
         const account = oauthAccounts.find((item) => item.id === accountId);
         if (!account) return null;
         const presentation = buildCodexAccountPresentation(account, t);
-        const accountStats = statsByAccountId.get(account.id);
+        const accountStats = windowStatsByAccountId.get(account.id);
         return {
           account,
           presentation,
@@ -378,7 +408,7 @@ export function CodexLocalAccessModal({
         const leftCount = left.stats?.requestCount ?? 0;
         return rightCount - leftCount;
       });
-  }, [collection?.accountIds, oauthAccounts, statsByAccountId, t]);
+  }, [collection?.accountIds, oauthAccounts, t, windowStatsByAccountId]);
 
   const routingStrategyOptions = useMemo(
     () => [
@@ -744,33 +774,56 @@ export function CodexLocalAccessModal({
 
           {!isMembersMode && (
             <section className="codex-local-access-section codex-local-access-section-surface codex-local-access-summary-block">
-            <div className="codex-local-access-summary-head">
-              <div className="codex-local-access-section-title">
-                <Activity size={16} />
-                <span>{t('codex.localAccess.statsTitle', '总量统计')}</span>
-              </div>
-              <button
-                type="button"
-                className="btn btn-danger btn-sm"
-                onClick={() => void handleClearStats()}
-                disabled={!collection || actionBusy}
-                title={t('codex.localAccess.clearStats', '清除统计')}
-                aria-label={t('codex.localAccess.clearStats', '清除统计')}
-              >
-                <Trash2 size={14} />
-                {t('codex.localAccess.clearStats', '清除统计')}
-              </button>
-            </div>
-            <div className="codex-local-access-stats-grid">
-              {summaryStats.map((item) => (
-                <div
-                  key={item.key}
-                  className={`codex-local-access-stat-card codex-local-access-stat-card-${item.key}`}
-                >
-                  <span className="codex-local-access-stat-label">{item.label}</span>
-                  <strong>{item.value}</strong>
-                  <span className="codex-local-access-stat-sub">{item.detail}</span>
+              <div className="codex-local-access-summary-head">
+                <div className="codex-local-access-section-title">
+                  <Activity size={16} />
+                  <span>{t('codex.localAccess.statsTitle', '总量统计')}</span>
                 </div>
+                <div className="codex-local-access-summary-actions">
+                  <div
+                    className="codex-local-access-stats-range-tabs"
+                    role="tablist"
+                    aria-label={t('codex.localAccess.statsRange.label', '统计范围')}
+                  >
+                    {statsRangeOptions.map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        role="tab"
+                        className={`codex-local-access-stats-range-tab${
+                          statsRange === option.key ? ' is-active' : ''
+                        }`}
+                        aria-selected={statsRange === option.key}
+                        onClick={() => setStatsRange(option.key)}
+                        disabled={actionBusy}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-danger btn-sm"
+                    onClick={() => void handleClearStats()}
+                    disabled={!collection || actionBusy}
+                    title={t('codex.localAccess.clearStats', '清除统计')}
+                    aria-label={t('codex.localAccess.clearStats', '清除统计')}
+                  >
+                    <Trash2 size={14} />
+                    {t('codex.localAccess.clearStats', '清除统计')}
+                  </button>
+                </div>
+              </div>
+              <div className="codex-local-access-stats-grid">
+                {summaryStats.map((item) => (
+                  <div
+                    key={item.key}
+                    className={`codex-local-access-stat-card codex-local-access-stat-card-${item.key}`}
+                  >
+                    <span className="codex-local-access-stat-label">{item.label}</span>
+                    <strong>{item.value}</strong>
+                    <span className="codex-local-access-stat-sub">{item.detail}</span>
+                  </div>
                 ))}
               </div>
             </section>
@@ -1043,7 +1096,7 @@ export function CodexLocalAccessModal({
                   visibleAccounts.map((account) => {
                     const presentation = buildCodexAccountPresentation(account, t);
                     const isChecked = selected.has(account.id);
-                    const accountStats = statsByAccountId.get(account.id)?.usage;
+                    const accountStats = allStatsByAccountId.get(account.id)?.usage;
 
                     return (
                       <label

@@ -245,7 +245,7 @@ fn repair_account_index_from_details(reason: &str) -> Result<Option<AccountIndex
             last_used: account.last_used,
         })
         .collect();
-    index.current_account_id = accounts.first().map(|account| account.id.clone());
+    index.current_account_id = None;
 
     let backup_path = crate::modules::account_index_repair::backup_existing_index(&index_path)
         .unwrap_or_else(|err| {
@@ -558,10 +558,6 @@ pub fn add_account(
         last_used: account.last_used,
     });
 
-    if index.current_account_id.is_none() {
-        index.current_account_id = Some(account_id);
-    }
-
     save_account_index(&index)?;
 
     if reused_fp_id.is_some() {
@@ -658,7 +654,7 @@ pub fn delete_account(account_id: &str) -> Result<(), String> {
     }
 
     if index.current_account_id.as_deref() == Some(account_id) {
-        index.current_account_id = index.accounts.first().map(|s| s.id.clone());
+        index.current_account_id = None;
     }
 
     save_account_index(&index)?;
@@ -704,10 +700,6 @@ pub fn delete_accounts(account_ids: &[String]) -> Result<(), String> {
         if account_path.exists() {
             let _ = fs::remove_file(&account_path);
         }
-    }
-
-    if index.current_account_id.is_none() {
-        index.current_account_id = index.accounts.first().map(|s| s.id.clone());
     }
 
     save_account_index(&index)
