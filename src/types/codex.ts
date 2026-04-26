@@ -25,6 +25,11 @@ export interface CodexAccount {
   account_name?: string;
   account_structure?: string;
   tokens: CodexTokens;
+  token_generation?: number;
+  token_updated_at?: number;
+  token_source_mode?: string;
+  requires_reauth?: boolean;
+  reauth_reason?: string;
   quota?: CodexQuota;
   quota_error?: CodexQuotaErrorInfo;
   tags?: string[];

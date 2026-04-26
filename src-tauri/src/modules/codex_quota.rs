@@ -132,25 +132,15 @@ pub struct FetchQuotaResult {
 }
 
 async fn refresh_account_tokens(account: &mut CodexAccount, reason: &str) -> Result<(), String> {
-    let refresh_token = account
-        .tokens
-        .refresh_token
-        .clone()
-        .ok_or_else(|| format!("{}，且账号缺少 refresh_token", reason))?;
-
     logger::log_info(&format!(
         "Codex 账号 {} 触发强制 Token 刷新: {}",
         account.email, reason
     ));
 
-    let new_tokens = crate::modules::codex_oauth::refresh_access_token_with_fallback(
-        &refresh_token,
-        Some(account.tokens.id_token.as_str()),
-    )
-    .await
-    .map_err(|e| format!("{}，刷新 Token 失败: {}", reason, e))?;
-
-    account.tokens = new_tokens;
+    let refreshed = codex_account::force_refresh_managed_account(&account.id, reason)
+        .await
+        .map_err(|e| format!("{}，刷新 Token 失败: {}", reason, e))?;
+    *account = refreshed;
     Ok(())
 }
 

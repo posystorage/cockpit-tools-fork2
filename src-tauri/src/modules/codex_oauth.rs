@@ -82,6 +82,21 @@ fn now_timestamp() -> i64 {
     chrono::Utc::now().timestamp()
 }
 
+fn extract_token_error_code(body: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    value
+        .get("error")
+        .and_then(|item| item.as_str())
+        .or_else(|| {
+            value
+                .get("error")
+                .and_then(|item| item.get("code"))
+                .and_then(|item| item.as_str())
+        })
+        .or_else(|| value.get("code").and_then(|item| item.as_str()))
+        .map(|item| item.to_string())
+}
+
 fn load_pending_state_from_disk() -> Option<OAuthState> {
     match crate::modules::oauth_pending_state::load::<OAuthState>(OAUTH_STATE_FILE) {
         Ok(Some(state)) => {
@@ -853,16 +868,19 @@ pub async fn refresh_access_token_with_fallback(
         .map_err(|e| format!("读取响应失败: {}", e))?;
 
     if !status.is_success() {
+        let error_code = extract_token_error_code(&body);
         logger::log_error(&format!(
-            "Token 刷新失败: status={}, body_len={}",
+            "Token 刷新失败: status={}, error_code={:?}, body_len={}",
             status,
+            error_code,
             body.len()
         ));
-        return Err(format!(
-            "Token 刷新失败: status={}, body_len={}",
-            status,
-            body.len()
-        ));
+        let mut message = format!("Token 刷新失败: status={}", status);
+        if let Some(code) = error_code {
+            message.push_str(&format!(", error_code={}", code));
+        }
+        message.push_str(&format!(", body_len={}", body.len()));
+        return Err(message);
     }
 
     logger::log_info("Codex Token 刷新成功");

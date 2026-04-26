@@ -2012,36 +2012,15 @@ async fn run_single_account(
         }
     };
 
-    let account = match codex_account::prepare_account_for_injection_from_store(account_id).await {
-        Ok(account) => account,
-        Err(err) => {
-            return create_failure_record(
-                run_id,
-                &context.trigger_type,
-                context.task_id.as_deref(),
-                context.task_name.as_deref(),
-                account_id,
-                existing.email,
-                existing_context_text,
-                prompt_value,
-                execution_config,
-                err,
-                binary_path,
-            )
-        }
-    };
-
     if let Err(err) = fs::create_dir_all(&managed_home) {
-        let account_context_text = resolve_account_context_text(&account);
-        let account_email = account.email;
         return create_failure_record(
             run_id,
             &context.trigger_type,
             context.task_id.as_deref(),
             context.task_name.as_deref(),
             account_id,
-            account_email,
-            account_context_text,
+            existing.email,
+            existing_context_text,
             prompt_value,
             execution_config,
             format!("创建受管 CODEX_HOME 失败: {}", err),
@@ -2049,27 +2028,33 @@ async fn run_single_account(
         );
     }
 
-    if let Err(err) = codex_account::write_auth_file_to_dir(&managed_home, &account) {
-        let account_context_text = resolve_account_context_text(&account);
-        let account_email = account.email;
-        return create_failure_record(
-            run_id,
-            &context.trigger_type,
-            context.task_id.as_deref(),
-            context.task_name.as_deref(),
+    let (account, command_result, sync_error) =
+        match codex_account::execute_with_managed_account_projection(
             account_id,
-            account_email,
-            account_context_text,
-            prompt_value,
-            execution_config,
-            err,
-            Some(binary.path.display().to_string()),
-        );
-    }
-
-    let command_result =
-        run_codex_exec_sync(binary, &managed_home, prompt, execution_config, cancel_flag);
-    if let Err(err) = codex_account::sync_account_from_auth_dir(account_id, &managed_home) {
+            &managed_home,
+            "Codex 唤醒执行",
+            |_| run_codex_exec_sync(binary, &managed_home, prompt, execution_config, cancel_flag),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(err) => {
+                return create_failure_record(
+                    run_id,
+                    &context.trigger_type,
+                    context.task_id.as_deref(),
+                    context.task_name.as_deref(),
+                    account_id,
+                    existing.email,
+                    existing_context_text,
+                    prompt_value,
+                    execution_config,
+                    err,
+                    Some(binary.path.display().to_string()),
+                )
+            }
+        };
+    if let Some(err) = sync_error {
         logger::log_warn(&format!(
             "Codex 唤醒执行后同步受管目录 Token 失败: account_id={}, managed_home={}, error={}",
             account_id,

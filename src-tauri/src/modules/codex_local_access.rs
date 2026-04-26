@@ -3798,21 +3798,8 @@ async fn write_upstream_response(
 }
 
 async fn force_refresh_gateway_account(account_id: &str) -> Result<CodexAccount, String> {
-    let mut account = codex_account::load_account(account_id)
-        .ok_or_else(|| format!("账号不存在: {}", account_id))?;
-    let refresh_token = account
-        .tokens
-        .refresh_token
-        .clone()
-        .filter(|token| !token.trim().is_empty())
-        .ok_or("当前账号缺少 refresh_token，无法刷新".to_string())?;
-
-    account.tokens = codex_oauth::refresh_access_token_with_fallback(
-        &refresh_token,
-        Some(account.tokens.id_token.as_str()),
-    )
-    .await?;
-    codex_account::save_account(&account)?;
+    let account =
+        codex_account::force_refresh_managed_account(account_id, "本地网关上游返回 401").await?;
     cache_prepared_account(&account).await;
     Ok(account)
 }

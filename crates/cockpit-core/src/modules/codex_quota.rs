@@ -132,25 +132,15 @@ pub struct FetchQuotaResult {
 }
 
 async fn refresh_account_tokens(account: &mut CodexAccount, reason: &str) -> Result<(), String> {
-    let refresh_token = account
-        .tokens
-        .refresh_token
-        .clone()
-        .ok_or_else(|| format!("{}，且账号缺少 refresh_token", reason))?;
-
     logger::log_info(&format!(
         "Codex 账号 {} 触发强制 Token 刷新: {}",
         account.email, reason
     ));
 
-    let new_tokens = crate::modules::codex_oauth::refresh_access_token_with_fallback(
-        &refresh_token,
-        Some(account.tokens.id_token.as_str()),
-    )
-    .await
-    .map_err(|e| format!("{}，刷新 Token 失败: {}", reason, e))?;
-
-    account.tokens = new_tokens;
+    let refreshed = codex_account::force_refresh_managed_account(&account.id, reason)
+        .await
+        .map_err(|e| format!("{}，刷新 Token 失败: {}", reason, e))?;
+    *account = refreshed;
     Ok(())
 }
 
@@ -310,8 +300,7 @@ fn sync_plan_type_from_token(account: &mut CodexAccount, plan_type: Option<Strin
 
 /// 刷新账号配额并保存（包含 token 自动刷新）
 async fn refresh_account_quota_once(account_id: &str) -> Result<CodexQuota, String> {
-    let mut account = codex_account::load_account(account_id)
-        .ok_or_else(|| format!("账号不存在: {}", account_id))?;
+    let mut account = codex_account::prepare_account_for_injection(account_id).await?;
     if account.is_api_key_auth() {
         account.quota = None;
         account.quota_error = None;

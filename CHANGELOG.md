@@ -7,6 +7,19 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [0.22.11] - 2026-04-26
+
+### Changed
+- **Codex token management now uses Cockpit's account store as the single authority**: managed Codex workflows no longer auto-read unmanaged official `auth.json` or Keychain snapshots back into Cockpit before injection, preventing stale local credentials from overwriting refreshed account-center tokens.
+- **Codex managed CLI runs now preserve rotated refresh tokens more reliably**: account-scoped execution serializes token refresh, projection writes, official CLI execution, and post-run token sync from Cockpit-marked managed homes so a rotated `refresh_token` chain is written back before another managed consumer can reuse the old value.
+- **Codex API Key handling now masks secrets by default**: API Key account cards and credential inputs hide keys unless explicitly revealed, and reveal state resets when switching accounts or managed provider keys.
+- **Dashboard current-account cards now stay populated for account-management-only users**: when a platform has managed accounts but no resolved current account, the dashboard shows the first account from the account data instead of an empty current-account slot.
+
+### Added
+- **Dashboard platform cards now include a quick hide action**: platform cards can be hidden directly from the dashboard while using the same dashboard visibility setting managed by Platform Layout.
+- **Codex model preset management is easier to reach from provider configuration**: the Codex model provider manager can open the preset editor directly, reducing the steps needed to maintain wake-up model presets.
+
+---
 ## [0.22.10] - 2026-04-24
 
 ### Changed

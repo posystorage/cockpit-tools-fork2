@@ -90,7 +90,6 @@ pub async fn switch_codex_account(
     app: AppHandle,
     account_id: String,
 ) -> Result<CodexAccount, String> {
-    let _ = codex_account::prepare_account_for_injection(&account_id).await?;
     let codex_home = codex_account::get_codex_home();
     let provider_before =
         crate::modules::codex_session_visibility::read_history_visibility_provider_for_dir(
@@ -106,7 +105,7 @@ pub async fn switch_codex_account(
         });
 
     // 切换账号（写入 auth.json）
-    let account = codex_account::switch_account(&account_id)?;
+    let account = codex_account::switch_account_managed(&account_id).await?;
 
     // 同步更新 Codex 默认实例的绑定账号（不同步到 Antigravity，因为账号体系不同）
     if let Err(e) = crate::modules::codex_instance::update_default_settings(

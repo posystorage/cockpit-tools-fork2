@@ -111,32 +111,18 @@ function toFiniteNumber(value: number | null | undefined): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-type TimestampedAccount = {
-  id: string;
-  last_used?: number | null;
-  created_at?: number | null;
-};
-
-function resolveCurrentAccountById<T extends { id: string }>(
+function resolveDashboardCurrentAccount<T extends { id: string }>(
   accounts: T[],
   currentId: string | null | undefined,
+  currentAccount?: T | null,
 ): T | null {
-  if (!currentId) return null;
-  return accounts.find((account) => account.id === currentId) ?? null;
-}
-
-function resolveCurrentOrMostRecentAccount<T extends TimestampedAccount>(
-  accounts: T[],
-  currentId: string | null | undefined,
-): T | null {
-  if (accounts.length === 0) return null;
-  const current = resolveCurrentAccountById(accounts, currentId);
-  if (current) return current;
-  return accounts.reduce((prev, curr) => {
-    const prevScore = prev.last_used || prev.created_at || 0;
-    const currScore = curr.last_used || curr.created_at || 0;
-    return currScore > prevScore ? curr : prev;
-  });
+  const normalizedCurrentId = currentId?.trim();
+  if (normalizedCurrentId) {
+    const matched = accounts.find((account) => account.id === normalizedCurrentId);
+    if (matched) return matched;
+    if (currentAccount?.id === normalizedCurrentId) return currentAccount;
+  }
+  return accounts[0] ?? null;
 }
 
 function getZedRecommendationScore(account: ZedAccount): { remainingPercent: number; freshness: number } {
@@ -391,13 +377,11 @@ export function DashboardPage({
   const codexCurrentId = codexCurrent?.id;
 
   const agCurrentAccount = useMemo(() => {
-    if (!agCurrentId) return null;
-    return agAccounts.find((account) => account.id === agCurrentId) ?? agCurrent ?? null;
+    return resolveDashboardCurrentAccount(agAccounts, agCurrentId, agCurrent);
   }, [agAccounts, agCurrent, agCurrentId]);
 
   const codexCurrentAccount = useMemo(() => {
-    if (!codexCurrentId) return null;
-    return codexAccounts.find((account) => account.id === codexCurrentId) ?? codexCurrent ?? null;
+    return resolveDashboardCurrentAccount(codexAccounts, codexCurrentId, codexCurrent);
   }, [codexAccounts, codexCurrent, codexCurrentId]);
 
   React.useEffect(() => {
@@ -706,7 +690,7 @@ export function DashboardPage({
   const handleRefreshAgCard = async () => {
     if (cardRefreshing.ag) return;
     setCardRefreshing(prev => ({ ...prev, ag: true }));
-    const idsToRefresh = [agCurrentId, agRecommended?.id].filter(Boolean) as string[];
+    const idsToRefresh = Array.from(new Set([agCurrentAccount?.id, agRecommended?.id].filter(Boolean))) as string[];
     try {
       for (const id of idsToRefresh) {
         await useAccountStore.getState().refreshQuota(id);
@@ -721,7 +705,7 @@ export function DashboardPage({
   const handleRefreshCodexCard = async () => {
     if (cardRefreshing.codex) return;
     setCardRefreshing(prev => ({ ...prev, codex: true }));
-    const idsToRefresh = [codexCurrentId, codexRecommended?.id].filter(Boolean) as string[];
+    const idsToRefresh = Array.from(new Set([codexCurrentAccount?.id, codexRecommended?.id].filter(Boolean))) as string[];
     try {
       for (const id of idsToRefresh) {
         await useCodexAccountStore.getState().refreshQuota(id);
@@ -736,7 +720,7 @@ export function DashboardPage({
   const handleRefreshZedCard = async () => {
     if (cardRefreshing.zed) return;
     setCardRefreshing((prev) => ({ ...prev, zed: true }));
-    const idsToRefresh = [zedCurrentId, zedRecommended?.id].filter(Boolean) as string[];
+    const idsToRefresh = [zedCurrent?.id, zedRecommended?.id].filter(Boolean) as string[];
     try {
       for (const id of idsToRefresh) {
         await useZedAccountStore.getState().refreshToken(id);
@@ -1157,10 +1141,11 @@ export function DashboardPage({
   // Antigravity Recommendation Logic
   const agRecommended = useMemo(() => {
     if (agAccounts.length <= 1) return null;
+    const currentId = agCurrentAccount?.id;
 
     // Simple logic: find account with highest overall quota that isn't current
     const others = agAccounts.filter((a) => {
-      if (a.id === agCurrentId) return false;
+      if (a.id === currentId) return false;
       if (a.disabled) return false;
       if (a.quota?.is_forbidden) return false;
       if (!a.quota?.models || a.quota.models.length === 0) return false;
@@ -1179,14 +1164,15 @@ export function DashboardPage({
 
       return getScore(curr) > getScore(prev) ? curr : prev;
     });
-  }, [agAccounts, agCurrentId]);
+  }, [agAccounts, agCurrentAccount?.id]);
 
   // Codex Recommendation Logic
   const codexRecommended = useMemo(() => {
     if (codexAccounts.length <= 1) return null;
+    const currentId = codexCurrentAccount?.id;
 
     const others = codexAccounts.filter((a) => {
-      if (a.id === codexCurrentId) return false;
+      if (a.id === currentId) return false;
       if (!a.quota) return false;
       return true;
     });
@@ -1199,60 +1185,60 @@ export function DashboardPage({
       };
       return getScore(curr) > getScore(prev) ? curr : prev;
     });
-  }, [codexAccounts, codexCurrentId]);
+  }, [codexAccounts, codexCurrentAccount?.id]);
 
   const githubCopilotCurrent = useMemo(
-    () => resolveCurrentOrMostRecentAccount(githubCopilotAccounts, githubCopilotCurrentId),
+    () => resolveDashboardCurrentAccount(githubCopilotAccounts, githubCopilotCurrentId),
     [githubCopilotAccounts, githubCopilotCurrentId],
   );
 
   const windsurfCurrent = useMemo(
-    () => resolveCurrentAccountById(windsurfAccounts, windsurfCurrentId),
+    () => resolveDashboardCurrentAccount(windsurfAccounts, windsurfCurrentId),
     [windsurfAccounts, windsurfCurrentId],
   );
 
   const kiroCurrent = useMemo(
-    () => resolveCurrentAccountById(kiroAccounts, kiroCurrentId),
+    () => resolveDashboardCurrentAccount(kiroAccounts, kiroCurrentId),
     [kiroAccounts, kiroCurrentId],
   );
 
   const cursorCurrent = useMemo(
-    () => resolveCurrentAccountById(cursorAccounts, cursorCurrentId),
+    () => resolveDashboardCurrentAccount(cursorAccounts, cursorCurrentId),
     [cursorAccounts, cursorCurrentId],
   );
 
   const geminiCurrent = useMemo(
-    () => resolveCurrentAccountById(geminiAccounts, geminiCurrentId),
+    () => resolveDashboardCurrentAccount(geminiAccounts, geminiCurrentId),
     [geminiAccounts, geminiCurrentId],
   );
 
   const codebuddyCurrent = useMemo(
-    () => resolveCurrentAccountById(codebuddyAccounts, codebuddyCurrentId),
+    () => resolveDashboardCurrentAccount(codebuddyAccounts, codebuddyCurrentId),
     [codebuddyAccounts, codebuddyCurrentId],
   );
 
   const codebuddyCnCurrent = useMemo(
-    () => resolveCurrentAccountById(codebuddyCnAccounts, codebuddyCnCurrentId),
+    () => resolveDashboardCurrentAccount(codebuddyCnAccounts, codebuddyCnCurrentId),
     [codebuddyCnAccounts, codebuddyCnCurrentId],
   );
 
   const qoderCurrent = useMemo(
-    () => resolveCurrentAccountById(qoderAccounts, qoderCurrentId),
+    () => resolveDashboardCurrentAccount(qoderAccounts, qoderCurrentId),
     [qoderAccounts, qoderCurrentId],
   );
 
   const traeCurrent = useMemo(
-    () => resolveCurrentAccountById(traeAccounts, traeCurrentId),
+    () => resolveDashboardCurrentAccount(traeAccounts, traeCurrentId),
     [traeAccounts, traeCurrentId],
   );
 
   const workbuddyCurrent = useMemo(
-    () => resolveCurrentAccountById(workbuddyAccounts, workbuddyCurrentId),
+    () => resolveDashboardCurrentAccount(workbuddyAccounts, workbuddyCurrentId),
     [workbuddyAccounts, workbuddyCurrentId],
   );
 
   const zedCurrent = useMemo(
-    () => resolveCurrentAccountById(zedAccounts, zedCurrentId),
+    () => resolveDashboardCurrentAccount(zedAccounts, zedCurrentId),
     [zedAccounts, zedCurrentId],
   );
 
