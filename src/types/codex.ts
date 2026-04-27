@@ -410,6 +410,25 @@ export function getCodexPlanBadgeLabel(account: CodexAccount): string {
   return baseLabel;
 }
 
+export function getCodexPlanBadgeClass(account: CodexAccount): string {
+  const baseClass = normalizeCodexPlanKey(account.plan_type);
+  if (baseClass !== 'pro') {
+    return baseClass;
+  }
+
+  const authFilePlanType =
+    normalizeCodexAuthFilePlanType(account.auth_file_plan_type) ??
+    normalizeCodexAuthFilePlanType(account.plan_type);
+  if (authFilePlanType === 'prolite') {
+    return 'pro codex-pro-lite';
+  }
+  return authFilePlanType === 'promax' ? 'pro codex-pro-max' : baseClass;
+}
+
+export function getCodexPlanFilterKey(account: CodexAccount): string {
+  return normalizeCodexPlanKey(account.plan_type).toUpperCase();
+}
+
 export function isCodexTeamLikePlan(planType?: string): boolean {
   if (!planType) return false;
   const upper = planType.toUpperCase();

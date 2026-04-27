@@ -2059,23 +2059,23 @@
       "dateTime": "{{date}} {{time}}"
     },
     "subscription": {
-      "label": "Subscription expiry",
-      "column": "Expires",
-      "unknown": "Reauthorize",
-      "missingDetail": "Reauthorize to fetch",
+      "label": "Term",
+      "column": "Subscription info",
+      "unknown": "No subscription info",
+      "missingDetail": "No subscription info",
       "expired": "Expired",
       "hoursLeft": "{{count}}h",
       "daysLeft": "{{count}}d",
       "over99Days": "99+d",
-      "titleWithDate": "Subscription expires: {{date}}",
-      "titleUnknown": "Reauthorize to fetch subscription expiry",
-      "filterLabel": "Expiry filter",
-      "filterAll": "Expiry All ({{count}})",
+      "titleWithDate": "Subscription valid until: {{date}}",
+      "titleUnknown": "No subscription info",
+      "filterLabel": "Term filter",
+      "filterAll": "Term All ({{count}})",
       "filterExpired": "Expired ({{count}})",
       "filterWithin24h": "24h ({{count}})",
       "filterWithin7d": "7d ({{count}})",
       "filterWithin30d": "30d ({{count}})",
-      "filterMissing": "Unknown ({{count}})"
+      "filterMissing": "No info ({{count}})"
     },
     "view": {
       "compact": "Compact view"
@@ -2089,7 +2089,7 @@
       "hourly": "5-hour quota",
       "weeklyReset": "Weekly reset time",
       "hourlyReset": "5-hour reset time",
-      "subscriptionExpiry": "Subscription expiry"
+      "subscriptionExpiry": "Subscription term"
     },
     "opencodeSwitch": "OpenCode switch toggle",
     "opencodeSwitchDesc": "Sync Codex account info in OpenCode",

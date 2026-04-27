@@ -2059,23 +2059,23 @@
       "dateTime": "{{date}} {{time}}"
     },
     "subscription": {
-      "label": "订阅到期",
-      "column": "订阅到期",
-      "unknown": "重新授权后获取",
-      "missingDetail": "重新授权后获取",
+      "label": "有效期",
+      "column": "订阅信息",
+      "unknown": "未获得订阅信息",
+      "missingDetail": "未获得订阅信息",
       "expired": "已过期",
       "hoursLeft": "{{count}}小时",
       "daysLeft": "{{count}}天",
       "over99Days": "99+天",
-      "titleWithDate": "订阅到期：{{date}}",
-      "titleUnknown": "重新授权后获取订阅到期时间",
-      "filterLabel": "到期筛选",
-      "filterAll": "到期 全部 ({{count}})",
+      "titleWithDate": "订阅有效至：{{date}}",
+      "titleUnknown": "未获得订阅信息",
+      "filterLabel": "有效期筛选",
+      "filterAll": "有效期 全部 ({{count}})",
       "filterExpired": "已过期 ({{count}})",
       "filterWithin24h": "24小时内 ({{count}})",
       "filterWithin7d": "7天内 ({{count}})",
       "filterWithin30d": "30天内 ({{count}})",
-      "filterMissing": "未知 ({{count}})"
+      "filterMissing": "未获得 ({{count}})"
     },
     "view": {
       "compact": "紧凑视图"
@@ -2089,7 +2089,7 @@
       "hourly": "按5小时配额",
       "weeklyReset": "按周配额重置时间",
       "hourlyReset": "按5小时配额重置时间",
-      "subscriptionExpiry": "按订阅到期"
+      "subscriptionExpiry": "按订阅有效期"
     },
     "opencodeSwitch": "OpenCode切换开关",
     "opencodeSwitchDesc": "同步切换OpenCode里codex账户信息",

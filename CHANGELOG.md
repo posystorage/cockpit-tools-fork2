@@ -7,6 +7,16 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [0.22.13] - 2026-04-27
+
+### Fixed
+- **Codex quota refresh no longer forces OAuth token rotation only because `id_token` expired**: quota refresh again uses the `access_token` validity and only refreshes tokens when the access token is expired or the quota API reports token invalidation, avoiding unnecessary refreshes that could lead to 401 responses.
+
+### Changed
+- **Codex subscription metadata now uses neutral missing-information wording**: subscription columns, filters, cards, and tooltips now say subscription info or term, and missing subscription metadata is shown as unavailable instead of asking the user to reauthorize.
+- **Codex PRO Lite and PRO Max accounts now keep PRO filtering while using distinct badges**: account lists, local API access, dashboard cards, floating cards, and instance badges can style `pro_lite` and `pro_max` separately without moving them out of the PRO filter group.
+
+---
 ## [0.22.12] - 2026-04-27
 
 ### Fixed

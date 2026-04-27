@@ -334,32 +334,6 @@ async fn refresh_account_quota_once(account_id: &str) -> Result<CodexQuota, Stri
         return Err("API Key 账号不支持刷新配额，请在网页端查看。".to_string());
     }
 
-    if crate::modules::codex_oauth::is_jwt_token_expired(&account.tokens.id_token) {
-        logger::log_info(&format!(
-            "Codex 账号 {} 的 id_token 已过期，配额刷新前先刷新 OAuth Token",
-            account.email
-        ));
-
-        match refresh_account_tokens(&mut account, "Token 已过期").await {
-            Ok(()) => {
-                logger::log_info(&format!("账号 {} 的 Token 刷新成功", account.email));
-                sync_subscription_expiry_from_current_id_token(&mut account);
-                codex_account::save_account(&account)?;
-            }
-            Err(e) => {
-                logger::log_error(&format!("账号 {} Token 刷新失败: {}", account.email, e));
-                let message = e;
-                write_quota_error(&mut account, message.clone());
-                if let Err(save_err) = codex_account::save_account(&account) {
-                    logger::log_warn(&format!("写入 Codex 配额错误失败: {}", save_err));
-                }
-                return Err(message);
-            }
-        }
-    } else {
-        sync_subscription_expiry_from_current_id_token(&mut account);
-    }
-
     // 检查 token 是否过期，如果过期则刷新
     if crate::modules::codex_oauth::is_token_expired(&account.tokens.access_token) {
         match refresh_account_tokens(&mut account, "Token 已过期").await {

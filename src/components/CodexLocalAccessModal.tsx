@@ -27,7 +27,11 @@ import type {
   CodexLocalAccessState,
   CodexLocalAccessStatsWindow,
 } from '../types/codexLocalAccess';
-import { isCodexApiKeyAccount, isCodexExplicitFreePlanType } from '../types/codex';
+import {
+  getCodexPlanFilterKey,
+  isCodexApiKeyAccount,
+  isCodexExplicitFreePlanType,
+} from '../types/codex';
 import {
   buildCodexAccountPresentation,
   buildQuotaPreviewLines,
@@ -339,7 +343,7 @@ export function CodexLocalAccessModal({
       if (!account.quota_error) {
         counts.VALID += 1;
       }
-      const tier = buildCodexAccountPresentation(account, t).planClass.toUpperCase();
+      const tier = getCodexPlanFilterKey(account);
       if (tier in counts) {
         counts[tier as keyof typeof counts] += 1;
       }
@@ -401,7 +405,7 @@ export function CodexLocalAccessModal({
       }
 
       if (selectedTypes.size > 0) {
-        const planKey = presentation.planClass.toUpperCase();
+        const planKey = getCodexPlanFilterKey(account);
         const matchesType = Array.from(selectedTypes).some((type) => {
           if (type === 'ERROR') return Boolean(account.quota_error);
           return type === planKey;

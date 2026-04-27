@@ -69,6 +69,7 @@ import {
   hasCodexAccountStructure,
   formatCodexLoginProvider,
   getCodexAuthMetadata,
+  getCodexPlanFilterKey,
   getCodexSubscriptionExpiryBucket,
   getCodexSubscriptionPresentation,
   hasCodexAccountName,
@@ -2338,8 +2339,8 @@ export function CodexAccountsPage() {
   );
 
   const resolvePlanKey = useCallback(
-    (account: CodexAccount) => resolvePresentation(account).planClass.toUpperCase(),
-    [resolvePresentation],
+    (account: CodexAccount) => getCodexPlanFilterKey(account),
+    [],
   );
 
   const accountIdLabel = t('kiro.account.userId', 'User ID');
@@ -3369,6 +3370,7 @@ export function CodexAccountsPage() {
       const moreTagCount = Math.max(0, accountTags.length - visibleTags.length);
       const isInLocalAccess = localAccessAccountIdSet.has(account.id);
       const subscriptionInfo = resolveSubscriptionPresentation(account);
+      const isSubscriptionInfoMissing = subscriptionInfo.bucket === 'missing';
       return (
         <div key={groupKey ? `${groupKey}-${account.id}` : account.id} className={`codex-account-card ${isCurrent ? 'current' : ''} ${isSelected ? 'selected' : ''}`}>
           <div className="card-top">
@@ -3489,8 +3491,14 @@ export function CodexAccountsPage() {
             <div className={`codex-subscription-footer ${subscriptionInfo.tone}`} title={subscriptionInfo.titleText}>
               <div className="codex-subscription-footer-main">
                 <Calendar size={14} />
-                <span>{t('codex.subscription.label', '到期')}</span>
-                <strong>{subscriptionInfo.valueText}</strong>
+                {isSubscriptionInfoMissing ? (
+                  <strong>{subscriptionInfo.valueText}</strong>
+                ) : (
+                  <>
+                    <span>{t('codex.subscription.label', '有效期')}</span>
+                    <strong>{subscriptionInfo.valueText}</strong>
+                  </>
+                )}
               </div>
               {subscriptionInfo.timestampMs != null && (
                 <span className="codex-subscription-footer-date">{subscriptionInfo.detailText}</span>
@@ -4310,7 +4318,7 @@ export function CodexAccountsPage() {
             <SingleSelectFilterDropdown
               value={expiryFilter}
               options={expiryFilterOptions}
-              ariaLabel={t('codex.subscription.filterLabel', '到期筛选')}
+              ariaLabel={t('codex.subscription.filterLabel', '有效期筛选')}
               icon={<Calendar size={14} />}
               onChange={(value) => setExpiryFilter(value as CodexExpiryFilterValue)}
             />
@@ -4341,7 +4349,7 @@ export function CodexAccountsPage() {
                 { value: 'hourly', label: t('codex.sort.hourly', '按5小时配额') },
                 { value: 'weekly_reset', label: t('codex.sort.weeklyReset', '按周配额重置时间') },
                 { value: 'hourly_reset', label: t('codex.sort.hourlyReset', '按5小时配额重置时间') },
-                { value: 'subscription_expiry', label: t('codex.sort.subscriptionExpiry', '按订阅到期') },
+                { value: 'subscription_expiry', label: t('codex.sort.subscriptionExpiry', '按订阅有效期') },
               ]}
               ariaLabel={t('common.shared.sortLabel', '排序')}
               icon={<ArrowDownWideNarrow size={14} />}
@@ -4461,7 +4469,7 @@ export function CodexAccountsPage() {
                 <div className="account-table-container grouped"><table className="account-table"><thead><tr>
                   <th style={{ width: 40 }}><input type="checkbox" checked={isAllPaginatedSelected} onChange={() => toggleSelectAll(paginatedIds)} /></th>
                   <th style={{ width: 260 }}>{t('common.shared.columns.email', '账号')}</th><th style={{ width: 140 }}>{t('common.shared.columns.plan', '订阅')}</th>
-                  <th style={{ width: 150 }}>{t('codex.subscription.column', '订阅到期')}</th>
+                  <th style={{ width: 150 }}>{t('codex.subscription.column', '订阅信息')}</th>
                   <th>{t('accounts.columns.quota', '配额状态')}</th><th className="sticky-action-header table-action-header">{t('common.shared.columns.actions', '操作')}</th></tr></thead>
                   <tbody>{paginatedGroupedAccounts.map(({ groupKey, items, totalCount }) => (<Fragment key={groupKey}><tr className="tag-group-row"><td colSpan={6}><div className="tag-group-header"><span className="tag-group-title">{resolveGroupLabel(groupKey)}</span><span className="tag-group-count">{totalCount}</span></div></td></tr>
                     {renderTableRows(items, groupKey)}</Fragment>))}</tbody></table></div>
@@ -4476,7 +4484,7 @@ export function CodexAccountsPage() {
                 <div className="account-table-container"><table className="account-table"><thead><tr>
                   <th style={{ width: 40 }}>{showOverviewSelectionBar ? null : <input type="checkbox" checked={isAllPaginatedSelected} onChange={() => toggleSelectAll(paginatedIds)} />}</th>
                   <th style={{ width: 260 }}>{t('common.shared.columns.email', '账号')}</th><th style={{ width: 140 }}>{t('common.shared.columns.plan', '订阅')}</th>
-                  <th style={{ width: 150 }}>{t('codex.subscription.column', '订阅到期')}</th>
+                  <th style={{ width: 150 }}>{t('codex.subscription.column', '订阅信息')}</th>
                   <th>{t('accounts.columns.quota', '配额状态')}</th><th className="sticky-action-header table-action-header">{t('common.shared.columns.actions', '操作')}</th></tr></thead>
                   <tbody>{renderGroupTableRows()}{renderTableRows(paginatedAccounts)}</tbody></table></div>
               </>
