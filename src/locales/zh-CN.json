@@ -2058,6 +2058,25 @@
       "tomorrow": "明天 {{time}}",
       "dateTime": "{{date}} {{time}}"
     },
+    "subscription": {
+      "label": "订阅到期",
+      "column": "订阅到期",
+      "unknown": "重新授权后获取",
+      "missingDetail": "重新授权后获取",
+      "expired": "已过期",
+      "hoursLeft": "{{count}}小时",
+      "daysLeft": "{{count}}天",
+      "over99Days": "99+天",
+      "titleWithDate": "订阅到期：{{date}}",
+      "titleUnknown": "重新授权后获取订阅到期时间",
+      "filterLabel": "到期筛选",
+      "filterAll": "到期 全部 ({{count}})",
+      "filterExpired": "已过期 ({{count}})",
+      "filterWithin24h": "24小时内 ({{count}})",
+      "filterWithin7d": "7天内 ({{count}})",
+      "filterWithin30d": "30天内 ({{count}})",
+      "filterMissing": "未知 ({{count}})"
+    },
     "view": {
       "compact": "紧凑视图"
     },
@@ -2069,7 +2088,8 @@
       "weekly": "按周配额",
       "hourly": "按5小时配额",
       "weeklyReset": "按周配额重置时间",
-      "hourlyReset": "按5小时配额重置时间"
+      "hourlyReset": "按5小时配额重置时间",
+      "subscriptionExpiry": "按订阅到期"
     },
     "opencodeSwitch": "OpenCode切换开关",
     "opencodeSwitchDesc": "同步切换OpenCode里codex账户信息",
@@ -2427,7 +2447,8 @@
       "desc": "粘贴您的 GitHub Copilot Access Token 或导出的 JSON 数据。"
     },
     "import": {
-      "localDesc": "从 JSON 文件导入 GitHub Copilot 账号数据。"
+      "localDesc": "支持从本机 VS Code 或 JSON 文件导入 GitHub Copilot 账号数据。",
+      "localClient": "从本机 VS Code 导入"
     },
     "sort": {
       "weekly": "按 Chat messages 使用量",
@@ -2452,7 +2473,7 @@
       "desc": "切换账号时需要读取 VS Code 本地认证存储，并调用系统凭据服务完成解密与回写；数据仅在本机处理。",
       "inject": "一键切号：本工具读取本地 VS Code 加密材料（DPAPI/Keychain/Secret Service），解密 state.vscdb 中的认证会话，替换 GitHub Copilot 令牌并重新加密 —— 全部在本机完成。",
       "reason": "权限需求：读取 VS Code 认证数据库（state.vscdb），并调用系统加密能力（Windows DPAPI / macOS Keychain / Linux Secret Service）进行解密与写回。",
-      "storage": "读取范围：仅处理 GitHub 登录会话相关数据，所有流程均在本地执行。"
+      "storage": "数据范围：本机导入会读取 VS Code 中的 GitHub 登录会话，切号会更新同类会话；OAuth、Token 导入、本机导入校验和配额刷新会调用 GitHub 官方 API，仅发送必要认证字段，不上传 state.vscdb 或系统密钥。"
     }
   },
   "dashboard": {

@@ -1812,7 +1812,8 @@
       "weekly": "Cuota semanal",
       "hourly": "Cuota 5 horas",
       "weeklyReset": "Hora de restablecimiento semanal",
-      "hourlyReset": "Hora de restablecimiento de 5 horas"
+      "hourlyReset": "Hora de restablecimiento de 5 horas",
+      "subscriptionExpiry": "Vencimiento de suscripción"
     },
     "opencodeSwitch": "Interruptor de OpenCode",
     "opencodeSwitchDesc": "Sincronizar el cambio de cuenta de Codex en OpenCode",
@@ -2259,6 +2260,25 @@
     },
     "groups": {
       "addToGroup": "Agregar al grupo"
+    },
+    "subscription": {
+      "label": "Vence suscripción",
+      "column": "Vence",
+      "unknown": "Reautorizar",
+      "missingDetail": "Reautoriza para obtener",
+      "expired": "Vencida",
+      "hoursLeft": "{{count}} h",
+      "daysLeft": "{{count}} d",
+      "over99Days": "99+ d",
+      "titleWithDate": "La suscripción vence: {{date}}",
+      "titleUnknown": "Reautoriza para obtener el vencimiento",
+      "filterLabel": "Filtro de vencimiento",
+      "filterAll": "Todos ({{count}})",
+      "filterExpired": "Vencidas ({{count}})",
+      "filterWithin24h": "24 h ({{count}})",
+      "filterWithin7d": "7 d ({{count}})",
+      "filterWithin30d": "30 d ({{count}})",
+      "filterMissing": "Desconocidas ({{count}})"
     }
   },
   "githubCopilot": {
@@ -2281,7 +2301,8 @@
       "desc": "Pega tu token de acceso de GitHub Copilot o los datos JSON exportados."
     },
     "import": {
-      "localDesc": "Importa datos de cuentas de GitHub Copilot desde un archivo JSON."
+      "localDesc": "Importa datos de cuentas de GitHub Copilot desde VS Code local o un archivo JSON.",
+      "localClient": "Importar desde VS Code local"
     },
     "sort": {
       "weekly": "Por uso de mensajes de chat",
@@ -2306,7 +2327,7 @@
       "desc": "Cambiar de cuenta requiere leer el almacenamiento local de autenticación de VS Code y usar el servicio de credenciales del sistema para descifrar y reescribir; los datos se procesan solo en local.",
       "inject": "Cambio con un clic: Esta herramienta lee el material de cifrado local de VS Code (DPAPI/Keychain/Secret Service), descifra la sesión de autenticación en state.vscdb, reemplaza el token de GitHub Copilot y vuelve a cifrarla; todo localmente en tu equipo.",
       "reason": "Alcance de permisos: leer la base de autenticación de VS Code (state.vscdb) y usar el cifrado del sistema (Windows DPAPI / macOS Keychain / Linux Secret Service) para descifrar y reescribir.",
-      "storage": "Alcance de lectura: solo se procesan datos relacionados con sesiones de inicio de GitHub; todos los procesos se ejecutan localmente."
+      "storage": "Alcance de datos: la importación local lee las sesiones de inicio de GitHub en VS Code y el cambio actualiza esas entradas; OAuth, la importación de token, la validación de importación local y la actualización de cuota llaman a las API oficiales de GitHub con los campos de autenticación necesarios. No se suben state.vscdb ni claves del sistema."
     }
   },
   "dashboard": {

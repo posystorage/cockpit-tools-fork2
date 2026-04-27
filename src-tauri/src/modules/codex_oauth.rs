@@ -805,8 +805,8 @@ pub fn restore_pending_oauth_listener(app_handle: AppHandle) {
     }
 }
 
-pub fn is_token_expired(access_token: &str) -> bool {
-    let parts: Vec<&str> = access_token.split('.').collect();
+pub fn is_jwt_token_expired(token: &str) -> bool {
+    let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 {
         return true;
     }
@@ -834,6 +834,10 @@ pub fn is_token_expired(access_token: &str) -> bool {
 
     let now = chrono::Utc::now().timestamp();
     exp < now + TOKEN_REFRESH_SKEW_SECONDS
+}
+
+pub fn is_token_expired(access_token: &str) -> bool {
+    is_jwt_token_expired(access_token)
 }
 
 pub async fn refresh_access_token(refresh_token: &str) -> Result<CodexTokens, String> {

@@ -19,6 +19,7 @@ export interface CodexAccount {
   api_provider_name?: string;
   user_id?: string;
   plan_type?: string;
+  subscription_active_until?: string;
   auth_file_plan_type?: string;
   account_id?: string;
   organization_id?: string;
@@ -439,6 +440,126 @@ export function getCodexQuotaClass(percentage: number): string {
 }
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const HOUR_IN_MS = 60 * 60 * 1000;
+
+export type CodexSubscriptionExpiryBucket =
+  | 'missing'
+  | 'expired'
+  | 'within_24h'
+  | 'within_7d'
+  | 'within_30d'
+  | 'active';
+
+export interface CodexSubscriptionPresentation {
+  bucket: CodexSubscriptionExpiryBucket;
+  tone: 'missing' | 'expired' | 'warning' | 'active';
+  valueText: string;
+  detailText: string;
+  titleText: string;
+  timestampMs: number | null;
+}
+
+export function parseCodexSubscriptionDate(value?: string): Date | null {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return null;
+
+  if (/^\d+$/.test(trimmed)) {
+    let timestamp = Number(trimmed);
+    if (!Number.isFinite(timestamp)) return null;
+    if (timestamp < 1_000_000_000_000) {
+      timestamp *= 1000;
+    }
+    const date = new Date(timestamp);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatCodexSubscriptionDate(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+export function getCodexSubscriptionExpiryBucket(
+  subscriptionActiveUntil?: string,
+): CodexSubscriptionExpiryBucket {
+  const date = parseCodexSubscriptionDate(subscriptionActiveUntil);
+  if (!date) return 'missing';
+
+  const diffMs = date.getTime() - Date.now();
+  if (diffMs <= 0) return 'expired';
+  if (diffMs <= HOUR_IN_MS * 24) return 'within_24h';
+  if (diffMs <= DAY_IN_MS * 7) return 'within_7d';
+  if (diffMs <= DAY_IN_MS * 30) return 'within_30d';
+  return 'active';
+}
+
+export function getCodexSubscriptionPresentation(
+  subscriptionActiveUntil: string | undefined,
+  t: Translate,
+): CodexSubscriptionPresentation {
+  const date = parseCodexSubscriptionDate(subscriptionActiveUntil);
+  if (!date) {
+    const valueText = t('codex.subscription.unknown');
+    const detailText = t('codex.subscription.missingDetail');
+    return {
+      bucket: 'missing',
+      tone: 'missing',
+      valueText,
+      detailText,
+      titleText: t('codex.subscription.titleUnknown'),
+      timestampMs: null,
+    };
+  }
+
+  const timestampMs = date.getTime();
+  const diffMs = timestampMs - Date.now();
+  const detailText = formatCodexSubscriptionDate(date);
+
+  if (diffMs <= 0) {
+    const valueText = t('codex.subscription.expired');
+    return {
+      bucket: 'expired',
+      tone: 'expired',
+      valueText,
+      detailText,
+      titleText: t('codex.subscription.titleWithDate', { date: detailText }),
+      timestampMs,
+    };
+  }
+
+  if (diffMs < DAY_IN_MS) {
+    const hours = Math.max(1, Math.ceil(diffMs / HOUR_IN_MS));
+    const valueText = t('codex.subscription.hoursLeft', { count: hours });
+    return {
+      bucket: 'within_24h',
+      tone: 'warning',
+      valueText,
+      detailText,
+      titleText: t('codex.subscription.titleWithDate', { date: detailText }),
+      timestampMs,
+    };
+  }
+
+  const days = Math.ceil(diffMs / DAY_IN_MS);
+  const valueText =
+    days > 99
+      ? t('codex.subscription.over99Days')
+      : t('codex.subscription.daysLeft', { count: days });
+
+  return {
+    bucket: getCodexSubscriptionExpiryBucket(subscriptionActiveUntil),
+    tone: days <= 7 ? 'warning' : 'active',
+    valueText,
+    detailText,
+    titleText: t('codex.subscription.titleWithDate', { date: detailText }),
+    timestampMs,
+  };
+}
 
 export interface CodexQuotaWindow {
   id: 'primary' | 'secondary';

@@ -1812,7 +1812,8 @@
       "weekly": "Limit tygodniowy",
       "hourly": "Limit 5-godzinny",
       "weeklyReset": "Czas tygodniowego resetu",
-      "hourlyReset": "Czas resetu 5-godzinnego"
+      "hourlyReset": "Czas resetu 5-godzinnego",
+      "subscriptionExpiry": "Koniec subskrypcji"
     },
     "opencodeSwitch": "Przełącznik OpenCode",
     "opencodeSwitchDesc": "Synchronizuj przełączenie konta Codex w OpenCode",
@@ -2259,6 +2260,25 @@
     },
     "groups": {
       "addToGroup": "Dodaj do grupy"
+    },
+    "subscription": {
+      "label": "Koniec sub.",
+      "column": "Wygasa",
+      "unknown": "Autoryzuj ponownie",
+      "missingDetail": "Autoryzuj ponownie, aby pobrać",
+      "expired": "Wygasła",
+      "hoursLeft": "{{count}} godz.",
+      "daysLeft": "{{count}} dni",
+      "over99Days": "99+ dni",
+      "titleWithDate": "Subskrypcja wygasa: {{date}}",
+      "titleUnknown": "Autoryzuj ponownie, aby pobrać termin",
+      "filterLabel": "Filtr wygasania",
+      "filterAll": "Wszystkie ({{count}})",
+      "filterExpired": "Wygasłe ({{count}})",
+      "filterWithin24h": "24 godz. ({{count}})",
+      "filterWithin7d": "7 dni ({{count}})",
+      "filterWithin30d": "30 dni ({{count}})",
+      "filterMissing": "Nieznane ({{count}})"
     }
   },
   "githubCopilot": {
@@ -2281,7 +2301,8 @@
       "desc": "Wklej token dostępu GitHub Copilot lub wyeksportowane dane JSON."
     },
     "import": {
-      "localDesc": "Importuj konta GitHub Copilot z lokalnie zalogowanych sesji."
+      "localDesc": "Zaimportuj dane konta GitHub Copilot z lokalnego VS Code lub pliku JSON.",
+      "localClient": "Importuj z lokalnego VS Code"
     },
     "sort": {
       "weekly": "Limit tygodniowy",
@@ -2306,7 +2327,7 @@
       "desc": "Przełączanie konta wymaga odczytu lokalnego magazynu uwierzytelniania VS Code oraz użycia systemowej usługi poświadczeń do odszyfrowania i ponownego zapisu; dane są przetwarzane wyłącznie lokalnie.",
       "inject": "Przełączanie jednym kliknięciem: to narzędzie odczytuje lokalny materiał szyfrujący VS Code (DPAPI/Keychain/Secret Service), odszyfrowuje sesję uwierzytelniania w state.vscdb, podmienia token GitHub Copilot i ponownie szyfruje dane — wszystko lokalnie na Twoim urządzeniu.",
       "reason": "Zakres uprawnień: odczyt bazy uwierzytelniania VS Code (state.vscdb) oraz użycie szyfrowania systemowego (Windows DPAPI / macOS Keychain / Linux Secret Service) do odszyfrowania i ponownego zapisu.",
-      "storage": "Zakres odczytu: przetwarzane są tylko dane związane z sesją logowania GitHub; wszystkie procesy są wykonywane lokalnie."
+      "storage": "Zakres danych: import lokalny odczytuje sesje logowania GitHub w VS Code, a przełączanie aktualizuje te wpisy; OAuth, import tokena, weryfikacja importu lokalnego i odświeżanie limitów wywołują oficjalne API GitHub z wymaganymi polami uwierzytelniania. state.vscdb i klucze systemowe nie są przesyłane."
     }
   },
   "dashboard": {

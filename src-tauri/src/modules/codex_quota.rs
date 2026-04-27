@@ -278,8 +278,13 @@ fn parse_quota_from_usage(usage: &UsageResponse, raw_body: &str) -> Result<Codex
     })
 }
 
-/// 从 id_token 中提取 plan_type 并同步更新账号和索引
-fn sync_plan_type_from_token(account: &mut CodexAccount, plan_type: Option<String>) {
+/// 从 id_token 中提取订阅标识并同步更新账号和索引
+fn sync_subscription_from_token(
+    account: &mut CodexAccount,
+    plan_type: Option<String>,
+    subscription_active_until: Option<String>,
+) {
+    let mut changed = false;
     if let Some(ref new_plan) = plan_type {
         let old_plan = account.plan_type.clone();
         if account.plan_type.as_deref() != Some(new_plan) {
@@ -288,13 +293,33 @@ fn sync_plan_type_from_token(account: &mut CodexAccount, plan_type: Option<Strin
                 account.email, old_plan, plan_type
             ));
             account.plan_type = plan_type;
-            // 同步更新索引中的 plan_type
-            if let Err(e) =
-                codex_account::update_account_plan_type_in_index(&account.id, &account.plan_type)
-            {
-                logger::log_warn(&format!("更新索引 plan_type 失败: {}", e));
-            }
+            changed = true;
         }
+    }
+
+    if let Some(ref next_expiry) = subscription_active_until {
+        if account.subscription_active_until.as_deref() != Some(next_expiry) {
+            account.subscription_active_until = Some(next_expiry.clone());
+            changed = true;
+        }
+    }
+
+    if changed {
+        if let Err(e) = codex_account::update_account_plan_type_in_index(
+            &account.id,
+            &account.plan_type,
+            &account.subscription_active_until,
+        ) {
+            logger::log_warn(&format!("更新索引 plan_type 失败: {}", e));
+        }
+    }
+}
+
+fn sync_subscription_expiry_from_current_id_token(account: &mut CodexAccount) {
+    if let Ok((_, _, _, subscription_active_until, _, _)) =
+        codex_account::extract_user_info(&account.tokens.id_token)
+    {
+        sync_subscription_from_token(account, None, subscription_active_until);
     }
 }
 
@@ -309,18 +334,39 @@ async fn refresh_account_quota_once(account_id: &str) -> Result<CodexQuota, Stri
         return Err("API Key 账号不支持刷新配额，请在网页端查看。".to_string());
     }
 
+    if crate::modules::codex_oauth::is_jwt_token_expired(&account.tokens.id_token) {
+        logger::log_info(&format!(
+            "Codex 账号 {} 的 id_token 已过期，配额刷新前先刷新 OAuth Token",
+            account.email
+        ));
+
+        match refresh_account_tokens(&mut account, "Token 已过期").await {
+            Ok(()) => {
+                logger::log_info(&format!("账号 {} 的 Token 刷新成功", account.email));
+                sync_subscription_expiry_from_current_id_token(&mut account);
+                codex_account::save_account(&account)?;
+            }
+            Err(e) => {
+                logger::log_error(&format!("账号 {} Token 刷新失败: {}", account.email, e));
+                let message = e;
+                write_quota_error(&mut account, message.clone());
+                if let Err(save_err) = codex_account::save_account(&account) {
+                    logger::log_warn(&format!("写入 Codex 配额错误失败: {}", save_err));
+                }
+                return Err(message);
+            }
+        }
+    } else {
+        sync_subscription_expiry_from_current_id_token(&mut account);
+    }
+
     // 检查 token 是否过期，如果过期则刷新
     if crate::modules::codex_oauth::is_token_expired(&account.tokens.access_token) {
         match refresh_account_tokens(&mut account, "Token 已过期").await {
             Ok(()) => {
                 logger::log_info(&format!("账号 {} 的 Token 刷新成功", account.email));
 
-                // 从新的 id_token 重新解析 plan_type
-                if let Ok((_, _, new_plan_type, _, _)) =
-                    codex_account::extract_user_info(&account.tokens.id_token)
-                {
-                    sync_plan_type_from_token(&mut account, new_plan_type);
-                }
+                sync_subscription_expiry_from_current_id_token(&mut account);
 
                 codex_account::save_account(&account)?;
             }
@@ -346,11 +392,7 @@ async fn refresh_account_quota_once(account_id: &str) -> Result<CodexQuota, Stri
 
             match refresh_account_tokens(&mut account, "配额接口返回 Token 失效").await {
                 Ok(()) => {
-                    if let Ok((_, _, new_plan_type, _, _)) =
-                        codex_account::extract_user_info(&account.tokens.id_token)
-                    {
-                        sync_plan_type_from_token(&mut account, new_plan_type);
-                    }
+                    sync_subscription_expiry_from_current_id_token(&mut account);
                     codex_account::save_account(&account)?;
 
                     match fetch_quota(&account).await {
@@ -384,7 +426,7 @@ async fn refresh_account_quota_once(account_id: &str) -> Result<CodexQuota, Stri
 
     // 从 usage 响应中的 plan_type 更新订阅标识
     if result.plan_type.is_some() {
-        sync_plan_type_from_token(&mut account, result.plan_type);
+        sync_subscription_from_token(&mut account, result.plan_type, None);
     }
 
     account.quota = Some(result.quota.clone());

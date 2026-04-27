@@ -67,6 +67,8 @@ pub struct CodexAccount {
     pub user_id: Option<String>,
     pub plan_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subscription_active_until: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth_file_plan_type: Option<String>,
     pub account_id: Option<String>,
     pub organization_id: Option<String>,
@@ -187,6 +189,8 @@ pub struct CodexAccountSummary {
     pub id: String,
     pub email: String,
     pub plan_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subscription_active_until: Option<String>,
     pub created_at: i64,
     pub last_used: i64,
 }
@@ -226,6 +230,7 @@ pub struct CodexJwtPayload {
 pub struct CodexAuthData {
     pub chatgpt_user_id: Option<String>,
     pub chatgpt_plan_type: Option<String>,
+    pub chatgpt_subscription_active_until: Option<serde_json::Value>,
     pub account_id: Option<String>,
     pub organization_id: Option<String>,
 }
@@ -244,6 +249,7 @@ impl CodexAccount {
             api_provider_name: None,
             user_id: None,
             plan_type: None,
+            subscription_active_until: None,
             auth_file_plan_type: None,
             account_id: None,
             organization_id: None,

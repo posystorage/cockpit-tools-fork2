@@ -69,6 +69,8 @@ import {
   hasCodexAccountStructure,
   formatCodexLoginProvider,
   getCodexAuthMetadata,
+  getCodexSubscriptionExpiryBucket,
+  getCodexSubscriptionPresentation,
   hasCodexAccountName,
   isCodexApiKeyAccount,
   isCodexExplicitFreePlanType,
@@ -193,8 +195,18 @@ const CODEX_LOCAL_ACCESS_FALLBACK_BASE_URL = `http://127.0.0.1:${CODEX_LOCAL_ACC
 const CODEX_LOCAL_ACCESS_FALLBACK_API_KEY_MASK = 'agt_codex_••••••••••••';
 const CODEX_FILTER_PERSISTENCE_SCOPE = normalizeAccountsOverviewScope('Codex');
 const FILTER_TYPES_FIELD = 'filter_types';
+const EXPIRY_FILTER_FIELD = 'expiry_filter';
 const GROUP_FILTER_FIELD = 'group_filter';
 const ACTIVE_GROUP_ID_FIELD = 'active_group_id';
+const CODEX_EXPIRY_FILTER_VALUES = [
+  'expired',
+  'within_24h',
+  'within_7d',
+  'within_30d',
+  'missing',
+] as const;
+
+type CodexExpiryFilterValue = 'all' | (typeof CODEX_EXPIRY_FILTER_VALUES)[number];
 
 type CodexOverviewLayoutMode = 'compact' | 'list' | 'grid';
 
@@ -270,6 +282,20 @@ export function CodexAccountsPage() {
       ? readAccountsOverviewFilterStringArray(CODEX_FILTER_PERSISTENCE_SCOPE, FILTER_TYPES_FIELD)
       : [],
   );
+  const [expiryFilter, setExpiryFilter] = useState<CodexExpiryFilterValue>(() => {
+    if (!readAccountsOverviewFilterPersistenceEnabled(CODEX_FILTER_PERSISTENCE_SCOPE)) {
+      return 'all';
+    }
+    const saved = readAccountsOverviewFilterField<string | null>(
+      CODEX_FILTER_PERSISTENCE_SCOPE,
+      EXPIRY_FILTER_FIELD,
+      null,
+    );
+    const isSavedExpiryFilter =
+      saved === 'all' ||
+      CODEX_EXPIRY_FILTER_VALUES.includes(saved as (typeof CODEX_EXPIRY_FILTER_VALUES)[number]);
+    return isSavedExpiryFilter ? (saved as CodexExpiryFilterValue) : 'all';
+  });
   const [exportFormat, setExportFormat] = useState<CodexExportFormat>('cockpit_tools');
   const [exportFileNameBase, setExportFileNameBase] = useState('codex_accounts');
   const [formattedExportJsonCopied, setFormattedExportJsonCopied] = useState(false);
@@ -459,6 +485,14 @@ export function CodexAccountsPage() {
     }
     writeAccountsOverviewFilterField(filterPersistenceScope, FILTER_TYPES_FIELD, filterTypes);
   }, [filterPersistenceEnabled, filterPersistenceScope, filterTypes]);
+
+  useEffect(() => {
+    if (!filterPersistenceEnabled) {
+      removeAccountsOverviewFilterField(filterPersistenceScope, EXPIRY_FILTER_FIELD);
+      return;
+    }
+    writeAccountsOverviewFilterField(filterPersistenceScope, EXPIRY_FILTER_FIELD, expiryFilter);
+  }, [expiryFilter, filterPersistenceEnabled, filterPersistenceScope]);
 
   useEffect(() => {
     if (!filterPersistenceEnabled) {
@@ -2288,6 +2322,12 @@ export function CodexAccountsPage() {
     [accountPresentations, t],
   );
 
+  const resolveSubscriptionPresentation = useCallback(
+    (account: CodexAccount) =>
+      getCodexSubscriptionPresentation(account.subscription_active_until, t),
+    [t],
+  );
+
   const resolveSingleExportBaseName = useCallback(
     (account: CodexAccount) => {
       const display = (resolvePresentation(account).displayName || account.id).trim();
@@ -2550,6 +2590,53 @@ export function CodexAccountsPage() {
     { value: 'ERROR', label: `ERROR (${tierCounts.ERROR})` },
     buildValidAccountsFilterOption(t, tierCounts.VALID),
   ], [t, tierCounts]);
+
+  const expiryCounts = useMemo(() => {
+    const counts: Record<CodexExpiryFilterValue, number> = {
+      all: 0,
+      expired: 0,
+      within_24h: 0,
+      within_7d: 0,
+      within_30d: 0,
+      missing: 0,
+    };
+    overviewAccounts.forEach((account) => {
+      if (isCodexApiKeyAccount(account)) return;
+      counts.all += 1;
+      const bucket = getCodexSubscriptionExpiryBucket(account.subscription_active_until);
+      if (bucket in counts) {
+        counts[bucket as CodexExpiryFilterValue] += 1;
+      }
+    });
+    return counts;
+  }, [overviewAccounts]);
+
+  const expiryFilterOptions = useMemo<SingleSelectFilterOption[]>(() => [
+    {
+      value: 'all',
+      label: t('codex.subscription.filterAll', { count: expiryCounts.all }),
+    },
+    {
+      value: 'expired',
+      label: t('codex.subscription.filterExpired', { count: expiryCounts.expired }),
+    },
+    {
+      value: 'within_24h',
+      label: t('codex.subscription.filterWithin24h', { count: expiryCounts.within_24h }),
+    },
+    {
+      value: 'within_7d',
+      label: t('codex.subscription.filterWithin7d', { count: expiryCounts.within_7d }),
+    },
+    {
+      value: 'within_30d',
+      label: t('codex.subscription.filterWithin30d', { count: expiryCounts.within_30d }),
+    },
+    {
+      value: 'missing',
+      label: t('codex.subscription.filterMissing', { count: expiryCounts.missing }),
+    },
+  ], [expiryCounts, t]);
 
   const activeGroup = useMemo(() => {
     if (!activeGroupId) return null;
@@ -3025,10 +3112,18 @@ export function CodexAccountsPage() {
       if (bR == null) return -1;
       return sortDirection === 'desc' ? bR - aR : aR - bR;
     }
+    if (sortBy === 'subscription_expiry') {
+      const aR = isCodexApiKeyAccount(a) ? null : resolveSubscriptionPresentation(a).timestampMs;
+      const bR = isCodexApiKeyAccount(b) ? null : resolveSubscriptionPresentation(b).timestampMs;
+      if (aR == null && bR == null) return 0;
+      if (aR == null) return 1;
+      if (bR == null) return -1;
+      return sortDirection === 'desc' ? bR - aR : aR - bR;
+    }
     const aV = sortBy === 'weekly' ? a.quota?.weekly_percentage ?? -1 : a.quota?.hourly_percentage ?? -1;
     const bV = sortBy === 'weekly' ? b.quota?.weekly_percentage ?? -1 : b.quota?.hourly_percentage ?? -1;
     return sortDirection === 'desc' ? bV - aV : aV - bV;
-  }, [currentAccount?.id, sortBy, sortDirection]);
+  }, [currentAccount?.id, resolveSubscriptionPresentation, sortBy, sortDirection]);
 
   const sortedAccountsForInstances = useMemo(
     () => [...accounts].sort(compareAccountsBySort),
@@ -3054,6 +3149,12 @@ export function CodexAccountsPage() {
           return selectedTypes.has(resolvePlanKey(a));
         });
       }
+    }
+    if (expiryFilter !== 'all') {
+      result = result.filter((account) => {
+        if (isCodexApiKeyAccount(account)) return false;
+        return getCodexSubscriptionExpiryBucket(account.subscription_active_until) === expiryFilter;
+      });
     }
     if (tagFilter.length > 0) {
       const selectedTags = new Set(tagFilter.map(normalizeTag));
@@ -3084,7 +3185,7 @@ export function CodexAccountsPage() {
     }
     result.sort(compareAccountsBySort);
     return result;
-  }, [activeGroupId, codexGroups, compareAccountsBySort, filterTypes, groupFilter, isAbnormalAccount, normalizeTag, overviewAccounts, resolvePlanKey, resolvePresentation, searchQuery, tagFilter]);
+  }, [activeGroupId, codexGroups, compareAccountsBySort, expiryFilter, filterTypes, groupFilter, isAbnormalAccount, normalizeTag, overviewAccounts, resolvePlanKey, resolvePresentation, searchQuery, tagFilter]);
 
   const filteredIds = useMemo(() => filteredAccounts.map((account) => account.id), [filteredAccounts]);
   const exportSelectionCount = getScopedSelectedCount(filteredIds);
@@ -3177,7 +3278,11 @@ export function CodexAccountsPage() {
       const presentation = resolvePresentation(account);
       const isCurrent = currentAccount?.id === account.id;
       const isSelected = selected.has(account.id);
+      const isApiKeyAccount = isCodexApiKeyAccount(account);
       const compactQuotaItems = resolveCompactQuotaItems(presentation);
+      const subscriptionInfo = resolveSubscriptionPresentation(account);
+      const showCompactExpiry =
+        !isApiKeyAccount && subscriptionInfo.bucket !== 'active';
       return (
         <div
           key={groupKey ? `${groupKey}-${account.id}` : account.id}
@@ -3206,6 +3311,14 @@ export function CodexAccountsPage() {
                 <span className={`codex-compact-quota-value ${item.quotaClass}`}>{item.valueText}</span>
               </span>
             ))}
+            {showCompactExpiry && (
+              <span
+                className={`codex-compact-expiry ${subscriptionInfo.tone}`}
+                title={subscriptionInfo.titleText}
+              >
+                {subscriptionInfo.valueText}
+              </span>
+            )}
           </div>
           <button
             className={`codex-compact-switch-btn ${!isCurrent ? 'success' : ''}`}
@@ -3255,6 +3368,7 @@ export function CodexAccountsPage() {
       const visibleTags = accountTags.slice(0, 2);
       const moreTagCount = Math.max(0, accountTags.length - visibleTags.length);
       const isInLocalAccess = localAccessAccountIdSet.has(account.id);
+      const subscriptionInfo = resolveSubscriptionPresentation(account);
       return (
         <div key={groupKey ? `${groupKey}-${account.id}` : account.id} className={`codex-account-card ${isCurrent ? 'current' : ''} ${isSelected ? 'selected' : ''}`}>
           <div className="card-top">
@@ -3371,6 +3485,18 @@ export function CodexAccountsPage() {
               </>
             )}
           </div>
+          {!isApiKeyAccount && (
+            <div className={`codex-subscription-footer ${subscriptionInfo.tone}`} title={subscriptionInfo.titleText}>
+              <div className="codex-subscription-footer-main">
+                <Calendar size={14} />
+                <span>{t('codex.subscription.label', '到期')}</span>
+                <strong>{subscriptionInfo.valueText}</strong>
+              </div>
+              {subscriptionInfo.timestampMs != null && (
+                <span className="codex-subscription-footer-date">{subscriptionInfo.detailText}</span>
+              )}
+            </div>
+          )}
           <div className="card-footer">
             <span className="card-date">{formatDate(account.created_at)}</span>
             <div className="card-actions">
@@ -3864,6 +3990,7 @@ export function CodexAccountsPage() {
       const apiBaseUrlText = (account.api_base_url || '').trim() || '-';
       const apiBaseUrlLine = `${t('codex.api.baseUrl', 'Base URL')}：${apiBaseUrlText}`;
       const isInLocalAccess = localAccessAccountIdSet.has(account.id);
+      const subscriptionInfo = resolveSubscriptionPresentation(account);
       return (
         <tr key={groupKey ? `${groupKey}-${account.id}` : account.id} className={isCurrent ? 'current' : ''}>
           <td><input type="checkbox" checked={selected.has(account.id)} onChange={() => toggleSelect(account.id)} /></td>
@@ -3942,6 +4069,20 @@ export function CodexAccountsPage() {
             )}
             {hasQuotaError && (<div className="account-sub-line"><span className="codex-status-pill quota-error" title={quotaErrorMeta.rawMessage}><CircleAlert size={12} />{quotaErrorMeta.statusCode || t('codex.quotaError.badge', '配额异常')}</span></div>)}</div></td>
           <td><span className={`tier-badge ${planClass}`}>{presentation.planLabel}</span></td>
+          <td>
+            {isApiKeyAccount ? (
+              <span className="codex-subscription-table-empty">-</span>
+            ) : (
+              <div className="codex-subscription-table-cell" title={subscriptionInfo.titleText}>
+                <span className={`codex-subscription-badge ${subscriptionInfo.tone}`}>
+                  {subscriptionInfo.valueText}
+                </span>
+                {subscriptionInfo.timestampMs != null && (
+                  <span className="codex-subscription-date">{subscriptionInfo.detailText}</span>
+                )}
+              </div>
+            )}
+          </td>
           <td>
             {isApiKeyAccount ? (
               <button className="btn btn-secondary btn-sm" onClick={() => void handleOpenCodexUsage()}>
@@ -4036,7 +4177,7 @@ export function CodexAccountsPage() {
           onClick={() => handleEnterGroup(group.id)}
         >
           <td />
-          <td colSpan={3}>
+          <td colSpan={4}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <FolderOpen size={16} style={{ color: 'var(--primary)' }} />
               <strong>{group.name}</strong>
@@ -4166,6 +4307,13 @@ export function CodexAccountsPage() {
               onToggleValue={toggleFilterTypeValue}
               onClear={clearFilterTypes}
             />
+            <SingleSelectFilterDropdown
+              value={expiryFilter}
+              options={expiryFilterOptions}
+              ariaLabel={t('codex.subscription.filterLabel', '到期筛选')}
+              icon={<Calendar size={14} />}
+              onChange={(value) => setExpiryFilter(value as CodexExpiryFilterValue)}
+            />
             <div className="tag-filter" ref={tagFilterRef}>
               <button type="button" className={`tag-filter-btn ${tagFilter.length > 0 ? 'active' : ''}`} onClick={() => setShowTagFilter((prev) => !prev)} aria-label={t('accounts.filterTags', '标签筛选')}>
                 <Tag size={14} />{tagFilter.length > 0 ? `${t('accounts.filterTagsCount', '标签')}(${tagFilter.length})` : t('accounts.filterTags', '标签筛选')}
@@ -4193,6 +4341,7 @@ export function CodexAccountsPage() {
                 { value: 'hourly', label: t('codex.sort.hourly', '按5小时配额') },
                 { value: 'weekly_reset', label: t('codex.sort.weeklyReset', '按周配额重置时间') },
                 { value: 'hourly_reset', label: t('codex.sort.hourlyReset', '按5小时配额重置时间') },
+                { value: 'subscription_expiry', label: t('codex.sort.subscriptionExpiry', '按订阅到期') },
               ]}
               ariaLabel={t('common.shared.sortLabel', '排序')}
               icon={<ArrowDownWideNarrow size={14} />}
@@ -4312,8 +4461,9 @@ export function CodexAccountsPage() {
                 <div className="account-table-container grouped"><table className="account-table"><thead><tr>
                   <th style={{ width: 40 }}><input type="checkbox" checked={isAllPaginatedSelected} onChange={() => toggleSelectAll(paginatedIds)} /></th>
                   <th style={{ width: 260 }}>{t('common.shared.columns.email', '账号')}</th><th style={{ width: 140 }}>{t('common.shared.columns.plan', '订阅')}</th>
+                  <th style={{ width: 150 }}>{t('codex.subscription.column', '订阅到期')}</th>
                   <th>{t('accounts.columns.quota', '配额状态')}</th><th className="sticky-action-header table-action-header">{t('common.shared.columns.actions', '操作')}</th></tr></thead>
-                  <tbody>{paginatedGroupedAccounts.map(({ groupKey, items, totalCount }) => (<Fragment key={groupKey}><tr className="tag-group-row"><td colSpan={5}><div className="tag-group-header"><span className="tag-group-title">{resolveGroupLabel(groupKey)}</span><span className="tag-group-count">{totalCount}</span></div></td></tr>
+                  <tbody>{paginatedGroupedAccounts.map(({ groupKey, items, totalCount }) => (<Fragment key={groupKey}><tr className="tag-group-row"><td colSpan={6}><div className="tag-group-header"><span className="tag-group-title">{resolveGroupLabel(groupKey)}</span><span className="tag-group-count">{totalCount}</span></div></td></tr>
                     {renderTableRows(items, groupKey)}</Fragment>))}</tbody></table></div>
               </>
             ) : (
@@ -4326,6 +4476,7 @@ export function CodexAccountsPage() {
                 <div className="account-table-container"><table className="account-table"><thead><tr>
                   <th style={{ width: 40 }}>{showOverviewSelectionBar ? null : <input type="checkbox" checked={isAllPaginatedSelected} onChange={() => toggleSelectAll(paginatedIds)} />}</th>
                   <th style={{ width: 260 }}>{t('common.shared.columns.email', '账号')}</th><th style={{ width: 140 }}>{t('common.shared.columns.plan', '订阅')}</th>
+                  <th style={{ width: 150 }}>{t('codex.subscription.column', '订阅到期')}</th>
                   <th>{t('accounts.columns.quota', '配额状态')}</th><th className="sticky-action-header table-action-header">{t('common.shared.columns.actions', '操作')}</th></tr></thead>
                   <tbody>{renderGroupTableRows()}{renderTableRows(paginatedAccounts)}</tbody></table></div>
               </>

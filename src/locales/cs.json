@@ -1812,7 +1812,8 @@
       "weekly": "Týdenní kvóta",
       "hourly": "5hodinová kvóta",
       "weeklyReset": "Čas týdenního resetu",
-      "hourlyReset": "Čas resetu 5 hodin"
+      "hourlyReset": "Čas resetu 5 hodin",
+      "subscriptionExpiry": "Konec předplatného"
     },
     "opencodeSwitch": "Přepínač OpenCode",
     "opencodeSwitchDesc": "Synchronizovat přepnutí účtu Codex v OpenCode",
@@ -2259,6 +2260,25 @@
     },
     "groups": {
       "addToGroup": "Přidat do skupiny"
+    },
+    "subscription": {
+      "label": "Konec předpl.",
+      "column": "Konec",
+      "unknown": "Ověřit znovu",
+      "missingDetail": "Ověřit znovu pro načtení",
+      "expired": "Vypršelo",
+      "hoursLeft": "{{count}} h",
+      "daysLeft": "{{count}} d",
+      "over99Days": "99+ d",
+      "titleWithDate": "Předplatné končí: {{date}}",
+      "titleUnknown": "Ověřte znovu pro načtení konce předplatného",
+      "filterLabel": "Filtr konce",
+      "filterAll": "Vše ({{count}})",
+      "filterExpired": "Vypršela ({{count}})",
+      "filterWithin24h": "24 h ({{count}})",
+      "filterWithin7d": "7 d ({{count}})",
+      "filterWithin30d": "30 d ({{count}})",
+      "filterMissing": "Neznámé ({{count}})"
     }
   },
   "githubCopilot": {
@@ -2281,7 +2301,8 @@
       "desc": "Vložte access token GitHub Copilot nebo exportovaná data JSON."
     },
     "import": {
-      "localDesc": "Importovat účty GitHub Copilot z místně přihlášených relací."
+      "localDesc": "Importujte data účtu GitHub Copilot z místního VS Code nebo souboru JSON.",
+      "localClient": "Importovat z místního VS Code"
     },
     "sort": {
       "weekly": "Týdenní kvóta",
@@ -2306,7 +2327,7 @@
       "desc": "Přepnutí účtu vyžaduje čtení lokálního úložiště ověření ve VS Code a použití systémové služby přihlašovacích údajů pro dešifrování a zpětný zápis; data se zpracovávají pouze lokálně.",
       "inject": "Přepnutí jedním kliknutím: Tento nástroj načte lokální šifrovací materiál VS Code (DPAPI/Keychain/Secret Service), dešifruje autentizační relaci ve state.vscdb, nahradí token GitHub Copilot a znovu ji zašifruje — vše lokálně na vašem zařízení.",
       "reason": "Rozsah oprávnění: čtení databáze ověření VS Code (state.vscdb) a volání systémového šifrování (Windows DPAPI / macOS Keychain / Linux Secret Service) pro dešifrování a zpětný zápis.",
-      "storage": "Rozsah čtení: zpracovávají se pouze položky související s relací přihlášení GitHub a veškeré procesy probíhají lokálně."
+      "storage": "Rozsah dat: místní import čte relace přihlášení GitHub ve VS Code a přepnutí účtu aktualizuje stejné záznamy; OAuth, import tokenu, ověření místního importu a obnovení kvót volají oficiální API GitHub s nezbytnými autentizačními poli. state.vscdb ani systémové klíče se neodesílají."
     }
   },
   "dashboard": {

@@ -7,6 +7,16 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
 ---
+## [0.22.12] - 2026-04-27
+
+### 修复
+- **Codex 本地 API 服务端口冲突现可在应用内恢复**：网关重启前会先停止旧监听，端口被占用时展示明确的清理操作，并可清理当前配置的本地端口后重新启动服务。
+
+### 新增
+- **Codex 账号列表现已展示订阅到期状态**：OAuth 账号会保存 `chatgpt_subscription_active_until`，并在紧凑视图、卡片视图和表格视图展示到期状态，支持按到期状态筛选/排序，`sub2api` 导出也会带上订阅到期信息。
+- **GitHub Copilot 账号现已支持从本机 VS Code 导入当前会话**：导入弹框可读取 VS Code 当前 Copilot 绑定的 GitHub 登录名与匹配的 GitHub 认证会话，经官方 GitHub/Copilot API 校验后保存为受管账号。
+
+---
 ## [0.22.11] - 2026-04-26
 
 ### 变更

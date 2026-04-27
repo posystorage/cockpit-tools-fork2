@@ -1812,7 +1812,8 @@
       "weekly": "Haftalık kota",
       "hourly": "5 saatlik kota",
       "weeklyReset": "Haftalık sıfırlama zamanı",
-      "hourlyReset": "5 saatlik sıfırlama zamanı"
+      "hourlyReset": "5 saatlik sıfırlama zamanı",
+      "subscriptionExpiry": "Abonelik bitişi"
     },
     "opencodeSwitch": "OpenCode geçiş anahtarı",
     "opencodeSwitchDesc": "OpenCode içinde Codex hesap geçişini senkronize et",
@@ -2259,6 +2260,25 @@
     },
     "groups": {
       "addToGroup": "Gruba Ekle"
+    },
+    "subscription": {
+      "label": "Abonelik bitişi",
+      "column": "Bitiş",
+      "unknown": "Yeniden yetkilendir",
+      "missingDetail": "Almak icin yeniden yetkilendir",
+      "expired": "Süresi doldu",
+      "hoursLeft": "{{count}} sa",
+      "daysLeft": "{{count}} gün",
+      "over99Days": "99+ gün",
+      "titleWithDate": "Abonelik bitişi: {{date}}",
+      "titleUnknown": "Abonelik bitişini almak için yeniden yetkilendir",
+      "filterLabel": "Bitiş filtresi",
+      "filterAll": "Tümü ({{count}})",
+      "filterExpired": "Süresi dolan ({{count}})",
+      "filterWithin24h": "24 sa ({{count}})",
+      "filterWithin7d": "7 gün ({{count}})",
+      "filterWithin30d": "30 gün ({{count}})",
+      "filterMissing": "Bilinmiyor ({{count}})"
     }
   },
   "githubCopilot": {
@@ -2281,7 +2301,8 @@
       "desc": "GitHub Copilot erişim belirtecini veya dışa aktarılan JSON verisini yapıştırın."
     },
     "import": {
-      "localDesc": "Yerelde oturum açılmış oturumlardan GitHub Copilot hesaplarını içe aktar."
+      "localDesc": "GitHub Copilot hesap verilerini yerel VS Code'dan veya bir JSON dosyasından içe aktarın.",
+      "localClient": "Yerel VS Code'dan içe aktar"
     },
     "sort": {
       "weekly": "Haftalık kota",
@@ -2306,7 +2327,7 @@
       "desc": "Hesap değiştirme, VS Code yerel kimlik doğrulama deposunun okunmasını ve şifre çözme/geri yazma için sistem kimlik bilgisi hizmetinin kullanılmasını gerektirir; veriler yalnızca yerelde işlenir.",
       "inject": "Tek tıkla geçiş: Bu araç VS Code'un yerel şifreleme materyalini (DPAPI/Keychain/Secret Service) okur, state.vscdb içindeki kimlik doğrulama oturumunu çözer, GitHub Copilot belirtecini değiştirir ve yeniden şifreler — tüm işlem cihazınızda yerel olarak yapılır.",
       "reason": "İzin kapsamı: VS Code kimlik doğrulama veritabanını (state.vscdb) okumak ve şifre çözme/geri yazma için sistem şifreleme yeteneklerini (Windows DPAPI / macOS Keychain / Linux Secret Service) çağırmak.",
-      "storage": "Okuma kapsamı: yalnızca GitHub oturum açma oturumu ile ilgili veriler işlenir; tüm işlemler yerel olarak yürütülür."
+      "storage": "Veri kapsamı: yerel içe aktarma VS Code içindeki GitHub oturum açma oturumlarını okur, hesap değiştirme aynı kayıtları günceller; OAuth, token içe aktarma, yerel içe aktarma doğrulaması ve kota yenileme gerekli kimlik doğrulama alanlarıyla GitHub resmi API'lerini çağırır. state.vscdb ve sistem anahtarları yüklenmez."
     }
   },
   "dashboard": {

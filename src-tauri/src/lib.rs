@@ -490,6 +490,7 @@ pub fn run() {
             commands::github_copilot::delete_github_copilot_account,
             commands::github_copilot::delete_github_copilot_accounts,
             commands::github_copilot::import_github_copilot_from_json,
+            commands::github_copilot::import_github_copilot_from_local,
             commands::github_copilot::export_github_copilot_accounts,
             commands::github_copilot::refresh_github_copilot_token,
             commands::github_copilot::refresh_all_github_copilot_tokens,

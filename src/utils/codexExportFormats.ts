@@ -156,7 +156,10 @@ function formatSub2apiExportedAt(): string {
 
 function resolveSubscriptionExpiresAt(account: CodexAccount): string | undefined {
   const authPayload = resolveAuthPayload(account);
-  return normalizeTimestampToIso(authPayload?.chatgpt_subscription_active_until);
+  return (
+    normalizeTimestampToIso(account.subscription_active_until) ||
+    normalizeTimestampToIso(authPayload?.chatgpt_subscription_active_until)
+  );
 }
 
 function resolveAccessTokenExpiry(account: CodexAccount): string | undefined {

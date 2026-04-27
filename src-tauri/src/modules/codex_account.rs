@@ -294,6 +294,7 @@ fn apply_api_key_fields(
         refresh_token: None,
     };
     account.user_id = None;
+    account.subscription_active_until = None;
     account.account_id = None;
     account.organization_id = None;
     account.account_structure = None;
@@ -325,6 +326,26 @@ fn extract_api_base_url_from_json_value(value: &serde_json::Value) -> Option<Str
 
 fn normalize_optional_json_str(value: Option<&serde_json::Value>) -> Option<String> {
     normalize_optional_ref(value.and_then(|item| item.as_str()))
+}
+
+fn normalize_optional_json_scalar(value: Option<&serde_json::Value>) -> Option<String> {
+    value.and_then(|item| {
+        if let Some(raw) = item.as_str() {
+            return normalize_optional_ref(Some(raw));
+        }
+        if let Some(raw) = item.as_i64() {
+            return Some(raw.to_string());
+        }
+        if let Some(raw) = item.as_u64() {
+            return Some(raw.to_string());
+        }
+        if let Some(raw) = item.as_f64() {
+            if raw.is_finite() {
+                return Some(raw.trunc().to_string());
+            }
+        }
+        None
+    })
 }
 
 fn extract_account_record_field(
@@ -979,7 +1000,14 @@ fn mark_token_chain_updated(account: &mut CodexAccount) {
 }
 
 fn sync_identity_from_tokens(account: &mut CodexAccount) {
-    if let Ok((email, user_id, plan_type, id_token_account_id, id_token_org_id)) =
+    if let Ok((
+        email,
+        user_id,
+        plan_type,
+        subscription_active_until,
+        id_token_account_id,
+        id_token_org_id,
+    )) =
         extract_user_info(&account.tokens.id_token)
     {
         if !email.trim().is_empty() {
@@ -987,6 +1015,7 @@ fn sync_identity_from_tokens(account: &mut CodexAccount) {
         }
         account.user_id = user_id;
         account.plan_type = plan_type;
+        account.subscription_active_until = subscription_active_until;
         account.account_id = normalize_optional_value(
             extract_chatgpt_account_id_from_access_token(&account.tokens.access_token)
                 .or(id_token_account_id)
@@ -1117,6 +1146,7 @@ pub fn extract_user_info(
         Option<String>,
         Option<String>,
         Option<String>,
+        Option<String>,
     ),
     String,
 > {
@@ -1131,6 +1161,9 @@ pub fn extract_user_info(
         .auth_data
         .as_ref()
         .and_then(|d| d.chatgpt_plan_type.clone());
+    let subscription_active_until = payload.auth_data.as_ref().and_then(|d| {
+        normalize_optional_json_scalar(d.chatgpt_subscription_active_until.as_ref())
+    });
     let account_id = payload
         .auth_data
         .as_ref()
@@ -1140,7 +1173,14 @@ pub fn extract_user_info(
         .as_ref()
         .and_then(|d| d.organization_id.clone());
 
-    Ok((email, user_id, plan_type, account_id, organization_id))
+    Ok((
+        email,
+        user_id,
+        plan_type,
+        subscription_active_until,
+        account_id,
+        organization_id,
+    ))
 }
 
 /// 读取账号索引
@@ -1330,6 +1370,7 @@ fn repair_account_index_from_details(reason: &str) -> Option<CodexAccountIndex> 
             id: account.id.clone(),
             email: account.email.clone(),
             plan_type: account.plan_type.clone(),
+            subscription_active_until: account.subscription_active_until.clone(),
             created_at: account.created_at,
             last_used: account.last_used,
         })
@@ -1546,6 +1587,7 @@ pub fn upsert_api_key_account(
             id: account_id.clone(),
             email: acc.email.clone(),
             plan_type: acc.plan_type.clone(),
+            subscription_active_until: acc.subscription_active_until.clone(),
             created_at: acc.created_at,
             last_used: acc.last_used,
         });
@@ -1558,12 +1600,14 @@ pub fn upsert_api_key_account(
     if let Some(summary) = index.accounts.iter_mut().find(|item| item.id == account.id) {
         summary.email = account.email.clone();
         summary.plan_type = account.plan_type.clone();
+        summary.subscription_active_until = account.subscription_active_until.clone();
         summary.last_used = account.last_used;
     } else {
         index.accounts.push(CodexAccountSummary {
             id: account.id.clone(),
             email: account.email.clone(),
             plan_type: account.plan_type.clone(),
+            subscription_active_until: account.subscription_active_until.clone(),
             created_at: account.created_at,
             last_used: account.last_used,
         });
@@ -1585,7 +1629,14 @@ fn upsert_account_with_hints(
     account_id_hint: Option<String>,
     organization_id_hint: Option<String>,
 ) -> Result<CodexAccount, String> {
-    let (email, user_id, plan_type, id_token_account_id, id_token_org_id) =
+    let (
+        email,
+        user_id,
+        plan_type,
+        subscription_active_until,
+        id_token_account_id,
+        id_token_org_id,
+    ) =
         extract_user_info(&tokens.id_token)?;
     let account_id = normalize_optional_value(
         extract_chatgpt_account_id_from_access_token(&tokens.access_token)
@@ -1627,6 +1678,7 @@ fn upsert_account_with_hints(
         acc.api_provider_name = None;
         acc.user_id = user_id;
         acc.plan_type = plan_type.clone();
+        acc.subscription_active_until = subscription_active_until.clone();
         acc.account_id = account_id.clone();
         acc.organization_id = organization_id.clone();
         acc.update_last_used();
@@ -1643,6 +1695,7 @@ fn upsert_account_with_hints(
         acc.api_provider_name = None;
         acc.user_id = user_id;
         acc.plan_type = plan_type.clone();
+        acc.subscription_active_until = subscription_active_until.clone();
         acc.account_id = account_id.clone();
         acc.organization_id = organization_id.clone();
 
@@ -1651,6 +1704,7 @@ fn upsert_account_with_hints(
             id: existing_id.clone(),
             email: email.clone(),
             plan_type: plan_type.clone(),
+            subscription_active_until: subscription_active_until.clone(),
             created_at: acc.created_at,
             last_used: acc.last_used,
         });
@@ -1664,12 +1718,14 @@ fn upsert_account_with_hints(
     if let Some(summary) = index.accounts.iter_mut().find(|a| a.id == account.id) {
         summary.email = account.email.clone();
         summary.plan_type = account.plan_type.clone();
+        summary.subscription_active_until = account.subscription_active_until.clone();
         summary.last_used = account.last_used;
     } else {
         index.accounts.push(CodexAccountSummary {
             id: account.id.clone(),
             email: account.email.clone(),
             plan_type: account.plan_type.clone(),
+            subscription_active_until: account.subscription_active_until.clone(),
             created_at: account.created_at,
             last_used: account.last_used,
         });
@@ -1689,10 +1745,12 @@ fn upsert_account_with_hints(
 pub fn update_account_plan_type_in_index(
     account_id: &str,
     plan_type: &Option<String>,
+    subscription_active_until: &Option<String>,
 ) -> Result<(), String> {
     let mut index = load_account_index();
     if let Some(summary) = index.accounts.iter_mut().find(|a| a.id == account_id) {
         summary.plan_type = plan_type.clone();
+        summary.subscription_active_until = subscription_active_until.clone();
         save_account_index(&index)?;
     }
     Ok(())
@@ -1728,12 +1786,13 @@ pub fn remove_accounts(account_ids: &[String]) -> Result<(), String> {
 struct LocalCodexOAuthSnapshot {
     tokens: CodexTokens,
     email: String,
+    subscription_active_until: Option<String>,
     account_id: Option<String>,
     organization_id: Option<String>,
 }
 
 fn build_local_oauth_snapshot(tokens: CodexAuthTokens) -> Option<LocalCodexOAuthSnapshot> {
-    let (email, _, _, id_token_account_id, id_token_org_id) =
+    let (email, _, _, subscription_active_until, id_token_account_id, id_token_org_id) =
         extract_user_info(&tokens.id_token).ok()?;
     let account_id = normalize_optional_value(
         tokens
@@ -1753,6 +1812,7 @@ fn build_local_oauth_snapshot(tokens: CodexAuthTokens) -> Option<LocalCodexOAuth
             refresh_token: tokens.refresh_token,
         },
         email,
+        subscription_active_until,
         account_id,
         organization_id,
     })
@@ -1947,6 +2007,13 @@ fn apply_local_oauth_snapshot(
 
     if normalize_optional_ref(account.organization_id.as_deref()) != snapshot.organization_id {
         account.organization_id = snapshot.organization_id.clone();
+        changed = true;
+    }
+
+    if normalize_optional_ref(account.subscription_active_until.as_deref())
+        != snapshot.subscription_active_until
+    {
+        account.subscription_active_until = snapshot.subscription_active_until.clone();
         changed = true;
     }
 
@@ -3143,6 +3210,7 @@ mod tests {
             id: storage_id,
             email: account.email.clone(),
             plan_type: account.plan_type.clone(),
+            subscription_active_until: account.subscription_active_until.clone(),
             created_at: account.created_at,
             last_used: account.last_used,
         });
@@ -3806,6 +3874,7 @@ pub fn update_api_key_credentials(
             summary.id = account.id.clone();
             summary.email = account.email.clone();
             summary.plan_type = account.plan_type.clone();
+            summary.subscription_active_until = account.subscription_active_until.clone();
             summary.last_used = account.last_used;
             summary_found = true;
             break;
@@ -3817,6 +3886,7 @@ pub fn update_api_key_credentials(
             id: account.id.clone(),
             email: account.email.clone(),
             plan_type: account.plan_type.clone(),
+            subscription_active_until: account.subscription_active_until.clone(),
             created_at: account.created_at,
             last_used: account.last_used,
         });

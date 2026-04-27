@@ -1955,7 +1955,8 @@
       "weekly": "Kuota mingguan",
       "hourly": "Kuota 5 jam",
       "weeklyReset": "Waktu reset mingguan",
-      "hourlyReset": "5-hour reset time"
+      "hourlyReset": "5-hour reset time",
+      "subscriptionExpiry": "Akhir langganan"
     },
     "opencodeSwitch": "Sakelar OpenCode",
     "opencodeSwitchDesc": "Sinkronkan info akun Codex di OpenCode",
@@ -2305,6 +2306,25 @@
     },
     "groups": {
       "addToGroup": "Tambahkan ke Grup"
+    },
+    "subscription": {
+      "label": "Akhir langganan",
+      "column": "Berakhir",
+      "unknown": "Otorisasi ulang",
+      "missingDetail": "Otorisasi ulang untuk ambil",
+      "expired": "Kedaluwarsa",
+      "hoursLeft": "{{count}} jam",
+      "daysLeft": "{{count}} hr",
+      "over99Days": "99+ hr",
+      "titleWithDate": "Langganan berakhir: {{date}}",
+      "titleUnknown": "Otorisasi ulang untuk mengambil akhir langganan",
+      "filterLabel": "Filter akhir",
+      "filterAll": "Semua ({{count}})",
+      "filterExpired": "Kedaluwarsa ({{count}})",
+      "filterWithin24h": "24 jam ({{count}})",
+      "filterWithin7d": "7 hr ({{count}})",
+      "filterWithin30d": "30 hr ({{count}})",
+      "filterMissing": "Tidak diketahui ({{count}})"
     }
   },
   "codebuddy": {
@@ -2427,7 +2447,8 @@
       "desc": "Tempel token akses GitHub Copilot atau data JSON yang diekspor."
     },
     "import": {
-      "localDesc": "Impor data akun GitHub Copilot dari berkas JSON."
+      "localDesc": "Impor data akun GitHub Copilot dari VS Code lokal atau berkas JSON.",
+      "localClient": "Impor dari VS Code lokal"
     },
     "sort": {
       "weekly": "Berdasarkan penggunaan pesan Chat",
@@ -2452,7 +2473,7 @@
       "desc": "Switching accounts requires reading VS Code local auth storage and using the system credential service for decrypt/write-back. Data is processed locally only.",
       "inject": "One-click switching: This tool reads local VS Code encryption material (DPAPI/Keychain/Secret Service), decrypts the auth session in state.vscdb, replaces the GitHub Copilot token, and re-encrypts it Ã¢â‚¬â€ all locally on your machine.",
       "reason": "Permission scope: read VS Code auth database (state.vscdb) and call system credential capability (Windows DPAPI / macOS Keychain / Linux Secret Service) for decrypt/write-back.",
-      "storage": "Data scope: only GitHub auth-session related entries are read/updated; all processes run locally."
+      "storage": "Cakupan data: impor lokal membaca sesi masuk GitHub di VS Code, dan pergantian akun memperbarui entri yang sama; OAuth, impor token, validasi impor lokal, dan penyegaran kuota memanggil API resmi GitHub dengan bidang autentikasi yang diperlukan. state.vscdb dan kunci sistem tidak diunggah."
     }
   },
   "dashboard": {

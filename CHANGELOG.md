@@ -7,6 +7,16 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [0.22.12] - 2026-04-27
+
+### Fixed
+- **Codex Local API Service port conflicts are now recoverable in-app**: gateway restart stops the previous listener before rebinding, occupied-port failures show a clear cleanup action, and the configured local port can be cleared before restarting the service.
+
+### Added
+- **Codex account lists now surface subscription expiry**: OAuth accounts persist `chatgpt_subscription_active_until`, display expiry state in compact, card, and table views, support expiry filtering/sorting, and include subscription expiry metadata in `sub2api` exports.
+- **GitHub Copilot accounts can now import the current local VS Code session**: the import modal can read VS Code's selected Copilot GitHub login and matching GitHub auth session, validate it through official GitHub/Copilot APIs, and save it as a managed account.
+
+---
 ## [0.22.11] - 2026-04-26
 
 ### Changed

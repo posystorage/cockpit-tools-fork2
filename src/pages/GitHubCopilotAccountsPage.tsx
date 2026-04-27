@@ -115,6 +115,7 @@ export function GitHubCopilotAccountsPage() {
     },
     dataService: {
       importFromJson: githubCopilotService.importGitHubCopilotFromJson,
+      importFromLocal: githubCopilotService.importGitHubCopilotFromLocal,
       addWithToken: githubCopilotService.addGitHubCopilotAccountWithToken,
       exportAccounts: githubCopilotService.exportGitHubCopilotAccounts,
       injectToVSCode: githubCopilotService.injectGitHubCopilotToVSCode,
@@ -144,7 +145,7 @@ export function GitHubCopilotAccountsPage() {
     canOpenExportSavedDirectory, openExportSavedDirectory, copyExportSavedPath, exportPathCopied,
     showAddModal, addTab, addStatus, addMessage, tokenInput, setTokenInput,
     importing, openAddModal, closeAddModal,
-    handleTokenImport, handleImportJsonFile, handlePickImportFile, importFileInputRef,
+    handleTokenImport, handleImportJsonFile, handleImportFromLocal, handlePickImportFile, importFileInputRef,
     oauthUrl, oauthUrlCopied, oauthUserCode, oauthUserCodeCopied, oauthMeta,
     oauthPrepareError, oauthCompleteError, oauthPolling, oauthTimedOut,
     handleCopyOauthUrl, handleCopyOauthUserCode, handleRetryOauth, handleOpenOauthUrl,
@@ -767,7 +768,7 @@ export function GitHubCopilotAccountsPage() {
               <li>
                 {t(
                   'githubCopilot.flowNotice.storage',
-                  'Data scope: only GitHub auth-session related entries are read/updated; system secrets are not modified and no key/token is uploaded.',
+                  'Data scope: local import reads GitHub auth sessions from VS Code, and switching updates the same entries; OAuth, token import, local-import validation, and quota refresh call GitHub official APIs with required auth fields. state.vscdb and system keys are not uploaded.',
                 )}
               </li>
             </ul>
@@ -1272,8 +1273,15 @@ export function GitHubCopilotAccountsPage() {
               {addTab === 'import' && (
                 <div className="add-section">
                   <p className="section-desc">
-                    {t('githubCopilot.import.localDesc', '从 JSON 文件导入 GitHub Copilot 账号数据。')}
+                    {t('githubCopilot.import.localDesc', '支持从本机 VS Code 或 JSON 文件导入 GitHub Copilot 账号数据。')}
                   </p>
+                  <button className="btn btn-secondary btn-full" onClick={() => handleImportFromLocal?.()} disabled={importing}>
+                    {importing ? <RefreshCw size={16} className="loading-spinner" /> : <Database size={16} />}
+                    {t('githubCopilot.import.localClient', '从本机 VS Code 导入')}
+                  </button>
+                  <div className="oauth-hint" style={{ margin: '8px 0 4px' }}>
+                    {t('common.shared.import.orJson', '或从 JSON 文件导入')}
+                  </div>
                   <input
                     ref={importFileInputRef}
                     type="file"

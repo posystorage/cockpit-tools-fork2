@@ -1812,7 +1812,8 @@
       "weekly": "週間クォータ",
       "hourly": "5時間クォータ",
       "weeklyReset": "週間クォータのリセット時間",
-      "hourlyReset": "5時間クォータのリセット時間"
+      "hourlyReset": "5時間クォータのリセット時間",
+      "subscriptionExpiry": "契約期限"
     },
     "opencodeSwitch": "OpenCode 切り替えスイッチ",
     "opencodeSwitchDesc": "OpenCode 内の Codex アカウント情報を同期して切り替え",
@@ -2259,6 +2260,25 @@
     },
     "groups": {
       "addToGroup": "グループに追加"
+    },
+    "subscription": {
+      "label": "契約期限",
+      "column": "期限",
+      "unknown": "再認証",
+      "missingDetail": "再認証して取得",
+      "expired": "期限切れ",
+      "hoursLeft": "{{count}}時間",
+      "daysLeft": "{{count}}日",
+      "over99Days": "99日超",
+      "titleWithDate": "契約期限: {{date}}",
+      "titleUnknown": "再認証して契約期限を取得",
+      "filterLabel": "期限フィルター",
+      "filterAll": "すべて ({{count}})",
+      "filterExpired": "期限切れ ({{count}})",
+      "filterWithin24h": "24時間 ({{count}})",
+      "filterWithin7d": "7日 ({{count}})",
+      "filterWithin30d": "30日 ({{count}})",
+      "filterMissing": "不明 ({{count}})"
     }
   },
   "githubCopilot": {
@@ -2281,7 +2301,8 @@
       "desc": "GitHub Copilot のアクセストークン、またはエクスポートした JSON データを貼り付けてください。"
     },
     "import": {
-      "localDesc": "ローカルでログイン済みのセッションから GitHub Copilot アカウントをインポート。"
+      "localDesc": "ローカル VS Code または JSON ファイルから GitHub Copilot アカウントデータをインポートします。",
+      "localClient": "ローカル VS Code からインポート"
     },
     "sort": {
       "weekly": "週間クォータ",
@@ -2306,7 +2327,7 @@
       "desc": "アカウント切り替えでは、VS Code のローカル認証ストレージを読み取り、システムの資格情報サービスを使って復号・再書き込みを行う必要があります。データは端末内のみで処理されます。",
       "inject": "ワンクリック切り替え: このツールはローカルの VS Code 暗号化情報（DPAPI/Keychain/Secret Service）を読み取り、state.vscdb 内の認証セッションを復号して GitHub Copilot トークンを置き換え、再暗号化します。処理はすべて端末内で完結します。",
       "reason": "必要な権限: VS Code 認証データベース（state.vscdb）を読み取り、システム暗号化機能（Windows DPAPI / macOS Keychain / Linux Secret Service）を呼び出して復号・再書き込みを行います。",
-      "storage": "読み取り範囲: GitHub ログインセッション関連データのみを処理し、すべての処理はローカルで実行されます。"
+      "storage": "データ範囲: ローカルインポートは VS Code の GitHub ログインセッションを読み取り、切り替えは同じ種類のセッションを更新します。OAuth、トークンインポート、ローカルインポート検証、クォータ更新では GitHub 公式 API に必要な認証フィールドのみを送信し、state.vscdb やシステムキーはアップロードしません。"
     }
   },
   "dashboard": {

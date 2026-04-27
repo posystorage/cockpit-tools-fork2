@@ -1898,7 +1898,8 @@
       "weekly": "按週配額",
       "hourly": "按5小時配額",
       "weeklyReset": "按週配額重置時間",
-      "hourlyReset": "按5小時配額重置時間"
+      "hourlyReset": "按5小時配額重置時間",
+      "subscriptionExpiry": "按訂閱到期"
     },
     "opencodeSwitch": "OpenCode 切換開關",
     "opencodeSwitchDesc": "同步切換 OpenCode 裡的 Codex 帳號資訊",
@@ -2259,6 +2260,25 @@
     },
     "groups": {
       "addToGroup": "加入群組"
+    },
+    "subscription": {
+      "label": "訂閱到期",
+      "column": "訂閱到期",
+      "unknown": "重新授權",
+      "missingDetail": "重新授權後取得",
+      "expired": "已到期",
+      "hoursLeft": "{{count}} 小時",
+      "daysLeft": "{{count}} 天",
+      "over99Days": "99+ 天",
+      "titleWithDate": "訂閱到期：{{date}}",
+      "titleUnknown": "重新授權以取得訂閱到期時間",
+      "filterLabel": "到期篩選",
+      "filterAll": "全部到期 ({{count}})",
+      "filterExpired": "已到期 ({{count}})",
+      "filterWithin24h": "24 小時 ({{count}})",
+      "filterWithin7d": "7 天 ({{count}})",
+      "filterWithin30d": "30 天 ({{count}})",
+      "filterMissing": "未知 ({{count}})"
     }
   },
   "githubCopilot": {
@@ -2281,7 +2301,8 @@
       "desc": "貼上 GitHub Copilot 存取權杖或匯出的 JSON 資料。"
     },
     "import": {
-      "localDesc": "從本機已登入的會話匯入 GitHub Copilot 帳號。"
+      "localDesc": "支援從本機 VS Code 或 JSON 檔案匯入 GitHub Copilot 帳號資料。",
+      "localClient": "從本機 VS Code 匯入"
     },
     "sort": {
       "weekly": "按週配額",
@@ -2306,7 +2327,7 @@
       "desc": "切換帳號時需要讀取 VS Code 本機認證儲存，並呼叫系統憑證服務完成解密與回寫；資料僅在本機處理。",
       "inject": "一鍵切換：本工具會讀取本機 VS Code 加密材料（DPAPI/Keychain/Secret Service），解密 state.vscdb 中的驗證工作階段，替換 GitHub Copilot 權杖後再加密，全部流程都在本機完成。",
       "reason": "權限需求：讀取 VS Code 認證資料庫（state.vscdb），並呼叫系統加密能力（Windows DPAPI / macOS Keychain / Linux Secret Service）進行解密與寫回。",
-      "storage": "讀取範圍：僅處理 GitHub 登入工作階段相關資料，所有流程均在本機執行。"
+      "storage": "資料範圍：本機匯入會讀取 VS Code 中的 GitHub 登入會話，切換帳號會更新同類會話；OAuth、Token 匯入、本機匯入校驗與配額刷新會呼叫 GitHub 官方 API，只傳送必要認證欄位，不會上傳 state.vscdb 或系統金鑰。"
     }
   },
   "dashboard": {

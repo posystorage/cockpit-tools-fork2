@@ -1858,7 +1858,8 @@
       "weekly": "الحصة الأسبوعية",
       "hourly": "حصة 5 ساعات",
       "weeklyReset": "وقت إعادة الضبط الأسبوعي",
-      "hourlyReset": "وقت إعادة الضبط لمدة 5 ساعات"
+      "hourlyReset": "وقت إعادة الضبط لمدة 5 ساعات",
+      "subscriptionExpiry": "انتهاء الاشتراك"
     },
     "opencodeSwitch": "مفتاح تبديل OpenCode",
     "opencodeSwitchDesc": "مزامنة تبديل معلومات حساب Codex في OpenCode",
@@ -2305,6 +2306,25 @@
     },
     "groups": {
       "addToGroup": "إضافة إلى المجموعة"
+    },
+    "subscription": {
+      "label": "انتهاء الاشتراك",
+      "column": "ينتهي",
+      "unknown": "أعد التفويض",
+      "missingDetail": "أعد التفويض للجلب",
+      "expired": "منتهي",
+      "hoursLeft": "{{count}}س",
+      "daysLeft": "{{count}}ي",
+      "over99Days": "99+ي",
+      "titleWithDate": "ينتهي الاشتراك: {{date}}",
+      "titleUnknown": "أعد التفويض لجلب انتهاء الاشتراك",
+      "filterLabel": "تصفية الانتهاء",
+      "filterAll": "كلها ({{count}})",
+      "filterExpired": "منتهية ({{count}})",
+      "filterWithin24h": "24س ({{count}})",
+      "filterWithin7d": "7أيام ({{count}})",
+      "filterWithin30d": "30يوم ({{count}})",
+      "filterMissing": "غير معروف ({{count}})"
     }
   },
   "githubCopilot": {
@@ -2327,7 +2347,8 @@
       "desc": "الصق رمز وصول GitHub Copilot أو بيانات JSON المصدّرة."
     },
     "import": {
-      "localDesc": "استيراد بيانات حسابات GitHub Copilot من ملف JSON."
+      "localDesc": "استيراد بيانات حساب GitHub Copilot من VS Code المحلي أو ملف JSON.",
+      "localClient": "استيراد من VS Code المحلي"
     },
     "sort": {
       "weekly": "حسب استخدام رسائل الدردشة",
@@ -2352,7 +2373,7 @@
       "desc": "يتطلب تبديل الحساب قراءة مخزن المصادقة المحلي في VS Code واستخدام خدمة بيانات الاعتماد في النظام لفك التشفير وإعادة الكتابة؛ وتتم معالجة البيانات محليًا فقط.",
       "inject": "تبديل بنقرة واحدة: تقرأ هذه الأداة مواد التشفير المحلية في VS Code (DPAPI/Keychain/Secret Service)، وتفك تشفير جلسة المصادقة في state.vscdb، وتستبدل رمز GitHub Copilot ثم تعيد التشفير — وكل ذلك محليًا على جهازك.",
       "reason": "نطاق الأذونات: قراءة قاعدة بيانات مصادقة VS Code ‏(state.vscdb) واستدعاء قدرات التشفير في النظام (Windows DPAPI / macOS Keychain / Linux Secret Service) لفك التشفير وإعادة الكتابة.",
-      "storage": "نطاق القراءة: تتم معالجة بيانات جلسات تسجيل الدخول المرتبطة بـ GitHub فقط، وجميع العمليات تُنفّذ محليًا."
+      "storage": "نطاق البيانات: يقرأ الاستيراد المحلي جلسات تسجيل الدخول إلى GitHub في VS Code، ويحدّث تبديل الحساب الإدخالات نفسها؛ تستدعي OAuth واستيراد الرمز والتحقق من الاستيراد المحلي وتحديث الحصص واجهات GitHub الرسمية مع حقول المصادقة اللازمة فقط. لا يتم رفع state.vscdb أو مفاتيح النظام."
     }
   },
   "dashboard": {

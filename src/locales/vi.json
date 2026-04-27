@@ -1812,7 +1812,8 @@
       "weekly": "Hạn mức tuần",
       "hourly": "Hạn mức 5 giờ",
       "weeklyReset": "Thời gian đặt lại theo tuần",
-      "hourlyReset": "Thời gian đặt lại 5 giờ"
+      "hourlyReset": "Thời gian đặt lại 5 giờ",
+      "subscriptionExpiry": "Hạn gói"
     },
     "opencodeSwitch": "Công tắc OpenCode",
     "opencodeSwitchDesc": "Đồng bộ chuyển đổi tài khoản Codex trong OpenCode",
@@ -2259,6 +2260,25 @@
     },
     "groups": {
       "addToGroup": "Thêm vào nhóm"
+    },
+    "subscription": {
+      "label": "Hết hạn gói",
+      "column": "Hết hạn",
+      "unknown": "Ủy quyền lại",
+      "missingDetail": "Ủy quyền lại để lấy",
+      "expired": "Đã hết hạn",
+      "hoursLeft": "{{count}} giờ",
+      "daysLeft": "{{count}} ngày",
+      "over99Days": "99+ ngày",
+      "titleWithDate": "Gói hết hạn: {{date}}",
+      "titleUnknown": "Ủy quyền lại để lấy hạn gói",
+      "filterLabel": "Lọc hạn",
+      "filterAll": "Tất cả ({{count}})",
+      "filterExpired": "Đã hết hạn ({{count}})",
+      "filterWithin24h": "24 giờ ({{count}})",
+      "filterWithin7d": "7 ngày ({{count}})",
+      "filterWithin30d": "30 ngày ({{count}})",
+      "filterMissing": "Không rõ ({{count}})"
     }
   },
   "githubCopilot": {
@@ -2281,7 +2301,8 @@
       "desc": "Dán token truy cập GitHub Copilot hoặc dữ liệu JSON đã xuất."
     },
     "import": {
-      "localDesc": "Nhập tài khoản GitHub Copilot từ các phiên đăng nhập cục bộ."
+      "localDesc": "Nhập dữ liệu tài khoản GitHub Copilot từ VS Code cục bộ hoặc tệp JSON.",
+      "localClient": "Nhập từ VS Code cục bộ"
     },
     "sort": {
       "weekly": "Hạn mức tuần",
@@ -2306,7 +2327,7 @@
       "desc": "Việc chuyển tài khoản yêu cầu đọc kho xác thực cục bộ của VS Code và dùng dịch vụ thông tin xác thực hệ thống để giải mã/ghi lại; dữ liệu chỉ được xử lý trên máy cục bộ.",
       "inject": "Chuyển đổi một lần nhấp: công cụ này đọc dữ liệu mã hóa cục bộ của VS Code (DPAPI/Keychain/Secret Service), giải mã phiên xác thực trong state.vscdb, thay thế token GitHub Copilot rồi mã hóa lại — mọi thao tác đều diễn ra cục bộ trên máy của bạn.",
       "reason": "Phạm vi quyền: đọc cơ sở dữ liệu xác thực VS Code (state.vscdb) và gọi khả năng mã hóa hệ thống (Windows DPAPI / macOS Keychain / Linux Secret Service) để giải mã/ghi lại.",
-      "storage": "Phạm vi đọc: chỉ xử lý dữ liệu liên quan đến phiên đăng nhập GitHub; mọi quy trình đều được thực thi cục bộ."
+      "storage": "Phạm vi dữ liệu: nhập cục bộ đọc các phiên đăng nhập GitHub trong VS Code, còn chuyển tài khoản cập nhật các mục này; OAuth, nhập token, xác minh nhập cục bộ và làm mới hạn mức gọi API chính thức của GitHub với các trường xác thực cần thiết. Không tải lên state.vscdb hoặc khóa hệ thống."
     }
   },
   "dashboard": {
