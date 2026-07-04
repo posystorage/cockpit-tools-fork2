@@ -118,6 +118,8 @@ fn apply_macos_activation_policy(app: &tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     logger::init_logger();
+    modules::diagnostics::install_panic_hook();
+    modules::diagnostics::start_frontend_ready_watchdog();
     raise_process_file_descriptor_limit();
     // 启动时先加载一次配置，确保进程级代理环境与用户设置同步。
     let _ = modules::config::get_user_config();
@@ -486,6 +488,11 @@ pub fn run() {
             commands::system::delete_webdav_backup_file,
             commands::system::get_network_config,
             commands::system::save_network_config,
+            commands::system::get_diagnostics_config,
+            commands::system::save_diagnostics_config,
+            commands::system::diagnostics_frontend_stage,
+            commands::system::diagnostics_frontend_ready,
+            commands::system::diagnostics_capture_event,
             commands::system::get_general_config,
             commands::system::get_available_terminals,
             commands::system::save_general_config,
@@ -608,6 +615,7 @@ pub fn run() {
             commands::codex::close_codex_oauth_port,
             commands::codex::update_codex_account_tags,
             commands::codex::update_codex_account_note,
+            commands::codex::create_pending_codex_oauth_account,
             commands::codex::codex_wakeup_get_cli_status,
             commands::codex::codex_wakeup_update_runtime_config,
             commands::codex::codex_wakeup_get_overview,

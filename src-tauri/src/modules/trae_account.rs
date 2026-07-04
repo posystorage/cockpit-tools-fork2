@@ -1764,6 +1764,12 @@ fn to_json_string_value(value: &Value) -> Result<Value, String> {
     Ok(Value::String(text))
 }
 
+fn to_user_auth_storage_value(value: &Value) -> Result<Value, String> {
+    // Trae 1.107+ persists user info through its ByteCrypto wrapper before JSON.parse.
+    // The read path remains compatible with older plain JSON values.
+    to_icube_cipher_string_value(value)
+}
+
 fn to_icube_cipher_string_value(value: &Value) -> Result<Value, String> {
     let plaintext =
         serde_json::to_string(value).map_err(|e| format!("序列化 Trae 存储键值失败: {}", e))?;
@@ -2496,6 +2502,37 @@ pub fn import_from_local() -> Result<Option<TraeAccount>, String> {
 }
 
 pub(crate) fn resolve_current_account_id(accounts: &[TraeAccount]) -> Option<String> {
+    if let Ok(Some(payload)) = read_local_trae_auth() {
+        let normalized_user_id = normalize_non_empty(payload.user_id.as_deref());
+        let normalized_email = normalize_email(Some(payload.email.as_str()));
+
+        if let Some(account_id) = accounts
+            .iter()
+            .find(|account| {
+                if let (Some(existing), Some(incoming)) = (
+                    normalize_non_empty(account.user_id.as_deref()),
+                    normalized_user_id.clone(),
+                ) {
+                    if existing == incoming {
+                        return true;
+                    }
+                }
+
+                if let (Some(existing), Some(incoming)) = (
+                    normalize_email(Some(account.email.as_str())),
+                    normalized_email.clone(),
+                ) {
+                    return existing == incoming;
+                }
+
+                false
+            })
+            .map(|account| account.id.clone())
+        {
+            return Some(account_id);
+        }
+    }
+
     crate::modules::provider_current_state::resolve_existing_current_account_id(
         "trae",
         accounts.iter().map(|account| account.id.as_str()),
@@ -2569,7 +2606,7 @@ pub fn inject_to_trae_at_path(storage_path: &Path, account_id: &str) -> Result<(
         .get(auth_storage_key.as_str())
         .and_then(|value| parse_value_or_json_string_or_icube_cipher(Some(value)));
     let auth_raw = ensure_auth_raw_for_inject(&account, existing_auth_raw.as_ref());
-    root_obj.insert(auth_storage_key, to_icube_cipher_string_value(&auth_raw)?);
+    root_obj.insert(auth_storage_key, to_user_auth_storage_value(&auth_raw)?);
     write_device_key_pair_for_inject(root_obj, &account)?;
 
     if let Some(entitlement_raw) = ensure_entitlement_raw_for_inject(&account) {

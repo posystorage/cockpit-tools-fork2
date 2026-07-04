@@ -40,6 +40,7 @@ import {
   isCodexApiKeyAccount,
   isCodexChatCompletionsApiKeyAccount,
   isCodexNewApiAccount,
+  isCodexPendingOAuthAccount,
 } from "../types/codex";
 import {
   formatClaudeResetTime,
@@ -731,7 +732,12 @@ export function buildCodexAccountPresentation(
       resetAt: codeReviewMetric.resetTime,
     });
   }
-  const planBadge = getCodexPlanBadgePresentation(account);
+  const planBadge = isCodexPendingOAuthAccount(account)
+    ? {
+        label: t("codex.pendingAuth.badge", "待授权"),
+        className: "pending-auth",
+      }
+    : getCodexPlanBadgePresentation(account);
 
   return {
     id: account.id,

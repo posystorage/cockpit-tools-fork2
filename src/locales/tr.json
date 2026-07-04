@@ -786,7 +786,9 @@
       "claudeAutoRefresh": "Claude kota otomatik yenileme",
       "claudeAutoRefreshDesc": "Claude hesaplarının kota önbelleğini arka planda otomatik yeniler.",
       "claudeAppPath": "Claude Desktop başlatma hedefi",
-      "claudeAppPathDesc": "Varsayılan profil Microsoft Store hedefi kullanabilir; çoklu örnekler gerçek Claude.exe ister."
+      "claudeAppPathDesc": "Varsayılan profil Microsoft Store hedefi kullanabilir; çoklu örnekler gerçek Claude.exe ister.",
+      "antigravityLaunchOnSwitch": "Geçişte Antigravity IDE başlat",
+      "antigravityLaunchOnSwitchDesc": "Kapalıyken geçiş yalnızca varsayılan Antigravity IDE hesap verilerini yazar; uygulamayı kapatmaz, başlatmaz veya yeniden başlatmaz."
     },
     "network": {
       "apiTitle": "Yerçekimine Karşı Kokpit API'si",
@@ -2881,8 +2883,29 @@
     "accountNote": {
       "title": "Hesap Notu",
       "label": "Hesap Notu",
-      "desc": "{{account}} için ayrı bir hesap notu ekleyin.",
-      "placeholder": "E-posta, parola, kurtarma e-postası veya teslim notları",
+      "desc": "{{account}} için 2FA, parola, telefon ve diğer notları ekleyin.",
+      "twoFactorSecretLabel": "2FA sırrı",
+      "twoFactorSecretShort": "2FA",
+      "twoFactorSecretPlaceholder": "Base32 sırrı veya otpauth:// URI",
+      "twoFactorSecretInvalid": "Geçersiz 2FA sırrı. Base32 sırrı veya otpauth:// URI girin.",
+      "currentOtp": "Geçerli kod",
+      "otpShort": "Kod",
+      "otpRemaining": "{{seconds}} sn",
+      "passwordLabel": "Parola",
+      "passwordShort": "Parola",
+      "passwordPlaceholder": "Giriş parolası veya geçici parola",
+      "phoneNumberLabel": "Telefon",
+      "phoneShort": "Telefon",
+      "phoneNumberPlaceholder": "Bağlı telefon numarası",
+      "otherNoteLabel": "Diğer notlar",
+      "otherNoteShort": "Not",
+      "placeholder": "Teslim notları, kurtarma e-postası veya hesap ayrıntıları",
+      "exportSensitiveNotice": "Dışa aktarım 2FA sırları, parolalar veya telefon numaraları içerir. Yalnızca güvenilir bir konuma kaydedin.",
+      "exportSensitiveIncluded": "Hassas notları dahil et",
+      "exportSensitiveExcluded": "Hassas notları hariç tut",
+      "exportSensitiveToggleHint": "Dışa aktarılan JSON'un 2FA sırlarını, parolaları ve telefon numaralarını içerip içermeyeceğini kontrol eder.",
+      "show": "Göster",
+      "hide": "Gizle",
       "emptyTitle": "Hesap notu ekle",
       "short": "Not",
       "addShort": "Ekle",
@@ -3132,6 +3155,18 @@
       "legacyBefore4eb75d96": "4eb75d96 öncesi",
       "legacy4eb75d96": "4eb75d96 mantığı",
       "current": "Geçerli mantık"
+    },
+    "pendingAuth": {
+      "badge": "Yetki bekliyor",
+      "emailRequired": "Hesap e-postasını girin",
+      "saving": "Bekleyen hesap kaydediliyor...",
+      "saved": "Bekleyen hesap kaydedildi",
+      "saveFailed": "Bekleyen hesap kaydedilemedi: {{error}}",
+      "emailLabel": "Bekleyen hesap",
+      "emailPlaceholder": "OpenAI hesap e-postasını girin",
+      "saveDraft": "Bekleyen kartı kaydet",
+      "authorizeAction": "Yetkilendir",
+      "cardHint": "Notlar kaydedildi. Kullanmak için OAuth’u tamamlayın."
     }
   },
   "githubCopilot": {

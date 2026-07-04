@@ -832,7 +832,9 @@
       "claudeAutoRefresh": "تحديث حصة Claude تلقائيًا",
       "claudeAutoRefreshDesc": "يحدّث ذاكرة الحصة المؤقتة لحسابات Claude تلقائيًا في الخلفية.",
       "claudeAppPath": "هدف تشغيل Claude Desktop",
-      "claudeAppPathDesc": "يمكن للملف الافتراضي استخدام هدف Microsoft Store؛ أما الملفات متعددة المثيلات فتحتاج Claude.exe الحقيقي."
+      "claudeAppPathDesc": "يمكن للملف الافتراضي استخدام هدف Microsoft Store؛ أما الملفات متعددة المثيلات فتحتاج Claude.exe الحقيقي.",
+      "antigravityLaunchOnSwitch": "تشغيل Antigravity IDE عند التبديل",
+      "antigravityLaunchOnSwitchDesc": "عند الإيقاف، يكتب التبديل بيانات الحساب الافتراضي في Antigravity IDE فقط، ولا يغلق التطبيق أو يشغله أو يعيد تشغيله."
     },
     "network": {
       "apiTitle": "واجهة برمجة تطبيقات قمرة القيادة المضادة للجاذبية",
@@ -2927,8 +2929,29 @@
     "accountNote": {
       "title": "ملاحظة الحساب",
       "label": "ملاحظة الحساب",
-      "desc": "أضف ملاحظة حساب مستقلة لـ {{account}}.",
-      "placeholder": "البريد، كلمة المرور، بريد الاسترداد أو ملاحظات التسليم",
+      "desc": "أضف 2FA وكلمة المرور والهاتف وملاحظات أخرى لـ {{account}}.",
+      "twoFactorSecretLabel": "سر 2FA",
+      "twoFactorSecretShort": "2FA",
+      "twoFactorSecretPlaceholder": "سر Base32 أو رابط otpauth://",
+      "twoFactorSecretInvalid": "سر 2FA غير صالح. أدخل سر Base32 أو رابط otpauth://.",
+      "currentOtp": "الرمز الحالي",
+      "otpShort": "الرمز",
+      "otpRemaining": "{{seconds}} ث",
+      "passwordLabel": "كلمة المرور",
+      "passwordShort": "كلمة المرور",
+      "passwordPlaceholder": "كلمة مرور تسجيل الدخول أو كلمة مؤقتة",
+      "phoneNumberLabel": "الهاتف",
+      "phoneShort": "هاتف",
+      "phoneNumberPlaceholder": "رقم الهاتف المرتبط",
+      "otherNoteLabel": "ملاحظات أخرى",
+      "otherNoteShort": "ملاحظة",
+      "placeholder": "ملاحظات التسليم أو بريد الاسترداد أو تفاصيل الحساب",
+      "exportSensitiveNotice": "يتضمن التصدير أسرار 2FA أو كلمات مرور أو أرقام هاتف. احفظه في مكان موثوق فقط.",
+      "exportSensitiveIncluded": "تضمين الملاحظات الحساسة",
+      "exportSensitiveExcluded": "استبعاد الملاحظات الحساسة",
+      "exportSensitiveToggleHint": "حدد ما إذا كان JSON المصدر يتضمن أسرار 2FA وكلمات المرور وأرقام الهاتف.",
+      "show": "إظهار",
+      "hide": "إخفاء",
       "emptyTitle": "إضافة ملاحظة حساب",
       "short": "ملاحظة",
       "addShort": "أضف ملاحظة",
@@ -3178,6 +3201,18 @@
       "legacyBefore4eb75d96": "قبل 4eb75d96",
       "legacy4eb75d96": "منطق 4eb75d96",
       "current": "المنطق الحالي"
+    },
+    "pendingAuth": {
+      "badge": "بانتظار التفويض",
+      "emailRequired": "أدخل بريد الحساب",
+      "saving": "جارٍ حفظ الحساب المعلّق...",
+      "saved": "تم حفظ الحساب المعلّق",
+      "saveFailed": "فشل حفظ الحساب المعلّق: {{error}}",
+      "emailLabel": "حساب معلّق",
+      "emailPlaceholder": "أدخل بريد حساب OpenAI",
+      "saveDraft": "حفظ بطاقة معلّقة",
+      "authorizeAction": "تفويض",
+      "cardHint": "تم حفظ الملاحظات. أكمل OAuth لاستخدام الحساب."
     }
   },
   "githubCopilot": {

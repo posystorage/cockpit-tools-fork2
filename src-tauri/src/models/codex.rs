@@ -115,6 +115,27 @@ pub struct CodexAccount {
     pub account_structure: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account_note: Option<String>,
+    #[serde(
+        default,
+        alias = "twoFactorSecret",
+        alias = "accountTwoFactorSecret",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub two_factor_secret: Option<String>,
+    #[serde(
+        default,
+        alias = "accountPassword",
+        alias = "password",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub account_password: Option<String>,
+    #[serde(
+        default,
+        alias = "phoneNumber",
+        alias = "accountPhoneNumber",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub phone_number: Option<String>,
     #[serde(default)]
     pub app_speed: CodexAppSpeed,
     pub tokens: CodexTokens,
@@ -124,6 +145,12 @@ pub struct CodexAccount {
     pub token_updated_at: Option<i64>,
     #[serde(default = "default_token_source_mode")]
     pub token_source_mode: String,
+    #[serde(
+        default,
+        alias = "authorizationStatus",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub authorization_status: Option<String>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub requires_reauth: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -350,11 +377,15 @@ impl CodexAccount {
             account_name: None,
             account_structure: None,
             account_note: None,
+            two_factor_secret: None,
+            account_password: None,
+            phone_number: None,
             app_speed: CodexAppSpeed::Standard,
             tokens,
             token_generation: 0,
             token_updated_at: Some(now),
             token_source_mode: default_token_source_mode(),
+            authorization_status: None,
             requires_reauth: false,
             reauth_reason: None,
             quota: None,

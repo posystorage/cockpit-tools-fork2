@@ -786,7 +786,9 @@
       "claudeAutoRefresh": "Claude-Kontingent automatisch aktualisieren",
       "claudeAutoRefreshDesc": "Aktualisiert den Kontingent-Cache für Claude-Konten automatisch im Hintergrund.",
       "claudeAppPath": "Claude-Desktop-Startziel",
-      "claudeAppPathDesc": "Das Standardprofil kann ein Microsoft-Store-Ziel verwenden; Mehrfachinstanzen benötigen die echte Claude.exe."
+      "claudeAppPathDesc": "Das Standardprofil kann ein Microsoft-Store-Ziel verwenden; Mehrfachinstanzen benötigen die echte Claude.exe.",
+      "antigravityLaunchOnSwitch": "Antigravity IDE beim Wechsel starten",
+      "antigravityLaunchOnSwitchDesc": "Wenn deaktiviert, schreibt der Wechsel nur die Standard-Kontodaten von Antigravity IDE und schließt, startet oder startet die App nicht neu."
     },
     "network": {
       "apiTitle": "Antigravity-Cockpit-API",
@@ -2881,8 +2883,29 @@
     "accountNote": {
       "title": "Kontonotiz",
       "label": "Kontonotiz",
-      "desc": "Fügen Sie eine separate Kontonotiz für {{account}} hinzu.",
-      "placeholder": "E-Mail, Passwort, Wiederherstellungs-E-Mail oder Lieferhinweise",
+      "desc": "2FA, Passwort, Telefon und weitere Notizen für {{account}} hinzufügen.",
+      "twoFactorSecretLabel": "2FA-Secret",
+      "twoFactorSecretShort": "2FA",
+      "twoFactorSecretPlaceholder": "Base32-Secret oder otpauth://-URI",
+      "twoFactorSecretInvalid": "Ungültiges 2FA-Secret. Bitte Base32-Secret oder otpauth://-URI eingeben.",
+      "currentOtp": "Aktueller Code",
+      "otpShort": "Einmalcode",
+      "otpRemaining": "{{seconds}} s",
+      "passwordLabel": "Passwort",
+      "passwordShort": "Passwort",
+      "passwordPlaceholder": "Login- oder temporäres Passwort",
+      "phoneNumberLabel": "Telefon",
+      "phoneShort": "Telefon",
+      "phoneNumberPlaceholder": "Verknüpfte Telefonnummer",
+      "otherNoteLabel": "Weitere Notizen",
+      "otherNoteShort": "Notiz",
+      "placeholder": "Lieferhinweise, Wiederherstellungs-E-Mail oder Kontodetails",
+      "exportSensitiveNotice": "Der Export enthält 2FA-Secrets, Passwörter oder Telefonnummern. Nur an einem vertrauenswürdigen Ort speichern.",
+      "exportSensitiveIncluded": "Sensible Notizen einschließen",
+      "exportSensitiveExcluded": "Sensible Notizen ausschließen",
+      "exportSensitiveToggleHint": "Legt fest, ob der exportierte JSON 2FA-Secrets, Passwörter und Telefonnummern enthält.",
+      "show": "Anzeigen",
+      "hide": "Ausblenden",
       "emptyTitle": "Kontonotiz hinzufügen",
       "short": "Notiz",
       "addShort": "Notiz",
@@ -3132,6 +3155,18 @@
       "legacyBefore4eb75d96": "Vor 4eb75d96",
       "legacy4eb75d96": "Logik 4eb75d96",
       "current": "Aktuelle Logik"
+    },
+    "pendingAuth": {
+      "badge": "Auth ausstehend",
+      "emailRequired": "Konto-E-Mail eingeben",
+      "saving": "Ausstehendes Konto wird gespeichert...",
+      "saved": "Ausstehendes Konto gespeichert",
+      "saveFailed": "Ausstehendes Konto konnte nicht gespeichert werden: {{error}}",
+      "emailLabel": "Ausstehendes Konto",
+      "emailPlaceholder": "OpenAI-Konto-E-Mail eingeben",
+      "saveDraft": "Ausstehende Karte speichern",
+      "authorizeAction": "Autorisieren",
+      "cardHint": "Notizen gespeichert. Nach OAuth ist das Konto nutzbar."
     }
   },
   "githubCopilot": {

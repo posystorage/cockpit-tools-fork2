@@ -1,6 +1,5 @@
 import { ReactNode, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlarmClock, Layers, ShieldCheck } from 'lucide-react';
 import { Page } from '../types/navigation';
 import { ManualHelpIconButton } from './ManualHelpIconButton';
 import { TopCenterPromoBanner } from './TopCenterPromoBanner';
@@ -70,21 +69,6 @@ export function OverviewTabsHeader({
       key: 'overview',
       label: t('overview.title'),
       icon: <span className="tab-icon">{renderPlatformIcon(currentPlatformId, 16)}</span>,
-    },
-    {
-      key: 'instances',
-      label: t('instances.title', '多开实例'),
-      icon: <Layers className="tab-icon" />,
-    },
-    {
-      key: 'wakeup',
-      label: t('wakeup.title'),
-      icon: <AlarmClock className="tab-icon" />,
-    },
-    {
-      key: 'verification',
-      label: t('wakeup.verification.title'),
-      icon: <ShieldCheck className="tab-icon" />,
     },
   ];
 

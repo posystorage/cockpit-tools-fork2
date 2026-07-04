@@ -98,6 +98,7 @@ interface GeneralConfig {
   ghcp_launch_on_switch: boolean;
   openclaw_auth_overwrite_on_switch: boolean;
   codex_launch_on_switch: boolean;
+  antigravity_launch_on_switch: boolean;
   codex_restart_specified_app_on_switch: boolean;
   codex_local_access_entry_visible: boolean;
   antigravity_dual_switch_no_restart_enabled: boolean;
@@ -873,6 +874,7 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
           ghcpLaunchOnSwitch: merged.ghcp_launch_on_switch,
           openclawAuthOverwriteOnSwitch: merged.openclaw_auth_overwrite_on_switch,
           codexLaunchOnSwitch: merged.codex_launch_on_switch,
+          antigravityLaunchOnSwitch: merged.antigravity_launch_on_switch,
           codexRestartSpecifiedAppOnSwitch: merged.codex_restart_specified_app_on_switch,
           codexLocalAccessEntryVisible: merged.codex_local_access_entry_visible,
           antigravityDualSwitchNoRestartEnabled: merged.antigravity_dual_switch_no_restart_enabled,
@@ -1276,6 +1278,7 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
   };
 
   const showAppPathSection = type !== 'gemini';
+  const antigravityLaunchOnSwitch = config?.antigravity_launch_on_switch ?? true;
 
   const getAppPath = (): string => {
     if (!config) return '';
@@ -2112,12 +2115,46 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
             {/* ─── App Path ─── */}
             {showAppPathSection && (
               <div className="qs-section">
-                <div className="qs-section-header">
-                  <FolderOpen size={15} />
-                  <span>{getAppPathLabel()}</span>
-                </div>
-                {type === 'claude' && config && (
-                  <div className="qs-claude-scan-roots">
+	                <div className="qs-section-header">
+	                  <FolderOpen size={15} />
+	                  <span>{getAppPathLabel()}</span>
+	                </div>
+                {type === 'antigravity' && config && (
+                  <>
+                    <div className="qs-row">
+                      <div className="qs-row-label">
+                        <span>
+                          {t(
+                            'settings.general.antigravityLaunchOnSwitch',
+                            '切换时启动 Antigravity IDE',
+                          )}
+                        </span>
+                      </div>
+                      <div className="qs-row-control">
+                        <label className="qs-switch">
+                          <input
+                            type="checkbox"
+                            checked={antigravityLaunchOnSwitch}
+                            onChange={(event) =>
+                              saveConfig({
+                                antigravity_launch_on_switch: event.target.checked,
+                              })
+                            }
+                          />
+                          <span className="qs-switch-slider"></span>
+                        </label>
+                      </div>
+                    </div>
+                    <div className="qs-hint">
+                      {t(
+                        'settings.general.antigravityLaunchOnSwitchDesc',
+                        '关闭后切号只写入 Antigravity IDE 默认账号数据，不会关闭、启动或重启应用。',
+                      )}
+                    </div>
+                  </>
+                )}
+	                {type === 'claude' && config && (
+	                  <div className="qs-claude-scan-roots">
                     <label>{t('appPath.missing.scanRoots', '扫描范围')}</label>
                     <div className="qs-claude-scan-root-row">
                       <input
@@ -2150,7 +2187,8 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
                     </div>
                   </div>
                 )}
-                <div className="qs-path-control">
+                {config && (type !== 'antigravity' || antigravityLaunchOnSwitch) && (
+	                <div className="qs-path-control">
                   <input
                     type="text"
                     className="qs-path-input"
@@ -2222,10 +2260,11 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
                         <RefreshCw size={12} className={pathDetecting ? 'spin' : undefined} />
                       )}
                     </button>
-                  </div>
-                </div>
+	                  </div>
+	                </div>
+                )}
 
-                {type === 'claude' && config && (
+	                {type === 'claude' && config && (
                   <>
                     {claudeLaunchCandidates.length > 0 && (
                       <div className="qs-claude-candidate-list">
@@ -2263,7 +2302,7 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
                 )}
 
                 {type === 'codex' && (
-                  <>
+                  <div className="qs-codex-quick-settings">
                     <div className="qs-row" style={{ marginTop: 8 }}>
                       <div className="qs-row-label">
                         <Zap size={15} />
@@ -2288,38 +2327,38 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
                       </div>
                     </div>
 
-                    <div className="qs-path-control">
-                      <input
-                        type="text"
-                        className="qs-path-input"
-                        value={config.codex_specified_app_path}
-                        placeholder={t(
-                          'settings.general.codexSpecifiedAppPathPlaceholder',
-                          '例如 /Applications/Host.app',
-                        )}
-                        onChange={(e) =>
-                          saveConfig({ codex_specified_app_path: e.target.value })
-                        }
-                      />
-                      <div className="qs-path-actions">
-                        <button
-                          className="qs-btn"
-                          onClick={() => void handlePickCodexSpecifiedAppPath()}
-                          title={t('settings.general.codexPathSelect', '选择')}
-                        >
-                          {t('settings.general.codexPathSelect', '选择')}
-                        </button>
-                        <button
-                          className="qs-btn"
-                          onClick={() => saveConfig({ codex_specified_app_path: '' })}
-                          title={t('settings.general.codexPathReset', '恢复默认')}
-                        >
-                          <RefreshCw size={12} />
-                        </button>
+                    {config.codex_restart_specified_app_on_switch && (
+                      <div className="qs-path-control">
+                        <input
+                          type="text"
+                          className="qs-path-input"
+                          value={config.codex_specified_app_path}
+                          placeholder={t(
+                            'settings.general.codexSpecifiedAppPathPlaceholder',
+                            '例如 /Applications/Host.app',
+                          )}
+                          onChange={(e) =>
+                            saveConfig({ codex_specified_app_path: e.target.value })
+                          }
+                        />
+                        <div className="qs-path-actions">
+                          <button
+                            className="qs-btn"
+                            onClick={() => void handlePickCodexSpecifiedAppPath()}
+                            title={t('settings.general.codexPathSelect', '选择')}
+                          >
+                            {t('settings.general.codexPathSelect', '选择')}
+                          </button>
+                          <button
+                            className="qs-btn"
+                            onClick={() => saveConfig({ codex_specified_app_path: '' })}
+                            title={t('settings.general.codexPathReset', '恢复默认')}
+                          >
+                            <RefreshCw size={12} />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  </>
-                )}
+                    )}
               </div>
             )}
 
@@ -2775,15 +2814,17 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
                             'primary_window 一般指 5 小时配额；免费用户下 primary_window 可能对应周配额，不同订阅可能不同。'
                           )}
                         </div>
-                        <div>
-                          {`primary_window <= ${codexAutoSwitchPrimaryThresholdValue}% OR secondary_window <= ${codexAutoSwitchSecondaryThresholdValue}%`}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+	                        <div>
+	                          {`primary_window <= ${codexAutoSwitchPrimaryThresholdValue}% OR secondary_window <= ${codexAutoSwitchSecondaryThresholdValue}%`}
+	                        </div>
+		                </div>
+	                    </div>
+		                )}
+	              </div>
+	            </div>
+	          )}
+	        </div>
+	      )}
 
             {/* ─── GitHub Copilot: opencode sync ─── */}
             {type === 'github_copilot' && (

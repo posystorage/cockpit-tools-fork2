@@ -929,9 +929,39 @@ pub async fn update_codex_account_tags(
 #[tauri::command]
 pub async fn update_codex_account_note(
     account_id: String,
-    note: String,
+    note: Option<String>,
+    two_factor_secret: Option<String>,
+    account_password: Option<String>,
+    phone_number: Option<String>,
 ) -> Result<CodexAccount, String> {
-    codex_account::update_account_note(&account_id, note)
+    codex_account::update_account_note(
+        &account_id,
+        codex_account::CodexAccountNoteUpdate {
+            note,
+            two_factor_secret,
+            account_password,
+            phone_number,
+        },
+    )
+}
+
+#[tauri::command]
+pub async fn create_pending_codex_oauth_account(
+    email: String,
+    note: Option<String>,
+    two_factor_secret: Option<String>,
+    account_password: Option<String>,
+    phone_number: Option<String>,
+) -> Result<CodexAccount, String> {
+    codex_account::create_pending_oauth_account(
+        email,
+        codex_account::CodexAccountNoteUpdate {
+            note,
+            two_factor_secret,
+            account_password,
+            phone_number,
+        },
+    )
 }
 
 /// 检查 Codex OAuth 端口是否被占用

@@ -786,7 +786,9 @@
       "claudeAutoRefresh": "Actualisation auto du quota Claude",
       "claudeAutoRefreshDesc": "Actualise automatiquement en arrière-plan le cache de quota des comptes Claude.",
       "claudeAppPath": "Cible de lancement Claude Desktop",
-      "claudeAppPathDesc": "Le profil par défaut peut utiliser une cible Microsoft Store ; les instances multiples nécessitent le vrai Claude.exe."
+      "claudeAppPathDesc": "Le profil par défaut peut utiliser une cible Microsoft Store ; les instances multiples nécessitent le vrai Claude.exe.",
+      "antigravityLaunchOnSwitch": "Lancer Antigravity IDE au changement",
+      "antigravityLaunchOnSwitchDesc": "Si désactivé, le changement écrit seulement les données du compte par défaut Antigravity IDE et ne ferme, lance ni redémarre l’application."
     },
     "network": {
       "apiTitle": "API du cockpit antigravité",
@@ -2881,8 +2883,29 @@
     "accountNote": {
       "title": "Note de compte",
       "label": "Note de compte",
-      "desc": "Ajoutez une note de compte distincte pour {{account}}.",
-      "placeholder": "E-mail, mot de passe, e-mail de récupération ou notes de livraison",
+      "desc": "Ajoutez 2FA, mot de passe, téléphone et autres notes pour {{account}}.",
+      "twoFactorSecretLabel": "Secret 2FA",
+      "twoFactorSecretShort": "2FA",
+      "twoFactorSecretPlaceholder": "Secret Base32 ou URI otpauth://",
+      "twoFactorSecretInvalid": "Secret 2FA invalide. Saisissez un secret Base32 ou une URI otpauth://.",
+      "currentOtp": "Code actuel",
+      "otpShort": "Code OTP",
+      "otpRemaining": "{{seconds}} s",
+      "passwordLabel": "Mot de passe",
+      "passwordShort": "Mot de passe",
+      "passwordPlaceholder": "Mot de passe de connexion ou temporaire",
+      "phoneNumberLabel": "Téléphone",
+      "phoneShort": "Tél.",
+      "phoneNumberPlaceholder": "Numéro de téléphone lié",
+      "otherNoteLabel": "Autres notes",
+      "otherNoteShort": "Note",
+      "placeholder": "Notes de livraison, e-mail de récupération ou détails du compte",
+      "exportSensitiveNotice": "L’export contient des secrets 2FA, mots de passe ou numéros de téléphone. Enregistrez-le uniquement dans un emplacement fiable.",
+      "exportSensitiveIncluded": "Inclure les notes sensibles",
+      "exportSensitiveExcluded": "Exclure les notes sensibles",
+      "exportSensitiveToggleHint": "Contrôle si le JSON exporté contient les secrets 2FA, mots de passe et numéros de téléphone.",
+      "show": "Afficher",
+      "hide": "Masquer",
       "emptyTitle": "Ajouter une note de compte",
       "short": "Note​",
       "addShort": "Ajouter",
@@ -3132,6 +3155,18 @@
       "legacyBefore4eb75d96": "Avant 4eb75d96",
       "legacy4eb75d96": "Logique 4eb75d96",
       "current": "Logique actuelle"
+    },
+    "pendingAuth": {
+      "badge": "Autorisation requise",
+      "emailRequired": "Saisissez l’e-mail du compte",
+      "saving": "Enregistrement du compte en attente...",
+      "saved": "Compte en attente enregistré",
+      "saveFailed": "Échec de l’enregistrement du compte en attente : {{error}}",
+      "emailLabel": "Compte en attente",
+      "emailPlaceholder": "Saisissez l’e-mail du compte OpenAI",
+      "saveDraft": "Enregistrer la fiche en attente",
+      "authorizeAction": "Autoriser",
+      "cardHint": "Notes enregistrées. Terminez OAuth pour utiliser ce compte."
     }
   },
   "githubCopilot": {

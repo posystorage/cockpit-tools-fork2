@@ -167,6 +167,8 @@ pub struct GeneralConfig {
     pub openclaw_auth_overwrite_on_switch: bool,
     /// 切换 Codex 时是否自动启动/重启 Codex App
     pub codex_launch_on_switch: bool,
+    /// 切换 Antigravity IDE 时是否自动启动/重启应用
+    pub antigravity_launch_on_switch: bool,
     /// 切换 Codex 时是否自动重启指定应用
     pub codex_restart_specified_app_on_switch: bool,
     /// 是否在 Codex 总览中显示 API 服务入口
@@ -1927,6 +1929,8 @@ pub fn save_network_config(
         global_proxy_enabled: next_global_proxy_enabled,
         global_proxy_url: next_global_proxy_url,
         global_proxy_no_proxy: next_global_proxy_no_proxy,
+        diagnostics_error_reporting_enabled: current.diagnostics_error_reporting_enabled,
+        diagnostics_error_reporting_debug: current.diagnostics_error_reporting_debug,
         // 保留其他设置不变
         language: current.language,
         default_terminal: current.default_terminal,
@@ -2003,6 +2007,7 @@ pub fn save_network_config(
         ghcp_launch_on_switch: current.ghcp_launch_on_switch,
         openclaw_auth_overwrite_on_switch: current.openclaw_auth_overwrite_on_switch,
         codex_launch_on_switch: current.codex_launch_on_switch,
+        antigravity_launch_on_switch: current.antigravity_launch_on_switch,
         codex_restart_specified_app_on_switch: current.codex_restart_specified_app_on_switch,
         codex_local_access_entry_visible: current.codex_local_access_entry_visible,
         top_right_ad_visible: current.top_right_ad_visible,
@@ -2185,6 +2190,39 @@ fn is_command_available(cmd: &str) -> bool {
     command.status().map(|s| s.success()).unwrap_or(false)
 }
 
+/// 获取诊断上报配置
+#[tauri::command]
+pub fn get_diagnostics_config() -> modules::diagnostics::DiagnosticsConfig {
+    modules::diagnostics::get_diagnostics_config()
+}
+
+/// 保存诊断上报配置
+#[tauri::command]
+pub fn save_diagnostics_config(
+    error_reporting_enabled: bool,
+    error_reporting_debug: Option<bool>,
+) -> Result<(), String> {
+    modules::diagnostics::save_diagnostics_config(error_reporting_enabled, error_reporting_debug)
+}
+
+/// 记录前端启动阶段，只写本地日志，不触发远端上报
+#[tauri::command]
+pub fn diagnostics_frontend_stage(stage: String, detail: Option<serde_json::Value>) {
+    modules::diagnostics::record_frontend_stage(stage, detail);
+}
+
+/// 标记前端已完成启动
+#[tauri::command]
+pub fn diagnostics_frontend_ready(stage: Option<String>) {
+    modules::diagnostics::mark_frontend_ready(stage);
+}
+
+/// 捕获前端诊断事件并异步上报
+#[tauri::command]
+pub fn diagnostics_capture_event(event: modules::diagnostics::DiagnosticsClientEvent) {
+    modules::diagnostics::capture_client_event(event);
+}
+
 /// 获取通用设置配置
 #[tauri::command]
 pub fn get_general_config(app: tauri::AppHandle) -> Result<GeneralConfig, String> {
@@ -2274,6 +2312,7 @@ pub fn get_general_config(app: tauri::AppHandle) -> Result<GeneralConfig, String
         ghcp_launch_on_switch: user_config.ghcp_launch_on_switch,
         openclaw_auth_overwrite_on_switch: user_config.openclaw_auth_overwrite_on_switch,
         codex_launch_on_switch: user_config.codex_launch_on_switch,
+        antigravity_launch_on_switch: user_config.antigravity_launch_on_switch,
         codex_restart_specified_app_on_switch: user_config.codex_restart_specified_app_on_switch,
         codex_local_access_entry_visible: user_config.codex_local_access_entry_visible,
         top_right_ad_visible: user_config.top_right_ad_visible,
@@ -2407,6 +2446,7 @@ pub fn save_general_config(
     ghcp_launch_on_switch: Option<bool>,
     openclaw_auth_overwrite_on_switch: Option<bool>,
     codex_launch_on_switch: bool,
+    antigravity_launch_on_switch: Option<bool>,
     codex_restart_specified_app_on_switch: Option<bool>,
     codex_local_access_entry_visible: Option<bool>,
     top_right_ad_visible: Option<bool>,
@@ -2573,6 +2613,8 @@ pub fn save_general_config(
         global_proxy_enabled: current.global_proxy_enabled,
         global_proxy_url: current.global_proxy_url,
         global_proxy_no_proxy: current.global_proxy_no_proxy,
+        diagnostics_error_reporting_enabled: current.diagnostics_error_reporting_enabled,
+        diagnostics_error_reporting_debug: current.diagnostics_error_reporting_debug,
         // 更新通用设置
         language: normalized_language.clone(),
         default_terminal: default_terminal.unwrap_or(current.default_terminal),
@@ -2646,6 +2688,8 @@ pub fn save_general_config(
         openclaw_auth_overwrite_on_switch: openclaw_auth_overwrite_on_switch
             .unwrap_or(current.openclaw_auth_overwrite_on_switch),
         codex_launch_on_switch,
+        antigravity_launch_on_switch: antigravity_launch_on_switch
+            .unwrap_or(current.antigravity_launch_on_switch),
         codex_restart_specified_app_on_switch: codex_restart_specified_app_on_switch
             .unwrap_or(current.codex_restart_specified_app_on_switch),
         codex_local_access_entry_visible: codex_local_access_entry_visible

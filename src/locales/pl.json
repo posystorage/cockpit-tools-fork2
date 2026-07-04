@@ -786,7 +786,9 @@
       "claudeAutoRefresh": "Automatyczne odświeżanie limitu Claude",
       "claudeAutoRefreshDesc": "Automatycznie odświeża w tle pamięć podręczną limitów kont Claude.",
       "claudeAppPath": "Cel uruchamiania Claude Desktop",
-      "claudeAppPathDesc": "Profil domyślny może używać celu Microsoft Store; wiele instancji wymaga prawdziwego Claude.exe."
+      "claudeAppPathDesc": "Profil domyślny może używać celu Microsoft Store; wiele instancji wymaga prawdziwego Claude.exe.",
+      "antigravityLaunchOnSwitch": "Uruchamiaj Antigravity IDE przy przełączaniu",
+      "antigravityLaunchOnSwitchDesc": "Po wyłączeniu przełączanie tylko zapisuje dane domyślnego konta Antigravity IDE i nie zamyka, nie uruchamia ani nie restartuje aplikacji."
     },
     "network": {
       "apiTitle": "API kokpitu antygrawitacyjnego",
@@ -2881,8 +2883,29 @@
     "accountNote": {
       "title": "Notatka konta",
       "label": "Notatka konta",
-      "desc": "Dodaj osobną notatkę konta dla {{account}}.",
-      "placeholder": "E-mail, hasło, e-mail odzyskiwania lub notatki dostawy",
+      "desc": "Dodaj 2FA, hasło, telefon i inne notatki dla {{account}}.",
+      "twoFactorSecretLabel": "Sekret 2FA",
+      "twoFactorSecretShort": "2FA",
+      "twoFactorSecretPlaceholder": "Sekret Base32 lub URI otpauth://",
+      "twoFactorSecretInvalid": "Nieprawidłowy sekret 2FA. Wpisz sekret Base32 lub URI otpauth://.",
+      "currentOtp": "Aktualny kod",
+      "otpShort": "Kod",
+      "otpRemaining": "{{seconds}} s",
+      "passwordLabel": "Hasło",
+      "passwordShort": "Hasło",
+      "passwordPlaceholder": "Hasło logowania lub tymczasowe",
+      "phoneNumberLabel": "Telefon",
+      "phoneShort": "Telefon",
+      "phoneNumberPlaceholder": "Powiązany numer telefonu",
+      "otherNoteLabel": "Inne notatki",
+      "otherNoteShort": "Notatka",
+      "placeholder": "Notatki przekazania, e-mail odzyskiwania lub szczegóły konta",
+      "exportSensitiveNotice": "Eksport zawiera sekrety 2FA, hasła lub numery telefonu. Zapisuj go tylko w zaufanej lokalizacji.",
+      "exportSensitiveIncluded": "Dołącz poufne notatki",
+      "exportSensitiveExcluded": "Pomiń poufne notatki",
+      "exportSensitiveToggleHint": "Określa, czy eksportowany JSON zawiera sekrety 2FA, hasła i numery telefonu.",
+      "show": "Pokaż",
+      "hide": "Ukryj",
       "emptyTitle": "Dodaj notatkę konta",
       "short": "Notatka",
       "addShort": "Dodaj",
@@ -3132,6 +3155,18 @@
       "legacyBefore4eb75d96": "Przed 4eb75d96",
       "legacy4eb75d96": "Logika 4eb75d96",
       "current": "Bieżąca logika"
+    },
+    "pendingAuth": {
+      "badge": "Czeka na auth",
+      "emailRequired": "Wpisz e-mail konta",
+      "saving": "Zapisywanie konta oczekującego...",
+      "saved": "Konto oczekujące zapisane",
+      "saveFailed": "Nie udało się zapisać konta oczekującego: {{error}}",
+      "emailLabel": "Konto oczekujące",
+      "emailPlaceholder": "Wpisz e-mail konta OpenAI",
+      "saveDraft": "Zapisz kartę oczekującą",
+      "authorizeAction": "Autoryzuj",
+      "cardHint": "Notatki zapisane. Ukończ OAuth, aby użyć konta."
     }
   },
   "githubCopilot": {

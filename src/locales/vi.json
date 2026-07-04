@@ -786,7 +786,9 @@
       "claudeAutoRefresh": "Tự động làm mới hạn mức Claude",
       "claudeAutoRefreshDesc": "Tự động làm mới bộ nhớ đệm hạn mức cho tài khoản Claude trong nền.",
       "claudeAppPath": "Mục tiêu khởi chạy Claude Desktop",
-      "claudeAppPathDesc": "Hồ sơ mặc định có thể dùng mục tiêu Microsoft Store; hồ sơ đa phiên bản cần Claude.exe thật."
+      "claudeAppPathDesc": "Hồ sơ mặc định có thể dùng mục tiêu Microsoft Store; hồ sơ đa phiên bản cần Claude.exe thật.",
+      "antigravityLaunchOnSwitch": "Khởi chạy Antigravity IDE khi chuyển",
+      "antigravityLaunchOnSwitchDesc": "Khi tắt, việc chuyển chỉ ghi dữ liệu tài khoản mặc định của Antigravity IDE và không đóng, khởi chạy hoặc khởi động lại ứng dụng."
     },
     "network": {
       "apiTitle": "API Antigravity Cockpit",
@@ -2881,8 +2883,29 @@
     "accountNote": {
       "title": "Ghi chú tài khoản",
       "label": "Ghi chú tài khoản",
-      "desc": "Thêm ghi chú tài khoản riêng cho {{account}}.",
-      "placeholder": "Email, mật khẩu, email khôi phục hoặc ghi chú bàn giao",
+      "desc": "Thêm 2FA, mật khẩu, điện thoại và ghi chú khác cho {{account}}.",
+      "twoFactorSecretLabel": "Mã bí mật 2FA",
+      "twoFactorSecretShort": "2FA",
+      "twoFactorSecretPlaceholder": "Mã Base32 hoặc URI otpauth://",
+      "twoFactorSecretInvalid": "Mã bí mật 2FA không hợp lệ. Nhập mã Base32 hoặc URI otpauth://.",
+      "currentOtp": "Mã hiện tại",
+      "otpShort": "Mã",
+      "otpRemaining": "{{seconds}} giây",
+      "passwordLabel": "Mật khẩu",
+      "passwordShort": "Mật khẩu",
+      "passwordPlaceholder": "Mật khẩu đăng nhập hoặc tạm thời",
+      "phoneNumberLabel": "Điện thoại",
+      "phoneShort": "ĐT",
+      "phoneNumberPlaceholder": "Số điện thoại đã liên kết",
+      "otherNoteLabel": "Ghi chú khác",
+      "otherNoteShort": "Ghi chú",
+      "placeholder": "Ghi chú bàn giao, email khôi phục hoặc chi tiết tài khoản",
+      "exportSensitiveNotice": "Bản xuất chứa mã 2FA, mật khẩu hoặc số điện thoại. Chỉ lưu vào vị trí tin cậy.",
+      "exportSensitiveIncluded": "Gồm ghi chú nhạy cảm",
+      "exportSensitiveExcluded": "Loại ghi chú nhạy cảm",
+      "exportSensitiveToggleHint": "Kiểm soát JSON xuất ra có gồm mã 2FA, mật khẩu và số điện thoại hay không.",
+      "show": "Hiện",
+      "hide": "Ẩn",
       "emptyTitle": "Thêm ghi chú tài khoản",
       "short": "Ghi chú",
       "addShort": "Thêm",
@@ -3132,6 +3155,18 @@
       "legacyBefore4eb75d96": "Trước 4eb75d96",
       "legacy4eb75d96": "Logic 4eb75d96",
       "current": "Logic hiện tại"
+    },
+    "pendingAuth": {
+      "badge": "Chờ xác thực",
+      "emailRequired": "Nhập email tài khoản",
+      "saving": "Đang lưu tài khoản chờ xác thực...",
+      "saved": "Đã lưu tài khoản chờ xác thực",
+      "saveFailed": "Không thể lưu tài khoản chờ xác thực: {{error}}",
+      "emailLabel": "Tài khoản chờ xác thực",
+      "emailPlaceholder": "Nhập email tài khoản OpenAI",
+      "saveDraft": "Lưu thẻ chờ xác thực",
+      "authorizeAction": "Xác thực",
+      "cardHint": "Đã lưu ghi chú. Hoàn tất OAuth để sử dụng tài khoản."
     }
   },
   "githubCopilot": {

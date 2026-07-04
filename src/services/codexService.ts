@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import {
   CodexAccount,
+  CodexAccountNoteUpdate,
   CodexApiProviderMode,
   CodexAppSpeed,
   CodexAppSpeedConfig,
@@ -368,6 +369,17 @@ export async function updateCodexAccountTags(accountId: string, tags: string[]):
   return await invoke('update_codex_account_tags', { accountId, tags });
 }
 
-export async function updateCodexAccountNote(accountId: string, note: string): Promise<CodexAccount> {
-  return await invoke('update_codex_account_note', { accountId, note });
+export async function updateCodexAccountNote(
+  accountId: string,
+  update: string | CodexAccountNoteUpdate,
+): Promise<CodexAccount> {
+  const payload = typeof update === 'string' ? { note: update } : update;
+  return await invoke('update_codex_account_note', { accountId, ...payload });
+}
+
+export async function createPendingCodexOAuthAccount(
+  email: string,
+  update: CodexAccountNoteUpdate,
+): Promise<CodexAccount> {
+  return await invoke('create_pending_codex_oauth_account', { email, ...update });
 }

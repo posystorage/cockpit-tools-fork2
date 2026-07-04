@@ -786,7 +786,9 @@
       "claudeAutoRefresh": "Claude 할당량 자동 새로고침",
       "claudeAutoRefreshDesc": "백그라운드에서 Claude 계정의 할당량 캐시를 자동으로 갱신합니다.",
       "claudeAppPath": "Claude Desktop 시작 대상",
-      "claudeAppPathDesc": "기본 프로필은 Microsoft Store 대상을 사용할 수 있지만, 다중 인스턴스에는 실제 Claude.exe가 필요합니다."
+      "claudeAppPathDesc": "기본 프로필은 Microsoft Store 대상을 사용할 수 있지만, 다중 인스턴스에는 실제 Claude.exe가 필요합니다.",
+      "antigravityLaunchOnSwitch": "전환 시 Antigravity IDE 실행",
+      "antigravityLaunchOnSwitchDesc": "끄면 전환 시 Antigravity IDE 기본 계정 데이터만 쓰고 앱을 닫거나 실행하거나 다시 시작하지 않습니다."
     },
     "network": {
       "apiTitle": "반중력 조종석 API",
@@ -2881,8 +2883,29 @@
     "accountNote": {
       "title": "계정 메모",
       "label": "계정 메모",
-      "desc": "{{account}}에 별도 계정 메모를 추가합니다.",
-      "placeholder": "이메일, 비밀번호, 복구 이메일 또는 전달 메모",
+      "desc": "{{account}}에 2FA, 비밀번호, 전화번호 및 기타 메모를 추가합니다.",
+      "twoFactorSecretLabel": "2FA 시크릿",
+      "twoFactorSecretShort": "2FA",
+      "twoFactorSecretPlaceholder": "Base32 secret 또는 otpauth:// URI",
+      "twoFactorSecretInvalid": "2FA 시크릿이 올바르지 않습니다. Base32 secret 또는 otpauth:// URI를 입력하세요.",
+      "currentOtp": "현재 코드",
+      "otpShort": "코드",
+      "otpRemaining": "{{seconds}}초",
+      "passwordLabel": "비밀번호",
+      "passwordShort": "비밀번호",
+      "passwordPlaceholder": "로그인 또는 임시 비밀번호",
+      "phoneNumberLabel": "전화번호",
+      "phoneShort": "전화",
+      "phoneNumberPlaceholder": "연결된 전화번호",
+      "otherNoteLabel": "기타 메모",
+      "otherNoteShort": "메모",
+      "placeholder": "전달 메모, 복구 이메일 또는 계정 세부 정보",
+      "exportSensitiveNotice": "내보내기에는 2FA 시크릿, 비밀번호 또는 전화번호가 포함됩니다. 신뢰할 수 있는 위치에만 저장하세요.",
+      "exportSensitiveIncluded": "민감한 메모 포함",
+      "exportSensitiveExcluded": "민감한 메모 제외",
+      "exportSensitiveToggleHint": "내보내는 JSON에 2FA 시크릿, 비밀번호, 전화번호를 포함할지 제어합니다.",
+      "show": "표시",
+      "hide": "숨기기",
       "emptyTitle": "계정 메모 추가",
       "short": "메모",
       "addShort": "추가",
@@ -3132,6 +3155,18 @@
       "legacyBefore4eb75d96": "4eb75d96 이전",
       "legacy4eb75d96": "4eb75d96 로직",
       "current": "현재 로직"
+    },
+    "pendingAuth": {
+      "badge": "인증 대기",
+      "emailRequired": "계정 이메일을 입력하세요",
+      "saving": "인증 대기 계정을 저장하는 중...",
+      "saved": "인증 대기 계정이 저장되었습니다",
+      "saveFailed": "인증 대기 계정 저장 실패: {{error}}",
+      "emailLabel": "인증 대기 계정",
+      "emailPlaceholder": "OpenAI 계정 이메일 입력",
+      "saveDraft": "인증 대기 카드 저장",
+      "authorizeAction": "인증 추가",
+      "cardHint": "메모가 저장되었습니다. OAuth 완료 후 사용할 수 있습니다."
     }
   },
   "githubCopilot": {

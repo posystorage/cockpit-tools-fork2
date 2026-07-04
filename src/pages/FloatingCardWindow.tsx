@@ -70,7 +70,6 @@ import { ALL_PLATFORM_IDS, PLATFORM_PAGE_MAP, PlatformId } from '../types/platfo
 import type { InstanceProfile } from '../types/instance';
 import { isPrivacyModeEnabledByDefault, maskSensitiveValue } from '../utils/privacy';
 import { getPlatformLabel, renderPlatformIcon } from '../utils/platformMeta';
-import { getAntigravityRuntimeTarget } from '../utils/antigravityRuntimeTarget';
 import {
   getRecommendedAntigravityAccount,
   getRecommendedClaudeAccount,
@@ -211,7 +210,7 @@ export function FloatingCardWindow() {
   const orderedPlatformIds = usePlatformLayoutStore((state) => state.orderedPlatformIds);
   const remoteHiddenPlatformIds = useRemoteConfigStore((state) => state.hiddenPlatformIds);
   const fetchRemoteConfigState = useRemoteConfigStore((state) => state.fetchState);
-  const { accounts: agAccounts, currentAccount: agCurrent } = useAccountStore();
+  const { accounts: agAccounts, currentAccountsByTarget: agCurrentAccountsByTarget } = useAccountStore();
   const { accounts: codexAccounts, currentAccount: codexCurrent } = useCodexAccountStore();
   const {
     accounts: claudeAccounts,
@@ -398,10 +397,11 @@ export function FloatingCardWindow() {
     setPlatformLoading(true);
     try {
       switch (platformId) {
-        case 'antigravity': {
+        case 'antigravity':
+        case 'antigravity_ide': {
           await Promise.allSettled([
             useAccountStore.getState().fetchAccounts(),
-            useAccountStore.getState().fetchCurrentAccount(),
+            useAccountStore.getState().fetchCurrentAccount(platformId),
           ]);
           const groups = await getDisplayGroups();
           setDisplayGroups(groups);
@@ -722,7 +722,7 @@ export function FloatingCardWindow() {
       case 'antigravity_ide':
         return {
           accounts: agAccounts,
-          actualCurrentAccount: agCurrent,
+          actualCurrentAccount: agCurrentAccountsByTarget[selectedPlatform] ?? null,
         };
       case 'codex':
         return {
@@ -792,7 +792,7 @@ export function FloatingCardWindow() {
     }
   }, [
     agAccounts,
-    agCurrent,
+    agCurrentAccountsByTarget,
     claudeAccounts,
     claudeCurrentId,
     codebuddyAccounts,
@@ -1010,7 +1010,8 @@ export function FloatingCardWindow() {
       try {
         switch (selectedPlatform) {
           case 'antigravity':
-            await useAccountStore.getState().refreshQuota(viewedAccount.id);
+          case 'antigravity_ide':
+            await useAccountStore.getState().refreshQuota(viewedAccount.id, selectedPlatform);
             break;
           case 'codex':
             await useCodexAccountStore.getState().refreshQuota(viewedAccount.id);
@@ -1119,13 +1120,8 @@ export function FloatingCardWindow() {
         switch (selectedPlatform) {
           case 'antigravity':
           case 'antigravity_ide':
-            await useAccountStore.getState().switchAccount(
-              viewedAccount.id,
-              selectedPlatform === 'antigravity_ide'
-                ? 'antigravity_ide'
-                : getAntigravityRuntimeTarget(),
-            );
-            await useAccountStore.getState().fetchCurrentAccount();
+            await useAccountStore.getState().switchAccount(viewedAccount.id, selectedPlatform);
+            await useAccountStore.getState().fetchCurrentAccount(selectedPlatform);
             break;
           case 'codex':
             await useCodexAccountStore.getState().switchAccount(viewedAccount.id);

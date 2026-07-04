@@ -786,7 +786,9 @@
       "claudeAutoRefresh": "Claude 自動重新整理額度",
       "claudeAutoRefreshDesc": "在背景自動更新 Claude 帳號額度快取",
       "claudeAppPath": "Claude Desktop 啟動目標",
-      "claudeAppPathDesc": "預設實例可使用 Microsoft Store 應用目標；多開實例請選擇真實 Claude.exe。"
+      "claudeAppPathDesc": "預設實例可使用 Microsoft Store 應用目標；多開實例請選擇真實 Claude.exe。",
+      "antigravityLaunchOnSwitch": "切換時啟動 Antigravity IDE",
+      "antigravityLaunchOnSwitchDesc": "關閉後切號只寫入 Antigravity IDE 預設帳號資料，不會關閉、啟動或重啟應用程式。"
     },
     "network": {
       "apiTitle": "反重力駕駛艙 API",
@@ -2881,8 +2883,29 @@
     "accountNote": {
       "title": "帳號備註",
       "label": "帳號備註",
-      "desc": "為 {{account}} 填寫單獨顯示的帳號備註。",
-      "placeholder": "例如信箱、密碼、輔助信箱或其他交付備註",
+      "desc": "為 {{account}} 填寫 2FA、密碼、手機號和其他備註。",
+      "twoFactorSecretLabel": "2FA 秘鑰",
+      "twoFactorSecretShort": "2FA",
+      "twoFactorSecretPlaceholder": "Base32 secret 或 otpauth:// 連結",
+      "twoFactorSecretInvalid": "2FA 秘鑰格式無效，請輸入 Base32 secret 或 otpauth:// 連結",
+      "currentOtp": "目前驗證碼",
+      "otpShort": "驗證碼",
+      "otpRemaining": "{{seconds}}秒",
+      "passwordLabel": "帳號密碼",
+      "passwordShort": "密碼",
+      "passwordPlaceholder": "登入密碼或臨時密碼",
+      "phoneNumberLabel": "手機號",
+      "phoneShort": "手機",
+      "phoneNumberPlaceholder": "綁定手機號",
+      "otherNoteLabel": "其他備註",
+      "otherNoteShort": "備註",
+      "placeholder": "其他交付備註、輔助信箱或帳號說明",
+      "exportSensitiveNotice": "匯出內容包含 2FA 秘鑰、密碼或手機號，請只儲存到可信位置。",
+      "exportSensitiveIncluded": "包含敏感備註",
+      "exportSensitiveExcluded": "已排除敏感備註",
+      "exportSensitiveToggleHint": "控制匯出 JSON 是否包含 2FA 秘鑰、密碼和手機號。",
+      "show": "顯示",
+      "hide": "隱藏",
       "emptyTitle": "填寫帳號備註",
       "short": "帳號備註",
       "addShort": "加備註",
@@ -3132,6 +3155,18 @@
       "legacyBefore4eb75d96": "4eb75d96 前邏輯",
       "legacy4eb75d96": "4eb75d96 邏輯",
       "current": "目前邏輯"
+    },
+    "pendingAuth": {
+      "badge": "待授權",
+      "emailRequired": "請輸入帳號信箱",
+      "saving": "正在儲存待授權帳號...",
+      "saved": "待授權帳號已儲存",
+      "saveFailed": "儲存待授權帳號失敗：{{error}}",
+      "emailLabel": "待授權帳號",
+      "emailPlaceholder": "輸入 OpenAI 帳號信箱",
+      "saveDraft": "儲存待授權卡片",
+      "authorizeAction": "授權新增",
+      "cardHint": "備註已儲存，完成 OAuth 後即可使用"
     }
   },
   "githubCopilot": {

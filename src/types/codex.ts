@@ -41,11 +41,15 @@ export interface CodexAccount {
   account_name?: string;
   account_structure?: string;
   account_note?: string;
+  two_factor_secret?: string;
+  account_password?: string;
+  phone_number?: string;
   app_speed?: CodexAppSpeed;
   tokens: CodexTokens;
   token_generation?: number;
   token_updated_at?: number;
   token_source_mode?: string;
+  authorization_status?: string | null;
   requires_reauth?: boolean;
   reauth_reason?: string;
   quota?: CodexQuota;
@@ -53,6 +57,13 @@ export interface CodexAccount {
   tags?: string[];
   created_at: number;
   last_used: number;
+}
+
+export interface CodexAccountNoteUpdate {
+  note?: string;
+  twoFactorSecret?: string;
+  accountPassword?: string;
+  phoneNumber?: string;
 }
 
 export interface CodexQuotaErrorInfo {
@@ -516,6 +527,24 @@ export function isCodexApiKeyAccount(account: CodexAccount): boolean {
   return (account.auth_mode || "").trim().toLowerCase() === "apikey";
 }
 
+export function isCodexPendingOAuthAccount(account?: CodexAccount | null): boolean {
+  if (!account) return false;
+  if ((account.authorization_status || "").trim().toLowerCase() === "pending") {
+    return true;
+  }
+  if (isCodexApiKeyAccount(account)) return false;
+  const hasToken =
+    Boolean((account.tokens?.access_token || "").trim()) ||
+    Boolean((account.tokens?.refresh_token || "").trim()) ||
+    Boolean((account.tokens?.id_token || "").trim());
+  const hasSavedNote =
+    Boolean((account.account_note || "").trim()) ||
+    Boolean((account.two_factor_secret || "").trim()) ||
+    Boolean((account.account_password || "").trim()) ||
+    Boolean((account.phone_number || "").trim());
+  return !hasToken && hasSavedNote;
+}
+
 export function isCodexNewApiAccount(account: CodexAccount): boolean {
   const providerId = (account.api_provider_id || "").trim().toLowerCase();
   const planType = (account.plan_type || "").trim().toUpperCase();
@@ -653,6 +682,7 @@ export function getCodexPlanBadgePresentation(
 }
 
 export function getCodexPlanFilterKey(account: CodexAccount): string {
+  if (isCodexPendingOAuthAccount(account)) return "PENDING";
   return normalizeCodexPlanKey(account.plan_type).toUpperCase();
 }
 

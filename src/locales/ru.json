@@ -786,7 +786,9 @@
       "claudeAutoRefresh": "Автообновление квоты Claude",
       "claudeAutoRefreshDesc": "Автоматически обновляет кэш квоты аккаунтов Claude в фоне.",
       "claudeAppPath": "Цель запуска Claude Desktop",
-      "claudeAppPathDesc": "Стандартный профиль может использовать цель Microsoft Store; нескольким экземплярам нужен реальный Claude.exe."
+      "claudeAppPathDesc": "Стандартный профиль может использовать цель Microsoft Store; нескольким экземплярам нужен реальный Claude.exe.",
+      "antigravityLaunchOnSwitch": "Запускать Antigravity IDE при переключении",
+      "antigravityLaunchOnSwitchDesc": "Если выключено, переключение только записывает данные аккаунта по умолчанию Antigravity IDE и не закрывает, не запускает и не перезапускает приложение."
     },
     "network": {
       "apiTitle": "API антигравитационной кабины",
@@ -2881,8 +2883,29 @@
     "accountNote": {
       "title": "Заметка аккаунта",
       "label": "Заметка аккаунта",
-      "desc": "Добавьте отдельную заметку для {{account}}.",
-      "placeholder": "Почта, пароль, резервная почта или заметки к выдаче",
+      "desc": "Добавьте 2FA, пароль, телефон и другие заметки для {{account}}.",
+      "twoFactorSecretLabel": "Секрет 2FA",
+      "twoFactorSecretShort": "2FA",
+      "twoFactorSecretPlaceholder": "Секрет Base32 или URI otpauth://",
+      "twoFactorSecretInvalid": "Недействительный секрет 2FA. Введите секрет Base32 или URI otpauth://.",
+      "currentOtp": "Текущий код",
+      "otpShort": "Код",
+      "otpRemaining": "{{seconds}} с",
+      "passwordLabel": "Пароль",
+      "passwordShort": "Пароль",
+      "passwordPlaceholder": "Пароль входа или временный пароль",
+      "phoneNumberLabel": "Телефон",
+      "phoneShort": "Телефон",
+      "phoneNumberPlaceholder": "Привязанный номер телефона",
+      "otherNoteLabel": "Другие заметки",
+      "otherNoteShort": "Заметка",
+      "placeholder": "Заметки к выдаче, резервная почта или данные аккаунта",
+      "exportSensitiveNotice": "Экспорт содержит секреты 2FA, пароли или номера телефонов. Сохраняйте его только в надежном месте.",
+      "exportSensitiveIncluded": "Включить чувствительные заметки",
+      "exportSensitiveExcluded": "Исключить чувствительные заметки",
+      "exportSensitiveToggleHint": "Определяет, включает ли экспорт JSON секреты 2FA, пароли и номера телефонов.",
+      "show": "Показать",
+      "hide": "Скрыть",
       "emptyTitle": "Добавить заметку аккаунта",
       "short": "Заметка",
       "addShort": "Добавить",
@@ -3132,6 +3155,18 @@
       "legacyBefore4eb75d96": "До 4eb75d96",
       "legacy4eb75d96": "Логика 4eb75d96",
       "current": "Текущая логика"
+    },
+    "pendingAuth": {
+      "badge": "Ожидает входа",
+      "emailRequired": "Введите e-mail аккаунта",
+      "saving": "Сохранение аккаунта в ожидании...",
+      "saved": "Аккаунт в ожидании сохранен",
+      "saveFailed": "Не удалось сохранить аккаунт в ожидании: {{error}}",
+      "emailLabel": "Аккаунт в ожидании",
+      "emailPlaceholder": "Введите e-mail аккаунта OpenAI",
+      "saveDraft": "Сохранить карточку",
+      "authorizeAction": "Авторизовать",
+      "cardHint": "Заметки сохранены. Завершите OAuth, чтобы использовать аккаунт."
     }
   },
   "githubCopilot": {

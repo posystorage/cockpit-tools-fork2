@@ -100,6 +100,12 @@ interface NetworkConfig {
   global_proxy_no_proxy: string;
 }
 
+interface DiagnosticsConfig {
+  errorReportingEnabled: boolean;
+  errorReportingDebug: boolean;
+  endpointConfigured: boolean;
+}
+
 /** 通用配置类型 */
 interface GeneralConfig {
   language: string;
@@ -163,6 +169,7 @@ interface GeneralConfig {
   opencode_auth_overwrite_on_switch: boolean;
   openclaw_auth_overwrite_on_switch: boolean;
   codex_launch_on_switch: boolean;
+  antigravity_launch_on_switch: boolean;
   codex_restart_specified_app_on_switch: boolean;
   codex_local_access_entry_visible: boolean;
   top_right_ad_visible?: boolean;
@@ -400,6 +407,8 @@ export function SettingsPage() {
   const [startupMinimized, setStartupMinimized] = useState(false);
   const [floatingCardAlwaysOnTop, setFloatingCardAlwaysOnTop] = useState(false);
   const [appAutoLaunchEnabled, setAppAutoLaunchEnabled] = useState(false);
+  const [errorReportingEnabled, setErrorReportingEnabled] = useState(true);
+  const [errorReportingSaving, setErrorReportingSaving] = useState(false);
   const [opencodeAppPath, setOpencodeAppPath] = useState('');
   const [antigravityAppPath, setAntigravityAppPath] = useState('');
   const [codexAppPath, setCodexAppPath] = useState('');
@@ -466,6 +475,7 @@ export function SettingsPage() {
   const [opencodeAuthOverwriteOnSwitch, setOpencodeAuthOverwriteOnSwitch] = useState(false);
   const [openclawAuthOverwriteOnSwitch, setOpenclawAuthOverwriteOnSwitch] = useState(false);
   const [codexLaunchOnSwitch, setCodexLaunchOnSwitch] = useState(true);
+  const [antigravityLaunchOnSwitch, setAntigravityLaunchOnSwitch] = useState(true);
   const [codexRestartSpecifiedAppOnSwitch, setCodexRestartSpecifiedAppOnSwitch] = useState(false);
   const [codexLocalAccessEntryVisible, setCodexLocalAccessEntryVisible] = useState(true);
   const [topRightAdVisible, setTopRightAdVisible] = useState(true);
@@ -742,6 +752,7 @@ export function SettingsPage() {
   useEffect(() => {
     loadGeneralConfig();
     loadNetworkConfig();
+    loadDiagnosticsConfig();
   }, []);
   
   useEffect(() => {
@@ -878,6 +889,7 @@ export function SettingsPage() {
           opencodeAuthOverwriteOnSwitch,
           openclawAuthOverwriteOnSwitch,
           codexLaunchOnSwitch,
+          antigravityLaunchOnSwitch,
           codexRestartSpecifiedAppOnSwitch,
           codexLocalAccessEntryVisible,
           topRightAdVisible,
@@ -1008,6 +1020,7 @@ export function SettingsPage() {
     opencodeAuthOverwriteOnSwitch,
     openclawAuthOverwriteOnSwitch,
     codexLaunchOnSwitch,
+    antigravityLaunchOnSwitch,
     codexRestartSpecifiedAppOnSwitch,
     codexLocalAccessEntryVisible,
     topRightAdVisible,
@@ -1324,6 +1337,7 @@ export function SettingsPage() {
       setOpencodeAuthOverwriteOnSwitch(config.opencode_auth_overwrite_on_switch ?? false);
       setOpenclawAuthOverwriteOnSwitch(config.openclaw_auth_overwrite_on_switch ?? false);
       setCodexLaunchOnSwitch(config.codex_launch_on_switch ?? true);
+      setAntigravityLaunchOnSwitch(config.antigravity_launch_on_switch ?? true);
       setCodexRestartSpecifiedAppOnSwitch(
         config.codex_restart_specified_app_on_switch ?? false,
       );
@@ -1420,6 +1434,32 @@ export function SettingsPage() {
       setNeedsRestart(false);
     } catch (err) {
       console.error('加载网络配置失败:', err);
+    }
+  };
+
+  const loadDiagnosticsConfig = async () => {
+    try {
+      const config = await invoke<DiagnosticsConfig>('get_diagnostics_config');
+      setErrorReportingEnabled(config.errorReportingEnabled);
+    } catch (err) {
+      console.warn('加载诊断配置失败:', err);
+    }
+  };
+
+  const handleErrorReportingEnabledChange = async (enabled: boolean) => {
+    const previous = errorReportingEnabled;
+    setErrorReportingEnabled(enabled);
+    setErrorReportingSaving(true);
+    try {
+      await invoke('save_diagnostics_config', {
+        errorReportingEnabled: enabled,
+        errorReportingDebug: false,
+      });
+    } catch (err) {
+      setErrorReportingEnabled(previous);
+      console.error('保存诊断配置失败:', err);
+    } finally {
+      setErrorReportingSaving(false);
     }
   };
   
@@ -2665,6 +2705,31 @@ export function SettingsPage() {
 
               <div className="settings-row">
                 <div className="row-label">
+                  <div className="row-title">
+                    {t('settings.general.errorReporting', '遥测诊断')}
+                  </div>
+                  <div className="row-desc">
+                    {t(
+                      'settings.general.errorReportingDesc',
+                      '默认开启，仅用于排查启动和界面问题；关闭后不会提交遥测事件。上报前会脱敏，不上传账号密码、Token、2FA 秘钥、手机号等敏感信息。',
+                    )}
+                  </div>
+                </div>
+                <div className="row-control">
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={errorReportingEnabled}
+                      disabled={errorReportingSaving}
+                      onChange={(e) => void handleErrorReportingEnabledChange(e.target.checked)}
+                    />
+                    <span className="slider"></span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="settings-row">
+                <div className="row-label">
                   <div className="row-title">{t('settings.general.floatingCardShowNow', '立即显示悬浮卡片')}</div>
                   <div className="row-desc">{t('settings.general.floatingCardShowNowDesc', '关闭后可在这里或托盘菜单中重新打开')}</div>
                 </div>
@@ -2799,12 +2864,39 @@ export function SettingsPage() {
                 </div>
               </div>
 
-              {renderCurrentAccountRefreshRow('antigravity')}
-              {renderAccountLevelRefreshConfig('antigravity')}
+	              {renderCurrentAccountRefreshRow('antigravity')}
+	              {renderAccountLevelRefreshConfig('antigravity')}
 
               <div className="settings-row">
                 <div className="row-label">
-                  <div className="row-title">{t('settings.general.antigravityAppPath', 'Antigravity IDE 启动路径')}</div>
+                  <div className="row-title">
+                    {t(
+                      'settings.general.antigravityLaunchOnSwitch',
+                      '切换时启动 Antigravity IDE',
+                    )}
+                  </div>
+                  <div className="row-desc">
+                    {t(
+                      'settings.general.antigravityLaunchOnSwitchDesc',
+                      '关闭后切号只写入 Antigravity IDE 默认账号数据，不会关闭、启动或重启应用。',
+                    )}
+                  </div>
+                </div>
+                <div className="row-control">
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={antigravityLaunchOnSwitch}
+                      onChange={(e) => setAntigravityLaunchOnSwitch(e.target.checked)}
+                    />
+                    <span className="slider"></span>
+                  </label>
+                </div>
+              </div>
+
+	              <div className="settings-row">
+	                <div className="row-label">
+	                  <div className="row-title">{t('settings.general.antigravityAppPath', 'Antigravity IDE 启动路径')}</div>
                   <div className="row-desc">{t('settings.general.codexAppPathDesc', '留空则使用默认路径')}</div>
                 </div>
                 <div className="row-control row-control--grow">

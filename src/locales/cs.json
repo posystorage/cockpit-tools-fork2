@@ -786,7 +786,9 @@
       "claudeAutoRefresh": "Automatická obnova kvóty Claude",
       "claudeAutoRefreshDesc": "Automaticky na pozadí obnovuje mezipaměť kvóty účtů Claude.",
       "claudeAppPath": "Cíl spuštění Claude Desktop",
-      "claudeAppPathDesc": "Výchozí profil může použít cíl Microsoft Store; více instancí potřebuje skutečný Claude.exe."
+      "claudeAppPathDesc": "Výchozí profil může použít cíl Microsoft Store; více instancí potřebuje skutečný Claude.exe.",
+      "antigravityLaunchOnSwitch": "Spustit Antigravity IDE při přepnutí",
+      "antigravityLaunchOnSwitchDesc": "Po vypnutí přepnutí pouze zapíše data výchozího účtu Antigravity IDE a aplikaci nezavře, nespustí ani nerestartuje."
     },
     "network": {
       "apiTitle": "Antigravity Cockpit API​",
@@ -2881,8 +2883,29 @@
     "accountNote": {
       "title": "Poznámka účtu",
       "label": "Poznámka účtu",
-      "desc": "Přidejte samostatnou poznámku k účtu {{account}}.",
-      "placeholder": "E-mail, heslo, obnovovací e-mail nebo poznámky k předání",
+      "desc": "Přidejte 2FA, heslo, telefon a další poznámky pro {{account}}.",
+      "twoFactorSecretLabel": "2FA tajný klíč",
+      "twoFactorSecretShort": "2FA",
+      "twoFactorSecretPlaceholder": "Base32 secret nebo otpauth:// URI",
+      "twoFactorSecretInvalid": "Neplatný 2FA tajný klíč. Zadejte Base32 secret nebo otpauth:// URI.",
+      "currentOtp": "Aktuální kód",
+      "otpShort": "Kód",
+      "otpRemaining": "{{seconds}} s",
+      "passwordLabel": "Heslo",
+      "passwordShort": "Heslo",
+      "passwordPlaceholder": "Přihlašovací nebo dočasné heslo",
+      "phoneNumberLabel": "Telefon",
+      "phoneShort": "Telefon",
+      "phoneNumberPlaceholder": "Navázané telefonní číslo",
+      "otherNoteLabel": "Další poznámky",
+      "otherNoteShort": "Poznámka",
+      "placeholder": "Předávací poznámky, obnovovací e-mail nebo údaje účtu",
+      "exportSensitiveNotice": "Export obsahuje 2FA tajné klíče, hesla nebo telefonní čísla. Uložte jej pouze na důvěryhodné místo.",
+      "exportSensitiveIncluded": "Včetně citlivých poznámek",
+      "exportSensitiveExcluded": "Bez citlivých poznámek",
+      "exportSensitiveToggleHint": "Určuje, zda exportovaný JSON obsahuje 2FA tajné klíče, hesla a telefonní čísla.",
+      "show": "Zobrazit",
+      "hide": "Skrýt",
       "emptyTitle": "Přidat poznámku účtu",
       "short": "Poznámka",
       "addShort": "Přidat",
@@ -3132,6 +3155,18 @@
       "legacyBefore4eb75d96": "Před 4eb75d96",
       "legacy4eb75d96": "Logika 4eb75d96",
       "current": "Aktuální logika"
+    },
+    "pendingAuth": {
+      "badge": "Čeká na auth",
+      "emailRequired": "Zadejte e-mail účtu",
+      "saving": "Ukládá se čekající účet...",
+      "saved": "Čekající účet uložen",
+      "saveFailed": "Čekající účet se nepodařilo uložit: {{error}}",
+      "emailLabel": "Čekající účet",
+      "emailPlaceholder": "Zadejte e-mail účtu OpenAI",
+      "saveDraft": "Uložit čekající kartu",
+      "authorizeAction": "Autorizovat",
+      "cardHint": "Poznámky uloženy. Pro použití dokončete OAuth."
     }
   },
   "githubCopilot": {

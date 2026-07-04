@@ -420,12 +420,11 @@ function buildAccountRegistry(
 }
 
 async function loadAccountRegistry(): Promise<AccountRegistry> {
-  const entries = await Promise.all(
-    ALL_PLATFORM_IDS.map(async (platform) => {
-      const accounts = await ACCOUNT_LOADERS[platform]();
-      return [platform, accounts] as const;
-    }),
-  );
+  const entries: Array<readonly [PlatformId, TransferAccountRecord[]]> = [];
+  for (const platform of ALL_PLATFORM_IDS) {
+    const accounts = await ACCOUNT_LOADERS[platform]();
+    entries.push([platform, accounts] as const);
+  }
 
   return buildAccountRegistry(entries);
 }
@@ -988,12 +987,14 @@ async function exportConfigBundle(registry: AccountRegistry): Promise<DataTransf
     listCodexModelProviders(),
     getCodexWakeupState(),
     getCodexWakeupCliStatus(),
-    Promise.all(
-      INSTANCE_PLATFORMS.map(async (platform) => {
+    (async () => {
+      const entries: Array<readonly [InstancePlatform, ExportedInstanceStore]> = [];
+      for (const platform of INSTANCE_PLATFORMS) {
         const store = await invoke<RawInstanceStore>('data_transfer_get_instance_store', { platform });
-        return [platform, exportInstanceStore(platform, store, registry)] as const;
-      }),
-    ),
+        entries.push([platform, exportInstanceStore(platform, store, registry)] as const);
+      }
+      return entries;
+    })(),
   ]);
 
   return {

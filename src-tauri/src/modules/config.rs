@@ -61,6 +61,12 @@ pub struct UserConfig {
     /// NO_PROXY 白名单（逗号分隔）
     #[serde(default = "default_global_proxy_no_proxy")]
     pub global_proxy_no_proxy: String,
+    /// 是否启用匿名错误诊断上报
+    #[serde(default = "default_diagnostics_error_reporting_enabled")]
+    pub diagnostics_error_reporting_enabled: bool,
+    /// 是否输出错误诊断上报调试日志
+    #[serde(default = "default_diagnostics_error_reporting_debug")]
+    pub diagnostics_error_reporting_debug: bool,
     /// 界面语言
     #[serde(default = "default_language")]
     pub language: String,
@@ -285,6 +291,9 @@ pub struct UserConfig {
     /// 切换 Codex 时是否自动启动/重启 Codex App
     #[serde(default = "default_codex_launch_on_switch")]
     pub codex_launch_on_switch: bool,
+    /// 切换 Antigravity IDE 时是否自动启动/重启应用
+    #[serde(default = "default_antigravity_launch_on_switch")]
+    pub antigravity_launch_on_switch: bool,
     /// 切换 Codex 时是否自动重启指定应用
     #[serde(default = "default_codex_restart_specified_app_on_switch")]
     pub codex_restart_specified_app_on_switch: bool,
@@ -518,6 +527,12 @@ fn default_global_proxy_url() -> String {
 fn default_global_proxy_no_proxy() -> String {
     "127.0.0.1,localhost,::1".to_string()
 }
+fn default_diagnostics_error_reporting_enabled() -> bool {
+    true
+}
+fn default_diagnostics_error_reporting_debug() -> bool {
+    false
+}
 fn default_language() -> String {
     "zh-cn".to_string()
 }
@@ -741,6 +756,9 @@ fn default_openclaw_auth_overwrite_on_switch() -> bool {
 fn default_codex_launch_on_switch() -> bool {
     true
 }
+fn default_antigravity_launch_on_switch() -> bool {
+    true
+}
 fn default_codex_restart_specified_app_on_switch() -> bool {
     false
 }
@@ -894,6 +912,8 @@ impl Default for UserConfig {
             global_proxy_enabled: default_global_proxy_enabled(),
             global_proxy_url: default_global_proxy_url(),
             global_proxy_no_proxy: default_global_proxy_no_proxy(),
+            diagnostics_error_reporting_enabled: default_diagnostics_error_reporting_enabled(),
+            diagnostics_error_reporting_debug: default_diagnostics_error_reporting_debug(),
             language: default_language(),
             default_terminal: default_default_terminal(),
             theme: default_theme(),
@@ -971,6 +991,7 @@ impl Default for UserConfig {
             ghcp_launch_on_switch: default_ghcp_launch_on_switch(),
             openclaw_auth_overwrite_on_switch: default_openclaw_auth_overwrite_on_switch(),
             codex_launch_on_switch: default_codex_launch_on_switch(),
+            antigravity_launch_on_switch: default_antigravity_launch_on_switch(),
             codex_restart_specified_app_on_switch: default_codex_restart_specified_app_on_switch(),
             codex_local_access_entry_visible: default_codex_local_access_entry_visible(),
             top_right_ad_visible: default_top_right_ad_visible(),
@@ -1566,6 +1587,18 @@ pub fn load_user_config() -> Result<UserConfig, String> {
             obj.insert(
                 "global_proxy_no_proxy".to_string(),
                 json!(default_global_proxy_no_proxy()),
+            );
+        }
+        if !obj.contains_key("diagnostics_error_reporting_enabled") {
+            obj.insert(
+                "diagnostics_error_reporting_enabled".to_string(),
+                json!(default_diagnostics_error_reporting_enabled()),
+            );
+        }
+        if !obj.contains_key("diagnostics_error_reporting_debug") {
+            obj.insert(
+                "diagnostics_error_reporting_debug".to_string(),
+                json!(default_diagnostics_error_reporting_debug()),
             );
         }
 

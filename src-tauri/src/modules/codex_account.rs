@@ -40,6 +40,7 @@ const CODEX_CONFIG_MODEL_CATALOG_JSON_KEY: &str = "model_catalog_json";
 const CODEX_CONFIG_EXPERIMENTAL_BEARER_TOKEN_KEY: &str = "experimental_bearer_token";
 const CODEX_CONFIG_MODEL_CONTEXT_WINDOW_KEY: &str = "model_context_window";
 const CODEX_CONFIG_MODEL_AUTO_COMPACT_TOKEN_LIMIT_KEY: &str = "model_auto_compact_token_limit";
+const CODEX_MANAGED_MODEL_CATALOG_FILE: &str = "cockpit-provider-model-catalog.json";
 const CODEX_DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 const CODEX_COCKPIT_API_BASE_URL: &str = "https://chongcodex.cn/v1";
 const CODEX_COCKPIT_API_PROVIDER_ID: &str = "cockpit_api";
@@ -58,6 +59,7 @@ const CODEX_AUTO_SWITCH_ACCOUNT_SCOPE_ALL: &str = "all_accounts";
 const CODEX_AUTO_SWITCH_ACCOUNT_SCOPE_SELECTED: &str = "selected_accounts";
 const DISK_FULL_ERROR_CODE: &str = "DISK_FULL";
 const CODEX_TOKEN_SOURCE_MANAGED: &str = "managed";
+const CODEX_AUTHORIZATION_STATUS_PENDING: &str = "pending";
 const CODEX_MISSING_REFRESH_TOKEN_REAUTH_REASON: &str =
     "Codex 登录授权缺少 refresh_token，无法自动续期；当前 access_token 已不可用，请重新登录。";
 const CODEX_PROACTIVE_REFRESH_INTERVAL_SECONDS: i64 = 8 * 24 * 60 * 60;
@@ -906,7 +908,7 @@ fn write_api_provider_to_config_toml(
 
     match provider_config.mode {
         CodexApiProviderMode::OpenaiBuiltin => {
-            let _ = doc.remove(CODEX_CONFIG_MODEL_CATALOG_JSON_KEY);
+            remove_managed_model_catalog_from_doc(&mut doc);
             let _ = doc.remove(CODEX_CONFIG_MODEL_PROVIDER_KEY);
             remove_managed_api_key_model_providers_from_doc(&mut doc);
             #[cfg(target_os = "windows")]
@@ -924,7 +926,7 @@ fn write_api_provider_to_config_toml(
             }
         }
         CodexApiProviderMode::Custom => {
-            let _ = doc.remove(CODEX_CONFIG_MODEL_CATALOG_JSON_KEY);
+            remove_managed_model_catalog_from_doc(&mut doc);
             let _ = doc.remove(CODEX_CONFIG_OPENAI_BASE_URL_KEY);
             let provider_id = provider_config
                 .provider_id
@@ -964,6 +966,17 @@ fn write_api_provider_to_config_toml(
     let content = crate::modules::codex_config_format::codex_config_doc_to_string(&mut doc);
     crate::modules::codex_config_format::write_codex_config_toml_atomic(&config_path, &content)
         .map_err(|e| format!("写入 config.toml 失败: {}", e))
+}
+
+fn remove_managed_model_catalog_from_doc(doc: &mut Document) {
+    let uses_managed_catalog = doc
+        .get(CODEX_CONFIG_MODEL_CATALOG_JSON_KEY)
+        .and_then(|item| item.as_str())
+        .map(str::trim)
+        == Some(CODEX_MANAGED_MODEL_CATALOG_FILE);
+    if uses_managed_catalog {
+        let _ = doc.remove(CODEX_CONFIG_MODEL_CATALOG_JSON_KEY);
+    }
 }
 
 fn collect_managed_api_key_provider_ids() -> HashSet<String> {
@@ -1386,6 +1399,16 @@ pub(crate) fn account_has_refresh_token(account: &CodexAccount) -> bool {
         .map(str::trim)
         .filter(|token| !token.is_empty())
         .is_some()
+}
+
+pub fn is_pending_oauth_account(account: &CodexAccount) -> bool {
+    !account.is_api_key_auth()
+        && account
+            .authorization_status
+            .as_deref()
+            .map(str::trim)
+            .map(|value| value.eq_ignore_ascii_case(CODEX_AUTHORIZATION_STATUS_PENDING))
+            .unwrap_or(false)
 }
 
 fn clear_stale_missing_refresh_token_reauth(account: &mut CodexAccount) -> Result<(), String> {
@@ -1933,6 +1956,46 @@ fn read_json_string_array(value: &serde_json::Value, keys: &[&str]) -> Option<Ve
     }
 }
 
+fn read_account_two_factor_secret(value: &serde_json::Value) -> Option<String> {
+    read_json_string(
+        value,
+        &[
+            "two_factor_secret",
+            "twoFactorSecret",
+            "account_two_factor_secret",
+            "accountTwoFactorSecret",
+        ],
+    )
+}
+
+fn read_account_password(value: &serde_json::Value) -> Option<String> {
+    read_json_string(value, &["account_password", "accountPassword", "password"])
+}
+
+fn read_account_phone_number(value: &serde_json::Value) -> Option<String> {
+    read_json_string(
+        value,
+        &[
+            "phone_number",
+            "phoneNumber",
+            "account_phone_number",
+            "accountPhoneNumber",
+        ],
+    )
+}
+
+fn apply_account_sensitive_note_metadata(account: &mut CodexAccount, value: &serde_json::Value) {
+    if let Some(secret) = read_account_two_factor_secret(value) {
+        account.two_factor_secret = Some(secret);
+    }
+    if let Some(password) = read_account_password(value) {
+        account.account_password = Some(password);
+    }
+    if let Some(phone_number) = read_account_phone_number(value) {
+        account.phone_number = Some(phone_number);
+    }
+}
+
 fn read_codex_api_provider_mode(value: &serde_json::Value) -> Option<CodexApiProviderMode> {
     value
         .get("api_provider_mode")
@@ -1957,6 +2020,7 @@ fn apply_compat_account_metadata(
         .or_else(|| account.account_structure.clone());
     account.account_note = read_json_string(value, &["account_note", "accountNote"])
         .or_else(|| account.account_note.clone());
+    apply_account_sensitive_note_metadata(account, value);
     account.auth_file_plan_type =
         read_json_string(value, &["auth_file_plan_type", "authFilePlanType"])
             .or_else(|| account.auth_file_plan_type.clone());
@@ -1978,6 +2042,9 @@ fn apply_compat_account_metadata(
     account.token_updated_at = read_json_i64(value, &["token_updated_at", "tokenUpdatedAt"])
         .or_else(|| parse_auth_file_last_refresh(value.get("last_refresh")))
         .or(account.token_updated_at);
+    account.authorization_status =
+        read_json_string(value, &["authorization_status", "authorizationStatus"])
+            .or_else(|| account.authorization_status.clone());
     account.tags = read_json_string_array(value, &["tags"]).or_else(|| account.tags.clone());
 }
 
@@ -1988,6 +2055,7 @@ fn apply_api_key_import_metadata(account: &mut CodexAccount, value: &serde_json:
     if let Some(account_note) = read_json_string(value, &["account_note", "accountNote"]) {
         account.account_note = Some(account_note);
     }
+    apply_account_sensitive_note_metadata(account, value);
     if let Some(plan_type) = read_json_string(value, &["plan_type", "planType"]) {
         account.plan_type = Some(plan_type);
     }
@@ -2505,6 +2573,7 @@ fn upsert_account_with_hints_and_reauth_target(
         acc.tokens = tokens;
         mark_token_chain_updated(&mut acc);
         acc.auth_mode = CodexAuthMode::OAuth;
+        acc.authorization_status = None;
         acc.openai_api_key = None;
         acc.api_base_url = None;
         acc.api_provider_mode = CodexApiProviderMode::OpenaiBuiltin;
@@ -2525,6 +2594,7 @@ fn upsert_account_with_hints_and_reauth_target(
         let mut acc = CodexAccount::new(existing_id.clone(), email.clone(), tokens);
         mark_token_chain_updated(&mut acc);
         acc.auth_mode = CodexAuthMode::OAuth;
+        acc.authorization_status = None;
         acc.openai_api_key = None;
         acc.api_base_url = None;
         acc.api_provider_mode = CodexApiProviderMode::OpenaiBuiltin;
@@ -4335,6 +4405,18 @@ pub fn import_from_local() -> Result<CodexAccount, String> {
 }
 
 fn import_account_struct(account: CodexAccount) -> Result<CodexAccount, String> {
+    if is_pending_oauth_account(&account) {
+        let mut imported = create_pending_oauth_account(
+            account.email.clone(),
+            codex_account_note_update_from_account(&account),
+        )?;
+        if let Some(tags) = account.tags {
+            imported.tags = Some(tags);
+            save_account(&imported)?;
+        }
+        return Ok(imported);
+    }
+
     if account.is_api_key_auth() || account.openai_api_key.is_some() {
         let api_key = normalize_optional_ref(account.openai_api_key.as_deref())
             .ok_or("API Key 账号缺少 OPENAI_API_KEY")?;
@@ -4360,6 +4442,18 @@ fn import_account_struct(account: CodexAccount) -> Result<CodexAccount, String> 
             api_acc.account_note = Some(note);
             changed = true;
         }
+        if let Some(secret) = account.two_factor_secret {
+            api_acc.two_factor_secret = Some(secret);
+            changed = true;
+        }
+        if let Some(password) = account.account_password {
+            api_acc.account_password = Some(password);
+            changed = true;
+        }
+        if let Some(phone_number) = account.phone_number {
+            api_acc.phone_number = Some(phone_number);
+            changed = true;
+        }
         if changed {
             save_account(&api_acc)?;
         }
@@ -4377,6 +4471,18 @@ fn import_account_struct(account: CodexAccount) -> Result<CodexAccount, String> 
     }
     if let Some(note) = account.account_note {
         imported.account_note = Some(note);
+        changed = true;
+    }
+    if let Some(secret) = account.two_factor_secret {
+        imported.two_factor_secret = Some(secret);
+        changed = true;
+    }
+    if let Some(password) = account.account_password {
+        imported.account_password = Some(password);
+        changed = true;
+    }
+    if let Some(phone_number) = account.phone_number {
+        imported.phone_number = Some(phone_number);
         changed = true;
     }
 
@@ -4418,6 +4524,164 @@ enum CodexJsonImportCandidate {
         refresh_token: String,
         account_note: Option<String>,
     },
+}
+
+fn codex_account_note_update_from_value(value: &serde_json::Value) -> CodexAccountNoteUpdate {
+    CodexAccountNoteUpdate {
+        note: read_json_string(
+            value,
+            &["account_note", "accountNote", "note", "notes", "remark"],
+        ),
+        two_factor_secret: read_json_string(
+            value,
+            &[
+                "two_factor_secret",
+                "twoFactorSecret",
+                "account_two_factor_secret",
+                "accountTwoFactorSecret",
+            ],
+        ),
+        account_password: read_json_string(
+            value,
+            &["account_password", "accountPassword", "password"],
+        ),
+        phone_number: read_json_string(
+            value,
+            &[
+                "phone_number",
+                "phoneNumber",
+                "account_phone_number",
+                "accountPhoneNumber",
+            ],
+        ),
+    }
+}
+
+fn has_codex_account_note_update(update: &CodexAccountNoteUpdate) -> bool {
+    update.note.is_some()
+        || update.two_factor_secret.is_some()
+        || update.account_password.is_some()
+        || update.phone_number.is_some()
+}
+
+fn is_blank_codex_token_fields(value: &serde_json::Value) -> bool {
+    let id_token = first_json_string(
+        value,
+        &[&["id_token"], &["idToken"], &["tokens", "id_token"]],
+    );
+    let access_token = first_json_string(
+        value,
+        &[
+            &["access_token"],
+            &["accessToken"],
+            &["tokens", "access_token"],
+        ],
+    );
+    let refresh_token = first_json_string(
+        value,
+        &[
+            &["refresh_token"],
+            &["refreshToken"],
+            &["tokens", "refresh_token"],
+            &["tokens", "refreshToken"],
+        ],
+    );
+
+    id_token.is_none() && access_token.is_none() && refresh_token.is_none()
+}
+
+fn pending_oauth_account_from_value(value: &serde_json::Value) -> Option<CodexAccount> {
+    let obj = value.as_object()?;
+    let auth_mode = read_json_string(value, &["auth_mode", "authMode"])
+        .unwrap_or_else(|| "oauth".to_string())
+        .to_ascii_lowercase();
+    if auth_mode == "apikey" {
+        return None;
+    }
+
+    let account_type = read_json_string(value, &["type"])
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let authorization_status =
+        read_json_string(value, &["authorization_status", "authorizationStatus"])
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+    let update = codex_account_note_update_from_value(value);
+    let has_pending_marker = authorization_status == CODEX_AUTHORIZATION_STATUS_PENDING
+        || account_type == "codex"
+        || has_codex_account_note_update(&update);
+
+    if !has_pending_marker || !is_blank_codex_token_fields(value) {
+        return None;
+    }
+
+    let email = read_json_string(value, &["email", "account_email", "accountEmail"])
+        .or_else(|| read_json_string(value, &["account_name", "accountName"]))
+        .filter(|value| !value.trim().is_empty())?;
+    let account_id = build_account_storage_id(&email, Some("pending_oauth"), None);
+    let now = now_timestamp();
+    let mut account = CodexAccount::new(
+        account_id,
+        email,
+        CodexTokens {
+            id_token: String::new(),
+            access_token: String::new(),
+            refresh_token: None,
+        },
+    );
+    account.auth_mode = CodexAuthMode::OAuth;
+    account.authorization_status = Some(CODEX_AUTHORIZATION_STATUS_PENDING.to_string());
+    account.token_updated_at = None;
+    account.token_generation = 0;
+    account.created_at = read_json_i64(value, &["created_at", "createdAt"]).unwrap_or(now);
+    account.last_used =
+        read_json_i64(value, &["last_used", "lastUsed"]).unwrap_or(account.created_at);
+    apply_account_note_update(&mut account, update);
+    account.tags = read_json_string_array(value, &["tags"]);
+
+    // Treat a token-less Codex object as a saved draft only when it actually
+    // carries pending metadata. This avoids silently importing malformed auth files.
+    if authorization_status == CODEX_AUTHORIZATION_STATUS_PENDING
+        || has_codex_account_note_details(&account)
+        || obj.contains_key("account_note")
+        || obj.contains_key("accountNote")
+    {
+        Some(account)
+    } else {
+        None
+    }
+}
+
+fn has_codex_account_note_details(account: &CodexAccount) -> bool {
+    account
+        .account_note
+        .as_deref()
+        .and_then(|value| normalize_optional_ref(Some(value)))
+        .is_some()
+        || account
+            .two_factor_secret
+            .as_deref()
+            .and_then(|value| normalize_optional_ref(Some(value)))
+            .is_some()
+        || account
+            .account_password
+            .as_deref()
+            .and_then(|value| normalize_optional_ref(Some(value)))
+            .is_some()
+        || account
+            .phone_number
+            .as_deref()
+            .and_then(|value| normalize_optional_ref(Some(value)))
+            .is_some()
+}
+
+fn codex_account_note_update_from_account(account: &CodexAccount) -> CodexAccountNoteUpdate {
+    CodexAccountNoteUpdate {
+        note: account.account_note.clone(),
+        two_factor_secret: account.two_factor_secret.clone(),
+        account_password: account.account_password.clone(),
+        phone_number: account.phone_number.clone(),
+    }
 }
 
 fn extract_account_note_from_value(value: &serde_json::Value) -> Option<String> {
@@ -4844,6 +5108,10 @@ async fn import_sub2api_export_from_value(
 async fn import_account_from_json_value(
     value: serde_json::Value,
 ) -> Result<Option<CodexAccount>, String> {
+    if let Some(account) = pending_oauth_account_from_value(&value) {
+        return Ok(Some(import_account_struct(account)?));
+    }
+
     if is_auth_mode_apikey(
         value
             .get("auth_mode")
@@ -5424,6 +5692,10 @@ fn api_key_draft_from_value(
 async fn codex_batch_import_draft_from_value(
     value: serde_json::Value,
 ) -> Result<Option<CodexBatchImportDraft>, String> {
+    if let Some(account) = pending_oauth_account_from_value(&value) {
+        return Ok(Some(CodexBatchImportDraft::Account(account)));
+    }
+
     if let Ok(auth_file) = serde_json::from_value::<CodexAuthFile>(value.clone()) {
         let fallback_api_key = extract_api_key_from_auth_file(&auth_file);
         let fallback_provider = infer_api_provider_config(
@@ -6175,9 +6447,10 @@ mod tests {
         detect_auth_file_plan_type_from_path, ensure_managed_account_fresh,
         extract_codex_import_candidate_from_value, extract_codex_tokens_from_value,
         extract_user_info, format_refresh_error_for_user, get_accounts_dir,
-        get_accounts_storage_path, get_current_account_from_loaded, is_managed_auth_refresh_due,
-        list_accounts_checked, load_account, load_account_index, looks_like_sub2api_export,
-        parse_auth_file_last_refresh, parse_codex_account_compat, parse_line_delimited_json_values,
+        get_accounts_storage_path, get_current_account_from_loaded, import_from_json,
+        is_managed_auth_refresh_due, is_pending_oauth_account, list_accounts_checked, load_account,
+        load_account_index, looks_like_sub2api_export, parse_auth_file_last_refresh,
+        parse_codex_account_compat, parse_line_delimited_json_values,
         read_api_provider_from_config_toml, read_quick_config_from_config_toml,
         resolve_api_provider_config, save_account, save_account_index,
         should_accept_authority_snapshot, sync_account_from_auth_dir,
@@ -6187,8 +6460,8 @@ mod tests {
         write_api_key_provider_to_config_toml, write_api_provider_to_config_toml,
         write_managed_projection_to_dir, write_quick_config_to_config_toml, ApiProviderConfig,
         CodexAccountIndex, CodexAccountSummary, CodexAuthFile, CodexAuthTokens,
-        CodexJsonImportCandidate, LocalCodexOAuthSnapshot, CODEX_AUTO_COMPACT_DEFAULT_LIMIT,
-        CODEX_CONTEXT_WINDOW_1M_VALUE,
+        CodexJsonImportCandidate, LocalCodexOAuthSnapshot, CODEX_AUTHORIZATION_STATUS_PENDING,
+        CODEX_AUTO_COMPACT_DEFAULT_LIMIT, CODEX_CONTEXT_WINDOW_1M_VALUE,
     };
     use crate::models::codex::{CodexAccount, CodexApiProviderMode, CodexTokens};
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
@@ -6953,6 +7226,53 @@ mod tests {
     }
 
     #[test]
+    fn import_multiline_pending_oauth_array_creates_pending_account() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
+        let _env = TestEnvGuard::new("codex-pending-oauth-import-test");
+        let content = r#"[
+  {
+    "id_token": "",
+    "access_token": "",
+    "refresh_token": "",
+    "account_id": "",
+    "last_refresh": "2026-07-04T02:25:18.829Z",
+    "email": "dddd",
+    "type": "codex",
+    "expired": "",
+    "account_note": "2131",
+    "two_factor_secret": "Ddddd",
+    "account_password": "213123",
+    "phone_number": "2312"
+  }
+]"#;
+        let runtime = tokio::runtime::Runtime::new().expect("create runtime");
+
+        let accounts = runtime
+            .block_on(import_from_json(content))
+            .expect("pending OAuth JSON array should import");
+
+        assert_eq!(accounts.len(), 1);
+        let account = &accounts[0];
+        assert_eq!(account.email, "dddd");
+        assert!(is_pending_oauth_account(account));
+        assert_eq!(
+            account.authorization_status.as_deref(),
+            Some(CODEX_AUTHORIZATION_STATUS_PENDING)
+        );
+        assert_eq!(account.tokens.id_token, "");
+        assert_eq!(account.tokens.access_token, "");
+        assert_eq!(account.tokens.refresh_token, None);
+        assert_eq!(account.account_note.as_deref(), Some("2131"));
+        assert_eq!(account.two_factor_secret.as_deref(), Some("Ddddd"));
+        assert_eq!(account.account_password.as_deref(), Some("213123"));
+        assert_eq!(account.phone_number.as_deref(), Some("2312"));
+
+        let persisted = load_account(&account.id).expect("pending account persisted");
+        assert!(is_pending_oauth_account(&persisted));
+        assert_eq!(persisted.account_note.as_deref(), Some("2131"));
+    }
+
+    #[test]
     fn upsert_existing_account_keeps_own_refresh_token_when_import_has_none() {
         let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
         let _env = TestEnvGuard::new("codex-preserve-refresh-token-test");
@@ -7569,6 +7889,91 @@ requires_openai_auth = false
                 provider_name: None,
             }
         );
+
+        fs::remove_dir_all(&base_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn config_toml_preserves_user_model_catalog_when_switching_to_builtin_openai() {
+        let base_dir = make_temp_dir("codex-config-preserve-user-catalog-builtin-test");
+        let config_path = base_dir.join("config.toml");
+        fs::write(
+            &config_path,
+            r#"model_provider = "user_manual_provider"
+model_catalog_json = "user-model-catalog.json"
+model_context_window = 1000000
+
+[model_providers.user_manual_provider]
+name = "Manual"
+base_url = "https://manual.example.com/v1"
+wire_api = "responses"
+requires_openai_auth = false
+
+[features]
+multi_agent = true
+"#,
+        )
+        .expect("write user provider config");
+        let provider_config = resolve_api_provider_config(
+            None,
+            Some(CodexApiProviderMode::OpenaiBuiltin),
+            None,
+            None,
+        )
+        .expect("resolve provider config");
+
+        write_api_provider_to_config_toml(&base_dir, &provider_config).expect("write config");
+
+        let content = fs::read_to_string(&config_path).expect("read config");
+        assert!(!content.contains("model_provider = "));
+        assert!(content.contains("model_catalog_json = \"user-model-catalog.json\""));
+        assert!(content.contains("[model_providers.user_manual_provider]"));
+        assert!(content.contains("model_context_window = 1000000"));
+        assert!(content.contains("[features]"));
+
+        fs::remove_dir_all(&base_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn config_toml_preserves_user_model_catalog_when_switching_to_custom_provider() {
+        let base_dir = make_temp_dir("codex-config-preserve-user-catalog-custom-test");
+        let config_path = base_dir.join("config.toml");
+        fs::write(
+            &config_path,
+            r#"model_provider = "user_manual_provider"
+openai_base_url = "https://legacy.example.com/v1"
+model_catalog_json = "user-model-catalog.json"
+model_context_window = 1000000
+
+[model_providers.user_manual_provider]
+name = "Manual"
+base_url = "https://manual.example.com/v1"
+wire_api = "responses"
+requires_openai_auth = false
+
+[features]
+multi_agent = true
+"#,
+        )
+        .expect("write user provider config");
+        let provider_config = resolve_api_provider_config(
+            Some("https://relay.example.com/v1/"),
+            Some(CodexApiProviderMode::Custom),
+            Some("relay"),
+            Some("Relay"),
+        )
+        .expect("resolve provider config");
+
+        write_api_provider_to_config_toml(&base_dir, &provider_config).expect("write config");
+
+        let content = fs::read_to_string(&config_path).expect("read config");
+        assert!(content.contains("model_provider = \"relay\""));
+        assert!(content.contains("model_catalog_json = \"user-model-catalog.json\""));
+        assert!(content.contains("[model_providers.relay]"));
+        assert!(content.contains("[model_providers.user_manual_provider]"));
+        assert!(!content.contains("openai_base_url"));
+        assert!(content.contains("model_context_window = 1000000"));
+        assert!(content.contains("[features]"));
 
         fs::remove_dir_all(&base_dir).expect("cleanup temp dir");
     }
@@ -8242,12 +8647,114 @@ pub fn update_account_tags(account_id: &str, tags: Vec<String>) -> Result<CodexA
     Ok(account)
 }
 
-pub fn update_account_note(account_id: &str, note: String) -> Result<CodexAccount, String> {
+#[derive(Debug, Clone, Default)]
+pub struct CodexAccountNoteUpdate {
+    pub note: Option<String>,
+    pub two_factor_secret: Option<String>,
+    pub account_password: Option<String>,
+    pub phone_number: Option<String>,
+}
+
+fn apply_account_note_update(account: &mut CodexAccount, update: CodexAccountNoteUpdate) {
+    if let Some(note) = update.note {
+        account.account_note = normalize_optional_value(Some(note));
+    }
+    if let Some(secret) = update.two_factor_secret {
+        account.two_factor_secret = normalize_optional_value(Some(secret));
+    }
+    if let Some(password) = update.account_password {
+        account.account_password = normalize_optional_value(Some(password));
+    }
+    if let Some(phone_number) = update.phone_number {
+        account.phone_number = normalize_optional_value(Some(phone_number));
+    }
+}
+
+pub fn update_account_note(
+    account_id: &str,
+    update: CodexAccountNoteUpdate,
+) -> Result<CodexAccount, String> {
     let mut account =
         load_account(account_id).ok_or_else(|| format!("账号不存在: {}", account_id))?;
 
-    account.account_note = normalize_optional_value(Some(note));
+    apply_account_note_update(&mut account, update);
     save_account(&account)?;
+
+    Ok(account)
+}
+
+pub fn create_pending_oauth_account(
+    email: String,
+    update: CodexAccountNoteUpdate,
+) -> Result<CodexAccount, String> {
+    let email =
+        normalize_optional_value(Some(email)).ok_or_else(|| "账号邮箱不能为空".to_string())?;
+    let mut index = load_account_index();
+
+    if let Some(summary) = index
+        .accounts
+        .iter()
+        .find(|item| item.email.eq_ignore_ascii_case(&email))
+        .cloned()
+    {
+        if let Some(mut account) = load_account(&summary.id) {
+            if !is_pending_oauth_account(&account) {
+                return Err(format!("Codex 账号已存在: {}", email));
+            }
+            apply_account_note_update(&mut account, update);
+            account.email = email.clone();
+            account.last_used = chrono::Utc::now().timestamp();
+            save_account(&account)?;
+            if let Some(item) = index.accounts.iter_mut().find(|item| item.id == account.id) {
+                item.email = account.email.clone();
+                item.plan_type = account.plan_type.clone();
+                item.subscription_active_until = account.subscription_active_until.clone();
+                item.last_used = account.last_used;
+            }
+            save_account_index(&index)?;
+            return Ok(account);
+        }
+    }
+
+    let account_id = build_account_storage_id(&email, Some("pending_oauth"), None);
+    let now = chrono::Utc::now().timestamp();
+    let mut account = CodexAccount::new(
+        account_id.clone(),
+        email.clone(),
+        CodexTokens {
+            id_token: String::new(),
+            access_token: String::new(),
+            refresh_token: None,
+        },
+    );
+    account.auth_mode = CodexAuthMode::OAuth;
+    account.authorization_status = Some(CODEX_AUTHORIZATION_STATUS_PENDING.to_string());
+    account.token_updated_at = None;
+    account.token_generation = 0;
+    account.requires_reauth = false;
+    account.reauth_reason = None;
+    account.quota = None;
+    account.quota_error = None;
+    account.created_at = now;
+    account.last_used = now;
+    apply_account_note_update(&mut account, update);
+
+    index.accounts.retain(|item| item.id != account_id);
+    index.accounts.push(CodexAccountSummary {
+        id: account_id,
+        email: account.email.clone(),
+        plan_type: account.plan_type.clone(),
+        subscription_active_until: account.subscription_active_until.clone(),
+        created_at: account.created_at,
+        last_used: account.last_used,
+    });
+
+    save_account(&account)?;
+    save_account_index(&index)?;
+    logger::log_info(&format!(
+        "Codex 待授权 OAuth 账号已保存: account_id={}, email={}",
+        account.id, account.email
+    ));
 
     Ok(account)
 }

@@ -786,7 +786,9 @@
       "claudeAutoRefresh": "Atualização automática de cota do Claude",
       "claudeAutoRefreshDesc": "Atualiza automaticamente em segundo plano o cache de cota das contas do Claude.",
       "claudeAppPath": "Alvo de inicialização do Claude Desktop",
-      "claudeAppPathDesc": "O perfil padrão pode usar um alvo da Microsoft Store; perfis multi-instância precisam do Claude.exe real."
+      "claudeAppPathDesc": "O perfil padrão pode usar um alvo da Microsoft Store; perfis multi-instância precisam do Claude.exe real.",
+      "antigravityLaunchOnSwitch": "Iniciar Antigravity IDE ao alternar",
+      "antigravityLaunchOnSwitchDesc": "Quando desativado, a troca apenas grava os dados da conta padrão do Antigravity IDE e não fecha, inicia nem reinicia o app."
     },
     "network": {
       "apiTitle": "API de cockpit antigravidade",
@@ -2881,8 +2883,29 @@
     "accountNote": {
       "title": "Nota da conta",
       "label": "Nota da conta",
-      "desc": "Adicione uma nota separada para {{account}}.",
-      "placeholder": "E-mail, senha, e-mail de recuperação ou notas de entrega",
+      "desc": "Adicione 2FA, senha, telefone e outras notas para {{account}}.",
+      "twoFactorSecretLabel": "Segredo 2FA",
+      "twoFactorSecretShort": "2FA",
+      "twoFactorSecretPlaceholder": "Segredo Base32 ou URI otpauth://",
+      "twoFactorSecretInvalid": "Segredo 2FA inválido. Insira um segredo Base32 ou URI otpauth://.",
+      "currentOtp": "Código atual",
+      "otpShort": "Código",
+      "otpRemaining": "{{seconds}} s",
+      "passwordLabel": "Senha",
+      "passwordShort": "Senha",
+      "passwordPlaceholder": "Senha de login ou temporária",
+      "phoneNumberLabel": "Telefone",
+      "phoneShort": "Telefone",
+      "phoneNumberPlaceholder": "Número de telefone vinculado",
+      "otherNoteLabel": "Outras notas",
+      "otherNoteShort": "Nota",
+      "placeholder": "Notas de entrega, e-mail de recuperação ou detalhes da conta",
+      "exportSensitiveNotice": "A exportação inclui segredos 2FA, senhas ou telefones. Salve apenas em um local confiável.",
+      "exportSensitiveIncluded": "Incluir notas sensíveis",
+      "exportSensitiveExcluded": "Excluir notas sensíveis",
+      "exportSensitiveToggleHint": "Controla se o JSON exportado inclui segredos 2FA, senhas e telefones.",
+      "show": "Mostrar",
+      "hide": "Ocultar",
       "emptyTitle": "Adicionar nota da conta",
       "short": "Nota",
       "addShort": "Adicionar",
@@ -3132,6 +3155,18 @@
       "legacyBefore4eb75d96": "Antes de 4eb75d96",
       "legacy4eb75d96": "Lógica 4eb75d96",
       "current": "Lógica atual"
+    },
+    "pendingAuth": {
+      "badge": "Auth pendente",
+      "emailRequired": "Informe o e-mail da conta",
+      "saving": "Salvando conta pendente...",
+      "saved": "Conta pendente salva",
+      "saveFailed": "Falha ao salvar a conta pendente: {{error}}",
+      "emailLabel": "Conta pendente",
+      "emailPlaceholder": "Informe o e-mail da conta OpenAI",
+      "saveDraft": "Salvar cartão pendente",
+      "authorizeAction": "Autorizar",
+      "cardHint": "Notas salvas. Conclua o OAuth para usar esta conta."
     }
   },
   "githubCopilot": {

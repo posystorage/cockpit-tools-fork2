@@ -786,7 +786,9 @@
       "claudeAutoRefresh": "Claude 使用量の自動更新",
       "claudeAutoRefreshDesc": "Claude アカウントの使用量キャッシュをバックグラウンドで自動更新します。",
       "claudeAppPath": "Claude Desktop 起動ターゲット",
-      "claudeAppPathDesc": "既定プロファイルは Microsoft Store ターゲットを使用できます。複数インスタンスには実際の Claude.exe が必要です。"
+      "claudeAppPathDesc": "既定プロファイルは Microsoft Store ターゲットを使用できます。複数インスタンスには実際の Claude.exe が必要です。",
+      "antigravityLaunchOnSwitch": "切り替え時に Antigravity IDE を起動",
+      "antigravityLaunchOnSwitchDesc": "オフにすると、切り替え時は Antigravity IDE の既定アカウントデータのみを書き込み、アプリの終了、起動、再起動は行いません。"
     },
     "network": {
       "apiTitle": "反重力コックピット API",
@@ -2881,8 +2883,29 @@
     "accountNote": {
       "title": "アカウントメモ",
       "label": "アカウントメモ",
-      "desc": "{{account}} 用の個別メモを追加します。",
-      "placeholder": "メール、パスワード、復旧メール、受け渡しメモなど",
+      "desc": "{{account}} に 2FA、パスワード、電話番号、その他メモを追加します。",
+      "twoFactorSecretLabel": "2FA シークレット",
+      "twoFactorSecretShort": "2FA",
+      "twoFactorSecretPlaceholder": "Base32 secret または otpauth:// URI",
+      "twoFactorSecretInvalid": "2FA シークレットが無効です。Base32 secret または otpauth:// URI を入力してください。",
+      "currentOtp": "現在のコード",
+      "otpShort": "コード",
+      "otpRemaining": "{{seconds}}秒",
+      "passwordLabel": "パスワード",
+      "passwordShort": "パスワード",
+      "passwordPlaceholder": "ログイン用または一時パスワード",
+      "phoneNumberLabel": "電話番号",
+      "phoneShort": "電話",
+      "phoneNumberPlaceholder": "紐付け済み電話番号",
+      "otherNoteLabel": "その他メモ",
+      "otherNoteShort": "メモ",
+      "placeholder": "受け渡しメモ、復旧メール、アカウント詳細など",
+      "exportSensitiveNotice": "エクスポートには 2FA シークレット、パスワード、電話番号が含まれます。信頼できる場所にのみ保存してください。",
+      "exportSensitiveIncluded": "機密メモを含める",
+      "exportSensitiveExcluded": "機密メモを除外",
+      "exportSensitiveToggleHint": "エクスポートする JSON に 2FA シークレット、パスワード、電話番号を含めるかを切り替えます。",
+      "show": "表示",
+      "hide": "非表示",
       "emptyTitle": "アカウントメモを追加",
       "short": "メモ",
       "addShort": "追加",
@@ -3132,6 +3155,18 @@
       "legacyBefore4eb75d96": "4eb75d96 前",
       "legacy4eb75d96": "4eb75d96 ロジック",
       "current": "現在のロジック"
+    },
+    "pendingAuth": {
+      "badge": "認証待ち",
+      "emailRequired": "アカウントのメールアドレスを入力してください",
+      "saving": "認証待ちアカウントを保存しています...",
+      "saved": "認証待ちアカウントを保存しました",
+      "saveFailed": "認証待ちアカウントの保存に失敗しました：{{error}}",
+      "emailLabel": "認証待ちアカウント",
+      "emailPlaceholder": "OpenAI アカウントのメールアドレスを入力",
+      "saveDraft": "認証待ちカードを保存",
+      "authorizeAction": "認証して追加",
+      "cardHint": "メモは保存済みです。OAuth 完了後に使用できます。"
     }
   },
   "githubCopilot": {

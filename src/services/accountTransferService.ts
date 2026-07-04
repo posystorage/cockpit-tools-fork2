@@ -269,12 +269,11 @@ async function exportPlatformPayload(platform: PlatformId): Promise<AccountTrans
 }
 
 export async function buildAccountTransferBundle(): Promise<AccountTransferBundle> {
-  const entries = await Promise.all(
-    ALL_PLATFORM_IDS.map(async (platform) => {
-      const payload = await exportPlatformPayload(platform);
-      return [platform, payload] as const;
-    }),
-  );
+  const entries: Array<readonly [PlatformId, AccountTransferPlatformPayload]> = [];
+  for (const platform of ALL_PLATFORM_IDS) {
+    const payload = await exportPlatformPayload(platform);
+    entries.push([platform, payload] as const);
+  }
 
   const platforms = entries.reduce<Record<PlatformId, AccountTransferPlatformPayload>>(
     (acc, [platform, payload]) => {
