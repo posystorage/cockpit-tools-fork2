@@ -43,7 +43,7 @@ jobs:
       - name: Build Windows Tauri app
         uses: tauri-apps/tauri-action@v0
         with:
-          args: ""
+          args: "--ci --config src-tauri/tauri.ci.conf.json"
 
       - name: Collect Windows installers
         shell: pwsh
