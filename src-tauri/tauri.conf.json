@@ -100,7 +100,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ5RThBRUQ3MDFDN0E3RDMKUldUVHA4Y0IxNjdvMmJSbVNvVVJEejlHay9IQ1JMTW9LSWMyYVNKMGNobC9lTTA5YzFycEFidTAK",
       "endpoints": [
-        "https://github.com/jlcodes99/cockpit-tools/releases/latest/download/latest.json"
+        "https://github.com/posystorage/cockpit-tools-fork2/releases/latest/download/latest.json"
       ]
     }
   }
