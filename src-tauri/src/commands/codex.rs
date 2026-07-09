@@ -1670,6 +1670,24 @@ fn codex_model_provider_usage_url(base_url: &str) -> Result<String, String> {
     Ok(url.to_string())
 }
 
+fn codex_model_provider_usage_url_candidates(base_url: &str) -> Result<Vec<String>, String> {
+    let primary = codex_model_provider_usage_url(base_url)?;
+    let trimmed = base_url.trim().trim_end_matches('/');
+    let parsed =
+        reqwest::Url::parse(trimmed).map_err(|_| "PROVIDER_BASE_URL_INVALID".to_string())?;
+    let mut candidates = vec![primary];
+    if parsed.path().is_empty() || parsed.path() == "/" {
+        let mut v1_url = parsed;
+        v1_url.set_path("/v1/usage");
+        v1_url.set_query(None);
+        let candidate = v1_url.to_string();
+        if !candidates.contains(&candidate) {
+            candidates.push(candidate);
+        }
+    }
+    Ok(candidates)
+}
+
 fn codex_model_provider_new_api_billing_url(
     base_url: &str,
     endpoint: &str,
@@ -2174,7 +2192,11 @@ fn json_f64_at(value: &serde_json::Value, path: &[&str]) -> Option<f64> {
     for key in path {
         current = current.get(*key)?;
     }
-    current.as_f64()
+    current.as_f64().or_else(|| {
+        current
+            .as_str()
+            .and_then(|item| item.trim().parse::<f64>().ok())
+    })
 }
 
 fn json_i64_at(value: &serde_json::Value, path: &[&str]) -> Option<i64> {
@@ -2182,7 +2204,11 @@ fn json_i64_at(value: &serde_json::Value, path: &[&str]) -> Option<i64> {
     for key in path {
         current = current.get(*key)?;
     }
-    current.as_i64()
+    current.as_i64().or_else(|| {
+        current
+            .as_str()
+            .and_then(|item| item.trim().parse::<i64>().ok())
+    })
 }
 
 fn json_string_at(value: &serde_json::Value, path: &[&str]) -> Option<String> {
@@ -2823,28 +2849,48 @@ async fn query_sub2api_model_provider_usage(
     base_url: &str,
     key: &str,
 ) -> Result<CodexModelProviderUsageSummary, String> {
-    let url = codex_model_provider_usage_url(base_url)?;
-    let started = Instant::now();
-    let response = client
-        .get(&url)
-        .bearer_auth(key)
-        .header(reqwest::header::ACCEPT, "application/json")
-        .send()
-        .await
-        .map_err(|e| format!("PROVIDER_USAGE_NETWORK_FAILED: {}", e))?;
-    let latency_ms = started.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
-    let status = response.status();
-    let text = response.text().await.unwrap_or_default();
-    if !status.is_success() {
-        return Err(format!(
-            "PROVIDER_USAGE_HTTP_{}: {}",
-            status.as_u16(),
-            text.chars().take(300).collect::<String>()
-        ));
+    let urls = codex_model_provider_usage_url_candidates(base_url)?;
+    let mut last_error = None;
+    for url in urls {
+        let started = Instant::now();
+        let response = match client
+            .get(&url)
+            .bearer_auth(key)
+            .header(reqwest::header::ACCEPT, "application/json")
+            .send()
+            .await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                last_error = Some(format!("PROVIDER_USAGE_NETWORK_FAILED: {}", error));
+                continue;
+            }
+        };
+        let latency_ms = started.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        if !status.is_success() {
+            last_error = Some(format!(
+                "PROVIDER_USAGE_HTTP_{}: {}",
+                status.as_u16(),
+                text.chars().take(300).collect::<String>()
+            ));
+            continue;
+        }
+        let parsed = match serde_json::from_str::<serde_json::Value>(&text) {
+            Ok(parsed) => parsed,
+            Err(error) => {
+                last_error = Some(format!("PROVIDER_USAGE_PARSE_FAILED: {}", error));
+                continue;
+            }
+        };
+        let mut summary = summarize_model_provider_usage(&parsed, latency_ms);
+        if summary.mode.is_none() {
+            summary.mode = Some("sub2api".to_string());
+        }
+        return Ok(summary);
     }
-    let parsed = serde_json::from_str::<serde_json::Value>(&text)
-        .map_err(|e| format!("PROVIDER_USAGE_PARSE_FAILED: {}", e))?;
-    Ok(summarize_model_provider_usage(&parsed, latency_ms))
+    Err(last_error.unwrap_or_else(|| "PROVIDER_USAGE_DETECT_FAILED".to_string()))
 }
 
 #[tauri::command]
