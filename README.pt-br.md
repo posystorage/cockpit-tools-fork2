@@ -7,6 +7,18 @@
 [![GitHub release](https://img.shields.io/github/v/release/jlcodes99/cockpit-tools?style=flat)](https://github.com/jlcodes99/cockpit-tools/releases)
 [![GitHub issues](https://img.shields.io/github/issues/jlcodes99/cockpit-tools)](https://github.com/jlcodes99/cockpit-tools/issues)
 
+Este fork difere do projeto original nos seguintes pontos:
+1. Remove anúncios, patrocinadores, atualizações automáticas e conexões automáticas com servidores que podem não ser evidentes para o usuário. (Corresponde ao release-1.1.1adfree)
+2. Adiciona visibilidade de agendamento de contas ao usar o serviço codex-api para gerenciar todas as contas, mostrando quais contas estão sendo despachadas no momento. (Corresponde ao release-1.1.1show e também inclui as alterações sem anúncios)
+3. Adiciona consulta de saldo para endpoints de API upstream, principalmente para serviços upstream sub2api.
+
+Aviso de isenção de responsabilidade:
+1. Este fork destina-se apenas a pesquisa pessoal, aprendizado e testes locais. Não é recomendado para uso diário em produção nem para uso comercial.
+2. Exceto para fins de pesquisa pessoal, recomenda-se usar prioritariamente a versão original do Cockpit Tools e seguir os releases, a documentação e a licença publicados pelo autor original.
+3. As alterações deste fork relacionadas à remoção de anúncios, remoção de patrocinadores, remoção de atualizações e mudanças semelhantes podem afetar os interesses do autor do projeto original e podem envolver riscos de direitos autorais, licença ou outras questões de conformidade. Essas alterações são fornecidas apenas como exemplos de pesquisa técnica e não incentivam burlar anúncios, remover exibições de patrocinadores ou redistribuir builds modificadas.
+4. Quaisquer riscos ou responsabilidades decorrentes do uso, compilação, distribuição ou instalação deste fork são de responsabilidade do usuário. Se algum titular de direitos considerar que as alterações deste fork são inadequadas, use a versão original ou interrompa o uso deste fork.
+---
+
 Uma **ferramenta universal de gerenciamento de contas para IDEs de IA**, atualmente compatível com **Antigravity IDE**, **Codex**, **GitHub Copilot**, **Windsurf**, **Kiro**, **Cursor**, **Gemini Cli**, **CodeBuddy**, **CodeBuddy CN**, **Qoder**, **Trae** e **Zed**, com fluxos de trabalho paralelos em múltiplas instâncias.
 
 > Projetada para ajudar os usuários a gerenciar com eficiência múltiplas contas de IDE com IA, esta ferramenta oferece suporte à troca com um clique, monitoramento de cota, tarefas de ativação e execuções paralelas em múltiplas instâncias, ajudando você a utilizar totalmente os recursos de diferentes contas.

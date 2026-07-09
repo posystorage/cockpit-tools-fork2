@@ -5,7 +5,16 @@
 [![GitHub stars](https://img.shields.io/github/stars/jlcodes99/cockpit-tools?style=flat&color=gold)](https://github.com/jlcodes99/cockpit-tools)
 [![GitHub issues](https://img.shields.io/github/issues/jlcodes99/cockpit-tools)](https://github.com/jlcodes99/cockpit-tools/issues)
 
-本fork已经去除广告，去除赞助商，去除了自动更新，去除了自动连接了用户不可知的服务器。
+本fork相对原版有以下改变：
+1、去除广告，去除赞助商，去除了自动更新，去除了自动连接了用户不可知的服务器。（对应release-1.1.1adfree）
+2、增加使用codex-api服务管理所有账号的时候，显示当前调度的是哪些账号。（对应release-1.1.1show 同时包含去广告）
+3、增加查询上游api接口的余额功能（主要是针对上游sub2api）
+
+免责声明：
+1、本 fork 仅用于个人研究、学习与本地测试，不建议作为日常生产环境或商业用途使用。
+2、除个人研究需要外，建议优先使用原版 Cockpit Tools，并以原作者发布的版本、说明和许可为准。
+3、本 fork 中涉及去广告、去赞助商、去更新等修改，可能影响原项目作者的权益，也可能存在版权、许可或其他合规风险。相关修改仅作为技术研究示例，不构成对规避广告、移除赞助展示或重新分发修改版的鼓励。
+4、使用、编译、分发或安装本 fork 所产生的任何风险与责任由使用者自行承担。如相关权利方认为本 fork 的修改存在不当之处，请优先使用原版或停止使用本 fork。
 ---
 
 一款**通用的 AI IDE 账号管理工具**，目前支持 **Antigravity IDE**、**Codex**、**GitHub Copilot**、**Windsurf**、**Kiro**、**Cursor**、**Gemini Cli**、**CodeBuddy**、**CodeBuddy CN**、**Qoder**、**Trae**、**TRAE SOLO**、**Trae CN**、**TRAE SOLO CN** 和 **Zed**，并支持多账号多实例并行运行。

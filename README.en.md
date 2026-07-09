@@ -7,6 +7,18 @@ English · [Portuguese (BR)](README.pt-br.md) · [简体中文](README.md)
 [![GitHub release](https://img.shields.io/github/v/release/jlcodes99/cockpit-tools?style=flat)](https://github.com/jlcodes99/cockpit-tools/releases)
 [![GitHub issues](https://img.shields.io/github/issues/jlcodes99/cockpit-tools)](https://github.com/jlcodes99/cockpit-tools/issues)
 
+This fork differs from the original project in the following ways:
+1. Removed ads, sponsors, automatic updates, and automatic connections to servers that may not be obvious to users. (Corresponds to release-1.1.1adfree)
+2. Added account scheduling visibility when using the codex-api service to manage all accounts, showing which accounts are currently being dispatched. (Corresponds to release-1.1.1show and also includes the ad-free changes)
+3. Added balance querying for upstream API endpoints, mainly for upstream sub2api services.
+
+Disclaimer:
+1. This fork is intended only for personal research, learning, and local testing. It is not recommended for daily production use or commercial use.
+2. Except for personal research purposes, you are advised to use the original Cockpit Tools release first, and to follow the original author's releases, documentation, and license.
+3. The ad removal, sponsor removal, updater removal, and related changes in this fork may affect the original project's author interests and may involve copyright, license, or other compliance risks. These changes are provided only as technical research examples and do not encourage bypassing ads, removing sponsor displays, or redistributing modified builds.
+4. Any risks or responsibilities arising from using, compiling, distributing, or installing this fork are borne by the user. If any rights holder believes the changes in this fork are inappropriate, please use the original version or stop using this fork.
+---
+
 A **universal AI IDE account management tool**, currently supporting **Antigravity IDE**, **Codex**, **GitHub Copilot**, **Windsurf**, **Kiro**, **Cursor**, **Gemini Cli**, **CodeBuddy**, **CodeBuddy CN**, **Qoder**, **Trae**, **TRAE SOLO**, **Trae CN**, **TRAE SOLO CN**, and **Zed**, with multi-instance parallel workflows.
 
 > Designed to help users efficiently manage multiple AI IDE accounts, this tool supports one-click switching, quota monitoring, wake-up tasks, and multi-instance parallel runs, helping you fully utilize resources from different accounts.
@@ -18,33 +30,6 @@ A **universal AI IDE account management tool**, currently supporting **Antigravi
 🇺🇸 English · 🇨🇳 简体中文 · 繁體中文 · 🇯🇵 日本語 · 🇩🇪 Deutsch · 🇪🇸 Español · 🇫🇷 Français · 🇮🇹 Italiano · 🇰🇷 한국어 · 🇧🇷 Português · 🇷🇺 Русский · 🇹🇷 Türkçe · 🇵🇱 Polski · 🇨🇿 Čeština · 🇸🇦 العربية · 🇻🇳 Tiếng Việt · 🇮🇩 Bahasa Indonesia
 
 **Officially supported platforms**: macOS, Windows, and Linux.
-
----
-
-## Sponsors
-
-<table>
-  <tr>
-    <td width="120" align="center">
-      <a href="https://apikey.fun/register?aff=COCKPIT">
-        <img src="src/assets/icons/apikey-fun.png" alt="APIKEY.FUN" width="72" />
-      </a>
-    </td>
-    <td>
-      <a href="https://apikey.fun/register?aff=COCKPIT"><strong>APIKEY.FUN</strong></a> is a professional enterprise-grade AI relay focused on stable, efficient, and low-cost AI model API access for companies and individual developers. It supports popular models such as Claude, OpenAI, and Gemini, with prices as low as 7% of official pricing. Register through this project <a href="https://apikey.fun/register?aff=COCKPIT"><strong>exclusive link</strong></a> to receive an exclusive <strong>permanent 5% top-up discount</strong>.
-    </td>
-  </tr>
-  <tr>
-    <td width="120" align="center">
-      <a href="https://roxybrowser.cn?code=0326VTDA">
-        <img src="src/assets/icons/roxybrowser.jpg" alt="RoxyBrowser" width="96" />
-      </a>
-    </td>
-    <td>
-      <a href="https://roxybrowser.cn?code=0326VTDA"><strong>RoxyBrowser</strong></a> is an anti-detect browser for multi-account operations and AI automation, supporting isolated browser fingerprint environments, Cookie / storage isolation, Roxy native residential IPs, team collaboration, and API / MCP automation. It helps users manage AI account matrices, reduce account association risk, and improve long-term stability. Register or purchase through the Cockpit <a href="https://roxybrowser.cn?code=0326VTDA"><strong>invite link</strong></a> to get a 10% fan discount.
-    </td>
-  </tr>
-</table>
 
 ---
 
