@@ -188,8 +188,11 @@ jobs:
       - name: Determine version
         shell: bash
         run: |
-          VERSION="$(node -e "console.log(require(require('path').join(process.env.GITHUB_WORKSPACE, 'package.json')).version)")"
           RELEASE_TAG="${GITHUB_REF_NAME}"
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "${RELEASE_TAG}" = "1.1.1adfree" ]; then
+            VERSION="1.1.1"
+          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
 
@@ -282,8 +285,11 @@ jobs:
       - name: Determine version
         shell: bash
         run: |
-          VERSION="$(node -e "console.log(require(require('path').join(process.env.GITHUB_WORKSPACE, 'package.json')).version)")"
           RELEASE_TAG="${GITHUB_REF_NAME}"
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "${RELEASE_TAG}" = "1.1.1adfree" ]; then
+            VERSION="1.1.1"
+          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
 
@@ -441,8 +447,11 @@ jobs:
       - name: Determine version
         shell: bash
         run: |
-          VERSION="$(node -e "console.log(require(require('path').join(process.env.GITHUB_WORKSPACE, 'package.json')).version)")"
           RELEASE_TAG="${GITHUB_REF_NAME}"
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "${RELEASE_TAG}" = "1.1.1adfree" ]; then
+            VERSION="1.1.1"
+          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
 
