@@ -4,6 +4,7 @@ on:
     tags:
       - "v*"
       - "1.1.1adfree"
+      - "1.1.1show"
   workflow_dispatch:
 
 jobs:
@@ -83,8 +84,9 @@ jobs:
         run: |
           EXPECTED_TAG="v${{ steps.app_version.outputs.VERSION }}"
           ADFREE_TAG="1.1.1adfree"
-          if [ "${GITHUB_REF_NAME}" != "${EXPECTED_TAG}" ] && [ "${GITHUB_REF_NAME}" != "${ADFREE_TAG}" ]; then
-            echo "Tag (${GITHUB_REF_NAME}) does not match package.json version (${EXPECTED_TAG}) or the ad-free release tag (${ADFREE_TAG})."
+          SHOW_TAG="1.1.1show"
+          if [ "${GITHUB_REF_NAME}" != "${EXPECTED_TAG}" ] && [ "${GITHUB_REF_NAME}" != "${ADFREE_TAG}" ] && [ "${GITHUB_REF_NAME}" != "${SHOW_TAG}" ]; then
+            echo "Tag (${GITHUB_REF_NAME}) does not match package.json version (${EXPECTED_TAG}) or the custom release tags (${ADFREE_TAG}, ${SHOW_TAG})."
             exit 1
           fi
 
@@ -171,7 +173,7 @@ jobs:
     name: Rebuild merged latest.json
     needs: release
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/tags/1.1.1adfree'
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/tags/1.1.1adfree' || github.ref == 'refs/tags/1.1.1show'
     permissions:
       contents: write
     env:
@@ -190,7 +192,7 @@ jobs:
         run: |
           RELEASE_TAG="${GITHUB_REF_NAME}"
           VERSION="${GITHUB_REF_NAME#v}"
-          if [ "${RELEASE_TAG}" = "1.1.1adfree" ]; then
+          if [ "${RELEASE_TAG}" = "1.1.1adfree" ] || [ "${RELEASE_TAG}" = "1.1.1show" ]; then
             VERSION="1.1.1"
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
