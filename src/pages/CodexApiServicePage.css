@@ -1101,6 +1101,38 @@
   white-space: nowrap;
 }
 
+.codex-api-service-account-activity {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 3px 7px;
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--codex-api-border-soft));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 9%, var(--bg-card));
+  color: color-mix(in srgb, var(--primary) 78%, var(--text-primary));
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.codex-api-service-account-activity svg {
+  flex: 0 0 auto;
+}
+
+.codex-api-service-account-activity.is-running {
+  border-color: color-mix(in srgb, #22c55e 40%, var(--codex-api-border-soft));
+  background: color-mix(in srgb, #22c55e 14%, var(--bg-card));
+  color: #15803d;
+}
+
+.codex-api-service-account-activity.is-recent {
+  border-color: color-mix(in srgb, #38bdf8 34%, var(--codex-api-border-soft));
+  background: color-mix(in srgb, #38bdf8 12%, var(--bg-card));
+  color: #0369a1;
+}
+
 .codex-api-service-account-meta {
   grid-column: 1 / -1;
   display: flex;
@@ -1670,6 +1702,14 @@
 
 [data-theme="dark"] .codex-api-service-pill.mode-legacy {
   color: #c4b5fd;
+}
+
+[data-theme="dark"] .codex-api-service-account-activity.is-running {
+  color: #86efac;
+}
+
+[data-theme="dark"] .codex-api-service-account-activity.is-recent {
+  color: #7dd3fc;
 }
 
 @media (max-width: 1180px) {

@@ -264,6 +264,33 @@ export interface CodexLocalAccessAccountHealth {
   cooldowns: CodexLocalAccessAccountCooldown[];
 }
 
+export interface CodexLocalAccessRunningRequest {
+  requestId: string;
+  accountId: string;
+  email: string;
+  apiKeyId: string;
+  apiKeyLabel: string;
+  modelId: string;
+  requestKind: CodexLocalAccessRequestKind;
+  routingStrategy: string;
+  startedAt: number;
+  lastSeenAt: number;
+}
+
+export interface CodexLocalAccessAccountActivity {
+  accountId: string;
+  email: string;
+  runningCount: number;
+  lastSelectedAt: number;
+  lastFinishedAt: number | null;
+  lastModelId: string;
+  lastApiKeyId: string;
+  lastApiKeyLabel: string;
+  lastRequestKind: CodexLocalAccessRequestKind;
+  routingStrategy: string;
+  recentRequestId: string;
+}
+
 export interface CodexLocalAccessProfileAttachment {
   profileDir: string;
   attached: boolean;
@@ -288,6 +315,8 @@ export interface CodexLocalAccessState {
   memberCount: number;
   stats: CodexLocalAccessStats;
   accountHealth: CodexLocalAccessAccountHealth[];
+  runningRequests: CodexLocalAccessRunningRequest[];
+  accountActivity: CodexLocalAccessAccountActivity[];
 }
 
 export interface CodexLocalAccessTestResult {

@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   Plus,
+  Activity,
   RefreshCw,
   Download,
   Upload,
@@ -151,6 +152,7 @@ import type {
 } from "../types/codex";
 import type {
   CodexLocalAccessAddressKind,
+  CodexLocalAccessAccountActivity,
   CodexLocalAccessAccountHealth,
   CodexLocalAccessCustomRoutingRule,
   CodexLocalAccessGatewayMode,
@@ -651,6 +653,13 @@ function isAbnormalLocalAccessAccountFailure(
         health.lastFailureCategory,
       ),
   );
+}
+
+function formatLocalAccessActivityElapsedSeconds(
+  value: number | null | undefined,
+): number {
+  if (!value || !Number.isFinite(value) || value <= 0) return 0;
+  return Math.max(0, Math.floor((Date.now() - value) / 1000));
 }
 
 function normalizeLocalAccessAddressKind(
@@ -1973,6 +1982,14 @@ export function CodexAccountsPage() {
   useEffect(() => {
     void reloadLocalAccessState();
   }, [reloadLocalAccessState]);
+
+  useEffect(() => {
+    if (!localAccessState?.running) return;
+    const intervalId = window.setInterval(() => {
+      void reloadLocalAccessState();
+    }, 5000);
+    return () => window.clearInterval(intervalId);
+  }, [localAccessState?.running, reloadLocalAccessState]);
 
   useEffect(() => {
     void reloadLocalAccessEntryVisibility();
@@ -7489,6 +7506,13 @@ export function CodexAccountsPage() {
       localAccessCollection?.accountIds,
       localAccessState?.accountHealth,
     ]);
+  const localAccessActivityByAccountId = useMemo(() => {
+    const next = new Map<string, CodexLocalAccessAccountActivity>();
+    (localAccessState?.accountActivity ?? []).forEach((item) => {
+      next.set(item.accountId, item);
+    });
+    return next;
+  }, [localAccessState?.accountActivity]);
   const localAccessAccountPoolHealthHasIssue =
     localAccessAccountPoolHealthSummary.available <
       localAccessAccountPoolHealthSummary.total ||
@@ -10239,6 +10263,34 @@ export function CodexAccountsPage() {
                     const weeklyQuota = presentation.quotaItems.find(
                       (item) => item.key === "secondary",
                     );
+                    const activity =
+                      localAccessActivityByAccountId.get(account.id);
+                    const activityRunningCount = activity?.runningCount ?? 0;
+                    const activityRecentAt =
+                      activity?.lastFinishedAt ?? activity?.lastSelectedAt ?? 0;
+                    const hasActivity =
+                      activityRunningCount > 0 || activityRecentAt > 0;
+                    const activityText =
+                      activityRunningCount > 0
+                        ? t("codex.apiService.accountActivity.running", {
+                            count: activityRunningCount,
+                            defaultValue: "调度中 {{count}}",
+                          })
+                        : t("codex.apiService.accountActivity.recent", {
+                            seconds:
+                              formatLocalAccessActivityElapsedSeconds(
+                                activityRecentAt,
+                              ),
+                            defaultValue: "刚调度 {{seconds}} 秒前",
+                          });
+                    const activityTitle = [
+                      activityText,
+                      activity?.lastModelId,
+                      activity?.lastApiKeyLabel,
+                    ]
+                      .map((item) => item?.trim())
+                      .filter(Boolean)
+                      .join(" · ");
                     return (
                       <div
                         key={`local-access-${account.id}`}
@@ -10248,7 +10300,21 @@ export function CodexAccountsPage() {
                           className="folder-preview-email codex-local-access-member-email"
                           title={maskAccountText(presentation.displayName)}
                         >
-                          {maskAccountText(presentation.displayName)}
+                          {hasActivity && (
+                            <span
+                              className={`codex-local-access-member-activity ${
+                                activityRunningCount > 0
+                                  ? "is-running"
+                                  : "is-recent"
+                              }`}
+                              title={activityTitle}
+                            >
+                              <Activity size={10} />
+                            </span>
+                          )}
+                          <span className="codex-local-access-member-email-text">
+                            {maskAccountText(presentation.displayName)}
+                          </span>
                         </span>
                         <span
                           className={`codex-local-access-member-text codex-local-access-member-quota ${hourlyQuota?.quotaClass || "unknown"}`}

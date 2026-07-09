@@ -665,6 +665,37 @@ pub struct CodexLocalAccessAccountHealth {
     pub cooldowns: Vec<CodexLocalAccessAccountCooldown>,
 }
 
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexLocalAccessRunningRequest {
+    pub request_id: String,
+    pub account_id: String,
+    pub email: String,
+    pub api_key_id: String,
+    pub api_key_label: String,
+    pub model_id: String,
+    pub request_kind: CodexLocalAccessRequestKind,
+    pub routing_strategy: String,
+    pub started_at: i64,
+    pub last_seen_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexLocalAccessAccountActivity {
+    pub account_id: String,
+    pub email: String,
+    pub running_count: u32,
+    pub last_selected_at: i64,
+    pub last_finished_at: Option<i64>,
+    pub last_model_id: String,
+    pub last_api_key_id: String,
+    pub last_api_key_label: String,
+    pub last_request_kind: CodexLocalAccessRequestKind,
+    pub routing_strategy: String,
+    pub recent_request_id: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexLocalAccessProfileAttachment {
@@ -693,6 +724,8 @@ pub struct CodexLocalAccessState {
     pub member_count: usize,
     pub stats: CodexLocalAccessStats,
     pub account_health: Vec<CodexLocalAccessAccountHealth>,
+    pub running_requests: Vec<CodexLocalAccessRunningRequest>,
+    pub account_activity: Vec<CodexLocalAccessAccountActivity>,
 }
 
 #[derive(Debug, Clone, Serialize)]

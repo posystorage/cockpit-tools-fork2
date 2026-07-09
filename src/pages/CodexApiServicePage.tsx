@@ -51,6 +51,7 @@ import {
 import type { CodexAccount } from "../types/codex";
 import type {
   CodexLocalAccessAddressKind,
+  CodexLocalAccessAccountActivity,
   CodexLocalAccessAccountModelRule,
   CodexLocalAccessChatMessage,
   CodexLocalAccessChatStreamEvent,
@@ -272,6 +273,11 @@ function formatDateTime(value: number | null | undefined): string {
     minute: "2-digit",
     second: "2-digit",
   }).format(new Date(value));
+}
+
+function formatActivityElapsedSeconds(value: number | null | undefined): number {
+  if (!value || !Number.isFinite(value) || value <= 0) return 0;
+  return Math.max(0, Math.floor((Date.now() - value) / 1000));
 }
 
 function cleanRequestLogErrorDetail(value?: string | null): string {
@@ -658,6 +664,11 @@ export function CodexApiServicePage() {
     state?.accountHealth.forEach((item) => next.set(item.accountId, item));
     return next;
   }, [state?.accountHealth]);
+  const activityByAccountId = useMemo(() => {
+    const next = new Map<string, CodexLocalAccessAccountActivity>();
+    state?.accountActivity.forEach((item) => next.set(item.accountId, item));
+    return next;
+  }, [state?.accountActivity]);
   const quotaPoolSummary = useMemo(
     () => summarizeCodexQuotaPool(memberAccounts),
     [memberAccounts],
@@ -899,6 +910,16 @@ export function CodexApiServicePage() {
       window.removeEventListener("codex-local-access-state-updated", onUpdated);
     };
   }, [fetchAccounts, reloadState]);
+
+  useEffect(() => {
+    if (!state?.running) return;
+    const intervalId = window.setInterval(() => {
+      void reloadState().catch((err) =>
+        setError(String(err).replace(/^Error:\s*/, "")),
+      );
+    }, 5000);
+    return () => window.clearInterval(intervalId);
+  }, [reloadState, state?.running]);
 
   useEffect(() => {
     persistStatsRange(statsRange);
@@ -3237,6 +3258,34 @@ export function CodexApiServicePage() {
                       t,
                     );
                     const health = healthByAccountId.get(account.id);
+                    const activity = activityByAccountId.get(account.id);
+                    const activityRunningCount = activity?.runningCount ?? 0;
+                    const activityRecentAt =
+                      activity?.lastFinishedAt ?? activity?.lastSelectedAt ?? 0;
+                    const activityRecentSeconds =
+                      formatActivityElapsedSeconds(activityRecentAt);
+                    const hasActivity =
+                      activityRunningCount > 0 || activityRecentAt > 0;
+                    const activityClass =
+                      activityRunningCount > 0 ? "is-running" : "is-recent";
+                    const activityText =
+                      activityRunningCount > 0
+                        ? t("codex.apiService.accountActivity.running", {
+                            count: activityRunningCount,
+                            defaultValue: "调度中 {{count}}",
+                          })
+                        : t("codex.apiService.accountActivity.recent", {
+                            seconds: activityRecentSeconds,
+                            defaultValue: "刚调度 {{seconds}} 秒前",
+                          });
+                    const activityTitle = [
+                      activity?.lastModelId,
+                      activity?.lastApiKeyLabel,
+                      activity?.routingStrategy,
+                    ]
+                      .map((item) => item?.trim())
+                      .filter(Boolean)
+                      .join(" · ");
                     const stat = selectedStatsWindow?.accounts.find(
                       (item) => item.accountId === account.id,
                     );
@@ -3258,6 +3307,15 @@ export function CodexApiServicePage() {
                           >
                             {presentation.planLabel}
                           </span>
+                          {hasActivity && (
+                            <span
+                              className={`codex-api-service-account-activity ${activityClass}`}
+                              title={activityTitle || activityText}
+                            >
+                              <Activity size={12} />
+                              {activityText}
+                            </span>
+                          )}
                         </div>
                         <div className="codex-api-service-account-meta">
                           <span>

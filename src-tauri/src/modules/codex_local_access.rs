@@ -1,19 +1,19 @@
 use crate::models::codex::{CodexAccount, CodexApiProviderMode, CodexAppSpeed, CodexAuthMode};
 use crate::models::codex_local_access::{
-    CodexLocalAccessAccountCooldown, CodexLocalAccessAccountHealth,
-    CodexLocalAccessAccountModelRule, CodexLocalAccessAccountStats, CodexLocalAccessApiKey,
-    CodexLocalAccessApiKeyStats, CodexLocalAccessChatMessage, CodexLocalAccessChatResult,
-    CodexLocalAccessClientBaseUrlHost, CodexLocalAccessCollection,
+    CodexLocalAccessAccountActivity, CodexLocalAccessAccountCooldown,
+    CodexLocalAccessAccountHealth, CodexLocalAccessAccountModelRule, CodexLocalAccessAccountStats,
+    CodexLocalAccessApiKey, CodexLocalAccessApiKeyStats, CodexLocalAccessChatMessage,
+    CodexLocalAccessChatResult, CodexLocalAccessClientBaseUrlHost, CodexLocalAccessCollection,
     CodexLocalAccessCustomRoutingRule, CodexLocalAccessGatewayMode,
     CodexLocalAccessImageGenerationMode, CodexLocalAccessImageGenerationStatus,
     CodexLocalAccessModelAlias, CodexLocalAccessModelPricing, CodexLocalAccessModelStats,
     CodexLocalAccessPortCleanupResult, CodexLocalAccessProfileAttachment,
     CodexLocalAccessProviderGateway, CodexLocalAccessProviderGatewayModelCapability,
-    CodexLocalAccessRequestKind, CodexLocalAccessRoutingStrategy, CodexLocalAccessScope,
-    CodexLocalAccessState, CodexLocalAccessStats, CodexLocalAccessStatsWindow,
-    CodexLocalAccessTestFailure, CodexLocalAccessTestResult, CodexLocalAccessTimeoutPreset,
-    CodexLocalAccessTimeouts, CodexLocalAccessUsageEvent, CodexLocalAccessUsageEventPage,
-    CodexLocalAccessUsageStats,
+    CodexLocalAccessRequestKind, CodexLocalAccessRoutingStrategy, CodexLocalAccessRunningRequest,
+    CodexLocalAccessScope, CodexLocalAccessState, CodexLocalAccessStats,
+    CodexLocalAccessStatsWindow, CodexLocalAccessTestFailure, CodexLocalAccessTestResult,
+    CodexLocalAccessTimeoutPreset, CodexLocalAccessTimeouts, CodexLocalAccessUsageEvent,
+    CodexLocalAccessUsageEventPage, CodexLocalAccessUsageStats,
 };
 use crate::modules::atomic_write::write_string_atomic;
 use crate::modules::{
@@ -123,6 +123,8 @@ const DAY_WINDOW_MS: i64 = 24 * 60 * 60 * 1000;
 const WEEK_WINDOW_MS: i64 = 7 * DAY_WINDOW_MS;
 const MONTH_WINDOW_MS: i64 = 30 * DAY_WINDOW_MS;
 const STATE_RECENT_USAGE_EVENT_LIMIT: usize = 100;
+const ACCOUNT_ACTIVITY_RECENT_WINDOW_MS: i64 = 30 * 1000;
+const ACCOUNT_ACTIVITY_RUNNING_STALE_MS: i64 = 30 * 60 * 1000;
 const DEFAULT_MODEL_PRICING_VERSION: u64 = 1;
 const COOLDOWN_KEY_SEPARATOR: &str = "\u{1f}";
 const CUSTOM_ROUTING_PRIORITY_MIN: i32 = 0;
@@ -187,6 +189,8 @@ struct GatewayRuntime {
     response_affinity: HashMap<String, ResponseAffinityBinding>,
     model_cooldowns: HashMap<String, AccountModelCooldown>,
     account_health: HashMap<String, RuntimeAccountHealth>,
+    running_requests: HashMap<String, CodexLocalAccessRunningRequest>,
+    account_activity: HashMap<String, CodexLocalAccessAccountActivity>,
     prepared_accounts: HashMap<String, CachedPreparedAccount>,
     running: bool,
     actual_port: Option<u16>,
@@ -374,6 +378,7 @@ struct ProxyDispatchSuccess {
     upstream: reqwest::Response,
     account_id: String,
     account_email: String,
+    activity_request_id: String,
 }
 
 #[derive(Debug)]
@@ -383,6 +388,7 @@ struct ProxyDispatchError {
     account_id: Option<String>,
     account_email: Option<String>,
     error_category: Option<String>,
+    activity_request_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -402,6 +408,17 @@ struct RequestStatsContext {
     model_id: String,
     api_key_id: String,
     api_key_label: String,
+}
+
+struct RequestActivitySelection {
+    request_id: String,
+    account_id: String,
+    email: String,
+    api_key_id: String,
+    api_key_label: String,
+    model_id: String,
+    request_kind: CodexLocalAccessRequestKind,
+    routing_strategy: String,
 }
 
 struct ResponseUsageCollector {
@@ -451,6 +468,7 @@ struct WebSocketDispatchSuccess {
     account: CodexAccount,
     account_id: String,
     account_email: String,
+    activity_request_id: String,
 }
 
 #[derive(Debug, Clone)]
@@ -934,6 +952,238 @@ fn local_access_takeover_backups_path() -> Result<PathBuf, String> {
 
 fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
+}
+
+fn normalize_activity_request_id(value: Option<&str>) -> String {
+    value
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("local-{}", uuid::Uuid::new_v4()))
+}
+
+fn request_activity_id(request: &ParsedRequest) -> String {
+    normalize_activity_request_id(
+        request
+            .headers
+            .get("x-client-request-id")
+            .or_else(|| request.headers.get("x-request-id"))
+            .map(String::as_str),
+    )
+}
+
+fn request_kind_from_sidecar(value: &str) -> CodexLocalAccessRequestKind {
+    parse_sidecar_request_kind(value)
+}
+
+fn prune_account_activity(runtime: &mut GatewayRuntime, now: i64) {
+    runtime.running_requests.retain(|_, item| {
+        now.saturating_sub(item.last_seen_at) <= ACCOUNT_ACTIVITY_RUNNING_STALE_MS
+    });
+    runtime.account_activity.retain(|account_id, item| {
+        let has_running = runtime
+            .running_requests
+            .values()
+            .any(|request| request.account_id == *account_id);
+        let recent_at = item.last_finished_at.unwrap_or(item.last_selected_at);
+        has_running || now.saturating_sub(recent_at) <= ACCOUNT_ACTIVITY_RECENT_WINDOW_MS
+    });
+}
+
+fn record_account_activity_selected_locked(
+    runtime: &mut GatewayRuntime,
+    selection: RequestActivitySelection,
+    now: i64,
+) {
+    if selection.account_id.trim().is_empty() {
+        return;
+    }
+
+    let request = CodexLocalAccessRunningRequest {
+        request_id: selection.request_id.trim().to_string(),
+        account_id: selection.account_id.trim().to_string(),
+        email: selection.email.trim().to_string(),
+        api_key_id: selection.api_key_id.trim().to_string(),
+        api_key_label: selection.api_key_label.trim().to_string(),
+        model_id: selection.model_id.trim().to_string(),
+        request_kind: selection.request_kind,
+        routing_strategy: selection.routing_strategy.trim().to_string(),
+        started_at: now,
+        last_seen_at: now,
+    };
+
+    runtime
+        .running_requests
+        .insert(request.request_id.clone(), request.clone());
+    let entry = runtime
+        .account_activity
+        .entry(request.account_id.clone())
+        .or_insert_with(|| CodexLocalAccessAccountActivity {
+            account_id: request.account_id.clone(),
+            email: request.email.clone(),
+            ..CodexLocalAccessAccountActivity::default()
+        });
+    entry.email = request.email.clone();
+    entry.last_selected_at = now;
+    entry.last_finished_at = None;
+    entry.last_model_id = request.model_id.clone();
+    entry.last_api_key_id = request.api_key_id.clone();
+    entry.last_api_key_label = request.api_key_label.clone();
+    entry.last_request_kind = request.request_kind;
+    entry.routing_strategy = request.routing_strategy.clone();
+    entry.recent_request_id = request.request_id.clone();
+}
+
+async fn record_account_activity_selected(selection: RequestActivitySelection) {
+    let now = now_ms();
+    let mut runtime = gateway_runtime().lock().await;
+    prune_account_activity(&mut runtime, now);
+    record_account_activity_selected_locked(&mut runtime, selection, now);
+}
+
+fn finish_account_activity_locked(
+    runtime: &mut GatewayRuntime,
+    request_id: Option<&str>,
+    account_id: Option<&str>,
+    account_email: Option<&str>,
+    api_key_id: Option<&str>,
+    api_key_label: Option<&str>,
+    model_id: Option<&str>,
+    request_kind: CodexLocalAccessRequestKind,
+    now: i64,
+) {
+    let mut finished_request = request_id
+        .and_then(|id| runtime.running_requests.remove(id.trim()))
+        .filter(|request| !request.account_id.trim().is_empty());
+
+    if finished_request.is_none() {
+        let account_id = account_id.unwrap_or_default().trim();
+        if account_id.is_empty() {
+            return;
+        }
+        finished_request = Some(CodexLocalAccessRunningRequest {
+            request_id: request_id.unwrap_or_default().trim().to_string(),
+            account_id: account_id.to_string(),
+            email: account_email.unwrap_or_default().trim().to_string(),
+            api_key_id: api_key_id.unwrap_or_default().trim().to_string(),
+            api_key_label: api_key_label.unwrap_or_default().trim().to_string(),
+            model_id: model_id.unwrap_or_default().trim().to_string(),
+            request_kind,
+            routing_strategy: String::new(),
+            started_at: now,
+            last_seen_at: now,
+        });
+    }
+
+    let Some(request) = finished_request else {
+        return;
+    };
+    let entry = runtime
+        .account_activity
+        .entry(request.account_id.clone())
+        .or_insert_with(|| CodexLocalAccessAccountActivity {
+            account_id: request.account_id.clone(),
+            email: request.email.clone(),
+            ..CodexLocalAccessAccountActivity::default()
+        });
+    if !request.email.trim().is_empty() {
+        entry.email = request.email.clone();
+    }
+    entry.last_selected_at = entry.last_selected_at.max(request.started_at);
+    entry.last_finished_at = Some(now);
+    if !request.model_id.trim().is_empty() {
+        entry.last_model_id = request.model_id.clone();
+    }
+    if !request.api_key_id.trim().is_empty() {
+        entry.last_api_key_id = request.api_key_id.clone();
+    }
+    if !request.api_key_label.trim().is_empty() {
+        entry.last_api_key_label = request.api_key_label.clone();
+    }
+    entry.last_request_kind = request.request_kind;
+    if !request.routing_strategy.trim().is_empty() {
+        entry.routing_strategy = request.routing_strategy.clone();
+    }
+    if !request.request_id.trim().is_empty() {
+        entry.recent_request_id = request.request_id.clone();
+    }
+}
+
+async fn finish_account_activity(
+    request_id: Option<&str>,
+    account_id: Option<&str>,
+    account_email: Option<&str>,
+    api_key_id: Option<&str>,
+    api_key_label: Option<&str>,
+    model_id: Option<&str>,
+    request_kind: CodexLocalAccessRequestKind,
+) {
+    let now = now_ms();
+    let mut runtime = gateway_runtime().lock().await;
+    finish_account_activity_locked(
+        &mut runtime,
+        request_id,
+        account_id,
+        account_email,
+        api_key_id,
+        api_key_label,
+        model_id,
+        request_kind,
+        now,
+    );
+    prune_account_activity(&mut runtime, now);
+}
+
+fn build_account_activity_snapshot(
+    runtime: &GatewayRuntime,
+    now: i64,
+) -> (
+    Vec<CodexLocalAccessRunningRequest>,
+    Vec<CodexLocalAccessAccountActivity>,
+) {
+    let running_requests: Vec<CodexLocalAccessRunningRequest> = runtime
+        .running_requests
+        .values()
+        .filter(|item| now.saturating_sub(item.last_seen_at) <= ACCOUNT_ACTIVITY_RUNNING_STALE_MS)
+        .cloned()
+        .collect();
+    let mut running_count_by_account: HashMap<String, u32> = HashMap::new();
+    for request in &running_requests {
+        *running_count_by_account
+            .entry(request.account_id.clone())
+            .or_insert(0) += 1;
+    }
+
+    let mut account_activity: Vec<CodexLocalAccessAccountActivity> = runtime
+        .account_activity
+        .values()
+        .filter_map(|item| {
+            let running_count = running_count_by_account
+                .get(&item.account_id)
+                .copied()
+                .unwrap_or(0);
+            let recent_at = item.last_finished_at.unwrap_or(item.last_selected_at);
+            if running_count == 0
+                && now.saturating_sub(recent_at) > ACCOUNT_ACTIVITY_RECENT_WINDOW_MS
+            {
+                return None;
+            }
+            let mut next = item.clone();
+            next.running_count = running_count;
+            Some(next)
+        })
+        .collect();
+
+    account_activity.sort_by(|left, right| {
+        right
+            .running_count
+            .cmp(&left.running_count)
+            .then_with(|| right.last_selected_at.cmp(&left.last_selected_at))
+            .then_with(|| left.email.cmp(&right.email))
+    });
+    let mut running_requests = running_requests;
+    running_requests.sort_by(|left, right| right.started_at.cmp(&left.started_at));
+    (running_requests, account_activity)
 }
 
 fn is_prepared_account_cache_valid(entry: &CachedPreparedAccount, now: i64) -> bool {
@@ -6406,6 +6656,27 @@ struct SidecarAuthResultEvent {
     error_message: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SidecarAuthSelectedEvent {
+    #[serde(default)]
+    request_id: String,
+    #[serde(default)]
+    model: String,
+    #[serde(default)]
+    account_id: String,
+    #[serde(default)]
+    account_email: String,
+    #[serde(default)]
+    api_key_id: String,
+    #[serde(default)]
+    api_key_label: String,
+    #[serde(default)]
+    request_kind: String,
+    #[serde(default)]
+    routing_strategy: String,
+}
+
 fn local_access_sidecar_dir() -> Result<PathBuf, String> {
     Ok(account::get_data_dir()?.join(CODEX_LOCAL_ACCESS_SIDECAR_DIR))
 }
@@ -7724,6 +7995,34 @@ async fn record_sidecar_usage_event(event: SidecarUsageEvent) {
             error
         ));
     }
+    finish_account_activity(
+        request_id.as_deref(),
+        account_id.as_deref(),
+        account_email.as_deref(),
+        api_key_id.as_deref(),
+        api_key_label.as_deref(),
+        model.as_deref(),
+        parse_sidecar_request_kind(&event.request_kind),
+    )
+    .await;
+}
+
+async fn record_sidecar_auth_selected_event(event: SidecarAuthSelectedEvent) {
+    let account_id = event.account_id.trim();
+    if account_id.is_empty() {
+        return;
+    }
+    record_account_activity_selected(RequestActivitySelection {
+        request_id: normalize_activity_request_id(Some(event.request_id.as_str())),
+        account_id: account_id.to_string(),
+        email: event.account_email.trim().to_string(),
+        api_key_id: event.api_key_id.trim().to_string(),
+        api_key_label: event.api_key_label.trim().to_string(),
+        model_id: event.model.trim().to_string(),
+        request_kind: request_kind_from_sidecar(&event.request_kind),
+        routing_strategy: event.routing_strategy.trim().to_string(),
+    })
+    .await;
 }
 
 type SharedSidecarStartupDiagnostics = Arc<Mutex<SidecarStartupDiagnostics>>;
@@ -7803,6 +8102,13 @@ async fn handle_sidecar_stdout_line(
             Ok(event) => record_sidecar_usage_event(event).await,
             Err(error) => logger::log_codex_api_warn(&format!(
                 "[CodexLocalAccess] sidecar usage 事件解析失败: {}",
+                error
+            )),
+        },
+        "auth_selected" => match serde_json::from_value::<SidecarAuthSelectedEvent>(value) {
+            Ok(event) => record_sidecar_auth_selected_event(event).await,
+            Err(error) => logger::log_codex_api_warn(&format!(
+                "[CodexLocalAccess] sidecar auth_selected event parse failed: {}",
                 error
             )),
         },
@@ -10743,6 +11049,7 @@ fn build_state_snapshot_inner(
         .cloned()
         .collect();
     let account_health = build_account_health_snapshot(runtime);
+    let (running_requests, account_activity) = build_account_activity_snapshot(runtime, now_ms());
 
     CodexLocalAccessState {
         collection,
@@ -10757,6 +11064,8 @@ fn build_state_snapshot_inner(
         member_count,
         stats,
         account_health,
+        running_requests,
+        account_activity,
     }
 }
 
@@ -16587,6 +16896,7 @@ async fn proxy_request_with_account_pool(
     api_key: &ResolvedLocalApiKey,
     request_kind: CodexLocalAccessRequestKind,
 ) -> Result<ProxyDispatchSuccess, ProxyDispatchError> {
+    let activity_request_id = request_activity_id(request);
     let scoped_account_ids = scoped_collection_account_ids(collection, api_key);
     if scoped_account_ids.is_empty() {
         return Err(ProxyDispatchError {
@@ -16595,6 +16905,7 @@ async fn proxy_request_with_account_pool(
             account_id: None,
             account_email: None,
             error_category: Some("no_accounts".to_string()),
+            activity_request_id: Some(activity_request_id.clone()),
         });
     }
 
@@ -16605,6 +16916,7 @@ async fn proxy_request_with_account_pool(
             account_id: None,
             account_email: None,
             error_category: Some("bad_request".to_string()),
+            activity_request_id: Some(activity_request_id.clone()),
         })?;
     let timeouts = collection_timeouts(collection);
     let upstream_connect_timeout = duration_from_millis(
@@ -16616,6 +16928,7 @@ async fn proxy_request_with_account_pool(
     let routing_hint = build_request_routing_hint(request);
     let total = scoped_account_ids.len();
     let strategy = effective_routing_strategy(collection, &scoped_account_ids);
+    let routing_strategy = sidecar_routing_strategy_value(strategy).to_string();
     let max_credential_attempts = max_credential_attempts_for_strategy(collection, total, strategy);
     let session_affinity_key = routing_hint
         .session_affinity_key
@@ -16743,6 +17056,27 @@ async fn proxy_request_with_account_pool(
 
             last_account_id = Some(account.id.clone());
             last_account_email = Some(account.email.clone());
+            finish_account_activity(
+                Some(&activity_request_id),
+                None,
+                None,
+                None,
+                None,
+                None,
+                request_kind,
+            )
+            .await;
+            record_account_activity_selected(RequestActivitySelection {
+                request_id: activity_request_id.clone(),
+                account_id: account.id.clone(),
+                email: account.email.clone(),
+                api_key_id: api_key.id.clone(),
+                api_key_label: api_key.label.clone(),
+                model_id: routing_hint.model_key.clone(),
+                request_kind,
+                routing_strategy: routing_strategy.clone(),
+            })
+            .await;
             legacy_debug_log(
                 collection.debug_logs,
                 format!(
@@ -16999,6 +17333,7 @@ async fn proxy_request_with_account_pool(
                         upstream: response,
                         account_id: account.id.clone(),
                         account_email: account.email.clone(),
+                        activity_request_id: activity_request_id.clone(),
                     });
                 }
 
@@ -17077,6 +17412,7 @@ async fn proxy_request_with_account_pool(
                     account_id: Some(account.id.clone()),
                     account_email: Some(account.email.clone()),
                     error_category: category.map(str::to_string),
+                    activity_request_id: Some(activity_request_id.clone()),
                 });
             }
         }
@@ -17101,6 +17437,7 @@ async fn proxy_request_with_account_pool(
                     account_id: affinity_account_id.clone(),
                     account_email: None,
                     error_category: Some("cooldown".to_string()),
+                    activity_request_id: Some(activity_request_id.clone()),
                 });
             }
             break;
@@ -17128,6 +17465,7 @@ async fn proxy_request_with_account_pool(
         account_id: last_account_id,
         account_email: last_account_email,
         error_category: last_error_category,
+        activity_request_id: Some(activity_request_id),
     })
 }
 
@@ -17673,6 +18011,7 @@ async fn proxy_websocket_with_account_pool(
     api_key: &ResolvedLocalApiKey,
     request_kind: CodexLocalAccessRequestKind,
 ) -> Result<WebSocketDispatchSuccess, ProxyDispatchError> {
+    let activity_request_id = request_activity_id(request);
     let scoped_account_ids = scoped_collection_account_ids(collection, api_key);
     if scoped_account_ids.is_empty() {
         return Err(ProxyDispatchError {
@@ -17681,6 +18020,7 @@ async fn proxy_websocket_with_account_pool(
             account_id: None,
             account_email: None,
             error_category: Some("no_accounts".to_string()),
+            activity_request_id: Some(activity_request_id.clone()),
         });
     }
 
@@ -17691,6 +18031,7 @@ async fn proxy_websocket_with_account_pool(
             account_id: None,
             account_email: None,
             error_category: Some("bad_request".to_string()),
+            activity_request_id: Some(activity_request_id.clone()),
         })?;
     let timeouts = collection_timeouts(collection);
     let websocket_connect_timeout = duration_from_millis(
@@ -17700,6 +18041,7 @@ async fn proxy_websocket_with_account_pool(
     let routing_hint = build_request_routing_hint(request);
     let total = scoped_account_ids.len();
     let strategy = effective_routing_strategy(collection, &scoped_account_ids);
+    let routing_strategy = sidecar_routing_strategy_value(strategy).to_string();
     let max_credential_attempts = max_credential_attempts_for_strategy(collection, total, strategy);
     let start = GATEWAY_ROUND_ROBIN_CURSOR.fetch_add(1, Ordering::Relaxed);
     let session_affinity_key = routing_hint
@@ -17793,6 +18135,27 @@ async fn proxy_websocket_with_account_pool(
 
         last_account_id = Some(account.id.clone());
         last_account_email = Some(account.email.clone());
+        finish_account_activity(
+            Some(&activity_request_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            request_kind,
+        )
+        .await;
+        record_account_activity_selected(RequestActivitySelection {
+            request_id: activity_request_id.clone(),
+            account_id: account.id.clone(),
+            email: account.email.clone(),
+            api_key_id: api_key.id.clone(),
+            api_key_label: api_key.label.clone(),
+            model_id: routing_hint.model_key.clone(),
+            request_kind,
+            routing_strategy: routing_strategy.clone(),
+        })
+        .await;
 
         match connect_upstream_websocket(
             request,
@@ -17808,6 +18171,7 @@ async fn proxy_websocket_with_account_pool(
                     upstream,
                     account_id: account.id.clone(),
                     account_email: account.email.clone(),
+                    activity_request_id: activity_request_id.clone(),
                     account,
                 });
             }
@@ -17877,6 +18241,7 @@ async fn proxy_websocket_with_account_pool(
                                         upstream,
                                         account_id: account.id.clone(),
                                         account_email: account.email.clone(),
+                                        activity_request_id: activity_request_id.clone(),
                                         account,
                                     });
                                 }
@@ -17951,6 +18316,7 @@ async fn proxy_websocket_with_account_pool(
         account_id: last_account_id,
         account_email: last_account_email,
         error_category: last_error_category,
+        activity_request_id: Some(activity_request_id),
     })
 }
 
@@ -18238,6 +18604,7 @@ async fn handle_websocket_connection(
             let account_id = success.account_id.clone();
             let account_email = success.account_email.clone();
             let account = success.account.clone();
+            let activity_request_id = success.activity_request_id.clone();
             let bridge_result = bridge_websocket_streams(
                 downstream,
                 success.upstream,
@@ -18295,6 +18662,16 @@ async fn handle_websocket_connection(
                         err
                     ));
                 }
+                finish_account_activity(
+                    Some(activity_request_id.as_str()),
+                    Some(account_id.as_str()),
+                    Some(account_email.as_str()),
+                    Some(stats_context.api_key_id.as_str()),
+                    Some(stats_context.api_key_label.as_str()),
+                    Some(stats_context.model_id.as_str()),
+                    stats_context.request_kind,
+                )
+                .await;
                 return Ok(());
             }
 
@@ -18332,9 +18709,20 @@ async fn handle_websocket_connection(
                     err
                 ));
             }
+            finish_account_activity(
+                Some(activity_request_id.as_str()),
+                Some(account_id.as_str()),
+                Some(account_email.as_str()),
+                Some(stats_context.api_key_id.as_str()),
+                Some(stats_context.api_key_label.as_str()),
+                Some(stats_context.model_id.as_str()),
+                stats_context.request_kind,
+            )
+            .await;
             Ok(())
         }
         Err(error) => {
+            let activity_request_id = error.activity_request_id.clone();
             let latency_ms = started_at.elapsed().as_millis() as u64;
             log_codex_api_failure(
                 Some(&addr),
@@ -18365,6 +18753,16 @@ async fn handle_websocket_connection(
                     err
                 ));
             }
+            finish_account_activity(
+                activity_request_id.as_deref(),
+                error.account_id.as_deref(),
+                error.account_email.as_deref(),
+                Some(stats_context.api_key_id.as_str()),
+                Some(stats_context.api_key_label.as_str()),
+                Some(stats_context.model_id.as_str()),
+                stats_context.request_kind,
+            )
+            .await;
             Err(error.message)
         }
     }
@@ -18758,6 +19156,7 @@ async fn handle_connection(
                 upstream,
                 account_id,
                 account_email,
+                activity_request_id,
             } = success;
             let timeouts = collection_timeouts(&collection);
             let response_capture = match write_gateway_response(
@@ -18810,6 +19209,16 @@ async fn handle_connection(
                             ));
                         }
                     }
+                    finish_account_activity(
+                        Some(activity_request_id.as_str()),
+                        Some(account_id.as_str()),
+                        Some(account_email.as_str()),
+                        Some(stats_context.api_key_id.as_str()),
+                        Some(stats_context.api_key_label.as_str()),
+                        Some(stats_context.model_id.as_str()),
+                        stats_context.request_kind,
+                    )
+                    .await;
                     return Err(err);
                 }
             };
@@ -18844,6 +19253,16 @@ async fn handle_connection(
                     err
                 ));
             }
+            finish_account_activity(
+                Some(activity_request_id.as_str()),
+                Some(account_id.as_str()),
+                Some(account_email.as_str()),
+                Some(stats_context.api_key_id.as_str()),
+                Some(stats_context.api_key_label.as_str()),
+                Some(stats_context.model_id.as_str()),
+                stats_context.request_kind,
+            )
+            .await;
             legacy_debug_log(
                 collection.debug_logs,
                 format!(
@@ -18865,6 +19284,7 @@ async fn handle_connection(
                 account_id,
                 account_email,
                 error_category,
+                activity_request_id,
             } = error;
             let latency_ms = started_at.elapsed().as_millis() as u64;
             log_codex_api_failure(
@@ -18918,6 +19338,16 @@ async fn handle_connection(
                     err
                 ));
             }
+            finish_account_activity(
+                activity_request_id.as_deref(),
+                account_id.as_deref(),
+                account_email.as_deref(),
+                Some(stats_context.api_key_id.as_str()),
+                Some(stats_context.api_key_label.as_str()),
+                Some(stats_context.model_id.as_str()),
+                stats_context.request_kind,
+            )
+            .await;
             write_result
         }
     }
