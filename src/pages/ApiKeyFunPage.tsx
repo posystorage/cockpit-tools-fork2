@@ -20,15 +20,9 @@ import {
   type ModelProviderUsageSummary,
 } from '../services/modelProviderUsageService';
 import {
-  APIKEY_FUN_GLOBAL_ENDPOINT,
-  APIKEY_FUN_PROVIDER_BASE_URL,
   APIKEY_FUN_REGISTER_URL,
   APIKEY_FUN_SOURCE_TAG,
-  buildApiKeyFunProviderBaseUrl,
 } from '../utils/apikeyFunLinks';
-import {
-  CLAUDE_APIKEY_FUN_BASE_URL,
-} from '../utils/claudeProviderPresets';
 import {
   dispatchApiKeyFunPrefillEvent,
   getApiKeyFunPrefillPage,
@@ -41,6 +35,7 @@ type ManagedApiKey = {
   id: string;
   key: string;
   name: string;
+  baseUrl?: string;
   createdAt: number;
   lastUsedAt: number;
   lastStatus?: 'ok' | 'bad' | 'unknown';
@@ -140,9 +135,24 @@ function isClaudeModelId(value: string): boolean {
   return model.startsWith('claude-') || model.startsWith('anthropic/claude-');
 }
 
+function normalizeProviderBaseUrlInput(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return trimmed.replace(/\/+$/, '');
+    }
+    return `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, '');
+  } catch {
+    return trimmed.replace(/\/+$/, '');
+  }
+}
+
 export function ApiKeyFunPage() {
   const { t } = useTranslation();
   const [apiKey, setApiKey] = useState('');
+  const [providerBaseUrlInput, setProviderBaseUrlInput] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [usage, setUsage] = useState<ModelProviderUsageSummary | null>(null);
   const [usageError, setUsageError] = useState<string | null>(null);
@@ -167,24 +177,23 @@ export function ApiKeyFunPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const providerBaseUrl = useMemo(
-    () => buildApiKeyFunProviderBaseUrl(APIKEY_FUN_GLOBAL_ENDPOINT),
-    [],
+    () => normalizeProviderBaseUrlInput(providerBaseUrlInput),
+    [providerBaseUrlInput],
   );
   const maskedApiKey = useMemo(() => maskKey(apiKey), [apiKey]);
   const currentKey = apiKey.trim();
   const currentSavedKey = useMemo(
-    () => managedKeys.find((item) => item.key === currentKey),
-    [currentKey, managedKeys],
+    () => managedKeys.find((item) => (
+      item.key === currentKey &&
+      normalizeProviderBaseUrlInput(item.baseUrl ?? '') === providerBaseUrl
+    )),
+    [currentKey, managedKeys, providerBaseUrl],
   );
   const apiKeyFunModelCatalog = useMemo(
     () => normalizeModelCatalog(apiKeyModels.map((model) => model.id)),
     [apiKeyModels],
   );
-  const modelCatalogText = useMemo(
-    () => apiKeyFunModelCatalog.join('\n').toLowerCase(),
-    [apiKeyFunModelCatalog],
-  );
-  const canAddCurrentKeyToCodex = modelCatalogText.includes('gpt');
+  const canAddCurrentKeyToCodex = Boolean(currentSavedKey && providerBaseUrl);
   const canAddCurrentKeyToClaude = apiKeyFunModelCatalog.some(isClaudeModelId);
   const canShowTargetActions = canAddCurrentKeyToCodex || canAddCurrentKeyToClaude;
   const canPrefillCurrentKey =
@@ -194,9 +203,11 @@ export function ApiKeyFunPage() {
     if (initialManagedKeySelectedRef.current) return;
     initialManagedKeySelectedRef.current = true;
     if (apiKey.trim()) return;
-    const firstKey = managedKeys[0]?.key.trim();
+    const first = managedKeys[0];
+    const firstKey = first?.key.trim();
     if (firstKey) {
       setApiKey(firstKey);
+      setProviderBaseUrlInput(first?.baseUrl ?? '');
     }
   }, [apiKey, managedKeys]);
 
@@ -223,7 +234,8 @@ export function ApiKeyFunPage() {
   // 自动额度查询
   useEffect(() => {
     const key = apiKey.trim();
-    if (!key) {
+    const baseUrl = providerBaseUrl;
+    if (!key || !baseUrl) {
       setUsage(null);
       setUsageError(null);
       setQueryingUsage(false);
@@ -242,7 +254,7 @@ export function ApiKeyFunPage() {
 
     const timer = window.setTimeout(() => {
       void queryModelProviderUsage({
-        baseUrl: providerBaseUrl,
+        baseUrl,
         apiKey: key,
         integrationType: 'sub2api',
       })
@@ -252,7 +264,7 @@ export function ApiKeyFunPage() {
           const nextRemaining = usagePrimaryValue(nextUsage);
           setUsage(nextUsage);
           setManagedKeys((items) => items.map((item) => (
-            item.key === key
+            item.key === key && normalizeProviderBaseUrlInput(item.baseUrl ?? '') === baseUrl
               ? {
                   ...item,
                   lastUsedAt: Date.now(),
@@ -272,7 +284,7 @@ export function ApiKeyFunPage() {
             }),
           );
           setManagedKeys((items) => items.map((item) => (
-            item.key === key
+            item.key === key && normalizeProviderBaseUrlInput(item.baseUrl ?? '') === baseUrl
               ? {
                   ...item,
                   lastUsedAt: Date.now(),
@@ -286,7 +298,7 @@ export function ApiKeyFunPage() {
           if (!cancelled) setQueryingUsage(false);
         });
       void listModelProviderModels({
-        baseUrl: providerBaseUrl,
+        baseUrl,
         apiKey: key,
       })
         .then((result) => {
@@ -326,17 +338,26 @@ export function ApiKeyFunPage() {
       setUsageError(t('apiKeyFun.error.missingApiKey', '请输入 API Key。'));
       return;
     }
+    const baseUrl = providerBaseUrl;
+    if (!baseUrl) {
+      setUsageError(t('apiKeyFun.error.missingBaseUrl', 'Please enter a provider Base URL.'));
+      return;
+    }
     const now = Date.now();
     const nextStatus = usageValidityTone(usage);
     const nextRemaining = usagePrimaryValue(usage);
     setManagedKeys((items) => {
-      const existing = items.find((item) => item.key === key);
+      const existing = items.find((item) => (
+        item.key === key &&
+        normalizeProviderBaseUrlInput(item.baseUrl ?? '') === baseUrl
+      ));
       if (existing) {
         return items.map((item) => (
-          item.key === key
+          item.id === existing.id
             ? {
                 ...item,
                 name: buildManagedKeyName(key),
+                baseUrl,
                 lastUsedAt: now,
                 lastStatus: nextStatus,
                 lastRemaining: nextRemaining,
@@ -349,6 +370,7 @@ export function ApiKeyFunPage() {
           id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
           key,
           name: buildManagedKeyName(key),
+          baseUrl,
           createdAt: now,
           lastUsedAt: now,
           lastStatus: nextStatus,
@@ -359,7 +381,7 @@ export function ApiKeyFunPage() {
     });
     setUsageError(null);
     setSaveFlash(true);
-  }, [apiKey, t, usage]);
+  }, [apiKey, providerBaseUrl, t, usage]);
 
   const setManagedKeyAction = useCallback((
     id: string,
@@ -373,11 +395,20 @@ export function ApiKeyFunPage() {
     item: ManagedApiKey,
   ) => {
     const key = item.key.trim();
+    const baseUrl = normalizeProviderBaseUrlInput(item.baseUrl ?? providerBaseUrl);
     if (!key) {
       setManagedKeyAction(item.id, {
         target,
         status: 'error',
         message: t('apiKeyFun.error.missingApiKey', '请输入 API Key。'),
+      });
+      return;
+    }
+    if (!baseUrl) {
+      setManagedKeyAction(item.id, {
+        target,
+        status: 'error',
+        message: t('apiKeyFun.error.missingBaseUrl', 'Please enter a provider Base URL.'),
       });
       return;
     }
@@ -393,8 +424,8 @@ export function ApiKeyFunPage() {
         target,
         apiKey: key,
         apiKeyName: item.name || buildManagedKeyName(key),
-        providerName: 'APIKEY.FUN',
-        baseUrl: target === 'codex' ? APIKEY_FUN_PROVIDER_BASE_URL : CLAUDE_APIKEY_FUN_BASE_URL,
+        providerName: 'Custom Provider',
+        baseUrl,
         sourceTag: APIKEY_FUN_SOURCE_TAG,
         modelCatalog: apiKeyFunModelCatalog,
       });
@@ -407,11 +438,12 @@ export function ApiKeyFunPage() {
         target: targetName,
       }),
     });
-  }, [apiKeyFunModelCatalog, setManagedKeyAction, t]);
+  }, [apiKeyFunModelCatalog, providerBaseUrl, setManagedKeyAction, t]);
 
   // 切换密钥
   const handleUseManagedKey = useCallback((item: ManagedApiKey) => {
     setApiKey(item.key);
+    setProviderBaseUrlInput(item.baseUrl ?? '');
     setUsageError(null);
     setManagedKeys((items) => items.map((nextItem) => (
       nextItem.id === item.id ? { ...nextItem, lastUsedAt: Date.now() } : nextItem
@@ -488,7 +520,7 @@ export function ApiKeyFunPage() {
             </p>
           </div>
         </div>
-        <div className="apikey-fun-brand-actions">
+        <div className="apikey-fun-brand-actions" style={{ display: APIKEY_FUN_REGISTER_URL ? undefined : 'none' }}>
           <button
             className="btn apikey-fun-register-btn"
             onClick={() => openExternal(APIKEY_FUN_REGISTER_URL)}
@@ -513,6 +545,37 @@ export function ApiKeyFunPage() {
             </div>
 
             <div className="apikey-fun-form-grid apikey-fun-form-grid-single">
+              <label className="apikey-fun-field apikey-fun-field-wide">
+                <span>{t('apiRelay.baseUrlLabel', 'Provider Base URL')}</span>
+                <div className="apikey-fun-secret-input">
+                  <input
+                    value={providerBaseUrlInput}
+                    type="text"
+                    placeholder="https://example.com/v1"
+                    onChange={(event) => {
+                      setProviderBaseUrlInput(event.target.value);
+                      setUsageError(null);
+                    }}
+                  />
+                  {providerBaseUrlInput && (
+                    <button
+                      type="button"
+                      className="apikey-fun-icon-button clear-btn"
+                      onClick={() => {
+                        setProviderBaseUrlInput('');
+                        setUsage(null);
+                        setApiKeyModels([]);
+                        setModelsError(null);
+                        setQueryingModels(false);
+                      }}
+                      title={t('apiRelay.clearBaseUrl', 'Clear Base URL')}
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+              </label>
+
               <label className="apikey-fun-field apikey-fun-field-wide">
                 <span>{t('apiKeyFun.apiKeyLabel', 'API Key')}</span>
                 <div className="apikey-fun-secret-input">
@@ -566,7 +629,7 @@ export function ApiKeyFunPage() {
 
             <div className="apikey-fun-action-row apikey-fun-key-actions">
               <div className="apikey-fun-primary-actions">
-                <button className="btn apikey-fun-save-btn" disabled={!currentKey} onClick={handleSaveCurrentKey}>
+                <button className="btn apikey-fun-save-btn" disabled={!currentKey || !providerBaseUrl} onClick={handleSaveCurrentKey}>
                   {currentSavedKey ? <CheckCircle2 size={16} /> : <BookmarkPlus size={16} />}
                   <span>
                     {currentSavedKey
@@ -738,7 +801,15 @@ export function ApiKeyFunPage() {
                   const isEditing = editingId === item.id;
                   const actionState = keyActionState[item.id];
                   return (
-                    <div className={`apikey-fun-key-item ${item.key === currentKey ? 'active' : ''} ${isEditing ? 'editing' : ''}`} key={item.id}>
+                    <div
+                      className={`apikey-fun-key-item ${
+                        item.key === currentKey &&
+                        normalizeProviderBaseUrlInput(item.baseUrl ?? '') === providerBaseUrl
+                          ? 'active'
+                          : ''
+                      } ${isEditing ? 'editing' : ''}`}
+                      key={item.id}
+                    >
                       {isEditing ? (
                         <form className="apikey-fun-rename-form" onSubmit={(e) => handleSaveRename(item.id, e)}>
                           <input

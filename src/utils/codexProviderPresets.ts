@@ -13,7 +13,7 @@ export interface CodexApiProviderPreset {
 export const CODEX_API_PROVIDER_CUSTOM_ID = "custom";
 export const COCKPIT_API_PROVIDER_ID = "cockpit_api";
 export const COCKPIT_API_PROVIDER_NAME = "Cockpit Api";
-export const COCKPIT_API_BASE_URL = "https://chongcodex.cn/v1";
+export const COCKPIT_API_BASE_URL = "";
 
 const COCKPIT_API_HIDDEN_BASE_URLS = [COCKPIT_API_BASE_URL] as const;
 

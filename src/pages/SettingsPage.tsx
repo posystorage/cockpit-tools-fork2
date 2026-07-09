@@ -85,6 +85,10 @@ import {
   AlertCircle, RefreshCw, Heart, MessageSquare, FileText, Download, X
 } from 'lucide-react';
 
+const SHOW_UPDATE_UI = false;
+const SHOW_PROMO_SETTINGS = false;
+const SHOW_EXTERNAL_PROJECT_LINKS = false;
+
 
 
 /** 网络配置类型 */
@@ -696,8 +700,9 @@ export function SettingsPage() {
       skipped_version?: string;
     }>('get_update_settings')
       .then((s) => {
-        setAutoInstall(Boolean(s?.auto_install));
-        setUpdateRemindersEnabled(s?.remind_on_update ?? true);
+        void s;
+        setAutoInstall(false);
+        setUpdateRemindersEnabled(false);
         setAutoInstallLoaded(true);
         setUpdateRemindersLoaded(true);
       })
@@ -3007,6 +3012,7 @@ export function SettingsPage() {
                 </div>
               </div>
 
+              {SHOW_UPDATE_UI && (
               <div className="settings-row">
                 <div className="row-label">
                   <div className="row-title">{t('settings.general.autoUpdate')}</div>
@@ -3026,7 +3032,9 @@ export function SettingsPage() {
                   </select>
                 </div>
               </div>
+              )}
 
+              {SHOW_UPDATE_UI && (
               <div className="settings-row">
                 <div className="row-label">
                   <div className="row-title">{t('settings.general.updateReminder')}</div>
@@ -3046,6 +3054,7 @@ export function SettingsPage() {
                   </select>
                 </div>
               </div>
+              )}
 
               {isMacOS && (
                 <>
@@ -3233,6 +3242,7 @@ export function SettingsPage() {
                 </div>
               </div>
 
+              {SHOW_PROMO_SETTINGS && (
               <div className="settings-row">
                 <div className="row-label">
                   <div className="row-title">
@@ -3256,6 +3266,7 @@ export function SettingsPage() {
                   </label>
                 </div>
               </div>
+              )}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <div style={{ order: platformSettingsOrder.antigravity }}>
@@ -6795,6 +6806,7 @@ export function SettingsPage() {
                 <h2>{t('settings.about.appName')}</h2>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div className="version-tag">{appVersion}</div>
+                  {SHOW_UPDATE_UI && (
                   <button 
                     className="btn btn-sm btn-ghost"
                     onClick={handleCheckUpdate}
@@ -6812,6 +6824,7 @@ export function SettingsPage() {
                       {updateChecking ? t('settings.about.checking') : t('settings.about.checkUpdate')}
                     </>
                   </button>
+                  )}
                   <button
                     className="btn btn-sm btn-ghost"
                     onClick={handleOpenReleaseHistory}
@@ -6819,7 +6832,7 @@ export function SettingsPage() {
                     style={{
                       fontSize: '12px',
                       padding: '4px 10px',
-                      display: 'flex',
+                      display: SHOW_UPDATE_UI ? 'flex' : 'none',
                       alignItems: 'center',
                       gap: '4px',
                     }}
@@ -6856,13 +6869,21 @@ export function SettingsPage() {
                 <p>cockpit-tools</p>
               </button>
 
-              <button className="credit-item" onClick={() => openLink('https://github.com/jlcodes99/cockpit-tools/blob/main/docs/DONATE.md')}>
+              <button
+                className="credit-item"
+                style={{ display: SHOW_EXTERNAL_PROJECT_LINKS ? undefined : 'none' }}
+                onClick={() => openLink('https://github.com/jlcodes99/cockpit-tools/blob/main/docs/DONATE.md')}
+              >
                 <div className="credit-icon" style={{ color: '#ef4444' }}><Heart size={24} /></div>
                 <h3>{t('settings.about.sponsor')}</h3>
                 <p>{t('settings.about.sponsorDesc', 'Donate')}</p>
               </button>
 
-              <button className="credit-item" onClick={() => openLink('https://github.com/jlcodes99/cockpit-tools/issues')}>
+              <button
+                className="credit-item"
+                style={{ display: SHOW_EXTERNAL_PROJECT_LINKS ? undefined : 'none' }}
+                onClick={() => openLink('https://github.com/jlcodes99/cockpit-tools/issues')}
+              >
                 <div className="credit-icon" style={{ color: '#3b82f6' }}><MessageSquare size={24} /></div>
                 <h3>{t('settings.about.feedback', '意见反馈')}</h3>
                 <p>{t('settings.about.feedbackDesc', 'Issues')}</p>

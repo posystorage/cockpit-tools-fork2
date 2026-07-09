@@ -413,6 +413,8 @@ function getTraeAppScanRoots(config: GeneralConfig, app: TraePlatformApp): strin
 const TOP_RIGHT_AD_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 const REMOTE_CONFIG_FALLBACK_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 const EXTERNAL_IMPORT_DEDUPE_WINDOW_MS = 30 * 1000;
+const ADS_AND_SPONSORS_DISABLED = true;
+const UPDATER_RUNTIME_DISABLED = true;
 
 type WakeupHistoryRecord = {
   id: string;
@@ -790,15 +792,16 @@ function MainApp() {
   const topRightAdState = useTopRightAdStore((state) => state.state);
   const fetchTopRightAdState = useTopRightAdStore((state) => state.fetchState);
   const forceRefreshTopRightAdState = useTopRightAdStore((state) => state.forceRefreshState);
-  const sponsorModuleState = useSponsorStore((state) => state.state);
   const fetchSponsorModuleState = useSponsorStore((state) => state.fetchState);
   const sponsorModuleInitialized = useSponsorStore((state) => state.initialized);
   const fetchRemoteConfigState = useRemoteConfigStore((state) => state.fetchState);
-  const sponsorEntryVisible = Boolean(sponsorModuleState.sponsorModule);
+  const sponsorEntryVisible = true;
   const [topRightAdVisible, setTopRightAdVisible] = useState(true);
   const topRightAdVisibleRef = useRef<boolean | null>(null);
   const visibleTopCenterPromoAds = useMemo(
-    () => topRightAdState.ads.filter((ad) => isTopPromoAdVisibleOnPage(ad, page)),
+    () => ADS_AND_SPONSORS_DISABLED
+      ? []
+      : topRightAdState.ads.filter((ad) => isTopPromoAdVisibleOnPage(ad, page)),
     [page, topRightAdState.ads],
   );
   const trayRefreshInFlightRef = useRef(false);
@@ -987,10 +990,19 @@ function MainApp() {
   }, []);
 
   useEffect(() => {
+    if (ADS_AND_SPONSORS_DISABLED) {
+      return;
+    }
     void fetchTopRightAdState();
   }, [fetchTopRightAdState]);
 
   useEffect(() => {
+    if (ADS_AND_SPONSORS_DISABLED) {
+      topRightAdVisibleRef.current = false;
+      setTopRightAdVisible(false);
+      return;
+    }
+
     let disposed = false;
 
     const loadTopRightAdVisible = async () => {
@@ -1025,6 +1037,9 @@ function MainApp() {
   }, [forceRefreshTopRightAdState]);
 
   useEffect(() => {
+    if (ADS_AND_SPONSORS_DISABLED) {
+      return;
+    }
     void fetchSponsorModuleState();
   }, [fetchSponsorModuleState]);
 
@@ -1062,6 +1077,9 @@ function MainApp() {
   }, [fetchRemoteConfigState]);
 
   useEffect(() => {
+    if (ADS_AND_SPONSORS_DISABLED) {
+      return;
+    }
     const intervalId = window.setInterval(() => {
       void fetchTopRightAdState();
       void fetchSponsorModuleState();
@@ -1072,6 +1090,9 @@ function MainApp() {
   }, [fetchSponsorModuleState, fetchTopRightAdState]);
 
   useEffect(() => {
+    if (ADS_AND_SPONSORS_DISABLED) {
+      return;
+    }
     const handleLanguageChanged = () => {
       void fetchTopRightAdState();
       void fetchSponsorModuleState();
@@ -1260,7 +1281,8 @@ function MainApp() {
         if (cancelled) {
           return;
         }
-        setUpdateRemindersEnabled(settings?.remind_on_update ?? true);
+        void settings;
+        setUpdateRemindersEnabled(false);
       })
       .catch(() => {});
     return () => {
@@ -1296,10 +1318,9 @@ function MainApp() {
     return target.length > 0 ? target : undefined;
   }, [updateRuntimeInfo]);
 
-  const runUpdaterCheck = useCallback(async () => {
-    const { check } = await import('@tauri-apps/plugin-updater');
-    const target = getUpdaterCheckTarget();
-    return target ? check({ target }) : check();
+  const runUpdaterCheck = useCallback(async (): Promise<UpdaterUpdate | null> => {
+    void getUpdaterCheckTarget;
+    return null;
   }, [getUpdaterCheckTarget]);
 
   const closeUpdaterHandle = useCallback(async (handle: UpdaterUpdate | null | undefined) => {
@@ -2071,6 +2092,16 @@ function MainApp() {
     if (!updateRuntimeInfoLoaded) {
       return;
     }
+    if (UPDATER_RUNTIME_DISABLED) {
+      setUpdateRemindersEnabled(false);
+      setUpdateAction({
+        state: 'hidden',
+        version: null,
+        progress: 0,
+        requiresInstall: true,
+      });
+      return;
+    }
 
     const UPDATE_POLL_INTERVAL_MS = 60 * 60 * 1000;
     let updateCheckInFlight = false;
@@ -2500,6 +2531,12 @@ function MainApp() {
 
   // Version jump detection (post-update changelog)
   useEffect(() => {
+    if (UPDATER_RUNTIME_DISABLED) {
+      setVersionJumpInfo(null);
+      setShowVersionJumpNotification(false);
+      return;
+    }
+
     const detectVersionJump = async () => {
       const versionJumpStartedAt = performance.now();
       try {
@@ -2764,10 +2801,16 @@ function MainApp() {
   }, []);
 
   useEffect(() => {
+    void runModalUpdateCheck;
     const handleUpdateRequest = (event: Event) => {
       const detail = (event as CustomEvent<{ source?: UpdateCheckSource }>).detail;
       const source: UpdateCheckSource = detail?.source === 'manual' ? 'manual' : 'auto';
-      void runModalUpdateCheck(source);
+      window.dispatchEvent(new CustomEvent('update-check-started', { detail: { source } }));
+      window.dispatchEvent(
+        new CustomEvent('update-check-finished', {
+          detail: { source, status: 'up_to_date' satisfies UpdateCheckResult['status'] },
+        }),
+      );
     };
     window.addEventListener('update-check-requested', handleUpdateRequest as EventListener);
     return () => {
@@ -3501,8 +3544,7 @@ function MainApp() {
   const appPathMissingBusy = appPathSetting || appPathDetecting || appPathCodexLaunchSetting;
   const claudeMultiInstanceNeedsExe =
     appPathMissing?.app === 'claude' && appPathMissing.retry?.kind === 'instance';
-  const shouldRenderUpdateNotification = showUpdateNotification
-    || (updateRemindersEnabled && updateAction.state !== 'hidden');
+  const shouldRenderUpdateNotification = false;
 
   return (
     <div
@@ -3808,8 +3850,8 @@ function MainApp() {
         easterEggClickCount={easterEggClickCount}
         onEasterEggTriggerClick={handleBreakoutEntryTriggerClick}
         hasBreakoutSession={hasBreakoutSession}
-        updateActionState={updateAction.state}
-        updateProgress={updateAction.progress}
+        updateActionState="hidden"
+        updateProgress={0}
         onUpdateActionClick={handleQuickUpdateActionClick}
         updateRemindersEnabled={updateRemindersEnabled}
         sponsorEntryVisible={sponsorEntryVisible}
@@ -3843,7 +3885,7 @@ function MainApp() {
       </Suspense>
 
       <div className="main-wrapper">
-        {topRightAdVisible && visibleTopCenterPromoAds.length > 0 ? (
+        {!ADS_AND_SPONSORS_DISABLED && topRightAdVisible && visibleTopCenterPromoAds.length > 0 ? (
           <div className="app-global-promo-layer" aria-hidden={false}>
             <TopCenterPromoBanner ads={visibleTopCenterPromoAds} reserveWhenEmpty={false} />
           </div>

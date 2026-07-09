@@ -1,4 +1,4 @@
-use crate::modules::linux_updater::{self, UpdateRuntimeInfo};
+use crate::modules::linux_updater::UpdateRuntimeInfo;
 use crate::modules::logger;
 use crate::modules::update_checker::{self, ReleaseHistoryItem, UpdateSettings, VersionJumpInfo};
 use std::time::Instant;
@@ -122,13 +122,28 @@ pub fn update_log(level: String, message: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn get_update_runtime_info() -> Result<UpdateRuntimeInfo, String> {
-    Ok(linux_updater::get_update_runtime_info())
+    let platform = if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else if cfg!(target_os = "linux") {
+        "linux"
+    } else {
+        std::env::consts::OS
+    };
+
+    Ok(UpdateRuntimeInfo {
+        platform: platform.to_string(),
+        linux_install_kind: "disabled".to_string(),
+        linux_managed_install_supported: false,
+        updater_target: None,
+    })
 }
 
 #[tauri::command]
 pub async fn install_linux_update(
-    app: tauri::AppHandle,
-    expected_version: Option<String>,
+    _app: tauri::AppHandle,
+    _expected_version: Option<String>,
 ) -> Result<(), String> {
-    linux_updater::install_linux_update(app, expected_version).await
+    Err("pure-local build: updater disabled".to_string())
 }

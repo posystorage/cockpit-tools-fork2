@@ -14,7 +14,6 @@ import { useQoderAccountStore } from '../stores/useQoderAccountStore';
 import { useTraeAccountStore } from '../stores/useTraeAccountStore';
 import { useWorkbuddyAccountStore } from '../stores/useWorkbuddyAccountStore';
 import { useZedAccountStore } from '../stores/useZedAccountStore';
-import { useSponsorStore } from '../stores/useSponsorStore';
 import { useRemoteConfigStore } from '../stores/useRemoteConfigStore';
 import {
   API_RELAY_LAYOUT_ENTRY_ID,
@@ -347,7 +346,7 @@ export function DashboardPage({
     apiRelayEntryOrder,
     setHiddenEntry,
   } = usePlatformLayoutStore();
-  const apiRelayEntryEnabled = useSponsorStore((state) => Boolean(state.state.sponsorModule));
+  const apiRelayEntryEnabled = true;
   const remoteHiddenPlatformIds = useRemoteConfigStore((state) => state.hiddenPlatformIds);
   const apiRelayDashboardEnabled = apiRelayEntryEnabled && apiRelayDashboardVisible;
   const hiddenEntrySet = useMemo(() => new Set(hiddenEntryIds), [hiddenEntryIds]);

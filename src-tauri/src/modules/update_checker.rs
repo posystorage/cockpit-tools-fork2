@@ -31,18 +31,18 @@ fn default_check_interval() -> u64 {
 }
 
 fn default_remind_on_update() -> bool {
-    true
+    false
 }
 
 impl Default for UpdateSettings {
     fn default() -> Self {
         Self {
-            auto_check: true,
+            auto_check: false,
             last_check_time: 0,
             check_interval_hours: DEFAULT_CHECK_INTERVAL_HOURS,
             auto_install: false,
             last_run_version: String::new(),
-            remind_on_update: true,
+            remind_on_update: false,
             skipped_version: String::new(),
         }
     }
@@ -109,23 +109,8 @@ fn compare_versions(latest: &str, current: &str) -> bool {
 }
 
 /// Check if enough time has passed since last check
-pub fn should_check_for_updates(settings: &UpdateSettings) -> bool {
-    if !settings.auto_check {
-        return false;
-    }
-
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-
-    let elapsed_hours = now.saturating_sub(settings.last_check_time) / 3600;
-    let interval = if settings.check_interval_hours > 0 {
-        settings.check_interval_hours
-    } else {
-        DEFAULT_CHECK_INTERVAL_HOURS
-    };
-    elapsed_hours >= interval
+pub fn should_check_for_updates(_settings: &UpdateSettings) -> bool {
+    false
 }
 
 /// Get data directory for storing update settings
@@ -396,6 +381,13 @@ pub fn load_update_settings() -> Result<UpdateSettings, String> {
         let _ = save_update_settings(&settings);
     }
 
+    if settings.auto_check || settings.auto_install || settings.remind_on_update {
+        settings.auto_check = false;
+        settings.auto_install = false;
+        settings.remind_on_update = false;
+        let _ = save_update_settings(&settings);
+    }
+
     Ok(settings)
 }
 
@@ -405,7 +397,12 @@ pub fn save_update_settings(settings: &UpdateSettings) -> Result<(), String> {
 
     let settings_path = data_dir.join("update_settings.json");
 
-    let content = serde_json::to_string_pretty(settings)
+    let mut normalized = settings.clone();
+    normalized.auto_check = false;
+    normalized.auto_install = false;
+    normalized.remind_on_update = false;
+
+    let content = serde_json::to_string_pretty(&normalized)
         .map_err(|e| format!("Failed to serialize settings: {}", e))?;
 
     crate::modules::atomic_write::write_string_atomic(&settings_path, &content)
@@ -495,7 +492,7 @@ mod tests {
     #[test]
     fn test_should_check_for_updates() {
         let mut settings = UpdateSettings::default();
-        assert!(should_check_for_updates(&settings));
+        assert!(!should_check_for_updates(&settings));
 
         settings.last_check_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -503,7 +500,7 @@ mod tests {
             .as_secs();
         assert!(!should_check_for_updates(&settings));
 
-        settings.auto_check = false;
+        settings.auto_check = true;
         assert!(!should_check_for_updates(&settings));
     }
 

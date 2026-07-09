@@ -7,8 +7,7 @@ use std::path::{Path, PathBuf};
 use super::config;
 use super::logger;
 
-const ANNOUNCEMENT_URL: &str =
-    "https://raw.githubusercontent.com/jlcodes99/cockpit-tools/main/announcements.json";
+const ANNOUNCEMENT_URL: &str = "";
 const ANNOUNCEMENT_CACHE_FILE: &str = "announcement_cache.json";
 const ANNOUNCEMENT_FORCE_REFRESH_ATTEMPTS_FILE: &str =
     "announcement_force_refresh_attempt_versions.json";
@@ -263,6 +262,19 @@ struct AnnouncementResponse {
     pub sponsor_module: Option<SponsorModule>,
 }
 
+fn empty_announcement_response() -> AnnouncementResponse {
+    AnnouncementResponse {
+        version: "pure-local".to_string(),
+        force_refresh_versions: Vec::new(),
+        announcements: Vec::new(),
+        top_right_ad: None,
+        api_relay_enabled: false,
+        top_right_ads_enabled: false,
+        top_right_ads: Vec::new(),
+        sponsor_module: None,
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AnnouncementCache {
@@ -390,8 +402,8 @@ fn load_cache() -> Result<Option<AnnouncementCache>, String> {
                 force_refresh_versions: Vec::new(),
                 announcements: legacy.data,
                 top_right_ad: None,
-                api_relay_enabled: default_true(),
-                top_right_ads_enabled: default_true(),
+                api_relay_enabled: false,
+                top_right_ads_enabled: false,
                 top_right_ads: Vec::new(),
                 sponsor_module: None,
             },
@@ -1039,6 +1051,9 @@ async fn try_load_force_refreshed_announcements(
 }
 
 async fn load_announcements_raw() -> Result<AnnouncementResponse, String> {
+    logger::log_info("[Announcement] pure-local build: announcements payload disabled");
+    return Ok(empty_announcement_response());
+
     if let Some(local_data) = load_local_announcements()? {
         return Ok(local_data);
     }
@@ -1084,6 +1099,12 @@ async fn load_announcements_raw() -> Result<AnnouncementResponse, String> {
 }
 
 pub async fn get_announcement_state() -> Result<AnnouncementState, String> {
+    return Ok(AnnouncementState {
+        announcements: Vec::new(),
+        unread_ids: Vec::new(),
+        popup_announcement: None,
+    });
+
     let current_version = env!("CARGO_PKG_VERSION");
     let locale = config::get_user_config().language.to_lowercase();
     let raw_payload = load_announcements_raw().await?;
@@ -1109,6 +1130,11 @@ pub async fn get_announcement_state() -> Result<AnnouncementState, String> {
 }
 
 pub async fn get_top_right_ad_state() -> Result<TopRightAdState, String> {
+    return Ok(TopRightAdState {
+        ad: None,
+        ads: Vec::new(),
+    });
+
     let current_version = env!("CARGO_PKG_VERSION");
     let locale = config::get_user_config().language.to_lowercase();
     let raw_payload = load_announcements_raw().await?;
@@ -1135,6 +1161,10 @@ pub async fn get_top_right_ad_state() -> Result<TopRightAdState, String> {
 }
 
 pub async fn get_sponsor_module_state() -> Result<SponsorModuleState, String> {
+    return Ok(SponsorModuleState {
+        sponsor_module: None,
+    });
+
     let current_version = env!("CARGO_PKG_VERSION");
     let locale = config::get_user_config().language.to_lowercase();
     let raw_payload = load_announcements_raw().await?;

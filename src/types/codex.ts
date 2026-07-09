@@ -149,7 +149,7 @@ export interface CodexResetCreditsSnapshot {
   next_expires_at?: number;
 }
 
-const COCKPIT_API_BASE_URL = "https://chongcodex.cn/v1";
+const COCKPIT_API_BASE_URL = "";
 
 function normalizeCodexApiBaseUrlForMatch(rawValue?: string | null): string {
   const trimmed = (rawValue || "").trim();

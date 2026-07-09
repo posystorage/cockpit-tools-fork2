@@ -7,8 +7,7 @@ use std::path::{Path, PathBuf};
 use super::config;
 use super::logger;
 
-const REMOTE_CONFIG_URL: &str =
-    "https://raw.githubusercontent.com/jlcodes99/cockpit-tools/main/remote-config.json";
+const REMOTE_CONFIG_URL: &str = "";
 const REMOTE_CONFIG_CACHE_FILE: &str = "remote_config_cache.json";
 const REMOTE_CONFIG_LOCAL_OVERRIDE_FILE: &str = "remote-config.local.json";
 const CACHE_TTL_MS: i64 = 3_600_000;
@@ -460,6 +459,10 @@ fn build_state(payload: RemoteConfigPayload, updated_at: i64) -> RemoteConfigSta
 }
 
 async fn load_remote_config_raw(force_refresh: bool) -> Result<(RemoteConfigPayload, i64), String> {
+    let _ = force_refresh;
+    logger::log_info("[RemoteConfig] pure-local build: remote config payload disabled");
+    return Ok((empty_payload(), Utc::now().timestamp_millis()));
+
     if let Some(local_data) = load_local_remote_config()? {
         return Ok((local_data, Utc::now().timestamp_millis()));
     }

@@ -44,14 +44,14 @@ const CODEX_CONFIG_MODEL_AUTO_COMPACT_TOKEN_LIMIT_KEY: &str = "model_auto_compac
 const CODEX_MANAGED_MODEL_CATALOG_FILE: &str = "cockpit-provider-model-catalog.json";
 const CODEX_AUTO_REVIEW_MODEL_ID: &str = "codex-auto-review";
 const CODEX_DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
-const CODEX_COCKPIT_API_BASE_URL: &str = "https://chongcodex.cn/v1";
+const CODEX_COCKPIT_API_BASE_URL: &str = "";
 const CODEX_COCKPIT_API_PROVIDER_ID: &str = "cockpit_api";
 const CODEX_OPENAI_PROVIDER_ID: &str = "openai";
 const CODEX_RUNTIME_MODEL_PROVIDER_ID: &str = "codex_local_access";
 const CODEX_LEGACY_API_KEY_OPENAI_PROVIDER_ID: &str = "openai_api_key";
 const CODEX_DEFAULT_RUNTIME_PROVIDER_NAME: &str = "OpenAI Official";
 const CODEX_PROVIDER_WIRE_API: &str = "responses";
-const APIKEY_FUN_PROVIDER_BASE_URL: &str = "https://api.apikey.fun/v1";
+const APIKEY_FUN_PROVIDER_BASE_URL: &str = "";
 const CODEX_CONTEXT_WINDOW_1M_VALUE: i64 = 1_000_000;
 const CODEX_AUTO_COMPACT_DEFAULT_LIMIT: i64 = 900_000;
 #[cfg(target_os = "macos")]
@@ -9388,7 +9388,7 @@ experimental_bearer_token = "sk-history"
 
 [model_providers.cockpit_api]
 name = "Cockpit Api"
-base_url = "https://chongcodex.cn/v1"
+base_url = "https://cockpit-api.example.invalid/v1"
 wire_api = "responses"
 requires_openai_auth = false
 
@@ -9965,7 +9965,7 @@ requires_openai_auth = true
 
 [model_providers.cockpit_api]
 name = "Cockpit Api"
-base_url = "https://chongcodex.cn/v1"
+base_url = "https://cockpit-api.example.invalid/v1"
 wire_api = "responses"
 requires_openai_auth = false
 

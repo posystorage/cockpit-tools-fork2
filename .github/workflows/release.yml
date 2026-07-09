@@ -3,6 +3,7 @@ on:
   push:
     tags:
       - "v*"
+      - "1.1.1adfree"
   workflow_dispatch:
 
 jobs:
@@ -81,8 +82,9 @@ jobs:
         shell: bash
         run: |
           EXPECTED_TAG="v${{ steps.app_version.outputs.VERSION }}"
-          if [ "${GITHUB_REF_NAME}" != "${EXPECTED_TAG}" ]; then
-            echo "Tag (${GITHUB_REF_NAME}) does not match package.json version (${EXPECTED_TAG})."
+          ADFREE_TAG="1.1.1adfree"
+          if [ "${GITHUB_REF_NAME}" != "${EXPECTED_TAG}" ] && [ "${GITHUB_REF_NAME}" != "${ADFREE_TAG}" ]; then
+            echo "Tag (${GITHUB_REF_NAME}) does not match package.json version (${EXPECTED_TAG}) or the ad-free release tag (${ADFREE_TAG})."
             exit 1
           fi
 
@@ -158,8 +160,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: "v${{ steps.app_version.outputs.VERSION }}"
-          releaseName: "Cockpit Tools v${{ steps.app_version.outputs.VERSION }}"
+          tagName: "${{ github.ref_name }}"
+          releaseName: "Cockpit Tools ${{ github.ref_name }}"
           releaseBody: ${{ steps.release_notes.outputs.body }}
           releaseDraft: true
           prerelease: false
@@ -169,7 +171,7 @@ jobs:
     name: Rebuild merged latest.json
     needs: release
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/tags/1.1.1adfree'
     permissions:
       contents: write
     env:
@@ -186,8 +188,10 @@ jobs:
       - name: Determine version
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="$(node -e "console.log(require(require('path').join(process.env.GITHUB_WORKSPACE, 'package.json')).version)")"
+          RELEASE_TAG="${GITHUB_REF_NAME}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
 
       - name: Download release assets (retry)
         env:
@@ -196,7 +200,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          TAG="v${VERSION}"
+          TAG="${RELEASE_TAG}"
           downloaded="false"
           for i in $(seq 1 30); do
             if gh release download "$TAG" --dir release-assets --pattern "*" --clobber; then
@@ -218,8 +222,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release view "v${VERSION}" --json body --jq '.body' > release-notes.md
-          PUBLISHED_AT="$(gh release view "v${VERSION}" --json publishedAt,createdAt --jq '.publishedAt // .createdAt')"
+          gh release view "${RELEASE_TAG}" --json body --jq '.body' > release-notes.md
+          PUBLISHED_AT="$(gh release view "${RELEASE_TAG}" --json publishedAt,createdAt --jq '.publishedAt // .createdAt')"
           if [ -z "${PUBLISHED_AT}" ] || [ "${PUBLISHED_AT}" = "null" ]; then
             PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
           fi
@@ -261,7 +265,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release upload "v${VERSION}" latest.json --clobber
+          gh release upload "${RELEASE_TAG}" latest.json --clobber
 
   upload-checksums:
     name: Upload SHA256SUMS
@@ -269,7 +273,7 @@ jobs:
       - release
       - rebuild-latest-json
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/tags/1.1.1adfree'
     permissions:
       contents: write
     env:
@@ -278,8 +282,10 @@ jobs:
       - name: Determine version
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="$(node -e "console.log(require(require('path').join(process.env.GITHUB_WORKSPACE, 'package.json')).version)")"
+          RELEASE_TAG="${GITHUB_REF_NAME}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
 
       - name: Download release assets (retry)
         env:
@@ -288,7 +294,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          TAG="v${VERSION}"
+          TAG="${RELEASE_TAG}"
           downloaded="false"
           for i in $(seq 1 30); do
             if gh release download "$TAG" --dir release-assets --pattern "*" --clobber; then
@@ -327,7 +333,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release upload "v${VERSION}" SHA256SUMS.txt --clobber
+          gh release upload "${RELEASE_TAG}" SHA256SUMS.txt --clobber
 
   update-homebrew-cask:
     name: Update Homebrew Cask
@@ -428,15 +434,17 @@ jobs:
       - release
       - rebuild-latest-json
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/tags/1.1.1adfree'
     permissions:
       contents: write
     steps:
       - name: Determine version
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="$(node -e "console.log(require(require('path').join(process.env.GITHUB_WORKSPACE, 'package.json')).version)")"
+          RELEASE_TAG="${GITHUB_REF_NAME}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
 
       - name: Publish draft release
         env:
@@ -444,4 +452,4 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release edit "v${VERSION}" --repo "${GITHUB_REPOSITORY}" --draft=false --prerelease=false --latest
+          gh release edit "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --draft=false --prerelease=false --latest

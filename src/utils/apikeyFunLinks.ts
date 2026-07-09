@@ -1,27 +1,16 @@
-export const APIKEY_FUN_REGISTER_URL = 'https://apikey.fun/register?aff=cockpit';
-export const APIKEY_FUN_DOCS_URL = 'https://apikey.fun/docs';
-export const APIKEY_FUN_GLOBAL_ENDPOINT = 'https://api.apikey.fun';
-export const APIKEY_FUN_DIRECT_ENDPOINT = 'https://slb.apikey.fun';
-export const APIKEY_FUN_SOURCE_TAG = 'apikey_fun';
-export const APIKEY_FUN_DEFAULT_MODEL_CATALOG = [
-  'gpt-5.5',
-  'gpt-5.4',
-  'gpt-5.4-mini',
-  'gpt-5.3-codex',
-  'gpt-5.2',
-  'claude-sonnet-4-5',
-  'claude-sonnet-4-5-thinking',
-  'claude-opus-4-6-thinking',
-  'gemini-3-pro-preview',
-  'gemini-3-flash-preview',
-  'gemini-3.5-flash',
-] as const;
+export const APIKEY_FUN_REGISTER_URL = '';
+export const APIKEY_FUN_DOCS_URL = '';
+export const APIKEY_FUN_GLOBAL_ENDPOINT = '';
+export const APIKEY_FUN_DIRECT_ENDPOINT = '';
+export const APIKEY_FUN_SOURCE_TAG = 'custom_provider';
+export const APIKEY_FUN_DEFAULT_MODEL_CATALOG = [] as const;
 export const APIKEY_FUN_PROVIDER_BASE_URL = buildApiKeyFunProviderBaseUrl(
   APIKEY_FUN_GLOBAL_ENDPOINT,
 );
 
 export function buildApiKeyFunProviderBaseUrl(endpoint: string): string {
-  return `${endpoint.trim().replace(/\/+$/, '')}/v1`;
+  const trimmed = endpoint.trim().replace(/\/+$/, '');
+  return trimmed ? `${trimmed}/v1` : '';
 }
 
 export function normalizeApiKeyFunOfficialUrl(value?: string | null): string {
@@ -30,7 +19,6 @@ export function normalizeApiKeyFunOfficialUrl(value?: string | null): string {
   try {
     const parsed = new URL(raw);
     if (
-      parsed.protocol === 'https:' &&
       parsed.hostname.toLowerCase() === 'apikey.fun' &&
       (parsed.pathname === '/' || parsed.pathname === '/register')
     ) {
@@ -42,20 +30,8 @@ export function normalizeApiKeyFunOfficialUrl(value?: string | null): string {
   return raw;
 }
 
-export function isApiKeyFunProviderBaseUrl(value?: string | null): boolean {
-  const raw = value?.trim() ?? '';
-  if (!raw) return false;
-  try {
-    const parsed = new URL(raw);
-    const expected = new URL(APIKEY_FUN_PROVIDER_BASE_URL);
-    return (
-      parsed.protocol === expected.protocol &&
-      parsed.hostname.toLowerCase() === expected.hostname.toLowerCase() &&
-      parsed.pathname.replace(/\/+$/, '') === expected.pathname.replace(/\/+$/, '')
-    );
-  } catch {
-    return false;
-  }
+export function isApiKeyFunProviderBaseUrl(_value?: string | null): boolean {
+  return false;
 }
 
 export function resolveApiKeyFunWireApi(
