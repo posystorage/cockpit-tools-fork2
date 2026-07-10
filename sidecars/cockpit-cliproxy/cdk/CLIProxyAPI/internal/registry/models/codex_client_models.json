@@ -206,8 +206,8 @@
       "reasoning_summary_format": "experimental",
       "default_reasoning_summary": "none",
       "slug": "gpt-5.6-luna",
-      "display_name": "Luna",
-      "description": "Luna",
+      "display_name": "5.6 Luna",
+      "description": "5.6 Luna",
       "default_reasoning_level": "medium",
       "supported_reasoning_levels": [
         {

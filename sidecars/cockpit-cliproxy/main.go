@@ -930,7 +930,7 @@ func displayNameForModel(model string) string {
 	case "gpt-5.6-terra":
 		return "5.6 Terra"
 	case "gpt-5.6-luna":
-		return "Luna"
+		return "5.6 Luna"
 	case "gpt-5.4":
 		return "GPT-5.4"
 	case "gpt-5.4-mini":

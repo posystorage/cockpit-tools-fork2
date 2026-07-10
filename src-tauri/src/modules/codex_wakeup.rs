@@ -491,7 +491,7 @@ fn default_reasoning_efforts_for_model(model: &str) -> Vec<String> {
 const DEFAULT_MODEL_PRESET_ITEMS: &[(&str, &str, &str)] = &[
     ("preset-gpt-5-6-sol", "5.6 Sol", "gpt-5.6-sol"),
     ("preset-gpt-5-6-terra", "5.6 Terra", "gpt-5.6-terra"),
-    ("preset-gpt-5-6-luna", "Luna", "gpt-5.6-luna"),
+    ("preset-gpt-5-6-luna", "5.6 Luna", "gpt-5.6-luna"),
     ("preset-gpt-5-5", "GPT-5.5", "gpt-5.5"),
     ("preset-gpt-5-4", "GPT-5.4", "gpt-5.4"),
     ("preset-gpt-5-4-mini", "GPT-5.4-Mini", "gpt-5.4-mini"),
@@ -2533,10 +2533,8 @@ mod tests {
 
     #[test]
     fn default_model_presets_include_latest_codex_models() {
-        let models: Vec<String> = default_model_presets()
-            .into_iter()
-            .map(|preset| preset.model)
-            .collect();
+        let presets = default_model_presets();
+        let models: Vec<String> = presets.iter().map(|preset| preset.model.clone()).collect();
 
         assert_eq!(
             models,
@@ -2548,6 +2546,13 @@ mod tests {
                 "gpt-5.4",
                 "gpt-5.4-mini"
             ]
+        );
+        assert_eq!(
+            presets
+                .iter()
+                .find(|preset| preset.model == "gpt-5.6-luna")
+                .map(|preset| preset.name.as_str()),
+            Some("5.6 Luna")
         );
     }
 
