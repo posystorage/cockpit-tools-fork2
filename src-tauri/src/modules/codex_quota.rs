@@ -6,6 +6,9 @@ use reqwest::header::{
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, Mutex};
 
 // 使用 wham/usage 端点（Quotio 使用的）
 const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
@@ -119,6 +122,95 @@ fn write_quota_error(account: &mut CodexAccount, message: String) {
     });
 }
 
+fn short_stable_hash(value: &str) -> String {
+    let value = value.trim();
+    if value.is_empty() {
+        return "none".to_string();
+    }
+    let digest = Sha256::digest(value.as_bytes());
+    format!("{:x}", digest)[..12].to_string()
+}
+
+fn normalize_optional_id(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+#[derive(Debug, thiserror::Error, PartialEq)]
+enum QuotaParseError {
+    #[error("rate_limit missing")]
+    MissingRateLimit,
+    #[error("{window} missing")]
+    MissingWindow { window: &'static str },
+    #[error("{window}.used_percent missing")]
+    MissingUsedPercent { window: &'static str },
+    #[error("{window}.used_percent out of range: {value}")]
+    InvalidUsedPercent { window: &'static str, value: i32 },
+}
+
+#[derive(Debug, Clone, Copy)]
+enum QuotaRefreshSource {
+    ManualSingle,
+    ManualAll,
+    Unknown,
+}
+
+impl QuotaRefreshSource {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::ManualSingle => "manual_single",
+            Self::ManualAll => "manual_all",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct QuotaRefreshContext {
+    internal_account_id_hash: String,
+    stored_account_id_hash: String,
+    token_account_id_hash: String,
+    refresh_source: QuotaRefreshSource,
+    generation: u64,
+    started_at_ms: i64,
+}
+
+struct QuotaRefreshSlot {
+    latest_generation: u64,
+    lock: Arc<tokio::sync::Mutex<()>>,
+}
+
+static CODEX_QUOTA_REFRESH_SLOTS: LazyLock<Mutex<HashMap<String, QuotaRefreshSlot>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn register_quota_refresh(account_id: &str) -> (u64, Arc<tokio::sync::Mutex<()>>) {
+    let mut slots = CODEX_QUOTA_REFRESH_SLOTS
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let slot = slots
+        .entry(account_id.to_string())
+        .or_insert_with(|| QuotaRefreshSlot {
+            latest_generation: 0,
+            lock: Arc::new(tokio::sync::Mutex::new(())),
+        });
+    slot.latest_generation += 1;
+    (slot.latest_generation, slot.lock.clone())
+}
+
+fn is_latest_quota_refresh(account_id: &str, generation: u64) -> bool {
+    CODEX_QUOTA_REFRESH_SLOTS
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .get(account_id)
+        .is_some_and(|slot| slot.latest_generation == generation)
+}
+
+fn should_commit_generation(requested_generation: u64, latest_generation: u64) -> bool {
+    requested_generation == latest_generation
+}
+
 /// 使用率窗口（5小时/周）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct WindowInfo {
@@ -170,9 +262,22 @@ pub struct CodexResetCreditsSnapshot {
     next_expires_at: Option<i64>,
 }
 
-fn normalize_remaining_percentage(window: &WindowInfo) -> i32 {
-    let used = window.used_percent.unwrap_or(0).clamp(0, 100);
-    100 - used
+fn remaining_percentage(
+    window_name: &'static str,
+    window: &WindowInfo,
+) -> Result<i32, QuotaParseError> {
+    let used = window
+        .used_percent
+        .ok_or(QuotaParseError::MissingUsedPercent {
+            window: window_name,
+        })?;
+    if !(0..=100).contains(&used) {
+        return Err(QuotaParseError::InvalidUsedPercent {
+            window: window_name,
+            value: used,
+        });
+    }
+    Ok(100 - used)
 }
 
 fn normalize_window_minutes(window: &WindowInfo) -> Option<i64> {
@@ -200,6 +305,39 @@ fn normalize_reset_time(window: &WindowInfo) -> Option<i64> {
 pub struct FetchQuotaResult {
     pub quota: CodexQuota,
     pub plan_type: Option<String>,
+}
+
+fn resolve_quota_account_id(account: &CodexAccount) -> Result<String, String> {
+    let stored_id = normalize_optional_id(account.account_id.as_deref());
+    let token_id =
+        codex_account::extract_chatgpt_account_id_from_access_token(&account.tokens.access_token)
+            .and_then(|value| normalize_optional_id(Some(&value)));
+
+    match (stored_id, token_id) {
+        (Some(stored), Some(token)) if stored == token => Ok(stored),
+        (Some(stored), Some(token)) => {
+            logger::log_error(&format!(
+                "event=codex_quota_identity_mismatch internal_account_hash={} stored_account_hash={} token_account_hash={}",
+                short_stable_hash(&account.id),
+                short_stable_hash(&stored),
+                short_stable_hash(&token)
+            ));
+            Err(
+                "ChatGPT 账号 ID 与 access token 不一致 [error_code:ACCOUNT_ID_MISMATCH]"
+                    .to_string(),
+            )
+        }
+        (Some(stored), None) => {
+            logger::log_warn(&format!(
+                "event=codex_quota_token_account_missing internal_account_hash={} stored_account_hash={}",
+                short_stable_hash(&account.id),
+                short_stable_hash(&stored)
+            ));
+            Ok(stored)
+        }
+        (None, Some(token)) => Ok(token),
+        (None, None) => Err("无法确定 ChatGPT 账号 ID [error_code:ACCOUNT_ID_MISSING]".to_string()),
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -549,12 +687,19 @@ fn parse_account_check_snapshot(
         return Err("accounts/check 返回里没有可用账号".to_string());
     }
 
-    let preferred_account_id =
-        normalize_optional_ref(account.account_id.as_deref()).or_else(|| {
-            codex_account::extract_chatgpt_account_id_from_access_token(
-                &account.tokens.access_token,
-            )
-        });
+    let stored_account_id = normalize_optional_ref(account.account_id.as_deref());
+    let token_account_id =
+        codex_account::extract_chatgpt_account_id_from_access_token(&account.tokens.access_token)
+            .and_then(|value| normalize_optional_ref(Some(&value)));
+    if let (Some(stored), Some(token)) = (&stored_account_id, &token_account_id) {
+        if stored != token {
+            return Err(
+                "订阅账号选择时本地账号 ID 与 token 不一致 [error_code:ACCOUNT_ID_MISMATCH]"
+                    .to_string(),
+            );
+        }
+    }
+    let preferred_account_id = stored_account_id.or(token_account_id);
     let ordering_first_key = payload
         .get("account_ordering")
         .and_then(|value| value.as_array())
@@ -562,31 +707,51 @@ fn parse_account_check_snapshot(
         .and_then(|value| value.as_str())
         .and_then(|value| normalize_optional_ref(Some(value)));
 
-    let selected = records
-        .iter()
-        .find(|item| {
-            let Some(record) = item.node.as_object() else {
-                return false;
-            };
-            let account_record = record
-                .get("account")
-                .and_then(|value| value.as_object())
-                .unwrap_or(record);
-            let candidate_id = extract_account_record_field(
-                account_record,
-                &["account_id", "id", "chatgpt_account_id", "workspace_id"],
-            );
-            candidate_id == preferred_account_id
-        })
-        .or_else(|| {
-            records.iter().find(|item| {
+    let selected = if let Some(preferred_account_id) = preferred_account_id.as_ref() {
+        records
+            .iter()
+            .find(|item| {
+                let Some(record) = item.node.as_object() else {
+                    return false;
+                };
+                let account_record = record
+                    .get("account")
+                    .and_then(|value| value.as_object())
+                    .unwrap_or(record);
+                let candidate_id = extract_account_record_field(
+                    account_record,
+                    &["account_id", "id", "chatgpt_account_id", "workspace_id"],
+                );
+                candidate_id.as_ref() == Some(preferred_account_id)
+            })
+            .ok_or_else(|| {
+                format!(
+                    "未找到目标订阅账号（候选数 {}）[error_code:PREFERRED_ACCOUNT_NOT_FOUND]",
+                    records.len()
+                )
+            })?
+    } else if let Some(ordering_first_key) = ordering_first_key.as_ref() {
+        records.iter().find(|item| {
                 item.key
                     .as_deref()
                     .and_then(|value| normalize_optional_ref(Some(value)))
-                    == ordering_first_key
+                    .as_ref()
+                    == Some(ordering_first_key)
             })
-        })
-        .unwrap_or(&records[0]);
+            .ok_or_else(|| {
+                format!(
+                    "account_ordering 未匹配订阅账号（候选数 {}）[error_code:ACCOUNT_SELECTION_AMBIGUOUS]",
+                    records.len()
+                )
+            })?
+    } else if records.len() == 1 {
+        &records[0]
+    } else {
+        return Err(format!(
+            "无法确定订阅账号（候选数 {}）[error_code:ACCOUNT_SELECTION_AMBIGUOUS]",
+            records.len()
+        ));
+    };
 
     let record = selected
         .node
@@ -821,9 +986,22 @@ async fn refresh_subscription_state(
     };
 
     let mut changed = false;
-    if snapshot.account_id.is_some() && account.account_id != snapshot.account_id {
-        account.account_id = snapshot.account_id.clone();
-        changed = true;
+    let token_account_id =
+        codex_account::extract_chatgpt_account_id_from_access_token(&account.tokens.access_token)
+            .and_then(|value| normalize_optional_ref(Some(&value)));
+    if let Some(snapshot_account_id) = snapshot.account_id.as_ref() {
+        if let Some(token_account_id) = token_account_id.as_ref() {
+            if snapshot_account_id != token_account_id {
+                return Err(
+                    "订阅快照账号 ID 与 access token 不一致 [error_code:ACCOUNT_ID_MISMATCH]"
+                        .to_string(),
+                );
+            }
+        }
+        if account.account_id.as_ref() != Some(snapshot_account_id) {
+            account.account_id = Some(snapshot_account_id.clone());
+            changed = true;
+        }
     }
 
     let previous_plan = account.plan_type.clone();
@@ -873,24 +1051,17 @@ pub async fn fetch_quota(account: &CodexAccount) -> Result<FetchQuotaResult, Str
     );
     headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
 
-    // 添加 ChatGPT-Account-Id 头（关键！）
-    let account_id = account.account_id.clone().or_else(|| {
-        codex_account::extract_chatgpt_account_id_from_access_token(&account.tokens.access_token)
-    });
-
-    if let Some(ref acc_id) = account_id {
-        if !acc_id.is_empty() {
-            headers.insert(
-                "ChatGPT-Account-Id",
-                HeaderValue::from_str(acc_id)
-                    .map_err(|e| format!("构建 Account-Id 头失败: {}", e))?,
-            );
-        }
-    }
+    let account_id = resolve_quota_account_id(account)?;
+    headers.insert(
+        "ChatGPT-Account-Id",
+        HeaderValue::from_str(&account_id).map_err(|e| format!("构建 Account-Id 头失败: {}", e))?,
+    );
 
     logger::log_info(&format!(
-        "Codex 配额请求: {} (account_id: {:?})",
-        USAGE_URL, account_id
+        "event=codex_quota_refresh_request internal_account_hash={} resolved_account_hash={} url={}",
+        short_stable_hash(&account.id),
+        short_stable_hash(&account_id),
+        USAGE_URL
     ));
 
     let response = client
@@ -946,53 +1117,67 @@ pub async fn fetch_quota(account: &CodexAccount) -> Result<FetchQuotaResult, Str
         serde_json::from_str(&body).map_err(|e| format!("解析 JSON 失败: {}", e))?;
 
     let quota = parse_quota_from_usage(&usage, &body)?;
+    logger::log_info(&format!(
+        "event=codex_quota_http_response internal_account_hash={} status={} request_id={} x_request_id={} cf_ray={} body_len={} primary_used_percent={} secondary_used_percent={} primary_reset_at={:?} secondary_reset_at={:?}",
+        short_stable_hash(&account.id),
+        status,
+        request_id,
+        x_request_id,
+        cf_ray,
+        body_len,
+        100 - quota.hourly_percentage,
+        100 - quota.weekly_percentage,
+        quota.hourly_reset_time,
+        quota.weekly_reset_time,
+    ));
     let plan_type = usage.plan_type.clone();
 
     Ok(FetchQuotaResult { quota, plan_type })
 }
 
 /// 从使用率响应中解析配额信息
-fn parse_quota_from_usage(usage: &UsageResponse, raw_body: &str) -> Result<CodexQuota, String> {
-    let rate_limit = usage.rate_limit.as_ref();
-    let primary_window = rate_limit.and_then(|r| r.primary_window.as_ref());
-    let secondary_window = rate_limit.and_then(|r| r.secondary_window.as_ref());
+fn parse_quota_from_usage(usage: &UsageResponse, _raw_body: &str) -> Result<CodexQuota, String> {
+    let rate_limit = usage
+        .rate_limit
+        .as_ref()
+        .ok_or(QuotaParseError::MissingRateLimit)
+        .map_err(|error| error.to_string())?;
+    let primary_window = rate_limit
+        .primary_window
+        .as_ref()
+        .ok_or(QuotaParseError::MissingWindow {
+            window: "primary_window",
+        })
+        .map_err(|error| error.to_string())?;
+    let secondary_window = rate_limit
+        .secondary_window
+        .as_ref()
+        .ok_or(QuotaParseError::MissingWindow {
+            window: "secondary_window",
+        })
+        .map_err(|error| error.to_string())?;
 
-    // Primary window = 5小时配额（session）
-    let (hourly_percentage, hourly_reset_time, hourly_window_minutes) =
-        if let Some(primary) = primary_window {
-            (
-                normalize_remaining_percentage(primary),
-                normalize_reset_time(primary),
-                normalize_window_minutes(primary),
-            )
-        } else {
-            (100, None, None)
-        };
+    let hourly_percentage = remaining_percentage("primary_window", primary_window)
+        .map_err(|error| error.to_string())?;
+    let weekly_percentage = remaining_percentage("secondary_window", secondary_window)
+        .map_err(|error| error.to_string())?;
+    let hourly_reset_time = normalize_reset_time(primary_window);
+    let weekly_reset_time = normalize_reset_time(secondary_window);
+    let hourly_window_minutes = normalize_window_minutes(primary_window);
+    let weekly_window_minutes = normalize_window_minutes(secondary_window);
 
-    // Secondary window = 周配额
-    let (weekly_percentage, weekly_reset_time, weekly_window_minutes) =
-        if let Some(secondary) = secondary_window {
-            (
-                normalize_remaining_percentage(secondary),
-                normalize_reset_time(secondary),
-                normalize_window_minutes(secondary),
-            )
-        } else {
-            (100, None, None)
-        };
-
-    // 保存原始响应
-    let raw_data: Option<serde_json::Value> = serde_json::from_str(raw_body).ok();
+    // Persist only the modeled quota fields, never an unbounded upstream payload.
+    let raw_data = serde_json::to_value(usage).ok();
 
     Ok(CodexQuota {
         hourly_percentage,
         hourly_reset_time,
         hourly_window_minutes,
-        hourly_window_present: Some(primary_window.is_some()),
+        hourly_window_present: Some(true),
         weekly_percentage,
         weekly_reset_time,
         weekly_window_minutes,
-        weekly_window_present: Some(secondary_window.is_some()),
+        weekly_window_present: Some(true),
         reset_credits_available: usage
             .rate_limit_reset_credits
             .as_ref()
@@ -1411,18 +1596,105 @@ fn sync_subscription_expiry_from_current_id_token(account: &mut CodexAccount) {
     }
 }
 
+fn ensure_latest_quota_refresh(
+    account_id: &str,
+    context: &QuotaRefreshContext,
+) -> Result<(), String> {
+    if is_latest_quota_refresh(account_id, context.generation) {
+        return Ok(());
+    }
+    logger::log_info(&format!(
+        "event=codex_quota_commit decision=discarded_stale internal_account_hash={} generation={}",
+        context.internal_account_id_hash, context.generation
+    ));
+    Err("配额刷新结果已过期 [error_code:QUOTA_REFRESH_STALE]".to_string())
+}
+
+fn record_quota_failure(account: &mut CodexAccount, message: String) {
+    write_quota_error(account, message);
+    account.quota_last_attempt_at = Some(now_timestamp());
+    account.quota_stale = Some(true);
+}
+
+fn window_has_suspicious_jump(
+    previous_percentage: i32,
+    previous_reset: Option<i64>,
+    candidate_percentage: i32,
+    candidate_reset: Option<i64>,
+    now: i64,
+) -> bool {
+    candidate_percentage - previous_percentage >= 80
+        && previous_reset.is_some_and(|reset| reset > now)
+        && !candidate_reset.is_some_and(|reset| reset <= now)
+}
+
+fn is_suspicious_quota_jump(previous: &CodexQuota, candidate: &CodexQuota, now: i64) -> bool {
+    let comparable_hourly = previous.hourly_window_minutes == candidate.hourly_window_minutes
+        && previous.hourly_window_present == candidate.hourly_window_present;
+    let comparable_weekly = previous.weekly_window_minutes == candidate.weekly_window_minutes
+        && previous.weekly_window_present == candidate.weekly_window_present;
+
+    (comparable_hourly
+        && window_has_suspicious_jump(
+            previous.hourly_percentage,
+            previous.hourly_reset_time,
+            candidate.hourly_percentage,
+            candidate.hourly_reset_time,
+            now,
+        ))
+        || (comparable_weekly
+            && window_has_suspicious_jump(
+                previous.weekly_percentage,
+                previous.weekly_reset_time,
+                candidate.weekly_percentage,
+                candidate.weekly_reset_time,
+                now,
+            ))
+}
+
+fn quota_confirmation_matches(first: &FetchQuotaResult, second: &FetchQuotaResult) -> bool {
+    let first = &first.quota;
+    let second = &second.quota;
+    first.hourly_percentage == second.hourly_percentage
+        && first.weekly_percentage == second.weekly_percentage
+        && first.hourly_reset_time == second.hourly_reset_time
+        && first.weekly_reset_time == second.weekly_reset_time
+        && first.hourly_window_minutes == second.hourly_window_minutes
+        && first.weekly_window_minutes == second.weekly_window_minutes
+        && first.hourly_window_present == second.hourly_window_present
+        && first.weekly_window_present == second.weekly_window_present
+        && first.plan_type == second.plan_type
+}
+
 /// 刷新账号配额并保存（包含 token 自动刷新）
 async fn refresh_account_quota_once(
     account_id: &str,
     options: RefreshQuotaOptions,
+    context: &mut QuotaRefreshContext,
 ) -> Result<CodexQuota, String> {
     let mut account = codex_account::prepare_account_for_injection(account_id).await?;
+    context.stored_account_id_hash = short_stable_hash(account.account_id.as_deref().unwrap_or(""));
+    context.token_account_id_hash = short_stable_hash(
+        &codex_account::extract_chatgpt_account_id_from_access_token(&account.tokens.access_token)
+            .unwrap_or_default(),
+    );
+    account.quota_last_attempt_at = Some(now_timestamp());
+    logger::log_info(&format!(
+        "event=codex_quota_refresh_started source={} internal_account_hash={} stored_account_hash={} token_account_hash={} generation={} started_at_ms={}",
+        context.refresh_source.as_str(),
+        context.internal_account_id_hash,
+        context.stored_account_id_hash,
+        context.token_account_id_hash,
+        context.generation,
+        context.started_at_ms
+    ));
     if account.is_api_key_auth() {
         if is_new_api_account(&account) {
             let result = match fetch_new_api_quota(&account).await {
                 Ok(result) => result,
                 Err(e) => {
-                    write_quota_error(&mut account, e.clone());
+                    ensure_latest_quota_refresh(account_id, context)?;
+                    record_quota_failure(&mut account, e.clone());
                     if let Err(save_err) = codex_account::save_account(&account) {
                         logger::log_warn(&format!("写入 Cockpit Api 配额错误失败: {}", save_err));
                     }
@@ -1432,18 +1704,21 @@ async fn refresh_account_quota_once(
             if result.plan_type.is_some() {
                 sync_subscription_from_token(&mut account, result.plan_type.clone(), None);
             }
+            ensure_latest_quota_refresh(account_id, context)?;
             normalize_subscription_retry_state(&mut account);
             account.quota = Some(result.quota.clone());
             account.quota_error = None;
             account.usage_updated_at = Some(now_timestamp());
+            account.quota_last_success_at = Some(now_timestamp());
+            account.quota_stale = Some(false);
             codex_account::save_account(&account)?;
             return Ok(result.quota);
         }
-        account.quota = None;
-        account.quota_error = None;
-        account.usage_updated_at = None;
+        let message = "API Key 账号不支持刷新配额，请在网页端查看。".to_string();
+        ensure_latest_quota_refresh(account_id, context)?;
+        record_quota_failure(&mut account, message.clone());
         let _ = codex_account::save_account(&account);
-        return Err("API Key 账号不支持刷新配额，请在网页端查看。".to_string());
+        return Err(message);
     }
 
     // 检查 token 是否过期，如果过期则刷新
@@ -1455,12 +1730,14 @@ async fn refresh_account_quota_once(
                 sync_subscription_expiry_from_current_id_token(&mut account);
                 normalize_subscription_retry_state(&mut account);
 
+                ensure_latest_quota_refresh(account_id, context)?;
                 codex_account::save_account(&account)?;
             }
             Err(e) => {
                 logger::log_error(&format!("账号 {} Token 刷新失败: {}", account.email, e));
                 let message = e;
-                write_quota_error(&mut account, message.clone());
+                ensure_latest_quota_refresh(account_id, context)?;
+                record_quota_failure(&mut account, message.clone());
                 if let Err(save_err) = codex_account::save_account(&account) {
                     logger::log_warn(&format!("写入 Codex 配额错误失败: {}", save_err));
                 }
@@ -1472,7 +1749,7 @@ async fn refresh_account_quota_once(
     let subscription_options = SubscriptionRefreshOptions {
         force: options.force_subscription_refresh,
     };
-    let result = match fetch_quota(&account).await {
+    let mut result = match fetch_quota(&account).await {
         Ok(result) => result,
         Err(e) => {
             if let Err(subscription_error) =
@@ -1483,13 +1760,61 @@ async fn refresh_account_quota_once(
                     account.email, subscription_error
                 ));
             }
-            write_quota_error(&mut account, e.clone());
+            ensure_latest_quota_refresh(account_id, context)?;
+            record_quota_failure(&mut account, e.clone());
             if let Err(save_err) = codex_account::save_account(&account) {
                 logger::log_warn(&format!("写入 Codex 配额错误失败: {}", save_err));
             }
             return Err(e);
         }
     };
+
+    ensure_latest_quota_refresh(account_id, context)?;
+    if account
+        .quota
+        .as_ref()
+        .is_some_and(|previous| is_suspicious_quota_jump(previous, &result.quota, now_timestamp()))
+    {
+        logger::log_warn(&format!(
+            "event=codex_quota_suspicious_jump internal_account_hash={} generation={} previous_hourly={} candidate_hourly={} previous_weekly={} candidate_weekly={}",
+            context.internal_account_id_hash,
+            context.generation,
+            account.quota.as_ref().map(|quota| quota.hourly_percentage).unwrap_or_default(),
+            result.quota.hourly_percentage,
+            account.quota.as_ref().map(|quota| quota.weekly_percentage).unwrap_or_default(),
+            result.quota.weekly_percentage
+        ));
+        let confirmation = match fetch_quota(&account).await {
+            Ok(confirmation) => confirmation,
+            Err(error) => {
+                ensure_latest_quota_refresh(account_id, context)?;
+                let message = format!(
+                    "异常额度跃迁二次确认失败: {} [error_code:QUOTA_CONFIRMATION_FAILED]",
+                    error
+                );
+                record_quota_failure(&mut account, message.clone());
+                codex_account::save_account(&account)?;
+                return Err(message);
+            }
+        };
+        ensure_latest_quota_refresh(account_id, context)?;
+        if !quota_confirmation_matches(&result, &confirmation) {
+            let message =
+                "异常额度跃迁二次确认不一致 [error_code:QUOTA_CONFIRMATION_MISMATCH]".to_string();
+            logger::log_warn(&format!(
+                "event=codex_quota_commit decision=rejected_confirmation internal_account_hash={} generation={}",
+                context.internal_account_id_hash, context.generation
+            ));
+            record_quota_failure(&mut account, message.clone());
+            codex_account::save_account(&account)?;
+            return Err(message);
+        }
+        logger::log_info(&format!(
+            "event=codex_quota_suspicious_jump_confirmed internal_account_hash={} generation={}",
+            context.internal_account_id_hash, context.generation
+        ));
+        result = confirmation;
+    }
 
     // 从 usage 响应中的 plan_type 更新订阅标识
     if result.plan_type.is_some() {
@@ -1508,20 +1833,46 @@ async fn refresh_account_quota_once(
     account.quota = Some(result.quota.clone());
     account.quota_error = None;
     account.usage_updated_at = Some(now_timestamp());
+    account.quota_last_success_at = Some(now_timestamp());
+    account.quota_stale = Some(false);
+    ensure_latest_quota_refresh(account_id, context)?;
     codex_account::save_account(&account)?;
 
     Ok(result.quota)
 }
 
 pub async fn refresh_account_quota(account_id: &str) -> Result<CodexQuota, String> {
-    refresh_account_quota_once(account_id, RefreshQuotaOptions::default()).await
+    refresh_account_quota_with_source(
+        account_id,
+        RefreshQuotaOptions::default(),
+        QuotaRefreshSource::ManualSingle,
+    )
+    .await
 }
 
 pub async fn refresh_account_quota_with_options(
     account_id: &str,
     options: RefreshQuotaOptions,
 ) -> Result<CodexQuota, String> {
-    refresh_account_quota_once(account_id, options).await
+    refresh_account_quota_with_source(account_id, options, QuotaRefreshSource::Unknown).await
+}
+
+async fn refresh_account_quota_with_source(
+    account_id: &str,
+    options: RefreshQuotaOptions,
+    source: QuotaRefreshSource,
+) -> Result<CodexQuota, String> {
+    let (generation, lock) = register_quota_refresh(account_id);
+    let mut context = QuotaRefreshContext {
+        internal_account_id_hash: short_stable_hash(account_id),
+        stored_account_id_hash: "none".to_string(),
+        token_account_id_hash: "none".to_string(),
+        refresh_source: source,
+        generation,
+        started_at_ms: chrono::Utc::now().timestamp_millis(),
+    };
+    let _guard = lock.lock().await;
+    refresh_account_quota_once(account_id, options, &mut context).await
 }
 
 pub async fn probe_import_account_quota(account: &CodexAccount) -> Result<CodexQuota, String> {
@@ -1593,7 +1944,12 @@ pub async fn refresh_all_quotas() -> Result<Vec<(String, Result<CodexQuota, Stri
                     .acquire_owned()
                     .await
                     .map_err(|e| format!("获取 Codex 刷新并发许可失败: {}", e))?;
-                let result = refresh_account_quota(&account_id).await;
+                let result = refresh_account_quota_with_source(
+                    &account_id,
+                    RefreshQuotaOptions::default(),
+                    QuotaRefreshSource::ManualAll,
+                )
+                .await;
                 Ok::<(String, Result<CodexQuota, String>), String>((account_id, result))
             }
         })
@@ -1613,10 +1969,154 @@ pub async fn refresh_all_quotas() -> Result<Vec<(String, Result<CodexQuota, Stri
 #[cfg(test)]
 mod tests {
     use super::{
-        normalize_http_error_body_for_display, parse_reset_credits_snapshot,
-        HTTP_ERROR_BODY_DISPLAY_MAX_CHARS,
+        is_suspicious_quota_jump, normalize_http_error_body_for_display,
+        parse_account_check_snapshot, parse_quota_from_usage, parse_reset_credits_snapshot,
+        should_commit_generation, UsageResponse, HTTP_ERROR_BODY_DISPLAY_MAX_CHARS,
     };
+    use crate::models::codex::{CodexAccount, CodexQuota, CodexTokens};
     use serde_json::json;
+
+    fn parse_usage(value: serde_json::Value) -> Result<CodexQuota, String> {
+        let usage: UsageResponse = serde_json::from_value(value).unwrap();
+        parse_quota_from_usage(&usage, "{}")
+    }
+
+    fn quota(hourly: i32, weekly: i32, reset: i64) -> CodexQuota {
+        CodexQuota {
+            hourly_percentage: hourly,
+            hourly_reset_time: Some(reset),
+            hourly_window_minutes: Some(300),
+            hourly_window_present: Some(true),
+            weekly_percentage: weekly,
+            weekly_reset_time: Some(reset),
+            weekly_window_minutes: Some(10_080),
+            weekly_window_present: Some(true),
+            reset_credits_available: None,
+            reset_credits: Vec::new(),
+            reset_credits_next_expires_at: None,
+            raw_data: None,
+        }
+    }
+
+    #[test]
+    fn parses_exhausted_and_low_used_percentages_without_defaults() {
+        let exhausted = parse_usage(json!({
+            "rate_limit": {
+                "primary_window": { "used_percent": 100 },
+                "secondary_window": { "used_percent": 100 }
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            (exhausted.hourly_percentage, exhausted.weekly_percentage),
+            (0, 0)
+        );
+
+        let low_used = parse_usage(json!({
+            "rate_limit": {
+                "primary_window": { "used_percent": 5 },
+                "secondary_window": { "used_percent": 1 }
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            (low_used.hourly_percentage, low_used.weekly_percentage),
+            (95, 99)
+        );
+    }
+
+    #[test]
+    fn rejects_incomplete_or_invalid_usage_payloads() {
+        for payload in [
+            json!({}),
+            json!({ "rate_limit": {} }),
+            json!({ "rate_limit": { "primary_window": { "used_percent": 1 } } }),
+            json!({ "rate_limit": { "primary_window": {}, "secondary_window": { "used_percent": 1 } } }),
+            json!({ "rate_limit": { "primary_window": { "used_percent": -1 }, "secondary_window": { "used_percent": 1 } } }),
+            json!({ "rate_limit": { "primary_window": { "used_percent": 101 }, "secondary_window": { "used_percent": 1 } } }),
+        ] {
+            assert!(parse_usage(payload).is_err());
+        }
+    }
+
+    #[test]
+    fn detects_only_large_quota_increases_without_a_reset() {
+        let now = 1_000;
+        assert!(is_suspicious_quota_jump(
+            &quota(0, 0, now + 100),
+            &quota(95, 99, now + 100),
+            now
+        ));
+        assert!(!is_suspicious_quota_jump(
+            &quota(0, 0, now - 1),
+            &quota(95, 99, now + 100),
+            now
+        ));
+        assert!(!is_suspicious_quota_jump(
+            &quota(10, 10, now + 100),
+            &quota(50, 50, now + 100),
+            now
+        ));
+    }
+
+    #[test]
+    fn only_the_latest_generation_may_commit() {
+        assert!(!should_commit_generation(1, 2));
+        assert!(should_commit_generation(2, 2));
+    }
+
+    fn account_with_preferred_id(account_id: Option<&str>) -> CodexAccount {
+        let mut account = CodexAccount::new(
+            "internal-account".to_string(),
+            "quota@example.com".to_string(),
+            CodexTokens {
+                id_token: String::new(),
+                access_token: "opaque-token".to_string(),
+                refresh_token: None,
+            },
+        );
+        account.account_id = account_id.map(str::to_string);
+        account
+    }
+
+    #[test]
+    fn subscription_snapshot_selects_the_preferred_record() {
+        let snapshot = parse_account_check_snapshot(
+            &json!({
+                "accounts": [
+                    { "account": { "id": "other" } },
+                    { "account": { "id": "wanted" }, "entitlement": { "subscription_plan": "pro" } }
+                ]
+            }),
+            &account_with_preferred_id(Some("wanted")),
+        )
+        .unwrap();
+
+        assert_eq!(snapshot.account_id.as_deref(), Some("wanted"));
+        assert_eq!(snapshot.plan_type.as_deref(), Some("pro"));
+    }
+
+    #[test]
+    fn subscription_snapshot_rejects_missing_or_ambiguous_records() {
+        let missing = parse_account_check_snapshot(
+            &json!({ "accounts": [{ "account": { "id": "other" } }] }),
+            &account_with_preferred_id(Some("wanted")),
+        )
+        .expect_err("preferred account must not fall back to the first record");
+        assert!(missing.contains("PREFERRED_ACCOUNT_NOT_FOUND"));
+
+        let ambiguous = parse_account_check_snapshot(
+            &json!({
+                "accounts": [
+                    { "account": { "id": "first" } },
+                    { "account": { "id": "second" } }
+                ]
+            }),
+            &account_with_preferred_id(None),
+        )
+        .expect_err("multiple records without a preference must be rejected");
+        assert!(ambiguous.contains("ACCOUNT_SELECTION_AMBIGUOUS"));
+    }
 
     #[test]
     fn displays_empty_http_error_body_explicitly() {

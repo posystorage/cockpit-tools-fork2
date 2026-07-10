@@ -23,6 +23,7 @@ const CODEX_CURRENT_ACCOUNT_CACHE_KEY = `agtools.codex.accounts.current${STORAGE
 const CODEX_PROFILE_SYNC_IN_FLIGHT = new Set<string>();
 const CODEX_PROFILE_SYNC_LAST_ATTEMPT = new Map<string, number>();
 const CODEX_PROFILE_SYNC_RETRY_INTERVAL_MS = 5 * 60 * 1000;
+const CODEX_QUOTA_REFRESH_IN_FLIGHT = new Map<string, Promise<CodexQuota>>();
 let allowNextEmptyCodexAccountList = false;
 let allowNextEmptyCodexCurrentAccount = false;
 
@@ -84,6 +85,22 @@ const mergeCodexAccountIntoList = (
   const next = [...accounts];
   next[index] = account;
   return next;
+};
+
+const runDedupedQuotaRefresh = (
+  accountId: string,
+  operation: () => Promise<CodexQuota>,
+): Promise<CodexQuota> => {
+  const existing = CODEX_QUOTA_REFRESH_IN_FLIGHT.get(accountId);
+  if (existing) return existing;
+
+  const promise = operation().finally(() => {
+    if (CODEX_QUOTA_REFRESH_IN_FLIGHT.get(accountId) === promise) {
+      CODEX_QUOTA_REFRESH_IN_FLIGHT.delete(accountId);
+    }
+  });
+  CODEX_QUOTA_REFRESH_IN_FLIGHT.set(accountId, promise);
+  return promise;
 };
 
 type FetchCodexAccountsOptions = {
@@ -321,12 +338,14 @@ export const useCodexAccountStore = create<CodexAccountState>((set, get) => ({
     if (account && isCodexPendingOAuthAccount(account)) {
       throw new Error('CODEX_PENDING_OAUTH_ACCOUNT');
     }
-    try {
-      return await codexService.refreshCodexQuota(accountId);
-    } finally {
-      await get().fetchAccounts();
-      await get().fetchCurrentAccount();
-    }
+    return runDedupedQuotaRefresh(accountId, async () => {
+      try {
+        return await codexService.refreshCodexQuota(accountId);
+      } finally {
+        await get().fetchAccounts();
+        await get().fetchCurrentAccount();
+      }
+    });
   },
 
   refreshSubscriptionInfo: async (accountId: string) => {

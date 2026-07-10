@@ -6,6 +6,7 @@ on:
       - "1.1.1adfree"
       - "1.1.1show"
       - "1.1.1usage"
+      - "1.1.1codexbalanceshow"
   workflow_dispatch:
 
 jobs:
@@ -87,8 +88,9 @@ jobs:
           ADFREE_TAG="1.1.1adfree"
           SHOW_TAG="1.1.1show"
           USAGE_TAG="1.1.1usage"
-          if [ "${GITHUB_REF_NAME}" != "${EXPECTED_TAG}" ] && [ "${GITHUB_REF_NAME}" != "${ADFREE_TAG}" ] && [ "${GITHUB_REF_NAME}" != "${SHOW_TAG}" ] && [ "${GITHUB_REF_NAME}" != "${USAGE_TAG}" ]; then
-            echo "Tag (${GITHUB_REF_NAME}) does not match package.json version (${EXPECTED_TAG}) or the custom release tags (${ADFREE_TAG}, ${SHOW_TAG}, ${USAGE_TAG})."
+          CODEX_BALANCE_SHOW_TAG="1.1.1codexbalanceshow"
+          if [ "${GITHUB_REF_NAME}" != "${EXPECTED_TAG}" ] && [ "${GITHUB_REF_NAME}" != "${ADFREE_TAG}" ] && [ "${GITHUB_REF_NAME}" != "${SHOW_TAG}" ] && [ "${GITHUB_REF_NAME}" != "${USAGE_TAG}" ] && [ "${GITHUB_REF_NAME}" != "${CODEX_BALANCE_SHOW_TAG}" ]; then
+            echo "Tag (${GITHUB_REF_NAME}) does not match package.json version (${EXPECTED_TAG}) or the custom release tags (${ADFREE_TAG}, ${SHOW_TAG}, ${USAGE_TAG}, ${CODEX_BALANCE_SHOW_TAG})."
             exit 1
           fi
 

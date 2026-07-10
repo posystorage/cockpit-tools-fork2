@@ -527,10 +527,10 @@ fn collect_account_records(payload: &serde_json::Value) -> Vec<serde_json::Value
 fn parse_account_profile_from_check_response(
     payload: &serde_json::Value,
     account: &CodexAccount,
-) -> (Option<String>, Option<String>, Option<String>) {
+) -> Result<(Option<String>, Option<String>, Option<String>), String> {
     let records = collect_account_records(payload);
     if records.is_empty() {
-        return (None, None, None);
+        return Err("订阅账号列表为空 [error_code:ACCOUNT_SELECTION_EMPTY]".to_string());
     }
 
     let ordering_first_id = payload
@@ -539,14 +539,22 @@ fn parse_account_profile_from_check_response(
         .and_then(|items| items.first())
         .and_then(|value| value.as_str())
         .and_then(|value| normalize_optional_ref(Some(value)));
-    let expected_account_id = normalize_optional_ref(account.account_id.as_deref())
-        .or_else(|| extract_chatgpt_account_id_from_access_token(&account.tokens.access_token));
-    let expected_org_id = normalize_optional_ref(account.organization_id.as_deref());
+    let stored_account_id = normalize_optional_ref(account.account_id.as_deref());
+    let token_account_id =
+        extract_chatgpt_account_id_from_access_token(&account.tokens.access_token)
+            .and_then(|value| normalize_optional_ref(Some(&value)));
+    if let (Some(stored), Some(token)) = (&stored_account_id, &token_account_id) {
+        if stored != token {
+            return Err(
+                "账号资料刷新时本地账号 ID 与 token 不一致 [error_code:ACCOUNT_ID_MISMATCH]"
+                    .to_string(),
+            );
+        }
+    }
+    let preferred_account_id = stored_account_id.or(token_account_id);
 
-    let mut selected_record: Option<serde_json::Value> = None;
-
-    if let Some(expected_id) = expected_account_id.as_deref() {
-        selected_record = records
+    let selected = if let Some(expected_id) = preferred_account_id.as_deref() {
+        records
             .iter()
             .find(|item| {
                 let Some(record) = item.as_object() else {
@@ -558,12 +566,15 @@ fn parse_account_profile_from_check_response(
                 );
                 normalize_optional_ref(candidate_id.as_deref()) == Some(expected_id.to_string())
             })
-            .cloned();
-    }
-
-    if selected_record.is_none() {
-        if let Some(ordering_id) = ordering_first_id.as_deref() {
-            selected_record = records
+            .cloned()
+            .ok_or_else(|| {
+                format!(
+                    "未找到目标订阅账号（候选数 {}）[error_code:PREFERRED_ACCOUNT_NOT_FOUND]",
+                    records.len()
+                )
+            })?
+    } else if let Some(ordering_id) = ordering_first_id.as_deref() {
+        records
                 .iter()
                 .find(|item| {
                     let Some(record) = item.as_object() else {
@@ -575,31 +586,23 @@ fn parse_account_profile_from_check_response(
                     );
                     normalize_optional_ref(candidate_id.as_deref()) == Some(ordering_id.to_string())
                 })
-                .cloned();
-        }
-    }
-
-    if selected_record.is_none() {
-        if let Some(org_id) = expected_org_id.as_deref() {
-            selected_record = records
-                .iter()
-                .find(|item| {
-                    let Some(record) = item.as_object() else {
-                        return false;
-                    };
-                    let candidate_org = extract_account_record_field(
-                        record,
-                        &["organization_id", "org_id", "workspace_id"],
-                    );
-                    normalize_optional_ref(candidate_org.as_deref()) == Some(org_id.to_string())
-                })
-                .cloned();
-        }
-    }
-
-    let selected = selected_record.unwrap_or_else(|| records[0].clone());
+                .cloned()
+                .ok_or_else(|| {
+                    format!(
+                        "account_ordering 未匹配订阅账号（候选数 {}）[error_code:ACCOUNT_SELECTION_AMBIGUOUS]",
+                        records.len()
+                    )
+                })?
+    } else if records.len() == 1 {
+        records[0].clone()
+    } else {
+        return Err(format!(
+            "无法确定订阅账号（候选数 {}）[error_code:ACCOUNT_SELECTION_AMBIGUOUS]",
+            records.len()
+        ));
+    };
     let Some(record) = selected.as_object() else {
-        return (None, None, None);
+        return Err("订阅账号记录格式无效 [error_code:ACCOUNT_SELECTION_INVALID]".to_string());
     };
 
     let account_name = extract_account_record_field(
@@ -628,7 +631,7 @@ fn parse_account_profile_from_check_response(
         &["id", "account_id", "chatgpt_account_id", "workspace_id"],
     );
 
-    (account_name, account_structure, account_id)
+    Ok((account_name, account_structure, account_id))
 }
 
 async fn fetch_remote_account_profile(
@@ -679,7 +682,7 @@ async fn fetch_remote_account_profile(
 
     let payload: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("账号信息 JSON 解析失败: {}", e))?;
-    Ok(parse_account_profile_from_check_response(&payload, account))
+    parse_account_profile_from_check_response(&payload, account)
 }
 
 /// 获取 Codex 数据目录
@@ -2822,6 +2825,17 @@ async fn refresh_account_profile_once(account_id: &str) -> Result<CodexAccount, 
     let mut changed = false;
 
     if let Some(remote_account_id) = normalize_optional_value(account_id_from_remote) {
+        if let Some(token_account_id) =
+            extract_chatgpt_account_id_from_access_token(&account.tokens.access_token)
+                .and_then(|value| normalize_optional_ref(Some(&value)))
+        {
+            if remote_account_id != token_account_id {
+                return Err(
+                    "远端账号快照与 access token 身份不一致 [error_code:ACCOUNT_ID_MISMATCH]"
+                        .to_string(),
+                );
+            }
+        }
         if normalize_optional_ref(account.account_id.as_deref()) != Some(remote_account_id.clone())
         {
             account.account_id = Some(remote_account_id);
@@ -7537,8 +7551,8 @@ mod tests {
         format_refresh_error_for_user, get_accounts_dir, get_accounts_storage_path,
         get_current_account_from_loaded, import_from_json, is_managed_auth_refresh_due,
         is_pending_oauth_account, list_accounts_checked, load_account, load_account_index,
-        looks_like_sub2api_export, now_timestamp, parse_auth_file_last_refresh,
-        parse_codex_account_compat, parse_line_delimited_json_values,
+        looks_like_sub2api_export, now_timestamp, parse_account_profile_from_check_response,
+        parse_auth_file_last_refresh, parse_codex_account_compat, parse_line_delimited_json_values,
         read_api_provider_from_config_toml, read_quick_config_from_config_toml, remove_accounts,
         resolve_api_provider_config, save_account, save_account_index,
         should_accept_authority_snapshot, sync_account_from_auth_dir,
@@ -7653,6 +7667,83 @@ mod tests {
         assert_eq!(account.api_provider_name.as_deref(), Some("Custom OpenAI"));
         assert_eq!(account.created_at, 100);
         assert_eq!(account.last_used, 200);
+    }
+
+    #[test]
+    fn account_profile_selection_uses_the_preferred_account_record() {
+        let tokens = make_codex_tokens(
+            "profile@example.com",
+            "account-wanted",
+            "org-wanted",
+            "profile",
+            "refresh-profile",
+        );
+        let mut account = CodexAccount::new(
+            "internal-profile".to_string(),
+            "profile@example.com".to_string(),
+            tokens,
+        );
+        account.account_id = Some("account-wanted".to_string());
+        let result = parse_account_profile_from_check_response(
+            &serde_json::json!({
+                "accounts": [
+                    { "id": "account-other", "name": "Other" },
+                    { "id": "account-wanted", "name": "Wanted", "structure": "team" }
+                ]
+            }),
+            &account,
+        )
+        .expect("preferred account should be selected");
+
+        assert_eq!(result.0.as_deref(), Some("Wanted"));
+        assert_eq!(result.1.as_deref(), Some("team"));
+        assert_eq!(result.2.as_deref(), Some("account-wanted"));
+    }
+
+    #[test]
+    fn account_profile_selection_rejects_a_missing_preferred_account() {
+        let tokens = make_codex_tokens(
+            "profile@example.com",
+            "account-wanted",
+            "org-wanted",
+            "profile-missing",
+            "refresh-profile-missing",
+        );
+        let mut account = CodexAccount::new(
+            "internal-profile".to_string(),
+            "profile@example.com".to_string(),
+            tokens,
+        );
+        account.account_id = Some("account-wanted".to_string());
+        let error = parse_account_profile_from_check_response(
+            &serde_json::json!({ "accounts": [{ "id": "account-other" }] }),
+            &account,
+        )
+        .expect_err("missing preferred account must not fall back to the first record");
+
+        assert!(error.contains("PREFERRED_ACCOUNT_NOT_FOUND"));
+    }
+
+    #[test]
+    fn account_profile_selection_rejects_ambiguous_records_without_a_preference() {
+        let account = CodexAccount::new(
+            "internal-profile".to_string(),
+            "profile@example.com".to_string(),
+            CodexTokens {
+                id_token: String::new(),
+                access_token: "opaque-token".to_string(),
+                refresh_token: None,
+            },
+        );
+        let error = parse_account_profile_from_check_response(
+            &serde_json::json!({
+                "accounts": [{ "id": "account-a" }, { "id": "account-b" }]
+            }),
+            &account,
+        )
+        .expect_err("ambiguous records must not select the first record");
+
+        assert!(error.contains("ACCOUNT_SELECTION_AMBIGUOUS"));
     }
 
     fn make_temp_dir(prefix: &str) -> std::path::PathBuf {

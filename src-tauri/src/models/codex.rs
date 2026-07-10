@@ -171,6 +171,12 @@ pub struct CodexAccount {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage_updated_at: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quota_last_attempt_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quota_last_success_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quota_stale: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subscription_query_last_attempt_at: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subscription_query_last_success_at: Option<i64>,
@@ -405,6 +411,9 @@ impl CodexAccount {
             quota: None,
             quota_error: None,
             usage_updated_at: None,
+            quota_last_attempt_at: None,
+            quota_last_success_at: None,
+            quota_stale: None,
             subscription_query_last_attempt_at: None,
             subscription_query_last_success_at: None,
             subscription_query_next_retry_at: None,
