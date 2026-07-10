@@ -1653,6 +1653,7 @@ fn is_suspicious_quota_jump(previous: &CodexQuota, candidate: &CodexQuota, now: 
 }
 
 fn quota_confirmation_matches(first: &FetchQuotaResult, second: &FetchQuotaResult) -> bool {
+    let plan_type_matches = first.plan_type == second.plan_type;
     let first = &first.quota;
     let second = &second.quota;
     first.hourly_percentage == second.hourly_percentage
@@ -1663,7 +1664,7 @@ fn quota_confirmation_matches(first: &FetchQuotaResult, second: &FetchQuotaResul
         && first.weekly_window_minutes == second.weekly_window_minutes
         && first.hourly_window_present == second.hourly_window_present
         && first.weekly_window_present == second.weekly_window_present
-        && first.plan_type == second.plan_type
+        && plan_type_matches
 }
 
 /// 刷新账号配额并保存（包含 token 自动刷新）
