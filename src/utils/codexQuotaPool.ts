@@ -7,6 +7,7 @@ import {
 export const CODEX_QUOTA_POOL_PLAN_KEYS = [
   'FREE',
   'API_KEY',
+  'K12',
   'PLUS',
   'PRO',
   'TEAM',

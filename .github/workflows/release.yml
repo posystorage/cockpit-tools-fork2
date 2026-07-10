@@ -3,6 +3,7 @@ on:
   push:
     tags:
       - "v*"
+      - "[0-9]*"
   workflow_dispatch:
 
 jobs:
@@ -76,15 +77,24 @@ jobs:
           VERSION="$(node -e "console.log(require(require('path').join(process.env.GITHUB_WORKSPACE, 'package.json')).version)")"
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Validate tag matches version
+      - name: Validate release tag
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: |
-          EXPECTED_TAG="v${{ steps.app_version.outputs.VERSION }}"
-          if [ "${GITHUB_REF_NAME}" != "${EXPECTED_TAG}" ]; then
-            echo "Tag (${GITHUB_REF_NAME}) does not match package.json version (${EXPECTED_TAG})."
-            exit 1
+          VERSION="${{ steps.app_version.outputs.VERSION }}"
+          TAG="${GITHUB_REF_NAME}"
+
+          if [ "${TAG}" = "v${VERSION}" ]; then
+            exit 0
           fi
+
+          if [[ "${TAG}" =~ ^${VERSION}[[:alpha:]][[:alnum:]._-]*$ ]]; then
+            echo "Accepted draft tag: ${TAG}"
+            exit 0
+          fi
+
+          echo "Tag (${TAG}) must be v${VERSION} or a draft tag beginning with ${VERSION} followed by a letter."
+          exit 1
 
       - name: Build bilingual release notes from changelog
         id: release_notes

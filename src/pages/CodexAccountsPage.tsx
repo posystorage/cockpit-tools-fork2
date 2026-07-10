@@ -1219,6 +1219,9 @@ export function CodexAccountsPage() {
     useState(false);
   const [showLocalAccessQuotaStatsModal, setShowLocalAccessQuotaStatsModal] =
     useState(false);
+  const localAccessMemberListRef = useRef<HTMLDivElement | null>(null);
+  const [localAccessHiddenMemberCount, setLocalAccessHiddenMemberCount] =
+    useState(0);
   const localAccessRiskNoticeResolverRef = useRef<
     ((accepted: boolean) => void) | null
   >(null);
@@ -7513,6 +7516,91 @@ export function CodexAccountsPage() {
     });
     return next;
   }, [localAccessState?.accountActivity]);
+  const localAccessDisplayAccounts = useMemo(
+    () =>
+      localAccessAccounts
+        .map((account, index) => ({
+          account,
+          index,
+          activity: localAccessActivityByAccountId.get(account.id),
+        }))
+        .sort((left, right) => {
+          const leftRunning = left.activity?.runningCount ?? 0;
+          const rightRunning = right.activity?.runningCount ?? 0;
+          if (leftRunning !== rightRunning) return rightRunning - leftRunning;
+
+          const leftRecent = Math.max(
+            left.activity?.lastSelectedAt ?? 0,
+            left.activity?.lastFinishedAt ?? 0,
+          );
+          const rightRecent = Math.max(
+            right.activity?.lastSelectedAt ?? 0,
+            right.activity?.lastFinishedAt ?? 0,
+          );
+          const leftHasRecent = leftRecent > 0;
+          const rightHasRecent = rightRecent > 0;
+          if (leftHasRecent !== rightHasRecent) {
+            return leftHasRecent ? -1 : 1;
+          }
+          if (leftRecent !== rightRecent) return rightRecent - leftRecent;
+          return left.index - right.index;
+        })
+        .map(({ account }) => account),
+    [localAccessAccounts, localAccessActivityByAccountId],
+  );
+  const localAccessRunningAccountCount = useMemo(
+    () =>
+      localAccessDisplayAccounts.filter(
+        (account) =>
+          (localAccessActivityByAccountId.get(account.id)?.runningCount ?? 0) >
+          0,
+      ).length,
+    [localAccessActivityByAccountId, localAccessDisplayAccounts],
+  );
+
+  useEffect(() => {
+    const container = localAccessMemberListRef.current;
+    if (!container) {
+      setLocalAccessHiddenMemberCount(0);
+      return;
+    }
+
+    let animationFrame = 0;
+    const updateHiddenCount = () => {
+      const containerRect = container.getBoundingClientRect();
+      const rows = Array.from(
+        container.querySelectorAll<HTMLElement>("[data-local-access-member-row]"),
+      );
+      const visibleCount = rows.filter((row) => {
+        const rowRect = row.getBoundingClientRect();
+        return (
+          rowRect.top >= containerRect.top - 1 &&
+          rowRect.bottom <= containerRect.bottom + 1
+        );
+      }).length;
+      const nextHiddenCount = Math.max(0, rows.length - visibleCount);
+      setLocalAccessHiddenMemberCount((current) =>
+        current === nextHiddenCount ? current : nextHiddenCount,
+      );
+    };
+    const scheduleUpdate = () => {
+      cancelAnimationFrame(animationFrame);
+      animationFrame = requestAnimationFrame(updateHiddenCount);
+    };
+
+    const observer = new ResizeObserver(scheduleUpdate);
+    observer.observe(container);
+    scheduleUpdate();
+
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      observer.disconnect();
+    };
+  }, [
+    localAccessDetailsExpanded,
+    localAccessDisplayAccounts,
+    overviewLayoutMode,
+  ]);
   const localAccessAccountPoolHealthHasIssue =
     localAccessAccountPoolHealthSummary.available <
       localAccessAccountPoolHealthSummary.total ||
@@ -9895,7 +9983,7 @@ export function CodexAccountsPage() {
       : localAccessKeyVisible
         ? localAccessCollection.apiKey
         : `${localAccessCollection.apiKey.slice(0, 10)}••••••••••••`;
-    const previewAccounts = localAccessAccounts.slice(0, 2);
+    const previewAccounts = localAccessDisplayAccounts;
     const localAccessOAuthBindingLabel = t(
       "codex.api.oauthBinding.label",
       "OAuth 绑定",
@@ -9908,10 +9996,7 @@ export function CodexAccountsPage() {
         )
       : t("codex.api.oauthBinding.unbound", "未绑定");
     const localAccessOAuthBindingLine = `${localAccessOAuthBindingLabel}：${localAccessOAuthBindingValue}`;
-    const hiddenCount = Math.max(
-      0,
-      localAccessAccounts.length - previewAccounts.length,
-    );
+    const hiddenCount = localAccessHiddenMemberCount;
     const showLocalAccessEmptyState = previewAccounts.length === 0;
     const localAccessStatusTone = !localAccessCollection
       ? "disabled"
@@ -10131,7 +10216,8 @@ export function CodexAccountsPage() {
 
         {showLocalAccessDetails && (
           <>
-            <div className="codex-local-access-meta">
+            <div className="codex-local-access-details">
+              <div className="codex-local-access-meta">
               <div className="codex-local-access-row">
                 <div className="codex-local-access-label codex-local-access-address-select">
                   <SingleSelectDropdown
@@ -10236,7 +10322,29 @@ export function CodexAccountsPage() {
               </div>
             </div>
 
-            <div className="folder-inline-preview codex-local-access-preview">
+            <div className="codex-local-access-member-summary">
+              <span>
+                {t("codex.localAccess.accountPoolHealth.title", "账号池")} {" "}
+                {localAccessAccounts.length}
+              </span>
+              {localAccessRunningAccountCount > 0 && (
+                <span>
+                  {t("codex.apiService.accountActivity.running", {
+                    count: localAccessRunningAccountCount,
+                    defaultValue: "调度中 {{count}}",
+                  })}
+                </span>
+              )}
+              {hiddenCount > 0 && <span>+{hiddenCount}</span>}
+              <span className="codex-local-access-member-summary-sort">
+                {t("codex.localAccess.memberSort.dispatchFirst", "调度优先")}
+              </span>
+            </div>
+
+            <div
+              ref={localAccessMemberListRef}
+              className="folder-inline-preview codex-local-access-preview"
+            >
               {showLocalAccessEmptyState ? (
                 <div className="codex-local-access-empty-state">
                   <span className="codex-local-access-empty-text">
@@ -10295,6 +10403,7 @@ export function CodexAccountsPage() {
                       <div
                         key={`local-access-${account.id}`}
                         className="folder-preview-item codex-local-access-member"
+                        data-local-access-member-row
                       >
                         <span
                           className="folder-preview-email codex-local-access-member-email"
@@ -10348,23 +10457,6 @@ export function CodexAccountsPage() {
                       </div>
                     );
                   })}
-                  {hiddenCount > 0 && (
-                    <button
-                      type="button"
-                      className="folder-preview-item more"
-                      onClick={openLocalAccessMemberPicker}
-                      title={t(
-                        "codex.localAccess.modal.manageMembers",
-                        "管理成员",
-                      )}
-                      aria-label={t(
-                        "codex.localAccess.modal.manageMembers",
-                        "管理成员",
-                      )}
-                    >
-                      +{hiddenCount}
-                    </button>
-                  )}
                 </>
               )}
             </div>
@@ -10374,6 +10466,12 @@ export function CodexAccountsPage() {
                 className="codex-local-access-pool-row"
                 aria-label={localAccessQuotaPoolLabels.title}
               >
+                <div className="codex-local-access-pool-heading">
+                  {t("codex.localAccess.quotaPool.summary", {
+                    count: localAccessQuotaPoolSummary.all.count,
+                    defaultValue: "套餐汇总（全部 {{count}} 个账号）",
+                  })}
+                </div>
                 {localAccessQuotaPreviewItems.map((item) => (
                   <div key={item.key} className="codex-local-access-pool-pill">
                     <strong>
@@ -10428,7 +10526,10 @@ export function CodexAccountsPage() {
                 })}
               >
                 <span className="codex-local-access-health-summary-title">
-                  {t("codex.localAccess.accountPoolHealth.title", "账号池")}
+                  {t(
+                    "codex.localAccess.accountPoolHealth.summaryTitle",
+                    "账号池汇总",
+                  )}
                 </span>
                 <span className="codex-local-access-health-summary-value">
                   {localAccessAccountPoolHealthSummary.available ===
@@ -10575,6 +10676,7 @@ export function CodexAccountsPage() {
                   </button>
                 </div>
               </div>
+            </div>
             </div>
           </>
         )}
