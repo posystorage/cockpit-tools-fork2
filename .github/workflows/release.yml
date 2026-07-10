@@ -3,10 +3,6 @@ on:
   push:
     tags:
       - "v*"
-      - "1.1.1adfree"
-      - "1.1.1show"
-      - "1.1.1usage"
-      - "1.1.1codexbalanceshow"
   workflow_dispatch:
 
 jobs:
@@ -85,12 +81,8 @@ jobs:
         shell: bash
         run: |
           EXPECTED_TAG="v${{ steps.app_version.outputs.VERSION }}"
-          ADFREE_TAG="1.1.1adfree"
-          SHOW_TAG="1.1.1show"
-          USAGE_TAG="1.1.1usage"
-          CODEX_BALANCE_SHOW_TAG="1.1.1codexbalanceshow"
-          if [ "${GITHUB_REF_NAME}" != "${EXPECTED_TAG}" ] && [ "${GITHUB_REF_NAME}" != "${ADFREE_TAG}" ] && [ "${GITHUB_REF_NAME}" != "${SHOW_TAG}" ] && [ "${GITHUB_REF_NAME}" != "${USAGE_TAG}" ] && [ "${GITHUB_REF_NAME}" != "${CODEX_BALANCE_SHOW_TAG}" ]; then
-            echo "Tag (${GITHUB_REF_NAME}) does not match package.json version (${EXPECTED_TAG}) or the custom release tags (${ADFREE_TAG}, ${SHOW_TAG}, ${USAGE_TAG}, ${CODEX_BALANCE_SHOW_TAG})."
+          if [ "${GITHUB_REF_NAME}" != "${EXPECTED_TAG}" ]; then
+            echo "Tag (${GITHUB_REF_NAME}) does not match package.json version (${EXPECTED_TAG})."
             exit 1
           fi
 
@@ -177,7 +169,7 @@ jobs:
     name: Rebuild merged latest.json
     needs: release
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/tags/1.1.1adfree' || github.ref == 'refs/tags/1.1.1show' || github.ref == 'refs/tags/1.1.1usage'
+    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     env:
@@ -196,9 +188,6 @@ jobs:
         run: |
           RELEASE_TAG="${GITHUB_REF_NAME}"
           VERSION="${GITHUB_REF_NAME#v}"
-          if [ "${RELEASE_TAG}" = "1.1.1adfree" ] || [ "${RELEASE_TAG}" = "1.1.1show" ] || [ "${RELEASE_TAG}" = "1.1.1usage" ]; then
-            VERSION="1.1.1"
-          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
 
@@ -282,7 +271,7 @@ jobs:
       - release
       - rebuild-latest-json
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/tags/1.1.1adfree'
+    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     env:
@@ -293,9 +282,6 @@ jobs:
         run: |
           RELEASE_TAG="${GITHUB_REF_NAME}"
           VERSION="${GITHUB_REF_NAME#v}"
-          if [ "${RELEASE_TAG}" = "1.1.1adfree" ]; then
-            VERSION="1.1.1"
-          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
 
@@ -446,7 +432,8 @@ jobs:
       - release
       - rebuild-latest-json
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/tags/1.1.1adfree'
+    # Keep tag builds as drafts until a maintainer explicitly publishes them.
+    if: ${{ false }}
     permissions:
       contents: write
     steps:
@@ -455,9 +442,6 @@ jobs:
         run: |
           RELEASE_TAG="${GITHUB_REF_NAME}"
           VERSION="${GITHUB_REF_NAME#v}"
-          if [ "${RELEASE_TAG}" = "1.1.1adfree" ]; then
-            VERSION="1.1.1"
-          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
 

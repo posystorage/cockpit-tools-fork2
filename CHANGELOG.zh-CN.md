@@ -7,6 +7,38 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
 ---
+## [1.1.4] - 2026-07-10
+
+### 变更
+
+- **完善 Codex 5.6 模型目录兼容**：官方客户端和 API 服务的模型响应会为 `gpt-5.6-sol`、`gpt-5.6-terra` 和 `gpt-5.6-luna` 保留显示名称、排序、默认及支持的推理强度、Ultra 能力和 priority 服务层级元数据。
+- **提升 Codex API 服务经过代理时的流式请求兼容性**：访问 `chatgpt.com` 时改用标准 Go HTTP Transport，避免自定义 uTLS HTTP/2 连接可能触发的 `tls: bad record MAC`；Anthropic 继续保持原有 uTLS Transport。
+
+---
+## [1.1.3] - 2026-07-10
+
+### 新增
+
+- **新增最新官方 Codex 5.6 模型条目支持**：API 服务、受管官方客户端模型目录和唤醒模型预设现在包含 `gpt-5.6-sol`、`gpt-5.6-terra` 和 `gpt-5.6-luna`；老用户会自动补齐新预设，同时保留自定义预设。
+
+### 变更
+
+- **Codex OAuth API 服务兼容更贴近官方客户端**：OAuth 账号的文本对话不再注入 hosted `image_generation` 工具，同时保留图片接口能力，API Key 账号继续保持原有图片生成行为。
+- **Codex 本地接入 profile 接管会持续刷新受管模型目录**：已接管的官方客户端 profile 也会在需要时重新写入配置，让更新后的模型目录继续同步到客户端。
+- **设置页默认不再显示顶部推广横幅**。
+
+### 修复
+
+- **修复 Codex API 服务请求同时包含官方 `image_gen.imagegen` 工具和 hosted `image_generation` 时的冲突**：Rust 网关和 Go sidecar 现在会在检测到官方图片工具时移除 hosted 图片工具及对应 `tool_choice`。
+
+---
+## [1.1.2] - 2026-07-10
+
+### 新增
+
+- **新增对官方 Codex 客户端改名为 ChatGPT 后的兼容支持**：Windows 和 macOS 的启动路径检测、Store/Appx 发现、进程扫描、窗口定位和 app-server 解析现在同时兼容 ChatGPT 与旧 Codex 客户端。
+
+---
 ## [1.1.1] - 2026-07-08
 
 ### 变更

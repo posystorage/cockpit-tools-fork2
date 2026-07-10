@@ -1025,11 +1025,10 @@ fn sync_api_key_model_catalog_to_dir(
     base_dir: &Path,
     account: &CodexAccount,
 ) -> Result<(), String> {
-    let is_responses_direct = account.is_api_key_auth()
-        && account.api_provider_mode == CodexApiProviderMode::Custom
-        && account.api_wire_api.as_deref() != Some("chat_completions");
+    let is_responses_direct =
+        account.is_api_key_auth() && account.api_wire_api.as_deref() != Some("chat_completions");
     let mut model_ids = if is_responses_direct {
-        normalize_api_model_catalog(account.api_model_catalog.clone())
+        crate::modules::codex_local_access::supported_codex_model_ids()
     } else {
         Vec::new()
     };
@@ -1064,6 +1063,43 @@ fn sync_api_key_model_catalog_to_dir(
     let content = crate::modules::codex_config_format::codex_config_doc_to_string(&mut doc);
     crate::modules::codex_config_format::write_codex_config_toml_atomic(&config_path, &content)
         .map_err(|e| format!("写入 config.toml 失败: {}", e))
+}
+
+fn profile_uses_managed_model_catalog(base_dir: &Path) -> Result<bool, String> {
+    let config_path = get_config_toml_path(base_dir);
+    if !config_path.exists() {
+        return Ok(false);
+    }
+    let existing = fs::read_to_string(&config_path).map_err(|e| {
+        format!(
+            "读取 Codex 配置失败: path={}, error={}",
+            config_path.display(),
+            e
+        )
+    })?;
+    if existing.trim().is_empty() {
+        return Ok(false);
+    }
+    let doc = crate::modules::codex_config_format::read_codex_config_doc_from_str(&existing)
+        .map_err(|e| format!("解析 config.toml 失败: {}", e))?;
+    Ok(doc
+        .get(CODEX_CONFIG_MODEL_CATALOG_JSON_KEY)
+        .and_then(|item| item.as_str())
+        .map(str::trim)
+        == Some(CODEX_MANAGED_MODEL_CATALOG_FILE))
+}
+
+fn refresh_managed_api_key_model_catalog_for_profile(
+    base_dir: &Path,
+    account: &CodexAccount,
+) -> Result<bool, String> {
+    let is_responses_direct =
+        account.is_api_key_auth() && account.api_wire_api.as_deref() != Some("chat_completions");
+    if !is_responses_direct || !profile_uses_managed_model_catalog(base_dir)? {
+        return Ok(false);
+    }
+    sync_api_key_model_catalog_to_dir(base_dir, account)?;
+    Ok(true)
 }
 
 fn collect_managed_api_key_provider_ids() -> HashSet<String> {
@@ -4344,6 +4380,37 @@ fn managed_projection_dirs_for_account(account_id: &str) -> Vec<PathBuf> {
     let mut seen = HashSet::new();
     dirs.retain(|dir| seen.insert(dir.to_string_lossy().to_string()));
     dirs
+}
+
+pub fn refresh_managed_api_key_model_catalogs_on_startup() -> Result<usize, String> {
+    let mut refreshed = 0;
+    let mut failures = Vec::new();
+    for account in list_accounts().into_iter().filter(|account| {
+        account.is_api_key_auth() && account.api_wire_api.as_deref() != Some("chat_completions")
+    }) {
+        for dir in managed_projection_dirs_for_account(&account.id) {
+            match refresh_managed_api_key_model_catalog_for_profile(&dir, &account) {
+                Ok(true) => refreshed += 1,
+                Ok(false) => {}
+                Err(error) => failures.push(format!(
+                    "account_id={}, profile_dir={}, error={}",
+                    account.id,
+                    dir.display(),
+                    error
+                )),
+            }
+        }
+    }
+
+    if failures.is_empty() {
+        Ok(refreshed)
+    } else {
+        Err(format!(
+            "刷新受管 API Key 模型目录部分失败: refreshed={}, failures={}",
+            refreshed,
+            failures.join("; ")
+        ))
+    }
 }
 
 fn projection_dirs_equal(left: &Path, right: &Path) -> bool {
@@ -9838,7 +9905,7 @@ multi_agent = true
     }
 
     #[test]
-    fn api_key_bundle_writes_custom_provider_model_catalog() {
+    fn responses_api_key_bundle_uses_api_service_model_catalog() {
         let base_dir = make_temp_dir("codex-api-key-model-catalog-test");
         fs::write(
             base_dir.join("config.toml"),
@@ -9879,43 +9946,28 @@ multi_agent = true
             .get("models")
             .and_then(serde_json::Value::as_array)
             .expect("models should be an array");
-        let custom_a = models
-            .iter()
-            .find(|model| model.get("slug").and_then(serde_json::Value::as_str) == Some("custom-a"))
-            .expect("custom-a model");
-        assert_eq!(
-            custom_a
-                .get("display_name")
-                .and_then(serde_json::Value::as_str),
-            Some("custom-a")
-        );
-        assert_eq!(
-            custom_a
-                .get("visibility")
-                .and_then(serde_json::Value::as_str),
-            Some("list")
-        );
-        assert!(custom_a.get("context_window").is_some());
-        assert_eq!(
-            models
-                .iter()
-                .filter(|model| {
-                    model.get("slug").and_then(serde_json::Value::as_str) == Some("custom-a")
-                })
-                .count(),
-            1
-        );
+        assert!(!models.iter().any(|model| {
+            matches!(
+                model.get("slug").and_then(serde_json::Value::as_str),
+                Some("custom-a" | "custom-b")
+            )
+        }));
         assert!(models.iter().any(|model| {
             model.get("slug").and_then(serde_json::Value::as_str)
                 == Some(super::CODEX_AUTO_REVIEW_MODEL_ID)
                 && model.get("visibility").and_then(serde_json::Value::as_str) == Some("hide")
         }));
+        for model_id in ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] {
+            assert!(models.iter().any(|model| {
+                model.get("slug").and_then(serde_json::Value::as_str) == Some(model_id)
+            }));
+        }
 
         fs::remove_dir_all(&base_dir).expect("cleanup temp dir");
     }
 
     #[test]
-    fn api_key_bundle_cleans_empty_managed_model_catalog() {
+    fn responses_api_key_bundle_writes_fallback_managed_model_catalog() {
         let base_dir = make_temp_dir("codex-api-key-empty-model-catalog-test");
         fs::write(
             base_dir.join("config.toml"),
@@ -9945,7 +9997,126 @@ multi_agent = true
         write_account_bundle_to_dir(&base_dir, &account).expect("write account bundle");
 
         let config = fs::read_to_string(base_dir.join("config.toml")).expect("read config");
-        assert!(!config.contains("model_catalog_json"));
+        assert!(config.contains(&format!(
+            "model_catalog_json = \"{}\"",
+            super::CODEX_MANAGED_MODEL_CATALOG_FILE
+        )));
+        let catalog: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(base_dir.join(super::CODEX_MANAGED_MODEL_CATALOG_FILE))
+                .expect("read catalog"),
+        )
+        .expect("parse catalog");
+        let models = catalog
+            .get("models")
+            .and_then(serde_json::Value::as_array)
+            .expect("models array");
+        for model_id in ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] {
+            assert!(models.iter().any(|model| {
+                model.get("slug").and_then(serde_json::Value::as_str) == Some(model_id)
+            }));
+        }
+
+        fs::remove_dir_all(&base_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn refreshes_existing_managed_api_key_catalog_with_5_6_capabilities() {
+        let base_dir = make_temp_dir("codex-managed-model-catalog-refresh-test");
+        fs::write(
+            base_dir.join("config.toml"),
+            format!(
+                "model_catalog_json = \"{}\"\n",
+                super::CODEX_MANAGED_MODEL_CATALOG_FILE
+            ),
+        )
+        .expect("write config");
+        fs::write(
+            base_dir.join(super::CODEX_MANAGED_MODEL_CATALOG_FILE),
+            r#"{"models":[]}"#,
+        )
+        .expect("write stale catalog");
+        let mut account = CodexAccount::new_api_key(
+            "custom-api-key".to_string(),
+            "custom@example.com".to_string(),
+            "sk-custom".to_string(),
+            CodexApiProviderMode::Custom,
+            Some("https://relay.example.com/v1".to_string()),
+            Some("relay".to_string()),
+            Some("Relay".to_string()),
+            Vec::new(),
+        );
+        account.api_wire_api = Some("responses".to_string());
+
+        assert!(
+            super::refresh_managed_api_key_model_catalog_for_profile(&base_dir, &account)
+                .expect("refresh managed catalog")
+        );
+
+        let catalog: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(base_dir.join(super::CODEX_MANAGED_MODEL_CATALOG_FILE))
+                .expect("read refreshed catalog"),
+        )
+        .expect("parse refreshed catalog");
+        let sol = catalog
+            .get("models")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|models| {
+                models.iter().find(|model| {
+                    model.get("slug").and_then(serde_json::Value::as_str) == Some("gpt-5.6-sol")
+                })
+            })
+            .expect("Sol model should exist");
+        assert!(sol
+            .get("supported_reasoning_levels")
+            .and_then(serde_json::Value::as_array)
+            .expect("reasoning levels")
+            .iter()
+            .any(|level| {
+                level.get("effort").and_then(serde_json::Value::as_str) == Some("ultra")
+            }));
+        assert_eq!(
+            sol.pointer("/service_tiers/0/id")
+                .and_then(serde_json::Value::as_str),
+            Some("priority")
+        );
+
+        fs::remove_dir_all(&base_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn startup_catalog_refresh_preserves_custom_model_catalog() {
+        let base_dir = make_temp_dir("codex-custom-model-catalog-refresh-test");
+        fs::write(
+            base_dir.join("config.toml"),
+            "model_catalog_json = \"user-model-catalog.json\"\n",
+        )
+        .expect("write custom config");
+        fs::write(
+            base_dir.join("user-model-catalog.json"),
+            r#"{"models":[{"slug":"user-model"}]}"#,
+        )
+        .expect("write custom catalog");
+        let mut account = CodexAccount::new_api_key(
+            "custom-api-key".to_string(),
+            "custom@example.com".to_string(),
+            "sk-custom".to_string(),
+            CodexApiProviderMode::Custom,
+            Some("https://relay.example.com/v1".to_string()),
+            Some("relay".to_string()),
+            Some("Relay".to_string()),
+            Vec::new(),
+        );
+        account.api_wire_api = Some("responses".to_string());
+
+        assert!(
+            !super::refresh_managed_api_key_model_catalog_for_profile(&base_dir, &account)
+                .expect("skip custom catalog")
+        );
+        assert_eq!(
+            fs::read_to_string(base_dir.join("user-model-catalog.json"))
+                .expect("read custom catalog"),
+            r#"{"models":[{"slug":"user-model"}]}"#
+        );
         assert!(!base_dir
             .join(super::CODEX_MANAGED_MODEL_CATALOG_FILE)
             .exists());
@@ -9954,7 +10125,7 @@ multi_agent = true
     }
 
     #[test]
-    fn api_key_bundle_preserves_user_model_catalog_when_account_catalog_empty() {
+    fn responses_api_key_bundle_replaces_external_catalog_with_managed_catalog() {
         let base_dir = make_temp_dir("codex-api-key-user-model-catalog-test");
         fs::write(
             base_dir.join("config.toml"),
@@ -9977,10 +10148,79 @@ multi_agent = true
         write_account_bundle_to_dir(&base_dir, &account).expect("write account bundle");
 
         let config = fs::read_to_string(base_dir.join("config.toml")).expect("read config");
-        assert!(config.contains("model_catalog_json = \"user-model-catalog.json\""));
+        assert!(!config.contains("model_catalog_json = \"user-model-catalog.json\""));
+        assert!(config.contains(&format!(
+            "model_catalog_json = \"{}\"",
+            super::CODEX_MANAGED_MODEL_CATALOG_FILE
+        )));
+        assert!(base_dir
+            .join(super::CODEX_MANAGED_MODEL_CATALOG_FILE)
+            .exists());
+
+        fs::remove_dir_all(&base_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn chat_completions_api_key_bundle_does_not_write_managed_model_catalog() {
+        let base_dir = make_temp_dir("codex-chat-api-key-model-catalog-test");
+        let mut account = CodexAccount::new_api_key(
+            "custom-api-key".to_string(),
+            "custom@example.com".to_string(),
+            "sk-custom".to_string(),
+            CodexApiProviderMode::Custom,
+            Some("https://relay.example.com/v1".to_string()),
+            Some("relay".to_string()),
+            Some("Relay".to_string()),
+            vec!["chat-model".to_string()],
+        );
+        account.api_wire_api = Some("chat_completions".to_string());
+
+        write_account_bundle_to_dir(&base_dir, &account).expect("write account bundle");
+
+        let config = fs::read_to_string(base_dir.join("config.toml")).expect("read config");
+        assert!(!config.contains("model_catalog_json"));
         assert!(!base_dir
             .join(super::CODEX_MANAGED_MODEL_CATALOG_FILE)
             .exists());
+
+        fs::remove_dir_all(&base_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn builtin_openai_responses_api_key_bundle_writes_fallback_catalog() {
+        let base_dir = make_temp_dir("codex-builtin-responses-model-catalog-test");
+        let mut account = CodexAccount::new_api_key(
+            "openai-api-key".to_string(),
+            "openai@example.com".to_string(),
+            "sk-openai".to_string(),
+            CodexApiProviderMode::OpenaiBuiltin,
+            Some("https://api.openai.com/v1".to_string()),
+            None,
+            None,
+            Vec::new(),
+        );
+        account.api_wire_api = Some("responses".to_string());
+
+        write_account_bundle_to_dir(&base_dir, &account).expect("write account bundle");
+
+        let config = fs::read_to_string(base_dir.join("config.toml")).expect("read config");
+        assert!(config.contains(&format!(
+            "model_catalog_json = \"{}\"",
+            super::CODEX_MANAGED_MODEL_CATALOG_FILE
+        )));
+        let catalog: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(base_dir.join(super::CODEX_MANAGED_MODEL_CATALOG_FILE))
+                .expect("read catalog"),
+        )
+        .expect("parse catalog");
+        assert!(catalog
+            .get("models")
+            .and_then(serde_json::Value::as_array)
+            .expect("models array")
+            .iter()
+            .any(|model| {
+                model.get("slug").and_then(serde_json::Value::as_str) == Some("gpt-5.6-luna")
+            }));
 
         fs::remove_dir_all(&base_dir).expect("cleanup temp dir");
     }
@@ -10028,6 +10268,14 @@ multi_agent = true
         )
         .expect("parse catalog");
         assert!(catalog
+            .get("models")
+            .and_then(serde_json::Value::as_array)
+            .expect("models array")
+            .iter()
+            .any(|model| {
+                model.get("slug").and_then(serde_json::Value::as_str) == Some("gpt-5.6-sol")
+            }));
+        assert!(!catalog
             .get("models")
             .and_then(serde_json::Value::as_array)
             .expect("models array")

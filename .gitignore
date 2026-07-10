@@ -45,6 +45,10 @@ src-tauri/resources/electron/*
 src-tauri/native/macos-native-menu/.build/
 .tmp/
 
+# Local release-verification artifacts
+action-artifacts/
+compare-official/
+
 # Rust
 target/
 **/*.rs.bk

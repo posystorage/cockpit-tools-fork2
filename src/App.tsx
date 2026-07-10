@@ -47,6 +47,7 @@ import { useTopRightAdStore } from './stores/useTopRightAdStore';
 import { useSponsorStore } from './stores/useSponsorStore';
 import { useRemoteConfigStore } from './stores/useRemoteConfigStore';
 import type { UpdateCheckResult, UpdateInfo } from './components/UpdateNotification';
+import type { RemoteUpdatePromptMode } from './types/remoteConfig';
 import type { Update as UpdaterUpdate } from '@tauri-apps/plugin-updater';
 import { parseUpdaterReleaseNotes, resolveUpdaterDownloadUrl } from './utils/updaterReleaseNotes';
 import { FloatingCardWindow } from './pages/FloatingCardWindow';
@@ -195,7 +196,7 @@ const RENDERABLE_PAGE_VALUES: readonly Page[] = [
 ];
 const RENDERABLE_PAGE_SET = new Set<string>(RENDERABLE_PAGE_VALUES);
 
-const TOP_PROMO_DEFAULT_EXCLUDED_PAGES: readonly Page[] = ['api-relay'];
+const TOP_PROMO_DEFAULT_EXCLUDED_PAGES: readonly Page[] = ['api-relay', 'settings'];
 const TOP_PROMO_PAGE_PLATFORM_TARGETS: Partial<Record<Page, readonly string[]>> = {
   overview: ['antigravity', 'antigravity-ide'],
   instances: ['antigravity', 'antigravity-ide'],
@@ -787,6 +788,7 @@ function MainApp() {
   const updateDownloadTaskIdRef = useRef(0);
   const updateDownloadOwnerRef = useRef<'none' | 'shared' | 'silent'>('none');
   const updateCheckRequestIdRef = useRef(0);
+  const autoPromptedUpdateVersionsRef = useRef<Set<string>>(new Set());
   const externalImportHandledAtRef = useRef<Map<string, number>>(new Map());
   const { showModal, closeModal } = useGlobalModal();
   const topRightAdState = useTopRightAdStore((state) => state.state);
@@ -1149,6 +1151,18 @@ function MainApp() {
   const writeUpdateLog = useCallback((level: 'info' | 'warn' | 'error', message: string) => {
     void invoke('update_log', { level, message }).catch(() => {});
   }, []);
+
+  const openAutomaticUpdatePrompt = useCallback((
+    version: string,
+    mode: RemoteUpdatePromptMode,
+  ) => {
+    if (mode !== 'popup' || autoPromptedUpdateVersionsRef.current.has(version)) {
+      return;
+    }
+    autoPromptedUpdateVersionsRef.current.add(version);
+    openUpdateNotificationDetails();
+    writeUpdateLog('info', `远端更新策略已自动打开更新弹框: version=${version}`);
+  }, [openUpdateNotificationDetails, writeUpdateLog]);
 
   const prepareCodexLocalAccessBeforeRelaunch = useCallback(async () => {
     setUpdateRetryStatus(
@@ -2135,10 +2149,13 @@ function MainApp() {
         const autoInstall = settings?.auto_install ?? false;
         const remindOnUpdate = settings?.remind_on_update ?? true;
         const skippedVersion = (settings?.skipped_version ?? '').trim();
+        const remoteConfigState = await fetchRemoteConfigState(false);
+        const updatePromptMode = remoteConfigState.updatePromptMode;
+        const shouldAutoOpenUpdatePrompt = updatePromptMode === 'popup';
         setUpdateRemindersEnabled(remindOnUpdate);
         writeUpdateLog(
           'info',
-          `读取更新设置: auto_install=${autoInstall}；启动始终执行更新检查`,
+          `读取更新设置: auto_install=${autoInstall}, update_prompt_mode=${updatePromptMode}；启动始终执行更新检查`,
         );
 
         writeUpdateLog('info', '启动检查立即执行');
@@ -2189,7 +2206,7 @@ function MainApp() {
                 });
               } else {
                 preparedUpdateInfo = await prepareUpdateNotificationInfo(update);
-                if (remindOnUpdate) {
+                if (remindOnUpdate || shouldAutoOpenUpdatePrompt) {
                   setUpdateNotificationInfo(preparedUpdateInfo);
                   handleUpdateCheckResult({
                     source: 'auto',
@@ -2198,6 +2215,7 @@ function MainApp() {
                     latestVersion: preparedUpdateInfo.latest_version,
                   });
                 }
+                openAutomaticUpdatePrompt(update.version, updatePromptMode);
                 console.log('[App] Update found, downloading silently with retry...');
                 writeUpdateLog('info', `检测到新版本，开始静默下载: version=${update.version}`);
                 updateDownloadOwnerRef.current = 'silent';
@@ -2449,7 +2467,7 @@ function MainApp() {
                 });
               } else {
                 const info = await prepareUpdateNotificationInfo(update);
-                if (remindOnUpdate) {
+                if (remindOnUpdate || shouldAutoOpenUpdatePrompt) {
                   setUpdateNotificationInfo(info);
                 }
                 handleUpdateCheckResult({
@@ -2458,7 +2476,13 @@ function MainApp() {
                   currentVersion: info.current_version,
                   latestVersion: info.latest_version,
                 });
-                writeUpdateLog('info', `检测到新版本，已在左上角显示更新入口: version=${update.version}`);
+                openAutomaticUpdatePrompt(update.version, updatePromptMode);
+                writeUpdateLog(
+                  'info',
+                  shouldAutoOpenUpdatePrompt
+                    ? `检测到新版本，已按远端策略打开更新弹框: version=${update.version}`
+                    : `检测到新版本，已在左上角显示更新入口: version=${update.version}`,
+                );
                 await closeUpdaterHandle(update);
               }
             } else {
@@ -2520,8 +2544,10 @@ function MainApp() {
     };
   }, [
     closeUpdaterHandle,
+    fetchRemoteConfigState,
     handleUpdateCheckResult,
     isLinuxManagedUpdate,
+    openAutomaticUpdatePrompt,
     prepareUpdateNotificationInfo,
     runUpdaterCheck,
     updateRuntimeInfo?.linux_install_kind,
