@@ -2722,7 +2722,8 @@
         "modelCatalog": "Каталог моделей",
         "visionCapability": "Ввод изображений",
         "visionModels": "Модели с vision",
-        "visionRoutingModel": "Модель для изображений"
+        "visionRoutingModel": "Модель для изображений",
+        "supportsWebsockets": "Передача WebSocket"
       },
       "validation": {
         "nameRequired": "Укажите название провайдера.",
@@ -2958,6 +2959,12 @@
         "customMoveUp": "Вверх",
         "customMoveDown": "Вниз",
         "customReset": "Сбросить порядок"
+      },
+      "websockets": {
+        "title": "Разрешить Codex использовать Responses через WebSocket",
+        "help": "Включайте только при явной поддержке Responses через WebSocket поставщиком; тип соединения можно проверить в журналах Codex или прокси-сервиса.",
+        "enabled": "Включено",
+        "disabled": "Отключено"
       }
     },
     "quickSwitch": {
