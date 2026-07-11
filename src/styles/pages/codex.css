@@ -173,6 +173,11 @@
   border: 1px solid var(--codex-local-card-border);
 }
 
+.codex-local-access-card.is-expanded {
+  max-height: 550px;
+  overflow: hidden;
+}
+
 .codex-local-access-card.is-collapsed {
   min-height: auto;
 }
@@ -697,14 +702,18 @@
 
 .codex-local-access-preview {
   flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
   min-height: 50px;
   padding: 0;
   background: transparent;
   border: none;
   box-shadow: none;
   gap: 6px;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--text-muted) 42%, transparent)
     transparent;
