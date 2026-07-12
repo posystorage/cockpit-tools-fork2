@@ -5083,7 +5083,11 @@
       "pastePlaceholder": "لصق JSON لحساب Grok",
       "pasteAction": "استيراد JSON",
       "localDesc": "استورد الحساب الحالي من ~/.grok/auth.json الافتراضي. عند اختيار ملف، استخدم ملف auth.json الرسمي من Grok CLI.",
-      "localClient": "الاستيراد من Grok CLI المحلي"
+      "localClient": "الاستيراد من Grok CLI المحلي",
+      "apiKeyTab": "مفتاح API",
+      "apiKeyDesc": "الصق مفتاح xAI API (XAI_API_KEY الرسمي). يُحقن عند التشغيل. يمكن أيضًا لصق auth.json الرسمي لـ OAuth.",
+      "apiKeyPlaceholder": "الصق xai-…",
+      "apiKeyAction": "إضافة API Key"
     },
     "instances": {
       "unsupported": "تتوافر نسخ Grok CLI المتعددة على macOS وWindows وLinux فقط.",
@@ -5122,7 +5126,8 @@
       "frequent": "مهام متكررة",
       "occasional": "مهام عرضية",
       "resetAt": "{{label}} إعادة التعيين: {{time}}",
-      "empty": "لا حصة"
+      "empty": "لا حصة",
+      "apiKeyUnsupported": "لا حصة باقة لحسابات API Key"
     },
     "quotaAlert": {
       "hint": "عندما ينخفض أي بند حصة للحساب الحالي عن الحد، أرسل إشعارًا أصليًا واعرض إجراء تبديل سريع داخل التطبيق.",

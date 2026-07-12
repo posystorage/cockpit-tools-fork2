@@ -5083,7 +5083,11 @@
       "pastePlaceholder": "Wklej JSON konta Grok",
       "pasteAction": "Importuj JSON",
       "localDesc": "Zaimportuj bieżące konto z domyślnego ~/.grok/auth.json. Przy wyborze pliku użyj oficjalnego auth.json z Grok CLI.",
-      "localClient": "Importuj z lokalnego Grok CLI"
+      "localClient": "Importuj z lokalnego Grok CLI",
+      "apiKeyTab": "Klucz API",
+      "apiKeyDesc": "Wklej klucz API xAI (oficjalny XAI_API_KEY). Wstrzykiwany przy starcie. Możesz też wkleić oficjalny auth.json (OAuth).",
+      "apiKeyPlaceholder": "wklej xai-…",
+      "apiKeyAction": "Dodaj API Key"
     },
     "instances": {
       "unsupported": "Wiele instancji Grok CLI jest obsługiwanych tylko w macOS, Windows i Linux.",
@@ -5122,7 +5126,8 @@
       "frequent": "Częste zadania",
       "occasional": "Okazjonalne zadania",
       "resetAt": "{{label}} reset: {{time}}",
-      "empty": "Brak limitu"
+      "empty": "Brak limitu",
+      "apiKeyUnsupported": "Konta API Key nie mają limitu planu"
     },
     "quotaAlert": {
       "hint": "Gdy dowolna pozycja limitu bieżącego konta spadnie poniżej progu, zostanie wysłane powiadomienie systemowe, a w aplikacji pojawi się szybkie przełączenie.",

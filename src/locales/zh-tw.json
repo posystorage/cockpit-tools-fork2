@@ -5083,7 +5083,11 @@
       "pastePlaceholder": "貼上 Grok 帳號 JSON",
       "pasteAction": "匯入 JSON",
       "localDesc": "從預設 ~/.grok/auth.json 匯入目前帳號；選擇檔案時請使用 Grok CLI 官方 auth.json。",
-      "localClient": "從本機 Grok CLI 匯入"
+      "localClient": "從本機 Grok CLI 匯入",
+      "apiKeyTab": "API 金鑰",
+      "apiKeyDesc": "貼上 xAI API Key（官方 XAI_API_KEY）。啟動時注入環境變數；也可貼上官方 auth.json 以 OAuth 匯入。",
+      "apiKeyPlaceholder": "貼上 xai- 開頭的金鑰",
+      "apiKeyAction": "新增 API Key"
     },
     "instances": {
       "unsupported": "Grok CLI 多開僅支援 macOS、Windows 與 Linux。",
@@ -5122,7 +5126,8 @@
       "frequent": "高頻任務",
       "occasional": "一般任務",
       "resetAt": "{{label}} 重設：{{time}}",
-      "empty": "暫無額度"
+      "empty": "暫無額度",
+      "apiKeyUnsupported": "API Key 帳號無套餐配額"
     },
     "quotaAlert": {
       "hint": "當目前帳號任一配額項目低於門檻時，傳送系統通知並在頁面顯示快速切換帳號操作。",

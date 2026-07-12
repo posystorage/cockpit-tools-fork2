@@ -476,24 +476,11 @@ func ConvertOpenAIResponsesRequestToOpenAIChatCompletions(modelName string, inpu
 		out, _ = sjson.SetRawBytes(out, "messages.-1", msg)
 	}
 
-	// Convert tools from responses format to chat completions format. Responses Lite
-	// sends tool definitions in input additional_tools items instead of top-level tools.
+	// Convert tools from responses format to chat completions format
 	var chatCompletionsTools []interface{}
-	appendTools := func(tools gjson.Result) {
-		if !tools.Exists() || !tools.IsArray() {
-			return
-		}
+	if tools := root.Get("tools"); tools.Exists() && tools.IsArray() {
 		tools.ForEach(func(_, tool gjson.Result) bool {
 			appendResponsesToolToChatTools(&chatCompletionsTools, tool, "")
-			return true
-		})
-	}
-	appendTools(root.Get("tools"))
-	if input := root.Get("input"); input.Exists() && input.IsArray() {
-		input.ForEach(func(_, item gjson.Result) bool {
-			if item.Get("type").String() == "additional_tools" {
-				appendTools(item.Get("tools"))
-			}
 			return true
 		})
 	}

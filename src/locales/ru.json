@@ -5083,7 +5083,11 @@
       "pastePlaceholder": "Вставить JSON аккаунта Grok",
       "pasteAction": "Импортировать JSON",
       "localDesc": "Импортируйте текущий аккаунт из стандартного ~/.grok/auth.json. При выборе файла используйте официальный auth.json из Grok CLI.",
-      "localClient": "Импортировать из локального Grok CLI"
+      "localClient": "Импортировать из локального Grok CLI",
+      "apiKeyTab": "Ключ API",
+      "apiKeyDesc": "Вставьте xAI API key (официальный XAI_API_KEY). Подставляется при запуске. Можно также вставить официальный auth.json для OAuth.",
+      "apiKeyPlaceholder": "вставьте xai-…",
+      "apiKeyAction": "Добавить API Key"
     },
     "instances": {
       "unsupported": "Несколько экземпляров Grok CLI поддерживаются только в macOS, Windows и Linux.",
@@ -5122,7 +5126,8 @@
       "frequent": "Частые задачи",
       "occasional": "Обычные задачи",
       "resetAt": "{{label}} сброс: {{time}}",
-      "empty": "Нет квоты"
+      "empty": "Нет квоты",
+      "apiKeyUnsupported": "У API Key-аккаунтов нет квоты подписки"
     },
     "quotaAlert": {
       "hint": "Если любой элемент квоты текущей учётной записи опустится ниже порога, будет отправлено системное уведомление, а в приложении появится действие быстрого переключения.",

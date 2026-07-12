@@ -1080,6 +1080,7 @@ pub fn run() {
             commands::grok::delete_grok_account,
             commands::grok::delete_grok_accounts,
             commands::grok::import_grok_from_json,
+            commands::grok::add_grok_account_with_api_key,
             commands::grok::import_grok_from_local,
             commands::grok::export_grok_accounts,
             commands::grok::grok_oauth_login_start,

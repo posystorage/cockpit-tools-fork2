@@ -2174,7 +2174,7 @@ mod tests {
         save_account_locked, should_retry_quota_after_unauthorized,
         write_account_to_auth_path_if_token_matches, write_account_to_profile,
     };
-    use crate::models::grok::GrokAccount;
+    use crate::models::grok::{GrokAccount, GrokAuthMode};
     use serde_json::json;
     use std::path::PathBuf;
 
@@ -2182,6 +2182,7 @@ mod tests {
         GrokAccount {
             id: "account-1".to_string(),
             email: "person@example.com".to_string(),
+            auth_mode: GrokAuthMode::Oauth,
             tags: None,
             first_name: None,
             last_name: None,
@@ -2192,6 +2193,7 @@ mod tests {
             profile_image_asset_id: None,
             coding_data_retention_opt_out: Some(false),
             access_token: "secret-access".to_string(),
+            api_key: None,
             refresh_token: Some("secret-refresh".to_string()),
             id_token: None,
             token_type: Some("Bearer".to_string()),

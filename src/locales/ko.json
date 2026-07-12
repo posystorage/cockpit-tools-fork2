@@ -5083,7 +5083,11 @@
       "pastePlaceholder": "Grok 계정 JSON 붙여넣기",
       "pasteAction": "JSON 가져오기",
       "localDesc": "기본 ~/.grok/auth.json에서 현재 계정을 가져옵니다. 파일을 선택할 때는 Grok CLI 공식 auth.json을 사용하세요.",
-      "localClient": "로컬 Grok CLI에서 가져오기"
+      "localClient": "로컬 Grok CLI에서 가져오기",
+      "apiKeyTab": "API 키",
+      "apiKeyDesc": "xAI API 키(공식 XAI_API_KEY)를 붙여넣으세요. 실행 시 환경 변수로 주입됩니다. 공식 auth.json도 붙여넣을 수 있습니다.",
+      "apiKeyPlaceholder": "xai-로 시작하는 키",
+      "apiKeyAction": "API Key 추가"
     },
     "instances": {
       "unsupported": "Grok CLI 다중 인스턴스는 macOS, Windows, Linux에서만 지원됩니다.",
@@ -5122,7 +5126,8 @@
       "frequent": "빈번한 작업",
       "occasional": "일반 작업",
       "resetAt": "{{label}} 초기화: {{time}}",
-      "empty": "할당량 없음"
+      "empty": "할당량 없음",
+      "apiKeyUnsupported": "API Key 계정에는 요금제 할당량이 없습니다"
     },
     "quotaAlert": {
       "hint": "현재 계정의 할당량 항목 중 하나라도 임계값 아래로 내려가면 기본 알림을 보내고 앱에 빠른 계정 전환 작업을 표시합니다.",

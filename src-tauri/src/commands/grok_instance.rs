@@ -31,6 +31,33 @@ struct GrokLaunchContext {
     working_dir: Option<String>,
     extra_args: String,
     managed: bool,
+    /// Official CLI API-key path: export XAI_API_KEY for this launch.
+    xai_api_key: Option<String>,
+}
+
+fn resolve_launch_account_id(instance_id: &str) -> Result<Option<String>, String> {
+    if instance_id == DEFAULT_INSTANCE_ID {
+        let settings = grok_instance::load_default_settings()?;
+        if settings.follow_local_account {
+            return grok_account::current_account_id();
+        }
+        return Ok(settings.bind_account_id);
+    }
+    let instance = grok_instance::load_instance_store()?
+        .instances
+        .into_iter()
+        .find(|instance| instance.id == instance_id)
+        .ok_or_else(|| "Grok 实例不存在".to_string())?;
+    Ok(instance.bind_account_id)
+}
+
+fn resolve_xai_api_key_for_instance(instance_id: &str) -> Result<Option<String>, String> {
+    let Some(account_id) = resolve_launch_account_id(instance_id)? else {
+        return Ok(None);
+    };
+    let account = grok_account::load_account(&account_id)
+        .ok_or_else(|| format!("Grok 账号不存在: {}", account_id))?;
+    Ok(account.resolved_api_key().map(|value| value.to_string()))
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -55,6 +82,7 @@ fn resolve_context(
     instance_id: &str,
     working_dir_override: Option<Option<String>>,
 ) -> Result<GrokLaunchContext, String> {
+    let xai_api_key = resolve_xai_api_key_for_instance(instance_id)?;
     if instance_id == DEFAULT_INSTANCE_ID {
         let settings = grok_instance::load_default_settings()?;
         return Ok(GrokLaunchContext {
@@ -67,6 +95,7 @@ fn resolve_context(
             },
             extra_args: settings.extra_args,
             managed: false,
+            xai_api_key,
         });
     }
 
@@ -84,6 +113,7 @@ fn resolve_context(
         },
         extra_args: instance.extra_args,
         managed: true,
+        xai_api_key,
     })
 }
 
@@ -115,6 +145,11 @@ fn build_launch_command_with_binary(
             command_parts.push(format!("cd -- {}", shell_quote(working_dir)));
         }
         let mut command = String::new();
+        if let Some(api_key) = context.xai_api_key.as_deref() {
+            command.push_str("XAI_API_KEY=");
+            command.push_str(&shell_quote(api_key));
+            command.push(' ');
+        }
         if context.managed {
             command.push_str("GROK_HOME=");
             command.push_str(&shell_quote(&context.user_data_dir));
@@ -139,6 +174,12 @@ fn build_launch_command_with_binary(
             command_parts.push(format!(
                 "Set-Location -LiteralPath {}",
                 powershell_quote(working_dir)
+            ));
+        }
+        if let Some(api_key) = context.xai_api_key.as_deref() {
+            command_parts.push(format!(
+                "$env:XAI_API_KEY={}",
+                powershell_quote(api_key)
             ));
         }
         if context.managed {
@@ -401,11 +442,13 @@ mod tests {
             working_dir: None,
             extra_args: String::new(),
             managed: false,
+            xai_api_key: None,
         };
         let command = build_launch_command_with_binary(&context, Path::new("/opt/grok"))
             .expect("build default command");
 
         assert!(!command.contains("GROK_HOME"));
+        assert!(!command.contains("XAI_API_KEY"));
         assert!(!command.contains("launch-"));
         assert!(!command.contains(".pid"));
         #[cfg(not(target_os = "windows"))]
@@ -421,6 +464,7 @@ mod tests {
             working_dir: None,
             extra_args: "--label \"team's files\"".to_string(),
             managed: true,
+            xai_api_key: None,
         };
         let command = build_launch_command_with_binary(&context, Path::new("/opt/Grok CLI/grok"))
             .expect("build managed command");
@@ -430,5 +474,20 @@ mod tests {
         assert!(!command.contains(".pid"));
         assert!(command.contains("team"));
         assert!(command.contains("/opt/Grok CLI/grok"));
+    }
+
+    #[test]
+    fn api_key_command_exports_xai_api_key() {
+        let context = GrokLaunchContext {
+            user_data_dir: "/tmp/.grok".to_string(),
+            working_dir: None,
+            extra_args: String::new(),
+            managed: false,
+            xai_api_key: Some("xai-test-key".to_string()),
+        };
+        let command = build_launch_command_with_binary(&context, Path::new("/opt/grok"))
+            .expect("build api key command");
+        assert!(command.contains("XAI_API_KEY"));
+        assert!(command.contains("xai-test-key"));
     }
 }

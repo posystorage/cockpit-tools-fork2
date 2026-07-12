@@ -5083,7 +5083,11 @@
       "pastePlaceholder": "Grok hesap JSON'unu yapıştır",
       "pasteAction": "JSON'u İçe Aktar",
       "localDesc": "Mevcut hesabı varsayılan ~/.grok/auth.json dosyasından içe aktarın. Dosya seçerken resmi Grok CLI auth.json dosyasını kullanın.",
-      "localClient": "Yerel Grok CLI'dan İçe Aktar"
+      "localClient": "Yerel Grok CLI'dan İçe Aktar",
+      "apiKeyTab": "API Anahtarı",
+      "apiKeyDesc": "xAI API anahtarını yapıştırın (resmi XAI_API_KEY). Başlatmada enjekte edilir. OAuth için resmi auth.json da yapıştırılabilir.",
+      "apiKeyPlaceholder": "xai-… yapıştırın",
+      "apiKeyAction": "API Key ekle"
     },
     "instances": {
       "unsupported": "Grok CLI çoklu örnekleri yalnızca macOS, Windows ve Linux'ta desteklenir.",
@@ -5122,7 +5126,8 @@
       "frequent": "Sık görevler",
       "occasional": "Ara sıra görevler",
       "resetAt": "{{label}} sıfırlanır: {{time}}",
-      "empty": "Kota yok"
+      "empty": "Kota yok",
+      "apiKeyUnsupported": "API Key hesaplarında plan kotası yok"
     },
     "quotaAlert": {
       "hint": "Geçerli hesabın herhangi bir kota öğesi eşiğin altına düştüğünde yerel bildirim gönderilir ve uygulamada hızlı geçiş eylemi gösterilir.",

@@ -5083,7 +5083,11 @@
       "pastePlaceholder": "Vložit JSON účtu Grok",
       "pasteAction": "Importovat JSON",
       "localDesc": "Importujte aktuální účet z výchozího ~/.grok/auth.json. Při výběru souboru použijte oficiální auth.json z Grok CLI.",
-      "localClient": "Importovat z místního Grok CLI"
+      "localClient": "Importovat z místního Grok CLI",
+      "apiKeyTab": "Klíč API",
+      "apiKeyDesc": "Vložte xAI API klíč (oficiální XAI_API_KEY). Při spuštění se injektuje. Lze i oficiální auth.json pro OAuth.",
+      "apiKeyPlaceholder": "vložte xai-…",
+      "apiKeyAction": "Přidat API Key"
     },
     "instances": {
       "unsupported": "Více instancí Grok CLI je podporováno jen v systémech macOS, Windows a Linux.",
@@ -5122,7 +5126,8 @@
       "frequent": "Časté úlohy",
       "occasional": "Občasné úlohy",
       "resetAt": "{{label}} reset: {{time}}",
-      "empty": "Bez kvóty"
+      "empty": "Bez kvóty",
+      "apiKeyUnsupported": "Účty API Key nemají kvótu tarifu"
     },
     "quotaAlert": {
       "hint": "Když libovolná položka kvóty aktuálního účtu klesne pod limit, odešle se systémové oznámení a v aplikaci se zobrazí rychlé přepnutí.",

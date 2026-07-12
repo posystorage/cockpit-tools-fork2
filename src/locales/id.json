@@ -5083,7 +5083,11 @@
       "pastePlaceholder": "Tempel JSON akun Grok",
       "pasteAction": "Impor JSON",
       "localDesc": "Impor akun saat ini dari ~/.grok/auth.json bawaan. Saat memilih berkas, gunakan auth.json resmi dari Grok CLI.",
-      "localClient": "Impor dari Grok CLI lokal"
+      "localClient": "Impor dari Grok CLI lokal",
+      "apiKeyTab": "Kunci API",
+      "apiKeyDesc": "Tempel xAI API Key (XAI_API_KEY resmi). Diinjeksikan saat peluncuran. Bisa juga tempel auth.json resmi untuk OAuth.",
+      "apiKeyPlaceholder": "tempel xai-…",
+      "apiKeyAction": "Tambah API Key"
     },
     "instances": {
       "unsupported": "Multi-instans Grok CLI hanya didukung di macOS, Windows, dan Linux.",
@@ -5122,7 +5126,8 @@
       "frequent": "Tugas sering",
       "occasional": "Tugas sesekali",
       "resetAt": "{{label}} direset: {{time}}",
-      "empty": "Tidak ada kuota"
+      "empty": "Tidak ada kuota",
+      "apiKeyUnsupported": "Akun API Key tidak punya kuota paket"
     },
     "quotaAlert": {
       "hint": "Saat item kuota mana pun untuk akun saat ini berada di bawah ambang, kirim notifikasi sistem dan tampilkan tindakan ganti cepat di aplikasi.",

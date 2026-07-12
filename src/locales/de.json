@@ -5083,7 +5083,11 @@
       "pastePlaceholder": "Grok-Konto-JSON einfügen",
       "pasteAction": "JSON importieren",
       "localDesc": "Das aktuelle Konto aus der standardmäßigen ~/.grok/auth.json importieren. Bei der Dateiauswahl die offizielle auth.json von Grok CLI verwenden.",
-      "localClient": "Aus lokaler Grok CLI importieren"
+      "localClient": "Aus lokaler Grok CLI importieren",
+      "apiKeyTab": "API-Schlüssel",
+      "apiKeyDesc": "xAI-API-Key einfügen (offiziell XAI_API_KEY). Wird beim Start als Umgebungsvariable gesetzt. Offizielle auth.json ist ebenfalls möglich.",
+      "apiKeyPlaceholder": "xai-… einfügen",
+      "apiKeyAction": "API-Key hinzufügen"
     },
     "instances": {
       "unsupported": "Grok CLI-Mehrfachinstanzen werden nur unter macOS, Windows und Linux unterstützt.",
@@ -5122,7 +5126,8 @@
       "frequent": "Häufige Aufgaben",
       "occasional": "Gelegentliche Aufgaben",
       "resetAt": "{{label}} zurücksetzen: {{time}}",
-      "empty": "Kein Kontingent"
+      "empty": "Kein Kontingent",
+      "apiKeyUnsupported": "Kein Plan-Kontingent für API-Key-Konten"
     },
     "quotaAlert": {
       "hint": "Wenn ein Kontingentposten des aktuellen Kontos unter den Schwellenwert fällt, wird eine native Benachrichtigung gesendet und in der App eine Schnellwechsel-Aktion angezeigt.",

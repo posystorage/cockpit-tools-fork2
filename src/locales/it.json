@@ -5083,7 +5083,11 @@
       "pastePlaceholder": "Incolla JSON account Grok",
       "pasteAction": "Importa JSON",
       "localDesc": "Importa l'account corrente dal file ~/.grok/auth.json predefinito. Quando scegli un file, usa il file auth.json ufficiale di Grok CLI.",
-      "localClient": "Importa da Grok CLI locale"
+      "localClient": "Importa da Grok CLI locale",
+      "apiKeyTab": "Chiave API",
+      "apiKeyDesc": "Incolla una API key xAI (XAI_API_KEY ufficiale). Viene iniettata all’avvio. Puoi anche incollare auth.json ufficiale per OAuth.",
+      "apiKeyPlaceholder": "incolla xai-…",
+      "apiKeyAction": "Aggiungi API Key"
     },
     "instances": {
       "unsupported": "Le istanze multiple di Grok CLI sono supportate solo su macOS, Windows e Linux.",
@@ -5122,7 +5126,8 @@
       "frequent": "Attività frequenti",
       "occasional": "Attività occasionali",
       "resetAt": "{{label}} reset: {{time}}",
-      "empty": "Nessuna quota"
+      "empty": "Nessuna quota",
+      "apiKeyUnsupported": "Nessuna quota piano per account API Key"
     },
     "quotaAlert": {
       "hint": "Quando una voce di quota dell’account corrente scende sotto la soglia, invia una notifica nativa e mostra un’azione di cambio rapido nell’app.",

@@ -1917,14 +1917,11 @@ func TestRelayServerFramesStreamingChatCompletionThroughRuntime(t *testing.T) {
 func TestRelayServerTimesOutWhenStreamDoesNotOpen(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldTimeout := streamOpenTimeout
-	oldImageOpenTimeout := imageStreamOpenTimeout
 	oldAttempts := streamOpenMaxAttempts
 	streamOpenTimeout = 20 * time.Millisecond
-	imageStreamOpenTimeout = 20 * time.Millisecond
 	streamOpenMaxAttempts = 2
 	defer func() {
 		streamOpenTimeout = oldTimeout
-		imageStreamOpenTimeout = oldImageOpenTimeout
 		streamOpenMaxAttempts = oldAttempts
 	}()
 	router := testRelayRouter(&fakeRuntime{streamWaitForContext: true})
@@ -1946,7 +1943,7 @@ func TestRelayServerTimesOutWhenStreamDoesNotOpen(t *testing.T) {
 	}
 }
 
-func TestRelayServerUsesLongOpenTimeoutWhenImageGenerationToolIsInjected(t *testing.T) {
+func TestRelayServerUsesLongOpenTimeoutForImageGenerationTool(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldOpenTimeout := streamOpenTimeout
 	oldImageOpenTimeout := imageStreamOpenTimeout
@@ -1974,7 +1971,7 @@ data: {"type":"response.completed"}
 	}
 	router := testRelayRouter(runtime)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-5.5","input":"draw","stream":true}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-5.5","input":"draw","stream":true,"tools":[{"type":"image_generation","model":"gpt-image-2"}]}`))
 	req.Header.Set("Authorization", "Bearer client-key")
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -1988,84 +1985,6 @@ data: {"type":"response.completed"}
 	}
 	if !strings.Contains(w.Body.String(), "response.completed") {
 		t.Fatalf("image stream response was not forwarded: %s", w.Body.String())
-	}
-}
-
-func TestRelayServerUsesNormalOpenTimeoutForResponsesLiteRequest(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	oldOpenTimeout := streamOpenTimeout
-	oldImageOpenTimeout := imageStreamOpenTimeout
-	oldAttempts := streamOpenMaxAttempts
-	streamOpenTimeout = 20 * time.Millisecond
-	imageStreamOpenTimeout = 120 * time.Millisecond
-	streamOpenMaxAttempts = 1
-	defer func() {
-		streamOpenTimeout = oldOpenTimeout
-		imageStreamOpenTimeout = oldImageOpenTimeout
-		streamOpenMaxAttempts = oldAttempts
-	}()
-	runtime := &fakeRuntime{streamOpenDelay: 60 * time.Millisecond}
-	router := testRelayRouter(runtime)
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-5.5","input":"read a skill","stream":true}`))
-	req.Header.Set("Authorization", "Bearer client-key")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-OpenAI-Internal-Codex-Responses-Lite", "true")
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusGatewayTimeout {
-		t.Fatalf("Responses Lite should use the normal open timeout, got status: %d body=%s", w.Code, w.Body.String())
-	}
-}
-
-func TestInspectRequestToolsCapturesAdditionalImageGenNamespaceAndResponsesLite(t *testing.T) {
-	diagnostic := inspectRequestTools([]byte(`{
-		"model":"gpt-5.6-sol",
-		"tools":[{"type":"web_search_preview"}],
-		"input":[
-			{"type":"message","content":[]},
-			{"type":"additional_tools","tools":[{"type":"namespace","name":"image_gen","tools":[{"type":"function","name":"imagegen"}]}]}
-		],
-		"tool_choice":{"type":"tool","name":"image_gen.imagegen"},
-		"client_metadata":{"ws_request_header_x_openai_internal_codex_responses_lite":true}
-	}`))
-
-	if !diagnostic.HasAdditionalTools || !diagnostic.HasImageGenNamespace {
-		t.Fatalf("expected additional image_gen namespace diagnostics: %#v", diagnostic)
-	}
-	if diagnostic.HasImageGeneration {
-		t.Fatalf("namespace tool should not be reported as hosted image_generation: %#v", diagnostic)
-	}
-	if !diagnostic.ResponsesLiteMetadata {
-		t.Fatalf("expected responses lite metadata: %#v", diagnostic)
-	}
-	if got := strings.Join(diagnostic.TopLevelToolTypes, ","); got != "web_search_preview" {
-		t.Fatalf("unexpected top-level tool types: %q", got)
-	}
-	if got := strings.Join(diagnostic.AdditionalToolTypes, ","); got != "function,namespace" {
-		t.Fatalf("unexpected additional tool types: %q", got)
-	}
-	if got := strings.Join(diagnostic.AdditionalToolNames, ","); got != "image_gen,imagegen" {
-		t.Fatalf("unexpected additional tool names: %q", got)
-	}
-	if diagnostic.ToolChoiceType != "tool:image_gen.imagegen" {
-		t.Fatalf("unexpected tool choice diagnostic: %q", diagnostic.ToolChoiceType)
-	}
-}
-
-func TestInspectRequestToolsCapturesHostedImageGeneration(t *testing.T) {
-	diagnostic := inspectRequestTools([]byte(`{
-		"model":"gpt-5.4",
-		"tools":[{"type":"image_generation","model":"gpt-image-2"}],
-		"stream":true
-	}`))
-
-	if !diagnostic.HasImageGeneration {
-		t.Fatalf("expected hosted image_generation diagnostic: %#v", diagnostic)
-	}
-	if diagnostic.HasImageGenNamespace || diagnostic.ResponsesLiteMetadata {
-		t.Fatalf("unexpected namespace or lite diagnostics: %#v", diagnostic)
 	}
 }
 
@@ -2117,14 +2036,11 @@ data: {"type":"response.completed","response":{"created_at":1710000000,"output":
 func TestRelayServerRetriesWhenStreamDoesNotOpen(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldTimeout := streamOpenTimeout
-	oldImageOpenTimeout := imageStreamOpenTimeout
 	oldAttempts := streamOpenMaxAttempts
 	streamOpenTimeout = 20 * time.Millisecond
-	imageStreamOpenTimeout = 20 * time.Millisecond
 	streamOpenMaxAttempts = 2
 	defer func() {
 		streamOpenTimeout = oldTimeout
-		imageStreamOpenTimeout = oldImageOpenTimeout
 		streamOpenMaxAttempts = oldAttempts
 	}()
 	stream := make(chan cliproxyexecutor.StreamChunk, 1)

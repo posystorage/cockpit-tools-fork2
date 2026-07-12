@@ -5083,7 +5083,11 @@
       "pastePlaceholder": "Dán JSON tài khoản Grok",
       "pasteAction": "Nhập JSON",
       "localDesc": "Nhập tài khoản hiện tại từ ~/.grok/auth.json mặc định. Khi chọn tệp, hãy dùng auth.json chính thức của Grok CLI.",
-      "localClient": "Nhập từ Grok CLI cục bộ"
+      "localClient": "Nhập từ Grok CLI cục bộ",
+      "apiKeyTab": "Khóa API",
+      "apiKeyDesc": "Dán xAI API Key (XAI_API_KEY chính thức). Được inject khi khởi chạy. Cũng có thể dán auth.json chính thức để OAuth.",
+      "apiKeyPlaceholder": "dán xai-…",
+      "apiKeyAction": "Thêm API Key"
     },
     "instances": {
       "unsupported": "Đa phiên bản Grok CLI chỉ được hỗ trợ trên macOS, Windows và Linux.",
@@ -5122,7 +5126,8 @@
       "frequent": "Tác vụ thường xuyên",
       "occasional": "Tác vụ thông thường",
       "resetAt": "{{label}} đặt lại: {{time}}",
-      "empty": "Không có hạn mức"
+      "empty": "Không có hạn mức",
+      "apiKeyUnsupported": "Tài khoản API Key không có hạn mức gói"
     },
     "quotaAlert": {
       "hint": "Khi bất kỳ mục hạn mức nào của tài khoản hiện tại xuống dưới ngưỡng, hãy gửi thông báo hệ thống và hiển thị thao tác chuyển nhanh trong ứng dụng.",

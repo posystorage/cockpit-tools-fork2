@@ -29,7 +29,6 @@ import (
 	"github.com/gin-gonic/gin"
 	internallogging "github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
 	internalregistry "github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
-	executorhelps "github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor/helps"
 	responsesconverter "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/openai/openai/responses"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/util"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/watcher/synthesizer"
@@ -227,19 +226,6 @@ type requestDiagnosticPayload struct {
 	HTTPStatus      int    `json:"httpStatus,omitempty"`
 	Retryable       *bool  `json:"retryable,omitempty"`
 	RetryAfterMS    int64  `json:"retryAfterMs,omitempty"`
-}
-
-type requestToolDiagnostics struct {
-	TopLevelToolTypes     []string
-	TopLevelToolNames     []string
-	AdditionalToolTypes   []string
-	AdditionalToolNames   []string
-	InputItemTypes        []string
-	HasAdditionalTools    bool
-	HasImageGeneration    bool
-	HasImageGenNamespace  bool
-	ResponsesLiteMetadata bool
-	ToolChoiceType        string
 }
 
 const executorWaitLogInterval = 30 * time.Second
@@ -3625,8 +3611,6 @@ func (s *relayServer) handleExecutorBody(c *gin.Context, spec *apiKeySpec, body 
 		writeAPIError(c, http.StatusBadRequest, "model is required", "invalid_request")
 		return
 	}
-	stream := requestBodyStream(body) && fixedAlt != "responses/compact"
-	s.emitRequestToolDiagnostics(c, body, model, sourceFormat, fixedAlt, stream)
 
 	if spec.ProviderGateway != nil {
 		s.handleProviderGatewayRequest(c, spec.ProviderGateway, body, model, sourceFormat, fixedAlt)
@@ -3637,6 +3621,7 @@ func (s *relayServer) handleExecutorBody(c *gin.Context, spec *apiKeySpec, body 
 	if alt == "" {
 		alt = requestAlt(c)
 	}
+	stream := requestBodyStream(body) && fixedAlt != "responses/compact"
 	if stream {
 		s.handleStream(c, body, model, sourceFormat, alt)
 		return
@@ -4146,7 +4131,6 @@ func (s *relayServer) handleStream(c *gin.Context, body []byte, model string, so
 	received := 0
 	endReason := "done"
 	firstChunkLogged := false
-	protocolEventsLogged := make(map[string]struct{})
 	idleTimer := time.NewTimer(timeouts.idle)
 	defer idleTimer.Stop()
 	defer func() {
@@ -4209,7 +4193,6 @@ func (s *relayServer) handleStream(c *gin.Context, body []byte, model string, so
 				firstChunkLogged = true
 				s.emitExecutorDiagnostic(c, "stream_first_chunk", model, "stream_loop", startedAt, fmt.Sprintf("bytes=%d", len(chunk.Payload)))
 			}
-			s.emitStreamProtocolEvents(c, model, chunk.Payload, protocolEventsLogged)
 			if err := framer.Write(c.Writer, chunk.Payload); err != nil {
 				endReason = "write_failed"
 				s.emitExecutorDiagnostic(c, "stream_write_failed", model, "stream_loop", startedAt, err.Error())
@@ -4375,196 +4358,6 @@ func (s *relayServer) emitStreamCompleted(c *gin.Context, model string, received
 		Status:       c.Writer.Status(),
 		ErrorMessage: fmt.Sprintf("reason=%s received=%d", reason, received),
 	})
-}
-
-func (s *relayServer) emitRequestToolDiagnostics(c *gin.Context, body []byte, model string, sourceFormat sdktranslator.Format, fixedAlt string, stream bool) {
-	if s == nil || s.emitter == nil || c == nil || c.Request == nil || !s.debugLogsEnabled() {
-		return
-	}
-	diagnostic := inspectRequestTools(body)
-	responsesLiteHeader := len(c.Request.Header.Values("X-OpenAI-Internal-Codex-Responses-Lite")) > 0
-	responsesLite := responsesLiteHeader || diagnostic.ResponsesLiteMetadata
-	configAllowsInjection := shouldInjectImageGenerationTool(s, c.Request)
-	s.emitter.emit(map[string]any{
-		"type":                            "request_tool_diagnostics",
-		"requestId":                       internallogging.GetRequestID(c.Request.Context()),
-		"method":                          c.Request.Method,
-		"path":                            requestPath(c.Request),
-		"model":                           model,
-		"sourceFormat":                    sourceFormat.String(),
-		"stream":                          stream,
-		"alt":                             fixedAlt,
-		"topLevelToolTypes":               diagnostic.TopLevelToolTypes,
-		"topLevelToolNames":               diagnostic.TopLevelToolNames,
-		"additionalToolTypes":             diagnostic.AdditionalToolTypes,
-		"additionalToolNames":             diagnostic.AdditionalToolNames,
-		"inputItemTypes":                  diagnostic.InputItemTypes,
-		"hasAdditionalTools":              diagnostic.HasAdditionalTools,
-		"hasImageGeneration":              diagnostic.HasImageGeneration,
-		"hasImageGenNamespace":            diagnostic.HasImageGenNamespace,
-		"responsesLiteHeader":             responsesLiteHeader,
-		"responsesLiteMetadata":           diagnostic.ResponsesLiteMetadata,
-		"responsesLite":                   responsesLite,
-		"toolChoiceType":                  diagnostic.ToolChoiceType,
-		"disableImageGeneration":          s.cfg.DisableImageGeneration.String(),
-		"configAllowsImageInjection":      configAllowsInjection,
-		"effectiveImageInjectionEligible": configAllowsInjection && !responsesLite,
-	})
-}
-
-func inspectRequestTools(body []byte) requestToolDiagnostics {
-	diagnostic := requestToolDiagnostics{}
-	var root map[string]any
-	if err := json.Unmarshal(body, &root); err != nil {
-		return diagnostic
-	}
-	collectToolDescriptors(root["tools"], &diagnostic.TopLevelToolTypes, &diagnostic.TopLevelToolNames, &diagnostic)
-	collectToolDescriptors(root["additional_tools"], &diagnostic.AdditionalToolTypes, &diagnostic.AdditionalToolNames, &diagnostic)
-	if input, ok := root["input"].([]any); ok {
-		for _, rawItem := range input {
-			item, _ := rawItem.(map[string]any)
-			itemType := stringValue(item["type"])
-			appendUniqueString(&diagnostic.InputItemTypes, itemType)
-			if itemType != "additional_tools" {
-				continue
-			}
-			diagnostic.HasAdditionalTools = true
-			collectToolDescriptors(item["tools"], &diagnostic.AdditionalToolTypes, &diagnostic.AdditionalToolNames, &diagnostic)
-		}
-	}
-	if metadata, ok := root["client_metadata"].(map[string]any); ok {
-		diagnostic.ResponsesLiteMetadata = boolLikeValue(metadata["ws_request_header_x_openai_internal_codex_responses_lite"])
-	}
-	diagnostic.ToolChoiceType = toolChoiceDiagnosticType(root["tool_choice"])
-	sort.Strings(diagnostic.TopLevelToolTypes)
-	sort.Strings(diagnostic.TopLevelToolNames)
-	sort.Strings(diagnostic.AdditionalToolTypes)
-	sort.Strings(diagnostic.AdditionalToolNames)
-	sort.Strings(diagnostic.InputItemTypes)
-	return diagnostic
-}
-
-func collectToolDescriptors(value any, types *[]string, names *[]string, diagnostic *requestToolDiagnostics) {
-	tools, ok := value.([]any)
-	if !ok {
-		return
-	}
-	for _, rawTool := range tools {
-		tool, _ := rawTool.(map[string]any)
-		toolType := strings.ToLower(strings.TrimSpace(stringValue(tool["type"])))
-		toolName := strings.TrimSpace(stringValue(tool["name"]))
-		if toolName == "" {
-			if function, ok := tool["function"].(map[string]any); ok {
-				toolName = strings.TrimSpace(stringValue(function["name"]))
-			}
-		}
-		appendUniqueString(types, toolType)
-		appendUniqueString(names, toolName)
-		if toolType == "image_generation" {
-			diagnostic.HasImageGeneration = true
-		}
-		normalizedName := strings.ToLower(toolName)
-		if normalizedName == "image_gen" || normalizedName == "imagegen" || strings.HasPrefix(normalizedName, "image_gen.") {
-			diagnostic.HasImageGenNamespace = true
-		}
-		if toolType == "namespace" {
-			children := tool["tools"]
-			if children == nil {
-				children = tool["children"]
-			}
-			collectToolDescriptors(children, types, names, diagnostic)
-		}
-	}
-}
-
-func appendUniqueString(values *[]string, value string) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return
-	}
-	for _, existing := range *values {
-		if existing == value {
-			return
-		}
-	}
-	*values = append(*values, value)
-}
-
-func stringValue(value any) string {
-	text, _ := value.(string)
-	return text
-}
-
-func boolLikeValue(value any) bool {
-	switch typed := value.(type) {
-	case bool:
-		return typed
-	case string:
-		return strings.EqualFold(strings.TrimSpace(typed), "true")
-	default:
-		return false
-	}
-}
-
-func toolChoiceDiagnosticType(value any) string {
-	switch typed := value.(type) {
-	case string:
-		return strings.TrimSpace(typed)
-	case map[string]any:
-		choiceType := strings.TrimSpace(stringValue(typed["type"]))
-		choiceName := strings.TrimSpace(stringValue(typed["name"]))
-		if choiceName != "" {
-			return choiceType + ":" + choiceName
-		}
-		return choiceType
-	default:
-		return ""
-	}
-}
-
-func (s *relayServer) emitStreamProtocolEvents(c *gin.Context, model string, chunk []byte, logged map[string]struct{}) {
-	if s == nil || s.emitter == nil || c == nil || c.Request == nil || !s.debugLogsEnabled() {
-		return
-	}
-	for _, payload := range openAIStreamPayloadsFromChunk(chunk) {
-		var event map[string]any
-		if err := json.Unmarshal(payload, &event); err != nil {
-			continue
-		}
-		eventType := strings.TrimSpace(stringValue(event["type"]))
-		item, _ := event["item"].(map[string]any)
-		itemType := strings.TrimSpace(stringValue(item["type"]))
-		hasImageGeneration := itemType == "image_generation_call" || eventContainsImageGenerationOutput(event)
-		key := eventType + "\x00" + itemType
-		if eventType == "" {
-			continue
-		}
-		if _, exists := logged[key]; exists {
-			continue
-		}
-		logged[key] = struct{}{}
-		s.emitter.emit(map[string]any{
-			"type":               "stream_protocol_event",
-			"requestId":          internallogging.GetRequestID(c.Request.Context()),
-			"path":               requestPath(c.Request),
-			"model":              model,
-			"eventType":          eventType,
-			"itemType":           itemType,
-			"hasImageGeneration": hasImageGeneration,
-		})
-	}
-}
-
-func eventContainsImageGenerationOutput(event map[string]any) bool {
-	response, _ := event["response"].(map[string]any)
-	output, _ := response["output"].([]any)
-	for _, rawItem := range output {
-		item, _ := rawItem.(map[string]any)
-		if stringValue(item["type"]) == "image_generation_call" {
-			return true
-		}
-	}
-	return false
 }
 
 func requestBodyModel(body []byte) string {
@@ -5586,8 +5379,7 @@ func (s *relayServer) streamTimeoutsForRequest(r *http.Request, body []byte, mod
 		profile.open = durationFromConfigMillis(s.cfg.Streaming.StreamOpenTimeoutMS, profile.open)
 		profile.idle = durationFromConfigMillis(s.cfg.Streaming.StreamIdleTimeoutMS, profile.idle)
 	}
-	if !isImageGenerationRequest(r, body, model) &&
-		(!shouldInjectImageGenerationTool(s, r) || isResponsesLiteRequest(r, body)) {
+	if !isImageGenerationRequest(r, body, model) {
 		return profile
 	}
 	profile.open = imageStreamOpenTimeout
@@ -5597,24 +5389,6 @@ func (s *relayServer) streamTimeoutsForRequest(r *http.Request, body []byte, mod
 		profile.idle = durationFromConfigMillis(s.cfg.Streaming.ImageStreamIdleTimeoutMS, profile.idle)
 	}
 	return profile
-}
-
-func isResponsesLiteRequest(r *http.Request, body []byte) bool {
-	if r != nil && strings.EqualFold(strings.TrimSpace(r.Header.Get("X-OpenAI-Internal-Codex-Responses-Lite")), "true") {
-		return true
-	}
-	return inspectRequestTools(body).ResponsesLiteMetadata
-}
-
-func shouldInjectImageGenerationTool(s *relayServer, r *http.Request) bool {
-	if s == nil || s.cfg == nil || r == nil || r.URL == nil {
-		return false
-	}
-	path := strings.ToLower(strings.TrimSpace(r.URL.Path))
-	if strings.HasSuffix(path, "/responses/compact") {
-		return false
-	}
-	return executorhelps.ShouldInjectImageGenerationTool(s.cfg, path, r.Header)
 }
 
 func isImageGenerationRequest(r *http.Request, body []byte, model string) bool {

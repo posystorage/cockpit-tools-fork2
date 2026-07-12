@@ -39,10 +39,13 @@ export interface GrokQuota {
  * Sanitized account DTO returned to the UI. OAuth credentials remain in the
  * Rust backend; `access_token` is always empty for shared-view compatibility.
  */
+export type GrokAuthMode = "oauth" | "api_key";
+
 export interface GrokAccount {
   id: string;
   email: string;
   access_token: "";
+  auth_mode?: GrokAuthMode | null;
   tags?: string[] | null;
   first_name?: string | null;
   last_name?: string | null;
@@ -65,6 +68,13 @@ export interface GrokAccount {
   working_dir?: string | null;
   created_at: number;
   last_used: number;
+}
+
+export function isGrokApiKeyAccount(account: GrokAccount): boolean {
+  return (
+    account.auth_mode === "api_key" ||
+    (account.plan_type || "").trim().toUpperCase() === "API_KEY"
+  );
 }
 
 export interface GrokQuotaSummaryItem {
@@ -201,6 +211,9 @@ export function getGrokAccountDisplayEmail(account: GrokAccount): string {
 }
 
 export function getGrokPlanRawValue(account: GrokAccount): string | null {
+  if (isGrokApiKeyAccount(account)) {
+    return account.plan_type?.trim() || "API_KEY";
+  }
   return (
     account.plan_type?.trim() || account.quota?.subscriptionTier?.trim() || null
   );
@@ -208,6 +221,10 @@ export function getGrokPlanRawValue(account: GrokAccount): string | null {
 
 /** Maps stable xAI tier identifiers to compact product names. */
 export function getGrokPlanBadge(account: GrokAccount): string {
+  if (isGrokApiKeyAccount(account)) {
+    // Plan/tier badges show raw values (project rule).
+    return getGrokPlanRawValue(account) || "API_KEY";
+  }
   const raw = getGrokPlanRawValue(account);
   // The official Grok CLI treats a missing subscription tier as the free tier.
   if (!raw) return "Free";
@@ -380,6 +397,10 @@ export function getGrokQuotaSummaryItems(
   account: GrokAccount,
   t: (key: string, defaultValue?: string) => string,
 ): GrokQuotaSummaryItem[] {
+  if (isGrokApiKeyAccount(account)) {
+    // API key accounts bill via xAI API credits, not SuperGrok product quotas.
+    return [];
+  }
   const quota = account.quota;
   if (!quota) return [];
   const billingResetAtMs = timestampMs(quota.periodEnd);

@@ -39,6 +39,7 @@ import {
   getGrokQuotaSummaryItems,
   getGrokUsage,
   hasGrokQuotaData,
+  isGrokApiKeyAccount,
   type GrokAccount,
 } from "../types/grok";
 import { compareCurrentAccountFirst } from "../utils/currentAccountSort";
@@ -62,6 +63,7 @@ function getGrokCliInstallCommand(): string {
 }
 
 function getGrokReauthorizationReason(account: GrokAccount): string | null {
+  if (isGrokApiKeyAccount(account)) return null;
   const reason = account.status_reason?.trim() || "";
   const normalized = `${account.status || ""} ${reason}`.toLowerCase();
   if (
@@ -143,6 +145,7 @@ export function GrokAccountsPage() {
       importFromLocal: grokService.importGrokFromLocal,
       exportAccounts: grokService.exportGrokAccounts,
       injectToVSCode: grokService.switchGrokAccount,
+      addWithToken: grokService.addGrokAccountWithApiKey,
     },
     getDisplayEmail: getGrokAccountDisplayEmail,
     onInjectSuccess: async ({ accountId, account, displayEmail }) => {
@@ -493,6 +496,21 @@ export function GrokAccountsPage() {
             </div>
           )}
           <div className="grok-quota-items">
+            {isGrokApiKeyAccount(account) && items.length === 0 && !errorMessage && (
+              <div
+                className={variant === "card" ? "quota-empty" : ""}
+                style={
+                  variant === "table"
+                    ? { color: "var(--text-muted)", fontSize: 13 }
+                    : undefined
+                }
+              >
+                {t(
+                  "grok.quota.apiKeyUnsupported",
+                  "API Key 账号无套餐配额",
+                )}
+              </div>
+            )}
             {items.map((item) => {
               const percentage = Math.max(
                 0,
@@ -576,7 +594,9 @@ export function GrokAccountsPage() {
                 </div>
               );
             })}
-            {items.length === 0 && !showError && (
+            {items.length === 0 &&
+              !showError &&
+              !isGrokApiKeyAccount(account) && (
               <div
                 className={variant === "card" ? "quota-empty" : ""}
                 style={
@@ -760,15 +780,15 @@ export function GrokAccountsPage() {
     oauthWaitingDefault: "等待 Grok OAuth 授权...",
     oauthOpenButtonKey: "grok.oauth.openWindow",
     oauthOpenButtonDefault: "打开授权页",
-    tokenTabLabelKey: "grok.import.pasteTab",
-    tokenTabLabelDefault: "粘贴 JSON",
-    tokenDescKey: "grok.import.pasteDesc",
+    tokenTabLabelKey: "grok.import.apiKeyTab",
+    tokenTabLabelDefault: "API Key",
+    tokenDescKey: "grok.import.apiKeyDesc",
     tokenDescDefault:
-      "粘贴 Grok CLI 官方 auth.json；凭据仅在本机后端处理。Cockpit 导出仅含脱敏元数据，不能用于恢复登录。",
-    tokenInputPlaceholderKey: "grok.import.pastePlaceholder",
-    tokenInputPlaceholderDefault: "粘贴 Grok 账号 JSON",
-    tokenSubmitLabelKey: "grok.import.pasteAction",
-    tokenSubmitLabelDefault: "导入 JSON",
+      "粘贴 xAI API Key（官方 XAI_API_KEY）。启动时注入环境变量；也可粘贴官方 auth.json 按 OAuth 导入。",
+    tokenInputPlaceholderKey: "grok.import.apiKeyPlaceholder",
+    tokenInputPlaceholderDefault: "xai-...",
+    tokenSubmitLabelKey: "grok.import.apiKeyAction",
+    tokenSubmitLabelDefault: "添加 API Key",
     tokenInputSecret: true,
     importLocalDescKey: "grok.import.localDesc",
     importLocalDescDefault:
@@ -780,6 +800,7 @@ export function GrokAccountsPage() {
     getPlanBadgeTitle: getGrokPlanRawValue,
     getPlanBadgeClass: (planBadge) => {
       if (planBadge === "Free") return "free";
+      if (planBadge === "API_KEY") return "pro";
       if (planBadge === "--") return "unknown";
       return "pro";
     },

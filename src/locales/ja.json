@@ -5083,7 +5083,11 @@
       "pastePlaceholder": "Grok アカウントの JSON を貼り付け",
       "pasteAction": "JSON をインポート",
       "localDesc": "既定の ~/.grok/auth.json から現在のアカウントをインポートします。ファイルを選ぶ場合は Grok CLI 公式の auth.json を使用してください。",
-      "localClient": "ローカルの Grok CLI からインポート"
+      "localClient": "ローカルの Grok CLI からインポート",
+      "apiKeyTab": "APIキー",
+      "apiKeyDesc": "xAI API キー（公式 XAI_API_KEY）を貼り付けます。起動時に環境変数へ注入します。公式 auth.json の貼り付けも可能です。",
+      "apiKeyPlaceholder": "xai- で始まるキー",
+      "apiKeyAction": "API Key を追加"
     },
     "instances": {
       "unsupported": "Grok CLI の複数インスタンスは macOS、Windows、Linux のみ対応しています。",
@@ -5122,7 +5126,8 @@
       "frequent": "高頻度タスク",
       "occasional": "通常タスク",
       "resetAt": "{{label}} リセット：{{time}}",
-      "empty": "枠なし"
+      "empty": "枠なし",
+      "apiKeyUnsupported": "API Key アカウントにプラン枠はありません"
     },
     "quotaAlert": {
       "hint": "現在のアカウントのいずれかのクォータ項目がしきい値を下回った場合、ネイティブ通知を送信し、アプリにクイック切り替え操作を表示します。",

@@ -5083,7 +5083,11 @@
       "pastePlaceholder": "Paste Grok account JSON",
       "pasteAction": "Import JSON",
       "localDesc": "Import the current account from the default ~/.grok/auth.json. When choosing a file, use the official Grok CLI auth.json.",
-      "localClient": "Import from Local Grok CLI"
+      "localClient": "Import from Local Grok CLI",
+      "apiKeyTab": "API Key",
+      "apiKeyDesc": "Paste an xAI API key (official XAI_API_KEY). It is injected at launch. You can also paste official auth.json for OAuth import.",
+      "apiKeyPlaceholder": "xai-...",
+      "apiKeyAction": "Add API Key"
     },
     "instances": {
       "unsupported": "Grok CLI multi-instance is supported on macOS, Windows, and Linux only.",
@@ -5122,7 +5126,8 @@
       "frequent": "Frequent tasks",
       "occasional": "Occasional tasks",
       "resetAt": "{{label}} resets: {{time}}",
-      "empty": "No quota"
+      "empty": "No quota",
+      "apiKeyUnsupported": "No plan quota for API key accounts"
     },
     "quotaAlert": {
       "hint": "When any quota item for the current account falls below the threshold, send a native notification and show a quick-switch action in the app.",

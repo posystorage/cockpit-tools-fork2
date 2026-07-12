@@ -28,6 +28,12 @@ export async function importGrokFromJson(
   return await invoke('import_grok_from_json', { jsonContent });
 }
 
+export async function addGrokAccountWithApiKey(
+  apiKey: string,
+): Promise<GrokAccount> {
+  return await invoke('add_grok_account_with_api_key', { apiKey });
+}
+
 export async function importGrokFromLocal(): Promise<GrokAccount[]> {
   return await invoke('import_grok_from_local');
 }

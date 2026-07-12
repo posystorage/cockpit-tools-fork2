@@ -39,7 +39,6 @@ const (
 	codexOriginator              = "codex-tui"
 	codexDefaultImageToolModel   = "gpt-image-2"
 	codexResponsesLiteHeaderName = "X-OpenAI-Internal-Codex-Responses-Lite"
-	codexResponsesLiteMetadata   = "client_metadata.ws_request_header_x_openai_internal_codex_responses_lite"
 )
 
 var dataTag = []byte("data:")
@@ -859,9 +858,8 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
 	body, _ = sjson.DeleteBytes(body, "stream_options")
 	body = normalizeCodexInstructions(body)
 	if helps.ShouldInjectImageGenerationTool(e.cfg, requestPath, opts.Headers) {
-		body = ensureImageGenerationTool(body, baseModel, auth, opts.Headers)
+		body = ensureImageGenerationTool(body, baseModel, auth)
 	}
-	body = normalizeCodexParallelToolCallsForTools(body, opts.Headers)
 	body = sanitizeOpenAIResponsesReasoningEncryptedContent(ctx, "codex executor", body)
 	body, replayScope := applyCodexReasoningReplayCache(ctx, from, req, opts, body)
 	if sourceFormatEqual(from, sdktranslator.FormatClaude) {
@@ -1029,7 +1027,9 @@ func (e *CodexExecutor) executeCompact(ctx context.Context, auth *cliproxyauth.A
 	body, _ = sjson.SetBytes(body, "model", baseModel)
 	body, _ = sjson.DeleteBytes(body, "stream")
 	body = normalizeCodexInstructions(body)
-	body = normalizeCodexParallelToolCallsForTools(body, opts.Headers)
+	if helps.ShouldInjectImageGenerationTool(e.cfg, requestPath, opts.Headers) {
+		body = ensureImageGenerationTool(body, baseModel, auth)
+	}
 	body = sanitizeOpenAIResponsesReasoningEncryptedContent(ctx, "codex executor", body)
 	reporter.SetTranslatedReasoningEffort(body, to.String())
 
@@ -1136,9 +1136,8 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 	body, _ = sjson.SetBytes(body, "model", baseModel)
 	body = normalizeCodexInstructions(body)
 	if helps.ShouldInjectImageGenerationTool(e.cfg, requestPath, opts.Headers) {
-		body = ensureImageGenerationTool(body, baseModel, auth, opts.Headers)
+		body = ensureImageGenerationTool(body, baseModel, auth)
 	}
-	body = normalizeCodexParallelToolCallsForTools(body, opts.Headers)
 	body = sanitizeOpenAIResponsesReasoningEncryptedContent(ctx, "codex executor", body)
 	body, replayScope := applyCodexReasoningReplayCache(ctx, from, req, opts, body)
 	if sourceFormatEqual(from, sdktranslator.FormatClaude) {
@@ -1830,22 +1829,7 @@ func removeHostedImageGenerationForFunctionConflict(body []byte, tools gjson.Res
 	return body
 }
 
-func isCodexResponsesLiteRequest(body []byte, headers http.Header) bool {
-	if strings.EqualFold(strings.TrimSpace(headers.Get(codexResponsesLiteHeaderName)), "true") {
-		return true
-	}
-	value := gjson.GetBytes(body, codexResponsesLiteMetadata)
-	if !value.Exists() {
-		return false
-	}
-	return value.Type == gjson.True ||
-		value.Type == gjson.String && strings.EqualFold(strings.TrimSpace(value.String()), "true")
-}
-
-func ensureImageGenerationTool(body []byte, baseModel string, auth *cliproxyauth.Auth, headers http.Header) []byte {
-	if isCodexResponsesLiteRequest(body, headers) {
-		return body
-	}
+func ensureImageGenerationTool(body []byte, baseModel string, auth *cliproxyauth.Auth) []byte {
 	if strings.HasSuffix(baseModel, "spark") {
 		return body
 	}
@@ -1875,24 +1859,6 @@ func ensureImageGenerationTool(body []byte, baseModel string, auth *cliproxyauth
 		return body
 	}
 	body, _ = sjson.SetRawBytes(body, "tools.-1", imageGenToolJSON)
-	return body
-}
-
-func normalizeCodexParallelToolCallsForTools(body []byte, headers http.Header) []byte {
-	if isCodexResponsesLiteRequest(body, headers) {
-		body, _ = sjson.SetBytes(body, "parallel_tool_calls", false)
-		return body
-	}
-	if !gjson.GetBytes(body, "parallel_tool_calls").Exists() {
-		return body
-	}
-
-	tools := gjson.GetBytes(body, "tools")
-	if tools.Exists() && tools.IsArray() && len(tools.Array()) > 0 {
-		return body
-	}
-
-	body, _ = sjson.DeleteBytes(body, "parallel_tool_calls")
 	return body
 }
 

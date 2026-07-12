@@ -105,8 +105,6 @@ const MAX_RETRY_INTERVAL_MAX_MS: u64 = 30 * 1000;
 const DEFAULT_MAX_RETRY_INTERVAL_MS: u64 = 3 * 1000;
 const LOCAL_ACCESS_TIMEOUT_MIN_MS: u64 = 1_000;
 const LOCAL_ACCESS_TIMEOUT_MAX_MS: u64 = 600_000;
-const CHAT_IMAGE_STREAM_OPEN_TIMEOUT_MIN_MS: u64 = 60_000;
-const CHAT_IMAGE_STREAM_IDLE_TIMEOUT_MIN_MS: u64 = 180_000;
 const LEGACY_STREAM_TOTAL_TIMEOUT_MAX_MS: u64 = 30 * 60 * 1000;
 const SIDECAR_STREAM_OPEN_ATTEMPTS_MIN: u8 = 1;
 const SIDECAR_STREAM_OPEN_ATTEMPTS_MAX: u8 = 3;
@@ -7811,7 +7809,7 @@ async fn prepare_sidecar_launch_config_in_dir(
             continue;
         }
 
-        if account_uses_bound_oauth_image_generation_compat(&account) {
+        if account_uses_oauth_chat_image_generation_compat(&account) {
             effective_image_generation_mode =
                 oauth_chat_image_generation_mode(effective_image_generation_mode);
         }
@@ -7905,22 +7903,6 @@ async fn prepare_sidecar_launch_config_in_dir(
         json!(MAX_REQUEST_RETRY_ATTEMPTS as i32),
     );
     let timeouts = collection_timeouts(collection);
-    let image_stream_open_timeout_ms =
-        if effective_image_generation_mode == CodexLocalAccessImageGenerationMode::Enabled {
-            timeouts
-                .sidecar_image_stream_open_timeout_ms
-                .max(CHAT_IMAGE_STREAM_OPEN_TIMEOUT_MIN_MS)
-        } else {
-            timeouts.sidecar_image_stream_open_timeout_ms
-        };
-    let image_stream_idle_timeout_ms =
-        if effective_image_generation_mode == CodexLocalAccessImageGenerationMode::Enabled {
-            timeouts
-                .sidecar_image_stream_idle_timeout_ms
-                .max(CHAT_IMAGE_STREAM_IDLE_TIMEOUT_MIN_MS)
-        } else {
-            timeouts.sidecar_image_stream_idle_timeout_ms
-        };
     config.insert(
         "streaming".to_string(),
         json!({
@@ -7930,8 +7912,8 @@ async fn prepare_sidecar_launch_config_in_dir(
             "bootstrap-retry-max-delay-ms": timeouts.single_account_status_retry_max_delay_ms,
             "stream-open-timeout-ms": timeouts.sidecar_stream_open_timeout_ms,
             "stream-idle-timeout-ms": timeouts.sidecar_stream_idle_timeout_ms,
-            "image-stream-open-timeout-ms": image_stream_open_timeout_ms,
-            "image-stream-idle-timeout-ms": image_stream_idle_timeout_ms,
+            "image-stream-open-timeout-ms": timeouts.sidecar_image_stream_open_timeout_ms,
+            "image-stream-idle-timeout-ms": timeouts.sidecar_image_stream_idle_timeout_ms,
             "stream-open-max-attempts": timeouts.sidecar_stream_open_max_attempts,
         }),
     );
@@ -11823,6 +11805,10 @@ fn account_uses_bound_oauth_image_generation_compat(account: &CodexAccount) -> b
         && normalize_optional_account_ref(account.bound_oauth_account_id.as_deref()).is_some()
 }
 
+fn account_uses_oauth_chat_image_generation_compat(account: &CodexAccount) -> bool {
+    !account.is_api_key_auth() || account_uses_bound_oauth_image_generation_compat(account)
+}
+
 fn oauth_chat_image_generation_mode(
     inherited_mode: CodexLocalAccessImageGenerationMode,
 ) -> CodexLocalAccessImageGenerationMode {
@@ -11837,9 +11823,7 @@ fn provider_gateway_image_generation_mode_for_account(
     account: &CodexAccount,
     inherited_mode: CodexLocalAccessImageGenerationMode,
 ) -> CodexLocalAccessImageGenerationMode {
-    if account_requires_provider_gateway(account)
-        || account_uses_bound_oauth_image_generation_compat(account)
-    {
+    if account_uses_bound_oauth_image_generation_compat(account) {
         oauth_chat_image_generation_mode(inherited_mode)
     } else {
         inherited_mode
@@ -17399,6 +17383,12 @@ fn build_account_scoped_upstream_body<'a>(
     let Some(body_obj) = body_value.as_object_mut() else {
         return Ok(Cow::Borrowed(body));
     };
+    let image_generation_mode = if account_uses_oauth_chat_image_generation_compat(account) {
+        oauth_chat_image_generation_mode(image_generation_mode)
+    } else {
+        image_generation_mode
+    };
+
     if has_hosted_image_generation_tool_conflict(body_obj) {
         if !remove_image_generation_tool_from_object(body_obj) {
             return Ok(Cow::Borrowed(body));
@@ -19977,7 +19967,6 @@ mod tests {
         CodexModelProviderGatewayChatTestRequest, GatewayResponseAdapter, ParsedRequest,
         ResolvedLocalApiKey, ResponseUsageCollector, RoutingCandidate, SidecarUsageDetails,
         SidecarUsageEvent, UsageCapture, BOUND_OAUTH_QUOTA_RESERVE_MAX_SNAPSHOT_AGE_SECONDS,
-        CHAT_IMAGE_STREAM_IDLE_TIMEOUT_MIN_MS, CHAT_IMAGE_STREAM_OPEN_TIMEOUT_MIN_MS,
         CODEX_AUTO_REVIEW_MODEL_ID, CODEX_LOCAL_ACCESS_TEST_DISABLE_IMAGE_GENERATION_HEADER,
         CODEX_PROFILE_AUTH_FILE, CODEX_PROFILE_CONFIG_FILE, CODEX_PROVIDER_MODEL_BACKUP_FILE,
         CODEX_PROVIDER_MODEL_CATALOG_FILE, DEFAULT_MAX_RETRY_INTERVAL_MS,
@@ -23256,7 +23245,7 @@ data: {"type":"response.completed","response":{"id":"resp_123","usage":{"input_t
     }
 
     #[test]
-    fn injects_image_generation_tool_for_paid_oauth_and_api_key_responses_accounts() {
+    fn injects_image_generation_tool_only_for_non_free_api_key_responses_accounts() {
         let request = ParsedRequest {
             method: "POST".to_string(),
             target: "/v1/responses".to_string(),
@@ -23284,7 +23273,7 @@ data: {"type":"response.completed","response":{"id":"resp_123","usage":{"input_t
         .expect("paid oauth body should build");
         let paid_oauth_mapped_body: Value = serde_json::from_slice(paid_oauth_body.as_ref())
             .expect("paid oauth body should be json");
-        assert!(has_image_generation_tool(&paid_oauth_mapped_body));
+        assert!(!has_image_generation_tool(&paid_oauth_mapped_body));
 
         let api_key_account = CodexAccount::new_api_key(
             "api-key-1".to_string(),
@@ -24486,9 +24475,7 @@ data: {"error":{"code":"server_error","type":"upstream","message":"stream aborte
         account.bound_oauth_account_id = Some("oauth-1".to_string());
         account.bound_oauth_use_local_gateway = true;
 
-        let mut collection = test_local_access_collection(vec![account.id.clone()]);
-        collection.timeouts.sidecar_image_stream_open_timeout_ms = 10_000;
-        collection.timeouts.sidecar_image_stream_idle_timeout_ms = 60_000;
+        let collection = test_local_access_collection(vec![account.id.clone()]);
         let launch_config = prepare_sidecar_launch_config_in_dir(
             &collection,
             dir.clone(),
@@ -24504,21 +24491,13 @@ data: {"error":{"code":"server_error","type":"upstream","message":"stream aborte
         .expect("parse sidecar config");
 
         assert_eq!(config.get("disable-image-generation"), Some(&json!("chat")));
-        assert_eq!(
-            config.pointer("/streaming/image-stream-open-timeout-ms"),
-            Some(&json!(10_000))
-        );
-        assert_eq!(
-            config.pointer("/streaming/image-stream-idle-timeout-ms"),
-            Some(&json!(60_000))
-        );
         assert_eq!(config.get("disable-auth-auto-refresh"), Some(&json!(true)));
 
         fs::remove_dir_all(&dir).expect("cleanup temp dir");
     }
 
     #[tokio::test]
-    async fn sidecar_config_enables_chat_image_generation_for_oauth_pool() {
+    async fn sidecar_config_disables_chat_image_generation_for_oauth_pool() {
         let dir = make_temp_dir("codex-sidecar-oauth-image-generation");
         let account = CodexAccount::new(
             "oauth-image-generation-1".to_string(),
@@ -24530,9 +24509,7 @@ data: {"error":{"code":"server_error","type":"upstream","message":"stream aborte
             },
         );
 
-        let mut collection = test_local_access_collection(vec![account.id.clone()]);
-        collection.timeouts.sidecar_image_stream_open_timeout_ms = 10_000;
-        collection.timeouts.sidecar_image_stream_idle_timeout_ms = 60_000;
+        let collection = test_local_access_collection(vec![account.id.clone()]);
         let launch_config = prepare_sidecar_launch_config_in_dir(
             &collection,
             dir.clone(),
@@ -24547,15 +24524,7 @@ data: {"error":{"code":"server_error","type":"upstream","message":"stream aborte
         )
         .expect("parse sidecar config");
 
-        assert_eq!(config.get("disable-image-generation"), Some(&json!(false)));
-        assert_eq!(
-            config.pointer("/streaming/image-stream-open-timeout-ms"),
-            Some(&json!(CHAT_IMAGE_STREAM_OPEN_TIMEOUT_MIN_MS))
-        );
-        assert_eq!(
-            config.pointer("/streaming/image-stream-idle-timeout-ms"),
-            Some(&json!(CHAT_IMAGE_STREAM_IDLE_TIMEOUT_MIN_MS))
-        );
+        assert_eq!(config.get("disable-image-generation"), Some(&json!("chat")));
 
         fs::remove_dir_all(&dir).expect("cleanup temp dir");
     }
@@ -24742,24 +24711,6 @@ data: {"error":{"code":"server_error","type":"upstream","message":"stream aborte
                 CodexLocalAccessImageGenerationMode::Disabled,
             ),
             CodexLocalAccessImageGenerationMode::Disabled
-        );
-
-        account.api_wire_api = Some("chat_completions".to_string());
-        assert_eq!(
-            provider_gateway_image_generation_mode_for_account(
-                &account,
-                CodexLocalAccessImageGenerationMode::Enabled,
-            ),
-            CodexLocalAccessImageGenerationMode::ImagesOnly
-        );
-
-        account.api_wire_api = Some("responses".to_string());
-        assert_eq!(
-            provider_gateway_image_generation_mode_for_account(
-                &account,
-                CodexLocalAccessImageGenerationMode::Enabled,
-            ),
-            CodexLocalAccessImageGenerationMode::Enabled
         );
     }
 

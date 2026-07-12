@@ -5083,7 +5083,11 @@
       "pastePlaceholder": "粘贴 Grok 账号 JSON",
       "pasteAction": "导入 JSON",
       "localDesc": "从默认 ~/.grok/auth.json 导入当前账号；选择文件时应使用 Grok CLI 官方 auth.json。",
-      "localClient": "从本机 Grok CLI 导入"
+      "localClient": "从本机 Grok CLI 导入",
+      "apiKeyTab": "API 密钥",
+      "apiKeyDesc": "粘贴 xAI API Key（官方 XAI_API_KEY）。启动时注入环境变量；也可粘贴官方 auth.json 按 OAuth 导入。",
+      "apiKeyPlaceholder": "粘贴 xai- 开头的密钥",
+      "apiKeyAction": "添加 API Key"
     },
     "instances": {
       "unsupported": "Grok CLI 多开仅支持 macOS、Windows 和 Linux。",
@@ -5122,7 +5126,8 @@
       "frequent": "高频任务",
       "occasional": "普通任务",
       "resetAt": "{{label}} 重置：{{time}}",
-      "empty": "暂无额度"
+      "empty": "暂无额度",
+      "apiKeyUnsupported": "API Key 账号无套餐配额"
     },
     "quotaAlert": {
       "hint": "当当前账号任意配额项低于阈值时，发送原生通知并在页面提示快捷切号。",
