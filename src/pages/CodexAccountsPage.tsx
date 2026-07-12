@@ -951,6 +951,12 @@ export function CodexAccountsPage() {
   const [groupQuickAddGroupId, setGroupQuickAddGroupId] = useState<
     string | null
   >(null);
+  const [codexAddTargetGroupId, setCodexAddTargetGroupId] = useState<
+    string | null
+  >(null);
+  const [batchImportTargetGroupId, setBatchImportTargetGroupId] = useState<
+    string | null
+  >(null);
   const [groupDeleteConfirm, setGroupDeleteConfirm] = useState<{
     id: string;
     name: string;
@@ -1079,6 +1085,47 @@ export function CodexAccountsPage() {
   const reloadCodexGroups = useCallback(async () => {
     setCodexGroups(await getCodexAccountGroups());
   }, []);
+
+  const codexAddTargetGroup = useMemo(() => {
+    if (!codexAddTargetGroupId) return null;
+    return (
+      codexGroups.find((group) => group.id === codexAddTargetGroupId) ?? null
+    );
+  }, [codexAddTargetGroupId, codexGroups]);
+
+  const resolveValidCodexGroupId = useCallback(
+    (groupId?: string | null) => {
+      const normalized = groupId?.trim();
+      if (!normalized) return null;
+      return codexGroups.some((group) => group.id === normalized)
+        ? normalized
+        : null;
+    },
+    [codexGroups],
+  );
+
+  const assignCodexAccountsToTargetGroup = useCallback(
+    async (
+      targetAccounts: Array<CodexAccount | null | undefined>,
+      targetGroupId = codexAddTargetGroupId,
+    ) => {
+      const resolvedGroupId = resolveValidCodexGroupId(targetGroupId);
+      if (!resolvedGroupId) return;
+
+      const accountIds = Array.from(
+        new Set(
+          targetAccounts
+            .map((account) => account?.id?.trim())
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
+      if (accountIds.length === 0) return;
+
+      await assignAccountsToCodexGroup(resolvedGroupId, accountIds);
+      await reloadCodexGroups();
+    },
+    [codexAddTargetGroupId, reloadCodexGroups, resolveValidCodexGroupId],
+  );
 
   useEffect(() => {
     reloadCodexGroups();
@@ -1555,6 +1602,7 @@ export function CodexAccountsPage() {
     setBatchImportResult(null);
     setBatchImportFilePaths([]);
     setBatchImportCheckQuota(false);
+    setBatchImportTargetGroupId(null);
     try {
       localStorage.removeItem(CODEX_BATCH_IMPORT_SESSION_STORAGE_KEY);
     } catch {
@@ -1656,6 +1704,9 @@ export function CodexAccountsPage() {
   const openCodexAddModal = useCallback(
     (tab: string, targetAccount?: CodexAccount | null) => {
       setReauthTargetAccount(targetAccount ?? null);
+      setCodexAddTargetGroupId(
+        targetAccount ? null : resolveValidCodexGroupId(activeGroupId),
+      );
       setReauthEmailCopied(false);
       if (!targetAccount) {
         setPendingOAuthEmailInput("");
@@ -1665,11 +1716,12 @@ export function CodexAccountsPage() {
       setPendingOAuthNoteModalOpen(false);
       openAddModal(tab);
     },
-    [openAddModal],
+    [activeGroupId, openAddModal, resolveValidCodexGroupId],
   );
 
   const closeCodexAddModal = useCallback(() => {
     setReauthTargetAccount(null);
+    setCodexAddTargetGroupId(null);
     setReauthEmailCopied(false);
     setPendingOAuthEmailInput("");
     setPendingOAuthNoteForm(EMPTY_CODEX_ACCOUNT_NOTE_FORM);
@@ -1690,6 +1742,7 @@ export function CodexAccountsPage() {
   useEffect(() => {
     if (showAddModal) return;
     setReauthTargetAccount(null);
+    setCodexAddTargetGroupId(null);
     setReauthEmailCopied(false);
     setPendingOAuthEmailInput("");
     setPendingOAuthNoteForm(EMPTY_CODEX_ACCOUNT_NOTE_FORM);
@@ -4217,6 +4270,7 @@ export function CodexAccountsPage() {
         );
       }
       await fetchAccounts();
+      await assignCodexAccountsToTargetGroup([account]);
       await emitAccountsChanged({
         platformId: "codex",
         accountId: account.id,
@@ -4242,6 +4296,7 @@ export function CodexAccountsPage() {
     }
   }, [
     buildPendingOAuthNoteUpdate,
+    assignCodexAccountsToTargetGroup,
     fetchAccounts,
     pendingOAuthEmailInput,
     resetAddModalState,
@@ -4274,42 +4329,50 @@ export function CodexAccountsPage() {
     [t],
   );
 
-  const completeOauthSuccess = useCallback(async () => {
-    oauthLog("授权完成并保存成功", { loginId: oauthLoginIdRef.current });
-    await fetchAccounts();
-    await fetchCurrentAccount();
-    await emitAccountsChanged({
-      platformId: "codex",
-      reason: "oauth",
-    });
-    setAddStatus("success");
-    setAddMessage(t("common.shared.oauth.success", "授权成功"));
-    oauthActiveRef.current = false;
-    oauthCompletingRef.current = false;
-    oauthLoginIdRef.current = null;
-    setOauthUrl("");
-    setOauthUrlCopied(false);
-    setOauthPrepareError(null);
-    setOauthPortInUse(null);
-    setOauthTimeoutInfo(null);
-    setOauthCallbackInput("");
-    setOauthCallbackSubmitting(false);
-    setOauthCallbackError(null);
-    setOauthTokenExchangeRetryVisible(false);
-    setTimeout(() => {
-      setShowAddModal(false);
-      resetAddModalState();
-    }, 1200);
-  }, [
-    fetchAccounts,
-    fetchCurrentAccount,
-    t,
-    oauthLog,
-    setAddStatus,
-    setAddMessage,
-    setShowAddModal,
-    resetAddModalState,
-  ]);
+  const completeOauthSuccess = useCallback(
+    async (account?: CodexAccount | null) => {
+      oauthLog("授权完成并保存成功", { loginId: oauthLoginIdRef.current });
+      await fetchAccounts();
+      await fetchCurrentAccount();
+      if (!reauthTargetAccountId) {
+        await assignCodexAccountsToTargetGroup([account]);
+      }
+      await emitAccountsChanged({
+        platformId: "codex",
+        reason: "oauth",
+      });
+      setAddStatus("success");
+      setAddMessage(t("common.shared.oauth.success", "授权成功"));
+      oauthActiveRef.current = false;
+      oauthCompletingRef.current = false;
+      oauthLoginIdRef.current = null;
+      setOauthUrl("");
+      setOauthUrlCopied(false);
+      setOauthPrepareError(null);
+      setOauthPortInUse(null);
+      setOauthTimeoutInfo(null);
+      setOauthCallbackInput("");
+      setOauthCallbackSubmitting(false);
+      setOauthCallbackError(null);
+      setOauthTokenExchangeRetryVisible(false);
+      setTimeout(() => {
+        setShowAddModal(false);
+        resetAddModalState();
+      }, 1200);
+    },
+    [
+      assignCodexAccountsToTargetGroup,
+      fetchAccounts,
+      fetchCurrentAccount,
+      reauthTargetAccountId,
+      t,
+      oauthLog,
+      setAddStatus,
+      setAddMessage,
+      setShowAddModal,
+      resetAddModalState,
+    ],
+  );
 
   const completeOauthError = useCallback(
     (e: unknown, allowTokenExchangeRetry = false) => {
@@ -4355,11 +4418,11 @@ export function CodexAccountsPage() {
         setAddMessage(t("codex.oauth.exchanging", "正在交换令牌..."));
         oauthCompletingRef.current = true;
         try {
-          await codexService.completeCodexOAuthLogin(
+          const account = await codexService.completeCodexOAuthLogin(
             loginId,
             reauthTargetAccountId || null,
           );
-          await completeOauthSuccess();
+          await completeOauthSuccess(account);
         } catch (e) {
           completeOauthError(e, true);
         } finally {
@@ -4624,11 +4687,11 @@ export function CodexAccountsPage() {
       setAddStatus("loading");
       setAddMessage(t("codex.oauth.exchanging", "正在交换令牌..."));
       tokenExchangeStarted = true;
-      await codexService.completeCodexOAuthLogin(
+      const account = await codexService.completeCodexOAuthLogin(
         loginId,
         reauthTargetAccountId || null,
       );
-      await completeOauthSuccess();
+      await completeOauthSuccess(account);
     } catch (e) {
       completeOauthError(e, tokenExchangeStarted);
       setOauthCallbackError(String(e).replace(/^Error:\s*/, ""));
@@ -4648,11 +4711,11 @@ export function CodexAccountsPage() {
     setAddMessage(t("codex.oauth.exchanging", "正在交换令牌..."));
     oauthCompletingRef.current = true;
     try {
-      await codexService.completeCodexOAuthLogin(
+      const account = await codexService.completeCodexOAuthLogin(
         loginId,
         reauthTargetAccountId || null,
       );
-      await completeOauthSuccess();
+      await completeOauthSuccess(account);
     } catch (e) {
       completeOauthError(e, true);
       setOauthCallbackError(String(e).replace(/^Error:\s*/, ""));
@@ -5346,6 +5409,7 @@ export function CodexAccountsPage() {
       await fetchAccounts();
       await new Promise((resolve) => setTimeout(resolve, 180));
       await fetchAccounts();
+      await assignCodexAccountsToTargetGroup([account]);
       await emitAccountsChanged({
         platformId: "codex",
         reason: "import",
@@ -5498,6 +5562,9 @@ export function CodexAccountsPage() {
       if (!selected || (Array.isArray(selected) && selected.length === 0))
         return;
       const paths = Array.isArray(selected) ? selected : [selected];
+      setBatchImportTargetGroupId(
+        resolveValidCodexGroupId(codexAddTargetGroupId),
+      );
       closeAddModal();
       await startBatchImportFromPaths(paths, false);
     } catch (e) {
@@ -5601,6 +5668,10 @@ export function CodexAccountsPage() {
       );
       setBatchImportResult(result);
       await fetchAccounts();
+      await assignCodexAccountsToTargetGroup(
+        result.imported,
+        batchImportTargetGroupId,
+      );
       if (result.imported.length > 0) {
         await emitAccountsChanged({
           platformId: "codex",
@@ -6129,6 +6200,7 @@ export function CodexAccountsPage() {
       );
       await fetchAccounts();
       await fetchCurrentAccount();
+      await assignCodexAccountsToTargetGroup([account]);
       await emitAccountsChanged({
         platformId: "codex",
         reason: "import",
@@ -6174,6 +6246,7 @@ export function CodexAccountsPage() {
     try {
       const imported = await codexService.importCodexFromJson(trimmed);
       await fetchAccounts();
+      await assignCodexAccountsToTargetGroup(imported);
       if (imported.length > 0) {
         await emitAccountsChanged({
           platformId: "codex",
@@ -8010,6 +8083,24 @@ export function CodexAccountsPage() {
   }, [codexGroups, groupQuickAddGroupId]);
 
   useEffect(() => {
+    if (
+      codexAddTargetGroupId &&
+      !codexGroups.some((group) => group.id === codexAddTargetGroupId)
+    ) {
+      setCodexAddTargetGroupId(null);
+    }
+  }, [codexAddTargetGroupId, codexGroups]);
+
+  useEffect(() => {
+    if (
+      batchImportTargetGroupId &&
+      !codexGroups.some((group) => group.id === batchImportTargetGroupId)
+    ) {
+      setBatchImportTargetGroupId(null);
+    }
+  }, [batchImportTargetGroupId, codexGroups]);
+
+  useEffect(() => {
     const existingAccountIds = new Set(accounts.map((account) => account.id));
     const hasStaleAccountIds = codexGroups.some((group) =>
       group.accountIds.some((accountId) => !existingAccountIds.has(accountId)),
@@ -8019,8 +8110,15 @@ export function CodexAccountsPage() {
     }
 
     void (async () => {
-      await cleanupDeletedCodexAccounts(existingAccountIds);
-      await reloadCodexGroups();
+      try {
+        await cleanupDeletedCodexAccounts(existingAccountIds);
+        await reloadCodexGroups();
+      } catch (error) {
+        console.error(
+          "Failed to clean up deleted Codex accounts from groups:",
+          error,
+        );
+      }
     })();
   }, [accounts, codexGroups, reloadCodexGroups]);
 
@@ -13378,6 +13476,17 @@ export function CodexAccountsPage() {
                   </button>
                 </div>
                 <div className="modal-body">
+                  {codexAddTargetGroup && !reauthTargetAccount && (
+                    <div className="codex-add-target-group-hint">
+                      <FolderPlus size={14} />
+                      <span>
+                        {t("codex.addModal.targetGroup", {
+                          defaultValue: "将添加到分组：{{group}}",
+                          group: codexAddTargetGroup.name,
+                        })}
+                      </span>
+                    </div>
+                  )}
                   {addTab !== "oauth" && <MfaQuickCodeSelect />}
                   {addTab === "oauth" && (
                     <div className="add-section">

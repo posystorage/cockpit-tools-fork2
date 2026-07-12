@@ -542,6 +542,7 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
     )
     return typeof saved === 'string' && saved.trim() ? saved : null
   })
+  const [addTargetGroupId, setAddTargetGroupId] = useState<string | null>(null)
   const [showAccountGroupModal, setShowAccountGroupModal] = useState(false)
   const [showAddToGroupModal, setShowAddToGroupModal] = useState(false)
   const [groupAccountPickerGroupId, setGroupAccountPickerGroupId] = useState<string | null>(null)
@@ -559,6 +560,43 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
     if (!activeGroupId) return null
     return accountGroups.find((g) => g.id === activeGroupId) || null
   }, [accountGroups, activeGroupId])
+
+  const addTargetGroup = useMemo(() => {
+    if (!addTargetGroupId) return null
+    return accountGroups.find((group) => group.id === addTargetGroupId) || null
+  }, [accountGroups, addTargetGroupId])
+
+  const resolveValidAccountGroupId = useCallback(
+    (groupId?: string | null) => {
+      const normalized = groupId?.trim()
+      if (!normalized) return null
+      return accountGroups.some((group) => group.id === normalized) ? normalized : null
+    },
+    [accountGroups],
+  )
+
+  const assignAccountsToAddTargetGroup = useCallback(
+    async (
+      targetAccounts: Array<Account | null | undefined>,
+      targetGroupId = addTargetGroupId,
+    ) => {
+      const resolvedGroupId = resolveValidAccountGroupId(targetGroupId)
+      if (!resolvedGroupId) return
+
+      const accountIds = Array.from(
+        new Set(
+          targetAccounts
+            .map((account) => account?.id?.trim())
+            .filter((id): id is string => Boolean(id)),
+        ),
+      )
+      if (accountIds.length === 0) return
+
+      await assignAccountsToGroup(resolvedGroupId, accountIds)
+      await reloadAccountGroups()
+    },
+    [addTargetGroupId, reloadAccountGroups, resolveValidAccountGroupId],
+  )
 
   const groupAccountPickerGroup = useMemo(() => {
     if (!groupAccountPickerGroupId) return null
@@ -644,7 +682,7 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
   const addTabRef = useRef(addTab)
   const oauthUrlRef = useRef(oauthUrl)
   const addStatusRef = useRef(addStatus)
-  const activeGroupIdRef = useRef(activeGroupId)
+  const addTargetGroupIdRef = useRef<string | null>(null)
   const verificationHistoryRequestIdRef = useRef(0)
   const colorPickerRef = useRef<HTMLDivElement>(null)
 
@@ -653,8 +691,8 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
     addTabRef.current = addTab
     oauthUrlRef.current = oauthUrl
     addStatusRef.current = addStatus
-    activeGroupIdRef.current = activeGroupId
-  }, [showAddModal, addTab, oauthUrl, addStatus, activeGroupId])
+    addTargetGroupIdRef.current = addTargetGroupId
+  }, [showAddModal, addTab, oauthUrl, addStatus, addTargetGroupId])
 
   useEffect(() => {
     const handleFeatureUnlockChanged = (event: Event) => {
@@ -1527,11 +1565,7 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
         const newAccount = await accountService.completeOAuthLogin()
         await fetchAccounts()
         await fetchCurrentAccount(antigravityRuntimeTarget)
-        // 如果在文件夹内添加，自动归入当前文件夹
-        if (activeGroupIdRef.current && newAccount?.id) {
-          await assignAccountsToGroup(activeGroupIdRef.current, [newAccount.id])
-          await reloadAccountGroups()
-        }
+        await assignAccountsToAddTargetGroup([newAccount], addTargetGroupIdRef.current)
         setAddStatus('success')
         setAddMessage(t('accounts.oauth.success'))
         setTimeout(() => {
@@ -1552,7 +1586,7 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
       if (unlistenUrl) unlistenUrl()
       if (unlistenCallback) unlistenCallback()
     }
-  }, [fetchAccounts, fetchCurrentAccount])
+  }, [assignAccountsToAddTargetGroup, fetchAccounts, fetchCurrentAccount])
 
   useEffect(() => {
     if (!showAddModal || addTab !== 'oauth' || oauthUrl) return
@@ -1726,10 +1760,11 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
   }, [])
 
   const openAddModal = useCallback((tab: 'oauth' | 'token' | 'import') => {
+    setAddTargetGroupId(resolveValidAccountGroupId(activeGroupId))
     setAddTab(tab)
     setShowAddModal(true)
     resetAddModalState()
-  }, [resetAddModalState])
+  }, [activeGroupId, resetAddModalState, resolveValidAccountGroupId])
 
   const consumeExternalProviderImport = useCallback(() => {
     const request = consumeQueuedExternalProviderImportForPlatform('antigravity')
@@ -1772,6 +1807,7 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
       accountService.cancelOAuthLogin().catch(() => { })
     }
     setShowAddModal(false)
+    setAddTargetGroupId(null)
     resetAddModalState()
     setOauthUrl('')
   }
@@ -1806,17 +1842,19 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
 
   const handleOAuthStart = async () => {
     await runModalAction(t('modals.import.oauthAction'), async () => {
-      await startOAuthLogin()
+      const account = await startOAuthLogin()
       await fetchAccounts()
       await fetchCurrentAccount(antigravityRuntimeTarget)
+      await assignAccountsToAddTargetGroup([account])
     })
   }
 
   const handleOAuthComplete = async () => {
     await runModalAction(t('modals.import.oauthAction'), async () => {
-      await accountService.completeOAuthLogin()
+      const account = await accountService.completeOAuthLogin()
       await fetchAccounts()
       await fetchCurrentAccount(antigravityRuntimeTarget)
+      await assignAccountsToAddTargetGroup([account])
     })
   }
 
@@ -1993,6 +2031,7 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
       await fetchAccounts()
       await Promise.allSettled(imported.map((acc) => refreshQuota(acc.id, antigravityRuntimeTarget)))
       await fetchAccounts()
+      await assignAccountsToAddTargetGroup(imported)
       if (imported.length === 0) {
         setAddStatus('error')
         setAddMessage(t('modals.import.noAccountsFound'))
@@ -2022,6 +2061,7 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
       await fetchAccounts()
       await refreshQuota(imported.id, antigravityRuntimeTarget)
       await fetchAccounts()
+      await assignAccountsToAddTargetGroup([imported])
       setAddStatus('success')
       setAddMessage(
         t('messages.importLocalSuccess', { email: maskAccountText(imported.email) })
@@ -2066,6 +2106,7 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
       await fetchAccounts()
       await Promise.allSettled(imported.map((acc) => refreshQuota(acc.id, antigravityRuntimeTarget)))
       await fetchAccounts()
+      await assignAccountsToAddTargetGroup(imported)
       if (imported.length === 0 && failed.length === 0) {
         setAddStatus('error')
         setAddMessage(t('modals.import.noAccountsFound'))
@@ -2101,6 +2142,7 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
     setAddMessage(t('modals.import.importingExtension'))
     let unlistenProgress: UnlistenFn | undefined
     try {
+      const knownAccountIds = new Set(accounts.map((account) => account.id))
       unlistenProgress = await listen<ExtensionImportProgressPayload>(
         'accounts:extension-import-progress',
         (event) => {
@@ -2120,6 +2162,12 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
       const count = await accountService.syncFromExtension()
       await fetchAccounts()
       await fetchCurrentAccount(antigravityRuntimeTarget)
+      if (count > 0) {
+        const imported = (await accountService.listAccounts()).filter(
+          (account) => !knownAccountIds.has(account.id),
+        )
+        await assignAccountsToAddTargetGroup(imported)
+      }
       if (count === 0) {
         setAddStatus('error')
         setAddMessage(t('modals.import.noAccountsFound'))
@@ -2227,11 +2275,7 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
         importedAccounts.map((acc) => refreshQuota(acc.id, antigravityRuntimeTarget))
       )
       await fetchAccounts()
-      // 如果在文件夹内添加，自动归入当前文件夹
-      if (activeGroupId) {
-        await assignAccountsToGroup(activeGroupId, importedAccounts.map((acc) => acc.id))
-        await reloadAccountGroups()
-      }
+      await assignAccountsToAddTargetGroup(importedAccounts)
     }
 
     if (success === tokens.length) {
@@ -3995,6 +4039,17 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
             </div>
             <div className="modal-body">
               <MfaQuickCodeSelect />
+              {addTargetGroup && (
+                <div className="accounts-add-target-group-hint">
+                  <FolderPlus size={14} />
+                  <span>
+                    {t('accounts.addModal.targetGroup', {
+                      defaultValue: '将添加到分组：{{group}}',
+                      group: addTargetGroup.name,
+                    })}
+                  </span>
+                </div>
+              )}
               <div className="add-tabs">
                 <button
                   className={`add-tab ${addTab === 'oauth' ? 'active' : ''}`}
