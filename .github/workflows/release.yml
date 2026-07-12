@@ -44,7 +44,7 @@ jobs:
           VERSION="${{ steps.app_version.outputs.VERSION }}"
           TAG="${GITHUB_REF_NAME}"
 
-          if [ "${TAG}" = "v${VERSION}" ]; then
+          if [ "${TAG}" = "v${VERSION}" ] || [ "${TAG}" = "${VERSION}" ]; then
             echo "RELEASE_TAG=${TAG}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -55,7 +55,7 @@ jobs:
             exit 0
           fi
 
-          echo "Tag (${TAG}) must be v${VERSION} or a draft tag beginning with ${VERSION} followed by a letter."
+          echo "Tag (${TAG}) must be v${VERSION}, ${VERSION}, or a draft tag beginning with ${VERSION} followed by a letter."
           exit 1
 
       - name: Build bilingual release notes from changelog
@@ -99,15 +99,26 @@ jobs:
             ' "$file"
           }
 
-          if ! zh_section="$(extract_section CHANGELOG.zh-CN.md "$VERSION")"; then
-            echo "Missing changelog section for version $VERSION in CHANGELOG.zh-CN.md"
-            exit 1
+          if [ "${VERSION}" = "1.3.0" ]; then
+            RELEASE_VERSIONS=("1.3.0" "1.2.0" "1.1.5")
+          else
+            RELEASE_VERSIONS=("${VERSION}")
           fi
 
-          if ! en_section="$(extract_section CHANGELOG.md "$VERSION")"; then
-            echo "Missing changelog section for version $VERSION in CHANGELOG.md"
-            exit 1
-          fi
+          zh_section=""
+          en_section=""
+          for release_version in "${RELEASE_VERSIONS[@]}"; do
+            if ! zh_version_section="$(extract_section CHANGELOG.zh-CN.md "$release_version")"; then
+              echo "Missing changelog section for version $release_version in CHANGELOG.zh-CN.md"
+              exit 1
+            fi
+            if ! en_version_section="$(extract_section CHANGELOG.md "$release_version")"; then
+              echo "Missing changelog section for version $release_version in CHANGELOG.md"
+              exit 1
+            fi
+            zh_section+="${zh_version_section}"$'\n\n'
+            en_section+="${en_version_section}"$'\n\n'
+          done
 
           {
             echo "## 更新日志（中文）"
