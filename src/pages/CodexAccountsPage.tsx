@@ -1966,6 +1966,14 @@ export function CodexAccountsPage() {
   }, [reloadLocalAccessState]);
 
   useEffect(() => {
+    if (!localAccessState?.running) return;
+    const intervalId = window.setInterval(() => {
+      void reloadLocalAccessState();
+    }, 5000);
+    return () => window.clearInterval(intervalId);
+  }, [localAccessState?.running, reloadLocalAccessState]);
+
+  useEffect(() => {
     if (
       !localAccessState?.running ||
       !localAccessState.collection?.boundOauthQuotaReserve
