@@ -23,7 +23,6 @@ const CODEX_CURRENT_ACCOUNT_CACHE_KEY = `agtools.codex.accounts.current${STORAGE
 const CODEX_PROFILE_SYNC_IN_FLIGHT = new Set<string>();
 const CODEX_PROFILE_SYNC_LAST_ATTEMPT = new Map<string, number>();
 const CODEX_PROFILE_SYNC_RETRY_INTERVAL_MS = 5 * 60 * 1000;
-const CODEX_QUOTA_REFRESH_IN_FLIGHT = new Map<string, Promise<CodexQuota>>();
 let allowNextEmptyCodexAccountList = false;
 let allowNextEmptyCodexCurrentAccount = false;
 
@@ -87,22 +86,6 @@ const mergeCodexAccountIntoList = (
   return next;
 };
 
-const runDedupedQuotaRefresh = (
-  accountId: string,
-  operation: () => Promise<CodexQuota>,
-): Promise<CodexQuota> => {
-  const existing = CODEX_QUOTA_REFRESH_IN_FLIGHT.get(accountId);
-  if (existing) return existing;
-
-  const promise = operation().finally(() => {
-    if (CODEX_QUOTA_REFRESH_IN_FLIGHT.get(accountId) === promise) {
-      CODEX_QUOTA_REFRESH_IN_FLIGHT.delete(accountId);
-    }
-  });
-  CODEX_QUOTA_REFRESH_IN_FLIGHT.set(accountId, promise);
-  return promise;
-};
-
 type FetchCodexAccountsOptions = {
   allowEmpty?: boolean;
 };
@@ -142,6 +125,7 @@ interface CodexAccountState {
     apiModelVisionSupport?: Record<string, boolean>,
     apiVisionRoutingModel?: string,
     apiWireApi?: CodexProviderWireApi,
+    apiSupportsWebsockets?: boolean,
   ) => Promise<CodexAccount>;
   updateApiKeyBoundOAuthAccount: (
     accountId: string,
@@ -338,14 +322,12 @@ export const useCodexAccountStore = create<CodexAccountState>((set, get) => ({
     if (account && isCodexPendingOAuthAccount(account)) {
       throw new Error('CODEX_PENDING_OAUTH_ACCOUNT');
     }
-    return runDedupedQuotaRefresh(accountId, async () => {
-      try {
-        return await codexService.refreshCodexQuota(accountId);
-      } finally {
-        await get().fetchAccounts();
-        await get().fetchCurrentAccount();
-      }
-    });
+    try {
+      return await codexService.refreshCodexQuota(accountId);
+    } finally {
+      await get().fetchAccounts();
+      await get().fetchCurrentAccount();
+    }
   },
 
   refreshSubscriptionInfo: async (accountId: string) => {
@@ -443,6 +425,7 @@ export const useCodexAccountStore = create<CodexAccountState>((set, get) => ({
     apiModelVisionSupport?: Record<string, boolean>,
     apiVisionRoutingModel?: string,
     apiWireApi?: CodexProviderWireApi,
+    apiSupportsWebsockets?: boolean,
   ) => {
     const account = await codexService.updateCodexApiKeyCredentials(
       accountId,
@@ -456,6 +439,7 @@ export const useCodexAccountStore = create<CodexAccountState>((set, get) => ({
       apiModelVisionSupport,
       apiVisionRoutingModel,
       apiWireApi,
+      apiSupportsWebsockets,
     );
     await get().fetchAccounts();
     await get().fetchCurrentAccount();

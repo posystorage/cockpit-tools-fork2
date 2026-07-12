@@ -117,6 +117,8 @@ pub struct CodexLocalAccessCustomRoutingRule {
     pub priority: i32,
     #[serde(default = "default_custom_routing_weight")]
     pub weight: u32,
+    #[serde(default)]
+    pub is_backup: bool,
 }
 
 fn default_custom_routing_weight() -> u32 {
@@ -399,6 +401,13 @@ fn default_true() -> bool {
     true
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexLocalAccessQuotaReserve {
+    pub hourly_percent: i32,
+    pub weekly_percent: i32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexLocalAccessCollection {
@@ -455,6 +464,8 @@ pub struct CodexLocalAccessCollection {
     pub debug_logs: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bound_oauth_account_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bound_oauth_quota_reserve: Option<CodexLocalAccessQuotaReserve>,
     pub account_ids: Vec<String>,
     pub created_at: i64,
     pub updated_at: i64,
@@ -724,8 +735,38 @@ pub struct CodexLocalAccessState {
     pub member_count: usize,
     pub stats: CodexLocalAccessStats,
     pub account_health: Vec<CodexLocalAccessAccountHealth>,
+    pub quota_reserve_status: Option<CodexLocalAccessQuotaReserveStatus>,
     pub running_requests: Vec<CodexLocalAccessRunningRequest>,
     pub account_activity: Vec<CodexLocalAccessAccountActivity>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexLocalAccessAppendAccountSkipped {
+    pub account_id: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexLocalAccessAppendAccountsResult {
+    pub state: CodexLocalAccessState,
+    pub synced_account_ids: Vec<String>,
+    pub added_account_ids: Vec<String>,
+    pub skipped_accounts: Vec<CodexLocalAccessAppendAccountSkipped>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexLocalAccessQuotaReserveStatus {
+    pub account_id: String,
+    pub snapshot_updated_at: Option<i64>,
+    pub snapshot_fresh: bool,
+    pub blocked: bool,
+    pub warning: bool,
+    pub effective_window: Option<String>,
+    pub effective_remaining_percent: Option<i32>,
+    pub effective_reserve_percent: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize)]

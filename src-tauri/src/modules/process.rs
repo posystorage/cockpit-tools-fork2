@@ -544,7 +544,7 @@ fn normalize_windows_candidate_path(raw: &str) -> Option<std::path::PathBuf> {
     }
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(test, target_os = "windows"))]
 fn score_windows_candidate(
     path: &std::path::Path,
     exe_names_lower: &HashSet<String>,
@@ -573,6 +573,12 @@ fn score_windows_candidate(
             score += 5;
         }
         return Some(score);
+    }
+
+    // The legacy Codex and current ChatGPT clients share this scanner. Do not
+    // accept helper executables whose paths merely contain one of those names.
+    if exe_names_lower.contains("chatgpt.exe") && exe_names_lower.contains("codex.exe") {
+        return None;
     }
 
     let is_exe = path
@@ -781,6 +787,15 @@ fn windows_app_launch_signature(app: &str) -> Option<WindowsAppLaunchSignature> 
             protocol_names: &["qoder"],
             display_keywords: &["qoder"],
             common_paths: &["Qoder\\Qoder.exe"],
+            supports_multi_instance: true,
+        }),
+        "zcode" => Some(WindowsAppLaunchSignature {
+            label: "ZCode",
+            exe_names: &["ZCode.exe"],
+            command_names: &["zcode"],
+            protocol_names: &["zcode"],
+            display_keywords: &["zcode", "z.ai"],
+            common_paths: &["ZCode\\ZCode.exe"],
             supports_multi_instance: true,
         }),
         "trae" => Some(WindowsAppLaunchSignature {
@@ -1237,6 +1252,20 @@ fn scan_windows_app_launch_targets(
             signature,
             trae_platform,
         );
+    }
+
+    if app == "codex" {
+        candidates.sort_by_key(|candidate| {
+            let file_name = std::path::Path::new(&candidate.target)
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or("");
+            if file_name.eq_ignore_ascii_case("ChatGPT.exe") {
+                0
+            } else {
+                1
+            }
+        });
     }
 
     Ok(candidates)
@@ -1779,8 +1808,11 @@ fn resolve_macos_exec_path(path_str: &str, _binary_name: &str) -> Option<std::pa
     }
 }
 
-fn update_app_path_in_config(app: &str, path: &Path) {
-    let mut current = config::get_user_config();
+fn app_path_matches_snapshot(current: &str, expected: &str) -> bool {
+    current.trim() == expected.trim()
+}
+
+fn update_app_path_in_config(app: &str, path: &Path, expected_current: &str) {
     let normalized = {
         #[cfg(target_os = "macos")]
         {
@@ -1791,101 +1823,44 @@ fn update_app_path_in_config(app: &str, path: &Path) {
             path.to_string_lossy().to_string()
         }
     };
-    match app {
-        "antigravity" => {
-            if current.antigravity_app_path != normalized {
-                current.antigravity_app_path = normalized;
-            } else {
-                return;
-            }
+    let _ = config::patch_user_config(|current| {
+        let configured_path = match app {
+            "antigravity" => &mut current.antigravity_app_path,
+            "codex" => &mut current.codex_app_path,
+            "zed" => &mut current.zed_app_path,
+            "vscode" => &mut current.vscode_app_path,
+            "opencode" => &mut current.opencode_app_path,
+            "codebuddy" => &mut current.codebuddy_app_path,
+            "codebuddy_cn" => &mut current.codebuddy_cn_app_path,
+            "qoder" => &mut current.qoder_app_path,
+            "zcode" => &mut current.zcode_app_path,
+            "trae" => &mut current.trae_app_path,
+            "trae_solo" => &mut current.trae_solo_app_path,
+            "trae_cn" => &mut current.trae_cn_app_path,
+            "trae_solo_cn" => &mut current.trae_solo_cn_app_path,
+            "workbuddy" => &mut current.workbuddy_app_path,
+            _ => return Ok(()),
+        };
+        if app_path_matches_snapshot(configured_path, expected_current)
+            && *configured_path != normalized
+        {
+            *configured_path = normalized;
         }
-        "codex" => {
-            if current.codex_app_path != normalized {
-                current.codex_app_path = normalized;
-            } else {
-                return;
-            }
-        }
-        "zed" => {
-            if current.zed_app_path != normalized {
-                current.zed_app_path = normalized;
-            } else {
-                return;
-            }
-        }
-        "vscode" => {
-            if current.vscode_app_path != normalized {
-                current.vscode_app_path = normalized;
-            } else {
-                return;
-            }
-        }
-        "opencode" => {
-            if current.opencode_app_path != normalized {
-                current.opencode_app_path = normalized;
-            } else {
-                return;
-            }
-        }
-        "codebuddy" => {
-            if current.codebuddy_app_path != normalized {
-                current.codebuddy_app_path = normalized;
-            } else {
-                return;
-            }
-        }
-        "codebuddy_cn" => {
-            if current.codebuddy_cn_app_path != normalized {
-                current.codebuddy_cn_app_path = normalized;
-            } else {
-                return;
-            }
-        }
-        "qoder" => {
-            if current.qoder_app_path != normalized {
-                current.qoder_app_path = normalized;
-            } else {
-                return;
-            }
-        }
-        "trae" => {
-            if current.trae_app_path != normalized {
-                current.trae_app_path = normalized;
-            } else {
-                return;
-            }
-        }
-        "trae_solo" => {
-            if current.trae_solo_app_path != normalized {
-                current.trae_solo_app_path = normalized;
-            } else {
-                return;
-            }
-        }
-        "trae_cn" => {
-            if current.trae_cn_app_path != normalized {
-                current.trae_cn_app_path = normalized;
-            } else {
-                return;
-            }
-        }
-        "trae_solo_cn" => {
-            if current.trae_solo_cn_app_path != normalized {
-                current.trae_solo_cn_app_path = normalized;
-            } else {
-                return;
-            }
-        }
-        "workbuddy" => {
-            if current.workbuddy_app_path != normalized {
-                current.workbuddy_app_path = normalized;
-            } else {
-                return;
-            }
-        }
-        _ => return,
+        Ok(())
+    });
+}
+
+#[cfg(test)]
+mod app_path_config_guard_tests {
+    use super::app_path_matches_snapshot;
+
+    #[test]
+    fn detected_path_only_replaces_the_snapshot_it_was_detected_for() {
+        assert!(app_path_matches_snapshot("", ""));
+        assert!(app_path_matches_snapshot(" /old/path ", "/old/path"));
+        assert!(!app_path_matches_snapshot("/manual/path", ""));
+        assert!(!app_path_matches_snapshot("/new/path", "/old/path"));
     }
-    let _ = config::save_user_config(&current);
 }
 
 #[cfg(target_os = "macos")]
@@ -1906,6 +1881,7 @@ fn resolve_macos_app_root_from_config(app: &str) -> Option<String> {
         "vscode" => current.vscode_app_path,
         "codebuddy" => current.codebuddy_app_path,
         "codebuddy_cn" => current.codebuddy_cn_app_path,
+        "zcode" => current.zcode_app_path,
         _ => String::new(),
     };
     let trimmed = raw.trim();
@@ -2640,6 +2616,72 @@ fn detect_qoder_exec_path() -> Option<std::path::PathBuf> {
     None
 }
 
+fn detect_zcode_exec_path() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut candidates = vec![std::path::PathBuf::from(
+            "/Applications/ZCode.app/Contents/MacOS/ZCode",
+        )];
+        if let Some(home) = dirs::home_dir() {
+            candidates.push(home.join("Applications/ZCode.app/Contents/MacOS/ZCode"));
+        }
+        if let Some(path) = candidates.into_iter().find(|path| path.is_file()) {
+            return Some(path);
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut candidates = Vec::new();
+        if let Ok(local_appdata) = std::env::var("LOCALAPPDATA") {
+            candidates
+                .push(std::path::PathBuf::from(&local_appdata).join("Programs/ZCode/ZCode.exe"));
+            candidates.push(std::path::PathBuf::from(local_appdata).join("ZCode/ZCode.exe"));
+        }
+        for variable in ["PROGRAMFILES", "PROGRAMFILES(X86)"] {
+            if let Ok(root) = std::env::var(variable) {
+                candidates.push(std::path::PathBuf::from(root).join("ZCode/ZCode.exe"));
+            }
+        }
+        if let Some(path) = candidates.into_iter().find(|path| path.is_file()) {
+            return Some(path);
+        }
+        if let Some(path) = detect_windows_exec_path_by_signatures(
+            "ZCode",
+            &["ZCode.exe"],
+            &["zcode"],
+            &["zcode"],
+            &["zcode", "z.ai"],
+        ) {
+            return Some(path);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        for candidate in [
+            "/usr/bin/zcode",
+            "/usr/local/bin/zcode",
+            "/opt/ZCode/zcode",
+            "/opt/zcode/zcode",
+            "/snap/bin/zcode",
+        ] {
+            let path = std::path::PathBuf::from(candidate);
+            if path.is_file() {
+                return Some(path);
+            }
+        }
+        if let Some(home) = dirs::home_dir() {
+            let path = home.join(".local/bin/zcode");
+            if path.is_file() {
+                return Some(path);
+            }
+        }
+    }
+
+    None
+}
+
 fn detect_zed_exec_path() -> Option<std::path::PathBuf> {
     #[cfg(target_os = "macos")]
     {
@@ -3241,6 +3283,18 @@ fn parse_codex_store_version_from_dir_name(dir_name: &str) -> Option<Vec<u32>> {
 }
 
 #[cfg(target_os = "windows")]
+fn codex_store_package_priority(dir_name: &str) -> u8 {
+    let lower = dir_name.to_ascii_lowercase();
+    if lower.starts_with("openai.chatgpt_") || lower.starts_with("openai.chatgpt-desktop_") {
+        2
+    } else if lower.starts_with("openai.codex_") {
+        1
+    } else {
+        0
+    }
+}
+
+#[cfg(target_os = "windows")]
 fn find_codex_windows_app_main_exe(app_dir: &std::path::Path) -> Option<std::path::PathBuf> {
     for exe_name in ["ChatGPT.exe", "Codex.exe"] {
         let candidate = app_dir.join(exe_name);
@@ -3253,7 +3307,7 @@ fn find_codex_windows_app_main_exe(app_dir: &std::path::Path) -> Option<std::pat
 
 #[cfg(target_os = "windows")]
 fn detect_codex_exec_path_by_windowsapps_scan() -> Option<std::path::PathBuf> {
-    let mut best: Option<(Vec<u32>, std::path::PathBuf)> = None;
+    let mut best: Option<(u8, Vec<u32>, std::path::PathBuf)> = None;
 
     for drive in b'A'..=b'Z' {
         let drive_letter = drive as char;
@@ -3285,6 +3339,7 @@ fn detect_codex_exec_path_by_windowsapps_scan() -> Option<std::path::PathBuf> {
             let Some(version) = parse_codex_store_version_from_dir_name(&dir_name) else {
                 continue;
             };
+            let package_priority = codex_store_package_priority(&dir_name);
 
             let candidate = match find_codex_windows_app_main_exe(&entry.path().join("app")) {
                 Some(path) => path,
@@ -3293,17 +3348,19 @@ fn detect_codex_exec_path_by_windowsapps_scan() -> Option<std::path::PathBuf> {
 
             let replace = match &best {
                 None => true,
-                Some((best_version, _)) => {
-                    compare_windows_store_version(&version, best_version).is_gt()
+                Some((best_priority, best_version, _)) => {
+                    package_priority > *best_priority
+                        || (package_priority == *best_priority
+                            && compare_windows_store_version(&version, best_version).is_gt())
                 }
             };
             if replace {
-                best = Some((version, candidate));
+                best = Some((package_priority, version, candidate));
             }
         }
     }
 
-    if let Some((_, path)) = best {
+    if let Some((_, _, path)) = best {
         crate::modules::logger::log_info(&format!(
             "[Path Detect] codex windowsapps scan hit: {}",
             path.to_string_lossy()
@@ -3319,7 +3376,7 @@ fn detect_codex_exec_path_by_appx_install_location() -> Option<std::path::PathBu
     let script = r#"$names = @('OpenAI.ChatGPT', 'OpenAI.ChatGPT-Desktop', 'OpenAI.Codex')
 $pkg = $names |
   ForEach-Object { Get-AppxPackage -Name $_ -ErrorAction SilentlyContinue } |
-  Sort-Object -Property Version -Descending |
+  Sort-Object @{ Expression = { if ($_.Name -like 'OpenAI.ChatGPT*') { 0 } else { 1 } } }, @{ Expression = { $_.Version }; Descending = $true } |
   Select-Object -First 1
 if (-not $pkg) {
   $pkg = Get-AppxPackage |
@@ -3329,7 +3386,7 @@ if (-not $pkg) {
       $_.PackageFamilyName -like 'OpenAI.ChatGPT*' -or
       $_.PackageFamilyName -like 'OpenAI.Codex*'
     } |
-  Sort-Object -Property Version -Descending |
+  Sort-Object @{ Expression = { if ($_.Name -like 'OpenAI.ChatGPT*' -or $_.PackageFamilyName -like 'OpenAI.ChatGPT*') { 0 } else { 1 } } }, @{ Expression = { $_.Version }; Descending = $true } |
   Select-Object -First 1
 }
 if ($pkg -and -not [string]::IsNullOrWhiteSpace($pkg.InstallLocation)) {
@@ -3398,7 +3455,7 @@ fn detect_codex_store_app_user_model_id_by_appx_fallback() -> Option<String> {
     let script = r#"$names = @('OpenAI.ChatGPT', 'OpenAI.ChatGPT-Desktop', 'OpenAI.Codex')
 $pkg = $names |
   ForEach-Object { Get-AppxPackage -Name $_ -ErrorAction SilentlyContinue } |
-  Sort-Object -Property Version -Descending |
+  Sort-Object @{ Expression = { if ($_.Name -like 'OpenAI.ChatGPT*') { 0 } else { 1 } } }, @{ Expression = { $_.Version }; Descending = $true } |
   Select-Object -First 1
 if (-not $pkg) {
   $pkg = Get-AppxPackage |
@@ -3408,7 +3465,7 @@ if (-not $pkg) {
       $_.PackageFamilyName -like 'OpenAI.ChatGPT*' -or
       $_.PackageFamilyName -like 'OpenAI.Codex*'
     } |
-  Sort-Object -Property Version -Descending |
+  Sort-Object @{ Expression = { if ($_.Name -like 'OpenAI.ChatGPT*' -or $_.PackageFamilyName -like 'OpenAI.ChatGPT*') { 0 } else { 1 } } }, @{ Expression = { $_.Version }; Descending = $true } |
   Select-Object -First 1
 }
 if ($pkg -and -not [string]::IsNullOrWhiteSpace($pkg.PackageFamilyName)) {
@@ -3612,8 +3669,49 @@ pub(crate) fn detect_codex_exec_path() -> Option<std::path::PathBuf> {
 }
 
 fn detect_and_save_codex_launch_path() -> Option<std::path::PathBuf> {
+    let expected_current = config::get_user_config().codex_app_path;
     let detected = detect_codex_exec_path()?;
-    update_app_path_in_config("codex", &detected);
+    update_app_path_in_config("codex", &detected, &expected_current);
+    Some(detected)
+}
+
+#[cfg(any(test, target_os = "windows"))]
+fn normalized_windows_path_text(path: &Path) -> String {
+    path.to_string_lossy()
+        .replace('/', "\\")
+        .to_ascii_lowercase()
+}
+
+#[cfg(any(test, target_os = "windows"))]
+fn is_legacy_codex_store_launch_path(path: &Path) -> bool {
+    let normalized = normalized_windows_path_text(path);
+    normalized.ends_with("\\codex.exe") && normalized.contains("\\windowsapps\\openai.codex_")
+}
+
+#[cfg(any(test, target_os = "windows"))]
+fn is_chatgpt_launch_path(path: &Path) -> bool {
+    normalized_windows_path_text(path).ends_with("\\chatgpt.exe")
+}
+
+#[cfg(any(test, target_os = "windows"))]
+fn should_migrate_legacy_codex_launch_path(current: &Path, detected: &Path) -> bool {
+    is_legacy_codex_store_launch_path(current) && is_chatgpt_launch_path(detected)
+}
+
+#[cfg(target_os = "windows")]
+fn migrate_legacy_codex_launch_path(custom_path: &str) -> Option<std::path::PathBuf> {
+    let current_path = std::path::PathBuf::from(custom_path);
+    let detected = detect_codex_exec_path()?;
+    if !should_migrate_legacy_codex_launch_path(&current_path, &detected) {
+        return None;
+    }
+
+    update_app_path_in_config("codex", &detected, custom_path);
+    crate::modules::logger::log_info(&format!(
+        "[Path Detect] migrated legacy Codex launch path to ChatGPT: old={} new={}",
+        current_path.to_string_lossy(),
+        detected.to_string_lossy()
+    ));
     Some(detected)
 }
 
@@ -3675,13 +3773,12 @@ fn detect_opencode_exec_path() -> Option<std::path::PathBuf> {
 }
 
 fn resolve_antigravity_launch_path() -> Result<std::path::PathBuf, String> {
-    if let Some(custom) =
-        normalize_custom_path(Some(&config::get_user_config().antigravity_app_path))
-    {
+    let configured_path = config::get_user_config().antigravity_app_path;
+    if let Some(custom) = normalize_custom_path(Some(&configured_path)) {
         #[cfg(target_os = "macos")]
         if is_legacy_antigravity_macos_path(&custom) {
             if let Some(detected) = detect_antigravity_exec_path() {
-                update_app_path_in_config("antigravity", &detected);
+                update_app_path_in_config("antigravity", &detected, &configured_path);
                 return Ok(detected);
             }
         }
@@ -3701,14 +3798,14 @@ fn resolve_antigravity_launch_path() -> Result<std::path::PathBuf, String> {
         }
 
         if let Some(detected) = detect_antigravity_exec_path() {
-            update_app_path_in_config("antigravity", &detected);
+            update_app_path_in_config("antigravity", &detected, &configured_path);
             return Ok(detected);
         }
         return Err(app_path_missing_error("antigravity"));
     }
 
     if let Some(detected) = detect_antigravity_exec_path() {
-        update_app_path_in_config("antigravity", &detected);
+        update_app_path_in_config("antigravity", &detected, &configured_path);
         return Ok(detected);
     }
 
@@ -3910,6 +4007,25 @@ fn resolve_qoder_launch_path() -> Result<std::path::PathBuf, String> {
     Err(app_path_missing_error("qoder"))
 }
 
+pub fn resolve_zcode_launch_path() -> Result<std::path::PathBuf, String> {
+    if let Some(custom) = normalize_custom_path(Some(&config::get_user_config().zcode_app_path)) {
+        if let Some(exec) = resolve_macos_exec_path(&custom, "ZCode") {
+            return Ok(exec);
+        }
+        return Err(app_path_missing_error("zcode"));
+    }
+
+    if let Some(detected) = detect_zcode_exec_path() {
+        update_app_path_in_config("zcode", &detected, "");
+        let detected = detected.to_string_lossy();
+        if let Some(exec) = resolve_macos_exec_path(&detected, "ZCode") {
+            return Ok(exec);
+        }
+    }
+
+    Err(app_path_missing_error("zcode"))
+}
+
 pub fn ensure_zed_launch_path_configured() -> Result<(), String> {
     resolve_zed_launch_path().map(|_| ())
 }
@@ -4060,6 +4176,10 @@ fn resolve_codex_launch_path() -> Result<std::path::PathBuf, String> {
 #[cfg(not(target_os = "macos"))]
 fn resolve_codex_launch_path() -> Result<std::path::PathBuf, String> {
     if let Some(custom) = normalize_custom_path(Some(&config::get_user_config().codex_app_path)) {
+        #[cfg(target_os = "windows")]
+        if let Some(migrated) = migrate_legacy_codex_launch_path(&custom) {
+            return Ok(migrated);
+        }
         if let Some(exec) = resolve_macos_exec_path(&custom, "Codex") {
             return Ok(exec);
         }
@@ -4087,7 +4207,7 @@ pub fn detect_and_save_app_path(app: &str, force: bool) -> Option<String> {
                 return Some(current.antigravity_app_path);
             }
             if let Some(detected) = detect_antigravity_exec_path() {
-                update_app_path_in_config("antigravity", &detected);
+                update_app_path_in_config("antigravity", &detected, &current.antigravity_app_path);
                 return Some(config::get_user_config().antigravity_app_path);
             }
         }
@@ -4096,7 +4216,7 @@ pub fn detect_and_save_app_path(app: &str, force: bool) -> Option<String> {
                 return Some(current.antigravity_app_path);
             }
             if let Some(detected) = detect_antigravity_legacy_exec_path() {
-                update_app_path_in_config("antigravity", &detected);
+                update_app_path_in_config("antigravity", &detected, &current.antigravity_app_path);
                 return Some(config::get_user_config().antigravity_app_path);
             }
         }
@@ -4105,7 +4225,7 @@ pub fn detect_and_save_app_path(app: &str, force: bool) -> Option<String> {
                 return Some(current.codex_app_path);
             }
             if let Some(detected) = detect_codex_exec_path() {
-                update_app_path_in_config("codex", &detected);
+                update_app_path_in_config("codex", &detected, &current.codex_app_path);
                 return Some(config::get_user_config().codex_app_path);
             }
         }
@@ -4114,7 +4234,7 @@ pub fn detect_and_save_app_path(app: &str, force: bool) -> Option<String> {
                 return Some(current.zed_app_path);
             }
             if let Some(detected) = detect_zed_exec_path() {
-                update_app_path_in_config("zed", &detected);
+                update_app_path_in_config("zed", &detected, &current.zed_app_path);
                 return Some(config::get_user_config().zed_app_path);
             }
         }
@@ -4123,7 +4243,7 @@ pub fn detect_and_save_app_path(app: &str, force: bool) -> Option<String> {
                 return Some(current.vscode_app_path);
             }
             if let Some(detected) = detect_vscode_exec_path() {
-                update_app_path_in_config("vscode", &detected);
+                update_app_path_in_config("vscode", &detected, &current.vscode_app_path);
                 return Some(config::get_user_config().vscode_app_path);
             }
         }
@@ -4132,7 +4252,7 @@ pub fn detect_and_save_app_path(app: &str, force: bool) -> Option<String> {
                 return Some(current.codebuddy_app_path);
             }
             if let Some(detected) = detect_codebuddy_exec_path() {
-                update_app_path_in_config("codebuddy", &detected);
+                update_app_path_in_config("codebuddy", &detected, &current.codebuddy_app_path);
                 return Some(config::get_user_config().codebuddy_app_path);
             }
         }
@@ -4141,7 +4261,11 @@ pub fn detect_and_save_app_path(app: &str, force: bool) -> Option<String> {
                 return Some(current.codebuddy_cn_app_path);
             }
             if let Some(detected) = detect_codebuddy_cn_exec_path() {
-                update_app_path_in_config("codebuddy_cn", &detected);
+                update_app_path_in_config(
+                    "codebuddy_cn",
+                    &detected,
+                    &current.codebuddy_cn_app_path,
+                );
                 return Some(config::get_user_config().codebuddy_cn_app_path);
             }
         }
@@ -4150,8 +4274,17 @@ pub fn detect_and_save_app_path(app: &str, force: bool) -> Option<String> {
                 return Some(current.qoder_app_path);
             }
             if let Some(detected) = detect_qoder_exec_path() {
-                update_app_path_in_config("qoder", &detected);
+                update_app_path_in_config("qoder", &detected, &current.qoder_app_path);
                 return Some(config::get_user_config().qoder_app_path);
+            }
+        }
+        "zcode" => {
+            if !force && !current.zcode_app_path.trim().is_empty() {
+                return Some(current.zcode_app_path);
+            }
+            if let Some(detected) = detect_zcode_exec_path() {
+                update_app_path_in_config("zcode", &detected, &current.zcode_app_path);
+                return Some(config::get_user_config().zcode_app_path);
             }
         }
         "trae" | "trae_solo" | "trae_cn" | "trae_solo_cn" => {
@@ -4163,7 +4296,11 @@ pub fn detect_and_save_app_path(app: &str, force: bool) -> Option<String> {
                     }
                 }
                 if let Some(detected) = detect_trae_exec_path_for_platform(platform) {
-                    update_app_path_in_config(app, &detected);
+                    update_app_path_in_config(
+                        app,
+                        &detected,
+                        trae_configured_app_path(&current, platform),
+                    );
                     let refreshed = config::get_user_config();
                     return Some(trae_configured_app_path(&refreshed, platform).to_string());
                 }
@@ -4174,7 +4311,7 @@ pub fn detect_and_save_app_path(app: &str, force: bool) -> Option<String> {
                 return Some(current.opencode_app_path);
             }
             if let Some(detected) = detect_opencode_exec_path() {
-                update_app_path_in_config("opencode", &detected);
+                update_app_path_in_config("opencode", &detected, &current.opencode_app_path);
                 return Some(config::get_user_config().opencode_app_path);
             }
         }
@@ -4183,7 +4320,7 @@ pub fn detect_and_save_app_path(app: &str, force: bool) -> Option<String> {
                 return Some(current.workbuddy_app_path);
             }
             if let Some(detected) = detect_workbuddy_exec_path() {
-                update_app_path_in_config("workbuddy", &detected);
+                update_app_path_in_config("workbuddy", &detected, &current.workbuddy_app_path);
                 return Some(config::get_user_config().workbuddy_app_path);
             }
         }
@@ -8638,7 +8775,13 @@ fn try_launch_via_shortcut(shortcut_pattern: &str) -> Result<Option<u32>, String
                         .to_string_lossy()
                         .to_string();
                     let name_lower = name.to_lowercase();
-                    if name_lower.contains(shortcut_pattern) && name_lower.ends_with(".lnk") {
+                    let matches_pattern = if shortcut_pattern == "antigravity" {
+                        name_lower.contains("antigravity")
+                            && !name_lower.contains("antigravity ide")
+                    } else {
+                        name_lower.contains(shortcut_pattern)
+                    };
+                    if matches_pattern && name_lower.ends_with(".lnk") {
                         crate::modules::logger::log_info(&format!(
                             "[Shortcut Launch] 找到任务栏快捷方式: {}, 尝试通过快捷方式启动",
                             name
@@ -9458,7 +9601,7 @@ pub fn start_codex_with_args(codex_home: &str, extra_args: &[String]) -> Result<
         let app_root = app_root.ok_or_else(|| app_path_missing_error("codex"))?;
 
         let codex_home_trimmed = codex_home.trim();
-        let args = build_codex_app_launch_args(extra_args, codex_home_trimmed);
+        let args = build_codex_app_launch_args(extra_args);
 
         // 使用 open -a 启动，避免 macOS Responsible Process 归因
         // 注意：CODEX_HOME 环境变量无法通过 open -a 传递，
@@ -9561,7 +9704,7 @@ pub fn start_codex_with_args(codex_home: &str, extra_args: &[String]) -> Result<
                 .stdout(Stdio::null())
                 .stderr(Stdio::null());
         }
-        let args = build_codex_app_launch_args(extra_args, codex_home_trimmed);
+        let args = build_codex_app_launch_args(extra_args);
         for arg in &args {
             cmd.arg(arg);
         }
@@ -9577,8 +9720,7 @@ pub fn start_codex_with_args(codex_home: &str, extra_args: &[String]) -> Result<
                 if err.kind() == std::io::ErrorKind::PermissionDenied
                     && launch_path_text.contains("\\windowsapps\\")
                 {
-                    let mut store_args =
-                        build_codex_app_launch_args(extra_args, codex_home_trimmed);
+                    let mut store_args = build_codex_app_launch_args(extra_args);
                     store_args.push(format!(
                         "--user-data-dir={}",
                         app_user_data_dir.to_string_lossy()
@@ -9674,40 +9816,17 @@ pub fn start_codex_default_fast_after_close(extra_args: &[String]) -> Result<u32
     start_codex_default_internal(extra_args, true)
 }
 
-fn build_codex_app_launch_args(extra_args: &[String], codex_home: &str) -> Vec<String> {
-    let mut args = Vec::new();
-    let mut index = 0usize;
-    while index < extra_args.len() {
-        let trimmed = extra_args[index].trim();
-        if trimmed.is_empty() {
-            index += 1;
-            continue;
-        }
-        if trimmed == "--remote-debugging-port" {
-            index += 1;
-            if index < extra_args.len() && !extra_args[index].trim().starts_with("--") {
-                index += 1;
-            }
-            continue;
-        }
-        if trimmed.starts_with("--remote-debugging-port=") {
-            index += 1;
-            continue;
-        }
-        args.push(trimmed.to_string());
-        index += 1;
-    }
-    args.push(crate::modules::codex_model_injector::remote_debugging_arg(
-        codex_home.trim(),
-    ));
-    args
+fn build_codex_app_launch_args(extra_args: &[String]) -> Vec<String> {
+    extra_args
+        .iter()
+        .map(|arg| arg.trim())
+        .filter(|arg| !arg.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 fn build_codex_default_launch_args(extra_args: &[String]) -> Vec<String> {
-    let default_home = crate::modules::codex_account::get_codex_home()
-        .to_string_lossy()
-        .to_string();
-    build_codex_app_launch_args(extra_args, &default_home)
+    build_codex_app_launch_args(extra_args)
 }
 
 fn start_codex_default_internal(
@@ -12847,6 +12966,85 @@ mod codex_macos_launch_tests {
         assert!(!is_codex_macos_main_process_command_line(
             "/applications/chatgpt.app/contents/resources/codex app-server"
         ));
+    }
+}
+
+#[cfg(test)]
+mod codex_launch_args_tests {
+    use super::build_codex_app_launch_args;
+
+    #[test]
+    fn keeps_user_launch_args_without_adding_remote_debugging() {
+        assert!(build_codex_app_launch_args(&[]).is_empty());
+        assert_eq!(
+            build_codex_app_launch_args(&[
+                " --remote-debugging-port=9333 ".to_string(),
+                "".to_string(),
+                " --disable-gpu ".to_string(),
+            ]),
+            vec![
+                "--remote-debugging-port=9333".to_string(),
+                "--disable-gpu".to_string(),
+            ]
+        );
+    }
+}
+
+#[cfg(test)]
+mod codex_windows_path_migration_tests {
+    use super::{score_windows_candidate, should_migrate_legacy_codex_launch_path};
+    use std::collections::HashSet;
+    use std::path::Path;
+
+    #[test]
+    fn migrates_official_windows_store_codex_path_when_chatgpt_exists() {
+        assert!(should_migrate_legacy_codex_launch_path(
+            Path::new(
+                r"C:\Program Files\WindowsApps\OpenAI.Codex_1.0.0.0_x64__8wekyb3d8bbwe\app\Codex.exe"
+            ),
+            Path::new(
+                r"C:\Program Files\WindowsApps\OpenAI.ChatGPT_2.0.0.0_x64__8wekyb3d8bbwe\app\ChatGPT.exe"
+            ),
+        ));
+    }
+
+    #[test]
+    fn keeps_legacy_path_when_chatgpt_is_not_detected() {
+        assert!(!should_migrate_legacy_codex_launch_path(
+            Path::new(
+                r"C:\Program Files\WindowsApps\OpenAI.Codex_1.0.0.0_x64__8wekyb3d8bbwe\app\Codex.exe"
+            ),
+            Path::new(
+                r"C:\Program Files\WindowsApps\OpenAI.Codex_1.0.0.0_x64__8wekyb3d8bbwe\app\Codex.exe"
+            ),
+        ));
+    }
+
+    #[test]
+    fn does_not_replace_custom_codex_executable() {
+        assert!(!should_migrate_legacy_codex_launch_path(
+            Path::new(r"D:\Tools\Codex.exe"),
+            Path::new(
+                r"C:\Program Files\WindowsApps\OpenAI.ChatGPT_2.0.0.0_x64__8wekyb3d8bbwe\app\ChatGPT.exe"
+            ),
+        ));
+    }
+
+    #[test]
+    fn scan_rejects_codex_keyword_helper_executables() {
+        let exe_names = HashSet::from(["chatgpt.exe".to_string(), "codex.exe".to_string()]);
+        let keywords = vec!["chatgpt".to_string(), "codex".to_string()];
+
+        assert!(score_windows_candidate(
+            Path::new("C:/Tools/CodexHelper.exe"),
+            &exe_names,
+            &keywords,
+        )
+        .is_none());
+        assert!(
+            score_windows_candidate(Path::new("C:/Tools/ChatGPT.exe"), &exe_names, &keywords,)
+                .is_some()
+        );
     }
 }
 

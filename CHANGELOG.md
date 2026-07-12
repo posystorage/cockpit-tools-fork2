@@ -7,6 +7,76 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [1.3.0] - 2026-07-13
+
+### Added
+
+- **Added Grok CLI (Grok Build) platform account management**: supports xAI Device OAuth and API Key accounts, local and auth.json / JSON import-export, real default-client account switching, reauthorization after credential failure, per-account working directories for launch, quota queries and alerts, tags and filters, batch operations, CLI path settings, and isolated multi-instance profiles via `GROK_HOME` on macOS, Windows, and Linux.
+- **Codex account import can sync eligible accounts into the API Service pool**: after a successful import, matching accounts can be appended automatically based on preference, with skip reasons for ineligible accounts and a follow-up guide to open API Service.
+- **Codex API Service custom routing supports backup accounts**: accounts marked as backup are used only when every regular account is unavailable; new requests prefer the regular pool again once it recovers.
+- **Accounts added or imported inside a group join that group automatically**: opening Add Account from a group assigns successful OAuth, token, local, and file imports to the current group for Codex and Antigravity. Thanks @yxc0915 for #1525.
+- **Codex can show or hide model-specific quota rows**: a quick setting toggles additional quota lines such as GPT-5.3, defaults to visible, remembers the preference, and applies to account cards and instance previews. Thanks @iwillwill-ALLWILL for #1424.
+
+### Changed
+
+- **Codex plan filters and quota summaries support dynamic plans**: local access, custom routing, wakeup, and model-provider binding share the same plan-filter and quota-summary rules instead of a fixed plan list.
+- **Codex API Service request logs show account display names**: log rows prefer the account presentation name so multi-account traffic under one API key is easier to tell apart. Thanks @lcpdeb for #1312.
+- **Windows CLI and background process launching is more consistent**: console windows stay hidden by default on related startup paths, reducing black-console flashes during use.
+
+### Fixed
+
+- **Fixed high CPU and memory usage on long Codex API Service conversations**: input role/metadata and built-in tool normalization now run in linear passes instead of repeatedly scanning the full JSON document for every item, while explicit proxies reuse HTTP transports to reduce connection and allocation overhead.
+- **Fixed Codex overview filters that looked like missing accounts**: when group, tag, search, plan, or folder filters hide some accounts, the page shows visible/total counts, lists active filter chips, and offers one-click clear-all; plan “All” is labeled as all plans so it is not confused with the full account list; stale group filter IDs are dropped after groups load.
+- **Fixed auto-switch “all accounts” scope keeping a stale selected-ID list**: switching to or loading `all_accounts` clears residual selected account IDs for Codex and Antigravity so config matches runtime (which already monitors every account in that mode).
+- **Fixed Cockpit startup automatically rewriting Codex configuration**: enabled Codex API Service and sidecar processes still recover automatically with Cockpit, but startup no longer takes over or restores Codex profiles and does not rewrite `config.toml` or `auth.json`; existing writes now occur only after explicit service enable/disable, account switching, binding, or instance launch actions.
+- **Fixed Codex API Key switch and sidecar rebuild writing a localhost upstream `base-url`**: local-access runtime endpoints are no longer synced back into the account's real upstream URL; sidecar `codex-api-key` entries avoid loopback addresses and try to recover the real Base URL from model-provider config, preventing gateway `no auth available` failures. See #1526.
+- **Fixed Codex batch-import task bars that stayed on the account page after a failed or empty import**: closing an invalid preview discards the task, and the sticky task bar can also be dismissed manually. See #1445.
+- **Fixed Codex CLI / Node discovery when installed via nvm, fnm, or asdf under GUI launches**: wakeup and CLI detection now scan common version-manager directories. See #1496.
+- **Fixed Codex account cards showing noisy GPT-5.3 Codex Spark additional quota rows**: Spark-related additional rate-limit windows are hidden from the default account presentation. See #1523.
+- **Fixed Codex request-log error tooltips showing only truncated text**: the list still shows a compact message, while hover reveals the full error detail. Thanks @lcpdeb for #1319.
+- **Fixed account-group saves that looked successful after a disk write failure**: failed writes now surface as errors instead of leaving a false-success cache state. Thanks @yxc0915 for #1525.
+
+---
+## [1.2.0] - 2026-07-12
+
+### Added
+
+- **Added ZCode platform account management**: supports Z.ai and BigModel OAuth and API Key accounts, local and JSON import/export, real account switching, quota queries, tags, filters, batch operations, launch-path settings, and isolated multi-instance management on macOS, Windows, and Linux.
+- **Antigravity accounts can now use a persistent custom order**: select custom sorting to arrange accounts by dragging or with move buttons, reopen the editor from the toolbar, and keep the order across reloads as accounts are added or removed. Thanks @khanra17 for #1501.
+- **Codex model providers can enable Responses WebSocket per provider**: each provider can persist its WebSocket transport capability, which is synchronized to the account and Codex configuration when adding accounts, editing credentials, switching providers, or starting instances; Chat Completions and built-in OpenAI remain disabled. Thanks @longwQaQ for #1512.
+
+### Changed
+
+- **Codex model loading now uses dynamic discovery**: removed the CDP-based `codex_model_injector` and Cockpit-managed static model catalog overrides; the official client now discovers models from the active provider or profile-local gateway, while user-defined model catalogs remain intact.
+- **Codex Chat Completions providers now use stable client model aliases**: upstream models are mapped to official-client-compatible model slots and translated back before requests are sent, with generated profile overrides cleaned up when no longer needed.
+- **Codex OAuth offers an in-app incognito WebView on macOS**: Windows and Linux continue to use the regular browser and manual callback flow without showing this option.
+
+### Fixed
+
+- **Fixed legacy Antigravity launch fallback opening Antigravity IDE on Windows**: taskbar shortcut matching now excludes Antigravity IDE when Cockpit is launching the legacy Antigravity app. Thanks @khanra17 for #1453.
+
+---
+## [1.1.5] - 2026-07-11
+
+### Added
+
+- **Codex API Service can protect quota on its bound OAuth account**: separate 1-100% reserves can be configured for the 5-hour and weekly windows; HTTP, WebSocket, embedded-gateway, sidecar, and session-affinity routing remove only the bound account from the eligible pool when either remaining quota reaches its reserve, while missing, stale, invalid, or failed quota snapshots fail closed.
+- **OAuth quota protection is continuously monitored and visible**: while API Service is running, the bound account quota refreshes every minute and after successful use with request throttling; sidecar mode hot-reloads the dynamic quota snapshot without restarting, and the Codex account card shows the effective window, remaining quota, and reserve when quota is near or below the configured threshold.
+
+### Changed
+
+- **Announcement popups now work across the entire app**: announcements are checked from a persistent app-level host instead of only when the dashboard is open, with throttled background, focus, and visibility refreshes; popups wait for existing dialogs to close and do not repeat when navigating between pages.
+- **Codex account selectors now share the account-overview behavior**: overview search state is persisted, and the API Service member picker plus OAuth binding selector reuse the same search, plan and validity, tag, group, sort direction, and custom-order rules; OAuth accounts without a usable `refresh_token` remain visible but disabled with an explanation instead of disappearing from the picker.
+- **Codex API Key usage refresh is centralized across account views**: scheduled refreshes update eligible API Key accounts, and cached usage is shared between the dashboard, account overview, and model provider manager; providers without usage-query support are remembered to avoid repeated requests, while manual refresh can force a retry.
+- **Desktop updates and release assets now resolve the exact target**: Windows MSI and NSIS, macOS Apple Silicon and Intel, and Linux AppImage, DEB, and RPM packages for x86_64 and ARM64 receive separate signed manifests and stable asset names; legacy `latest.json` remains available until all target builds finish so older clients do not receive incomplete release metadata.
+
+### Fixed
+
+- **Fixed Codex 5.6 Responses Lite request compatibility**: `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna` now advertise and enforce disabled parallel tool calls, the Responses Lite header is preserved across `/responses`, `/responses/compact`, HTTP, and WebSocket paths, and non-Lite models retain an explicit `parallel_tool_calls: false` setting.
+- **Fixed Windows official ChatGPT launch-path migration**: discovery now prefers the ChatGPT Store package over legacy Codex packages, migrates saved official Codex Store paths when ChatGPT is available, rejects keyword-matching helper executables, and preserves custom executable paths.
+- **Fixed invalid Codex quota responses being treated as fully available**: missing or out-of-range `used_percent` values and account-preparation failures are persisted as refresh errors instead of producing misleading remaining quota or bypassing quota protection.
+
+---
 ## [1.1.4] - 2026-07-10
 
 ### Changed

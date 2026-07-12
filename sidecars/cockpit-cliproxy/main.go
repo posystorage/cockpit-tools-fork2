@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -54,6 +55,7 @@ const (
 const ginUserAPIKeyKey = "userApiKey"
 
 const defaultStreamKeepAliveSeconds = 15
+const quotaReserveMaxSnapshotAge = 3 * time.Minute
 const codexAutoReviewModel = "codex-auto-review"
 const defaultImagesMainModel = "gpt-5.4-mini"
 const defaultImagesToolModel = "gpt-image-2"
@@ -122,13 +124,44 @@ type providerGatewayModelCapability struct {
 }
 
 type accountSpec struct {
-	ID                   string `json:"id"`
-	Email                string `json:"email"`
-	AuthID               string `json:"authId,omitempty"`
-	UpstreamAPIKey       string `json:"upstreamApiKey,omitempty"`
-	PlanRank             *int   `json:"planRank,omitempty"`
-	RemainingQuota       *int   `json:"remainingQuota,omitempty"`
-	SubscriptionExpiryMS *int64 `json:"subscriptionExpiryMs,omitempty"`
+	ID                   string            `json:"id"`
+	Email                string            `json:"email"`
+	AuthID               string            `json:"authId,omitempty"`
+	UpstreamAPIKey       string            `json:"upstreamApiKey,omitempty"`
+	PlanRank             *int              `json:"planRank,omitempty"`
+	RemainingQuota       *int              `json:"remainingQuota,omitempty"`
+	SubscriptionExpiryMS *int64            `json:"subscriptionExpiryMs,omitempty"`
+	QuotaReserve         *quotaReserveSpec `json:"quotaReserve,omitempty"`
+}
+
+type quotaReserveSpec struct {
+	HourlyThresholdPercent       *int   `json:"hourlyThresholdPercent,omitempty"`
+	WeeklyThresholdPercent       *int   `json:"weeklyThresholdPercent,omitempty"`
+	SnapshotUpdatedAtUnixSeconds *int64 `json:"snapshotUpdatedAtUnixSeconds,omitempty"`
+	HourlyRemainingPercent       *int   `json:"hourlyRemainingPercent,omitempty"`
+	WeeklyRemainingPercent       *int   `json:"weeklyRemainingPercent,omitempty"`
+	HourlyWindowPresent          *bool  `json:"hourlyWindowPresent,omitempty"`
+	WeeklyWindowPresent          *bool  `json:"weeklyWindowPresent,omitempty"`
+}
+
+type quotaReserveSnapshot struct {
+	SnapshotUpdatedAtUnixSeconds *int64 `json:"snapshotUpdatedAtUnixSeconds,omitempty"`
+	HourlyRemainingPercent       *int   `json:"hourlyRemainingPercent,omitempty"`
+	WeeklyRemainingPercent       *int   `json:"weeklyRemainingPercent,omitempty"`
+	HourlyWindowPresent          *bool  `json:"hourlyWindowPresent,omitempty"`
+	WeeklyWindowPresent          *bool  `json:"weeklyWindowPresent,omitempty"`
+}
+
+type quotaReserveStateFile struct {
+	Accounts map[string]quotaReserveSnapshot `json:"accounts"`
+}
+
+type quotaReserveStateStore struct {
+	path     string
+	snapshot atomic.Value
+	mu       sync.Mutex
+	lastHash [sha256.Size]byte
+	hasHash  bool
 }
 
 type modelAliasSpec struct {
@@ -141,6 +174,7 @@ type customRoutingRule struct {
 	AccountID string `json:"accountId"`
 	Priority  int    `json:"priority"`
 	Weight    int    `json:"weight"`
+	IsBackup  bool   `json:"isBackup"`
 }
 
 type usagePayload struct {
@@ -246,13 +280,23 @@ type usageFinalizeInput struct {
 	errorMessage  string
 }
 
+type selectedAccountRecord struct {
+	AccountID    string
+	AccountEmail string
+	AuthID       string
+}
+
 type requestUsageTracker struct {
-	mu      sync.Mutex
-	records map[string][]usagePayload
+	mu               sync.Mutex
+	records          map[string][]usagePayload
+	selectedAccounts map[string]selectedAccountRecord
 }
 
 func newRequestUsageTracker() *requestUsageTracker {
-	return &requestUsageTracker{records: make(map[string][]usagePayload)}
+	return &requestUsageTracker{
+		records:          make(map[string][]usagePayload),
+		selectedAccounts: make(map[string]selectedAccountRecord),
+	}
 }
 
 func (t *requestUsageTracker) record(payload usagePayload) {
@@ -269,6 +313,23 @@ func (t *requestUsageTracker) record(payload usagePayload) {
 	t.mu.Unlock()
 }
 
+func (t *requestUsageTracker) recordSelectedAccount(requestID string, account *accountSpec, authID string) {
+	if t == nil {
+		return
+	}
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" || account == nil {
+		return
+	}
+	t.mu.Lock()
+	t.selectedAccounts[requestID] = selectedAccountRecord{
+		AccountID:    strings.TrimSpace(account.ID),
+		AccountEmail: strings.TrimSpace(account.Email),
+		AuthID:       strings.TrimSpace(authID),
+	}
+	t.mu.Unlock()
+}
+
 func (t *requestUsageTracker) finalize(requestID string, input usageFinalizeInput) (usagePayload, bool) {
 	requestID = strings.TrimSpace(requestID)
 	if requestID == "" {
@@ -276,10 +337,14 @@ func (t *requestUsageTracker) finalize(requestID string, input usageFinalizeInpu
 	}
 
 	var records []usagePayload
+	var selected selectedAccountRecord
+	var selectedOK bool
 	if t != nil {
 		t.mu.Lock()
 		records = append(records, t.records[requestID]...)
 		delete(t.records, requestID)
+		selected, selectedOK = t.selectedAccounts[requestID]
+		delete(t.selectedAccounts, requestID)
 		t.mu.Unlock()
 	}
 
@@ -317,6 +382,15 @@ func (t *requestUsageTracker) finalize(requestID string, input usageFinalizeInpu
 	}
 	if strings.TrimSpace(payload.RequestKind) == "" {
 		payload.RequestKind = strings.TrimSpace(input.requestKind)
+	}
+	if selectedOK {
+		payload.AccountID = selected.AccountID
+		payload.AccountEmail = selected.AccountEmail
+		payload.AuthID = selected.AuthID
+	} else {
+		payload.AccountID = ""
+		payload.AccountEmail = ""
+		payload.AuthID = ""
 	}
 	if input.status > 0 {
 		payload.Status = input.status
@@ -1010,7 +1084,18 @@ func visibleModelsForAPIKey(m *manifest, spec *apiKeySpec) []string {
 		return nil
 	}
 	if spec != nil && spec.ProviderGateway != nil {
-		return append([]string(nil), spec.ProviderGateway.UpstreamModels...)
+		models := make([]string, 0, len(spec.ProviderGateway.UpstreamModels))
+		for _, upstreamModel := range spec.ProviderGateway.UpstreamModels {
+			clientModel := upstreamModel
+			for _, alias := range m.ModelAliases {
+				if strings.EqualFold(alias.SourceModel, upstreamModel) {
+					clientModel = alias.Alias
+					break
+				}
+			}
+			models = append(models, clientModel)
+		}
+		return normalizeStringList(models)
 	}
 	models := applyModelFilters(m.ModelIDs, nil, m.ExcludedModels)
 	if spec != nil {
@@ -1048,6 +1133,11 @@ func canonicalModelForClientModel(m *manifest, spec *apiKeySpec, model string) s
 		return codexAutoReviewModel
 	}
 	if spec != nil && spec.ProviderGateway != nil {
+		if m != nil {
+			if source := m.aliasToSource[strings.ToLower(withoutPrefix)]; source != "" {
+				withoutPrefix = source
+			}
+		}
 		return providerGatewayCanonicalModel(spec.ProviderGateway, withoutPrefix)
 	}
 	if m != nil {
@@ -1367,23 +1457,274 @@ func requestKindFromPath(path string) string {
 type cockpitSelector struct {
 	manifest *manifest
 	emitter  *eventEmitter
+	quota    *quotaReserveStateStore
 	mu       sync.Mutex
 	cursor   int
 }
 
+type recordingSelector struct {
+	inner    coreauth.Selector
+	manifest *manifest
+	tracker  *requestUsageTracker
+}
+
+func (s *recordingSelector) Pick(ctx context.Context, provider, model string, opts cliproxyexecutor.Options, auths []*coreauth.Auth) (*coreauth.Auth, error) {
+	auth, err := s.inner.Pick(ctx, provider, model, opts, auths)
+	if err != nil || auth == nil || s.tracker == nil {
+		return auth, err
+	}
+	s.tracker.recordSelectedAccount(internallogging.GetRequestID(ctx), accountForAuthInManifest(s.manifest, auth), auth.ID)
+	return auth, nil
+}
+
+func (s *recordingSelector) Stop() {
+	if stoppable, ok := s.inner.(coreauth.StoppableSelector); ok {
+		stoppable.Stop()
+	}
+}
+
+type quotaReserveSelector struct {
+	manifest *manifest
+	fallback coreauth.Selector
+	quota    *quotaReserveStateStore
+}
+
+type backupAccountSelector struct {
+	manifest *manifest
+	fallback coreauth.Selector
+}
+
+func quotaReserveSnapshotsFromManifest(m *manifest) map[string]quotaReserveSnapshot {
+	snapshots := make(map[string]quotaReserveSnapshot)
+	if m == nil {
+		return snapshots
+	}
+	for index := range m.Accounts {
+		account := &m.Accounts[index]
+		if account.QuotaReserve == nil || strings.TrimSpace(account.ID) == "" {
+			continue
+		}
+		reserve := account.QuotaReserve
+		snapshots[account.ID] = quotaReserveSnapshot{
+			SnapshotUpdatedAtUnixSeconds: reserve.SnapshotUpdatedAtUnixSeconds,
+			HourlyRemainingPercent:       reserve.HourlyRemainingPercent,
+			WeeklyRemainingPercent:       reserve.WeeklyRemainingPercent,
+			HourlyWindowPresent:          reserve.HourlyWindowPresent,
+			WeeklyWindowPresent:          reserve.WeeklyWindowPresent,
+		}
+	}
+	return snapshots
+}
+
+func newQuotaReserveStateStore(path string, m *manifest) *quotaReserveStateStore {
+	store := &quotaReserveStateStore{path: strings.TrimSpace(path)}
+	store.snapshot.Store(quotaReserveSnapshotsFromManifest(m))
+	return store
+}
+
+func (s *quotaReserveStateStore) load() error {
+	if s == nil || s.path == "" {
+		return nil
+	}
+	content, err := os.ReadFile(s.path)
+	if err != nil {
+		return err
+	}
+	hash := sha256.Sum256(content)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.hasHash && hash == s.lastHash {
+		return nil
+	}
+	var state quotaReserveStateFile
+	if err := json.Unmarshal(content, &state); err != nil {
+		return err
+	}
+	if state.Accounts == nil {
+		state.Accounts = make(map[string]quotaReserveSnapshot)
+	}
+	normalized := make(map[string]quotaReserveSnapshot, len(state.Accounts))
+	for accountID, snapshot := range state.Accounts {
+		accountID = strings.TrimSpace(accountID)
+		if accountID != "" {
+			normalized[accountID] = snapshot
+		}
+	}
+	s.snapshot.Store(normalized)
+	s.lastHash = hash
+	s.hasHash = true
+	return nil
+}
+
+func (s *quotaReserveStateStore) start(ctx context.Context, emitter *eventEmitter) {
+	if s == nil || s.path == "" {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		lastError := ""
+		for {
+			if err := s.load(); err != nil {
+				message := err.Error()
+				if message != lastError && emitter != nil {
+					emitter.emit(map[string]any{
+						"type":    "quota_reserve_state_error",
+						"message": message,
+					})
+				}
+				lastError = message
+			} else {
+				lastError = ""
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+}
+
+func (s *quotaReserveStateStore) forAccount(accountID string) *quotaReserveSnapshot {
+	if s == nil {
+		return nil
+	}
+	loaded := s.snapshot.Load()
+	snapshots, ok := loaded.(map[string]quotaReserveSnapshot)
+	if !ok {
+		return nil
+	}
+	snapshot, ok := snapshots[strings.TrimSpace(accountID)]
+	if !ok {
+		return nil
+	}
+	return &snapshot
+}
+
+func (s *quotaReserveSelector) Pick(ctx context.Context, provider, model string, opts cliproxyexecutor.Options, auths []*coreauth.Auth) (*coreauth.Auth, error) {
+	if s == nil || s.fallback == nil {
+		return nil, fmt.Errorf("quota reserve selector is not initialized")
+	}
+	if s.manifest == nil {
+		return s.fallback.Pick(ctx, provider, model, opts, auths)
+	}
+
+	now := time.Now()
+	var filtered []*coreauth.Auth
+	quotaReserveReasons := make([]string, 0)
+	availableAfterReserve := 0
+	for index, auth := range auths {
+		if !authAvailable(auth, model, now) {
+			if filtered != nil {
+				filtered = append(filtered, auth)
+			}
+			continue
+		}
+		reason := quotaReserveBlockReasonWithState(
+			accountForAuthInManifest(s.manifest, auth),
+			s.quota,
+			now,
+		)
+		if reason == "" {
+			availableAfterReserve++
+			if filtered != nil {
+				filtered = append(filtered, auth)
+			}
+			continue
+		}
+		if filtered == nil {
+			filtered = append(make([]*coreauth.Auth, 0, len(auths)-1), auths[:index]...)
+		}
+		quotaReserveReasons = append(quotaReserveReasons, reason)
+	}
+	if filtered == nil {
+		return s.fallback.Pick(ctx, provider, model, opts, auths)
+	}
+	if availableAfterReserve == 0 {
+		return nil, noAuthAvailableError(quotaReserveReasons)
+	}
+	return s.fallback.Pick(ctx, provider, model, opts, filtered)
+}
+
+func (s *quotaReserveSelector) Stop() {
+	if s == nil || s.fallback == nil {
+		return
+	}
+	if stoppable, ok := s.fallback.(coreauth.StoppableSelector); ok {
+		stoppable.Stop()
+	}
+}
+
+func (s *backupAccountSelector) Pick(ctx context.Context, provider, model string, opts cliproxyexecutor.Options, auths []*coreauth.Auth) (*coreauth.Auth, error) {
+	if s == nil || s.fallback == nil {
+		return nil, fmt.Errorf("backup account selector is not initialized")
+	}
+	if s.manifest == nil || !strings.EqualFold(strings.TrimSpace(s.manifest.RoutingStrategy), "custom") {
+		return s.fallback.Pick(ctx, provider, model, opts, auths)
+	}
+
+	now := time.Now()
+	regular := make([]*coreauth.Auth, 0, len(auths))
+	backup := make([]*coreauth.Auth, 0)
+	regularAvailable := false
+	for _, auth := range auths {
+		if s.isBackupAuth(auth) {
+			backup = append(backup, auth)
+			continue
+		}
+		regular = append(regular, auth)
+		if authAvailable(auth, model, now) {
+			regularAvailable = true
+		}
+	}
+
+	if regularAvailable || len(backup) == 0 {
+		return s.fallback.Pick(ctx, provider, model, opts, regular)
+	}
+	return s.fallback.Pick(ctx, provider, model, opts, backup)
+}
+
+func (s *backupAccountSelector) isBackupAuth(auth *coreauth.Auth) bool {
+	account := accountForAuthInManifest(s.manifest, auth)
+	if account == nil {
+		return false
+	}
+	for _, rule := range s.manifest.CustomRoutingRules {
+		if rule.AccountID == account.ID {
+			return rule.IsBackup
+		}
+	}
+	return false
+}
+
+func (s *backupAccountSelector) Stop() {
+	if s == nil || s.fallback == nil {
+		return
+	}
+	if stoppable, ok := s.fallback.(coreauth.StoppableSelector); ok {
+		stoppable.Stop()
+	}
+}
+
 func (s *cockpitSelector) Pick(ctx context.Context, provider, model string, opts cliproxyexecutor.Options, auths []*coreauth.Auth) (*coreauth.Auth, error) {
-	_ = ctx
 	_ = provider
 	_ = opts
 	now := time.Now()
 	available := make([]*coreauth.Auth, 0, len(auths))
+	quotaReserveReasons := make([]string, 0)
 	for _, auth := range auths {
-		if authAvailable(auth, model, now) {
-			available = append(available, auth)
+		if !authAvailable(auth, model, now) {
+			continue
 		}
+		if reason := quotaReserveBlockReasonWithState(s.accountForAuth(auth), s.quota, now); reason != "" {
+			quotaReserveReasons = append(quotaReserveReasons, reason)
+			continue
+		}
+		available = append(available, auth)
 	}
 	if len(available) == 0 {
-		return nil, fmt.Errorf("no auth available")
+		return nil, noAuthAvailableError(quotaReserveReasons)
 	}
 
 	s.mu.Lock()
@@ -1393,11 +1734,139 @@ func (s *cockpitSelector) Pick(ctx context.Context, provider, model string, opts
 
 	ordered := s.orderAuths(available, start)
 	if len(ordered) == 0 {
-		return nil, fmt.Errorf("no auth available")
+		return nil, noAuthAvailableError(quotaReserveReasons)
 	}
 	selected := ordered[0]
 	s.emitAuthSelected(ctx, selected, provider, model, len(auths), len(available))
 	return selected, nil
+}
+
+func quotaReserveBlockReason(account *accountSpec, now time.Time) string {
+	return quotaReserveBlockReasonWithSnapshot(account, quotaReserveSnapshotFromSpec(account), now)
+}
+
+func quotaReserveBlockReasonWithState(account *accountSpec, state *quotaReserveStateStore, now time.Time) string {
+	var snapshot *quotaReserveSnapshot
+	if account != nil && state != nil {
+		snapshot = state.forAccount(account.ID)
+	}
+	if snapshot == nil {
+		snapshot = quotaReserveSnapshotFromSpec(account)
+	}
+	return quotaReserveBlockReasonWithSnapshot(account, snapshot, now)
+}
+
+func quotaReserveSnapshotFromSpec(account *accountSpec) *quotaReserveSnapshot {
+	if account == nil || account.QuotaReserve == nil {
+		return nil
+	}
+	reserve := account.QuotaReserve
+	return &quotaReserveSnapshot{
+		SnapshotUpdatedAtUnixSeconds: reserve.SnapshotUpdatedAtUnixSeconds,
+		HourlyRemainingPercent:       reserve.HourlyRemainingPercent,
+		WeeklyRemainingPercent:       reserve.WeeklyRemainingPercent,
+		HourlyWindowPresent:          reserve.HourlyWindowPresent,
+		WeeklyWindowPresent:          reserve.WeeklyWindowPresent,
+	}
+}
+
+func quotaReserveBlockReasonWithSnapshot(account *accountSpec, snapshot *quotaReserveSnapshot, now time.Time) string {
+	if account == nil || account.QuotaReserve == nil {
+		return ""
+	}
+
+	reserve := account.QuotaReserve
+	if snapshot == nil {
+		return quotaReserveAccountReason(account, []string{"quota snapshot unknown"})
+	}
+	if reason := quotaReserveSnapshotBlockReason(snapshot.SnapshotUpdatedAtUnixSeconds, now); reason != "" {
+		return quotaReserveAccountReason(account, []string{reason})
+	}
+
+	reasons := make([]string, 0, 2)
+	if reason := quotaReserveWindowBlockReason(
+		"5h",
+		reserve.HourlyThresholdPercent,
+		snapshot.HourlyRemainingPercent,
+		snapshot.HourlyWindowPresent,
+	); reason != "" {
+		reasons = append(reasons, reason)
+	}
+	if reason := quotaReserveWindowBlockReason(
+		"weekly",
+		reserve.WeeklyThresholdPercent,
+		snapshot.WeeklyRemainingPercent,
+		snapshot.WeeklyWindowPresent,
+	); reason != "" {
+		reasons = append(reasons, reason)
+	}
+	if len(reasons) == 0 {
+		return ""
+	}
+	return quotaReserveAccountReason(account, reasons)
+}
+
+func quotaReserveSnapshotBlockReason(updatedAt *int64, now time.Time) string {
+	if updatedAt == nil {
+		return "quota snapshot timestamp unknown"
+	}
+
+	nowUnix := now.Unix()
+	if *updatedAt <= 0 || *updatedAt > nowUnix {
+		return "quota snapshot timestamp invalid"
+	}
+	if nowUnix-*updatedAt > int64(quotaReserveMaxSnapshotAge/time.Second) {
+		return "quota snapshot stale"
+	}
+	return ""
+}
+
+func quotaReserveAccountReason(account *accountSpec, reasons []string) string {
+	accountLabel := strings.TrimSpace(account.Email)
+	if accountLabel == "" {
+		accountLabel = strings.TrimSpace(account.ID)
+	}
+	if accountLabel == "" {
+		accountLabel = "unknown account"
+	}
+	return fmt.Sprintf("%s (%s)", accountLabel, strings.Join(reasons, ", "))
+}
+
+func quotaReserveWindowBlockReason(window string, threshold, remaining *int, present *bool) string {
+	if present != nil && !*present {
+		return ""
+	}
+	if threshold == nil || *threshold < 1 || *threshold > 100 {
+		return fmt.Sprintf("%s reserve threshold unknown", window)
+	}
+	if remaining == nil || *remaining < 0 || *remaining > 100 {
+		return fmt.Sprintf("%s remaining quota unknown; reserve %d%%", window, *threshold)
+	}
+	if *remaining <= *threshold {
+		return fmt.Sprintf("%s remaining %d%% <= reserve %d%%", window, *remaining, *threshold)
+	}
+	return ""
+}
+
+func noAuthAvailableError(quotaReserveReasons []string) error {
+	if len(quotaReserveReasons) == 0 {
+		return fmt.Errorf("no auth available")
+	}
+
+	const maxReasons = 3
+	reasons := quotaReserveReasons
+	if len(reasons) > maxReasons {
+		reasons = reasons[:maxReasons]
+	}
+	detail := strings.Join(reasons, "; ")
+	if omitted := len(quotaReserveReasons) - len(reasons); omitted > 0 {
+		detail = fmt.Sprintf("%s; and %d more", detail, omitted)
+	}
+	return fmt.Errorf(
+		"no auth available: bound OAuth quota reserve blocked %d auth(s): %s",
+		len(quotaReserveReasons),
+		detail,
+	)
 }
 
 func authAvailable(auth *coreauth.Auth, model string, now time.Time) bool {
@@ -1621,21 +2090,28 @@ func weightedOrder(group []*coreauth.Auth, rules map[string]customRoutingRule, s
 }
 
 func (s *cockpitSelector) accountForAuth(auth *coreauth.Auth) *accountSpec {
-	if s == nil || s.manifest == nil || auth == nil {
+	if s == nil {
+		return nil
+	}
+	return accountForAuthInManifest(s.manifest, auth)
+}
+
+func accountForAuthInManifest(m *manifest, auth *coreauth.Auth) *accountSpec {
+	if m == nil || auth == nil {
 		return nil
 	}
 	if auth.ID != "" {
-		if account := s.manifest.accountByAuthID[strings.ToLower(auth.ID)]; account != nil {
+		if account := m.accountByAuthID[strings.ToLower(auth.ID)]; account != nil {
 			return account
 		}
 		base := strings.TrimSuffix(filepath.Base(auth.ID), filepath.Ext(auth.ID))
-		if account := s.manifest.accountByID[base]; account != nil {
+		if account := m.accountByID[base]; account != nil {
 			return account
 		}
 	}
 	if auth.Attributes != nil {
 		if key := strings.TrimSpace(auth.Attributes["api_key"]); key != "" {
-			return s.manifest.accountByAPIKey[key]
+			return m.accountByAPIKey[key]
 		}
 	}
 	return nil
@@ -1935,10 +2411,9 @@ func (h *authHook) emit(eventType string, auth *coreauth.Auth) {
 	})
 }
 
-func buildCoreAuthManager(cfg *config.Config, selector coreauth.Selector, hook coreauth.Hook) *coreauth.Manager {
-	tokenStore := sdkauth.GetTokenStore()
-	if dirSetter, ok := tokenStore.(interface{ SetBaseDir(string) }); ok && cfg != nil {
-		dirSetter.SetBaseDir(cfg.AuthDir)
+func buildCoreAuthSelector(cfg *config.Config, selector coreauth.Selector, m *manifest, quota *quotaReserveStateStore) coreauth.Selector {
+	if selector == nil {
+		selector = &coreauth.RoundRobinSelector{}
 	}
 	if cfg != nil && cfg.Routing.SessionAffinity {
 		ttl := time.Hour
@@ -1949,6 +2424,22 @@ func buildCoreAuthManager(cfg *config.Config, selector coreauth.Selector, hook c
 			Fallback: selector,
 			TTL:      ttl,
 		})
+	}
+	if m != nil {
+		selector = &backupAccountSelector{manifest: m, fallback: selector}
+		selector = &quotaReserveSelector{manifest: m, fallback: selector, quota: quota}
+	}
+	return selector
+}
+
+func buildCoreAuthManager(cfg *config.Config, selector coreauth.Selector, hook coreauth.Hook, m *manifest, quota *quotaReserveStateStore, tracker *requestUsageTracker) *coreauth.Manager {
+	tokenStore := sdkauth.GetTokenStore()
+	if dirSetter, ok := tokenStore.(interface{ SetBaseDir(string) }); ok && cfg != nil {
+		dirSetter.SetBaseDir(cfg.AuthDir)
+	}
+	selector = buildCoreAuthSelector(cfg, selector, m, quota)
+	if tracker != nil {
+		selector = &recordingSelector{inner: selector, manifest: m, tracker: tracker}
 	}
 	return coreauth.NewManager(tokenStore, selector, hook)
 }
@@ -5592,6 +6083,7 @@ func monitorParentProcess(ctx context.Context, parentPID int, cancel context.Can
 func main() {
 	configPath := flag.String("config", "", "CLIProxyAPI config file")
 	manifestPath := flag.String("manifest", "", "Cockpit sidecar manifest file")
+	quotaReserveStatePath := flag.String("quota-reserve-state", "", "Cockpit OAuth quota reserve state file")
 	parentPID := flag.Int("parent-pid", 0, "Cockpit Tools parent process id")
 	flag.Parse()
 
@@ -5620,17 +6112,25 @@ func main() {
 		os.Exit(2)
 	}
 	emitter.emitStartupStage("init_runtime")
+	quotaState := newQuotaReserveStateStore(*quotaReserveStatePath, m)
+	if err := quotaState.load(); err != nil {
+		emitter.emit(map[string]any{
+			"type":    "quota_reserve_state_error",
+			"message": err.Error(),
+		})
+	}
 
 	usageTracker := newRequestUsageTracker()
 	policy := &requestPolicy{manifest: m, emitter: emitter, tracker: usageTracker}
 	hook := &authHook{manifest: m, emitter: emitter}
-	selector := &cockpitSelector{manifest: m, emitter: emitter}
-	coreManager := buildCoreAuthManager(cfg, selector, hook)
+	selector := &cockpitSelector{manifest: m, emitter: emitter, quota: quotaState}
+	coreManager := buildCoreAuthManager(cfg, selector, hook, m, quotaState, usageTracker)
 
 	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	ctx, cancel := context.WithCancel(signalCtx)
 	defer cancel()
+	quotaState.start(ctx, emitter)
 	monitorParentProcess(ctx, *parentPID, cancel, emitter)
 
 	coreusage.RegisterPlugin(&usagePlugin{manifest: m, tracker: usageTracker})
