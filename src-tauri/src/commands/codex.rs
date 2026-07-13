@@ -2209,11 +2209,15 @@ fn json_f64_at(value: &serde_json::Value, path: &[&str]) -> Option<f64> {
     for key in path {
         current = current.get(*key)?;
     }
-    current.as_f64().or_else(|| {
-        current
-            .as_str()
-            .and_then(|item| item.trim().parse::<f64>().ok())
-    })
+    current
+        .as_f64()
+        .filter(|value| value.is_finite())
+        .or_else(|| {
+            current
+                .as_str()
+                .and_then(|item| item.trim().parse::<f64>().ok())
+                .filter(|value| value.is_finite())
+        })
 }
 
 fn json_i64_at(value: &serde_json::Value, path: &[&str]) -> Option<i64> {
@@ -3349,13 +3353,17 @@ mod tests {
     fn usage_number_helpers_accept_numeric_strings() {
         let payload = serde_json::json!({
             "remaining": "12.5",
-            "usage": { "today": { "requests": "42" } }
+            "usage": {
+                "today": { "requests": "42" },
+                "invalid": "NaN"
+            }
         });
         assert_eq!(json_f64_at(&payload, &["remaining"]), Some(12.5));
         assert_eq!(
             json_i64_at(&payload, &["usage", "today", "requests"]),
             Some(42)
         );
+        assert_eq!(json_f64_at(&payload, &["usage", "invalid"]), None);
     }
 
     #[test]
