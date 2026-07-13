@@ -177,7 +177,10 @@ fn build_launch_command_with_binary(
             ));
         }
         if let Some(api_key) = context.xai_api_key.as_deref() {
-            command_parts.push(format!("$env:XAI_API_KEY={}", powershell_quote(api_key)));
+            command_parts.push(format!(
+                "$env:XAI_API_KEY={}",
+                powershell_quote(api_key)
+            ));
         }
         if context.managed {
             command_parts.push(format!(

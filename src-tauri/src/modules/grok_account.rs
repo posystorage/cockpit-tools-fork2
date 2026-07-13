@@ -882,7 +882,10 @@ fn accounts_match_for_upsert(candidate: &GrokAccount, existing: &GrokAccount) ->
         return false;
     }
     if candidate.is_api_key_auth() {
-        return match (candidate.resolved_api_key(), existing.resolved_api_key()) {
+        return match (
+            candidate.resolved_api_key(),
+            existing.resolved_api_key(),
+        ) {
             (Some(left), Some(right)) => left == right,
             _ => false,
         };
@@ -1565,7 +1568,12 @@ fn quota_from_payload(
     let products = config
         .get("productUsage")
         .and_then(Value::as_array)
-        .map(|items| items.iter().filter_map(product_usage_from_value).collect())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(product_usage_from_value)
+                .collect()
+        })
         .unwrap_or_default();
     let (weekly_used, weekly_total) = credit_usage_amounts(billing, config);
     GrokQuota {

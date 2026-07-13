@@ -7721,7 +7721,10 @@ fn parse_http_url_host_port(raw: &str) -> Option<(String, u16)> {
 }
 
 /// True when `raw` is the Cockpit API Service client URL (gateway), not a real upstream.
-fn is_local_access_gateway_base_url(raw: &str, collection: &CodexLocalAccessCollection) -> bool {
+fn is_local_access_gateway_base_url(
+    raw: &str,
+    collection: &CodexLocalAccessCollection,
+) -> bool {
     if profile_base_url_matches(Some(raw), &build_collection_base_url(collection)) {
         return true;
     }
@@ -7734,7 +7737,10 @@ fn is_local_access_gateway_base_url(raw: &str, collection: &CodexLocalAccessColl
 
 /// True when `raw` must not be used as a sidecar upstream Base URL.
 /// Rejects the local gateway URL and any loopback host (polluted account sync).
-fn is_unsafe_sidecar_upstream_base_url(raw: &str, collection: &CodexLocalAccessCollection) -> bool {
+fn is_unsafe_sidecar_upstream_base_url(
+    raw: &str,
+    collection: &CodexLocalAccessCollection,
+) -> bool {
     if is_local_access_gateway_base_url(raw, collection) {
         return true;
     }
@@ -7765,9 +7771,7 @@ fn lookup_codex_model_provider_base_url_in_dir(
     let items = serde_json::from_str::<Value>(&raw).ok()?;
     let arr = items.as_array()?;
     let id = provider_id.map(str::trim).filter(|value| !value.is_empty());
-    let name = provider_name
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
+    let name = provider_name.map(str::trim).filter(|value| !value.is_empty());
 
     let read_base = |item: &Value| -> Option<String> {
         item.get("baseUrl")
@@ -7849,23 +7853,18 @@ fn resolve_sidecar_upstream_base_url_with(
     }
 
     // Polluted gateway / loopback URL on a built-in OpenAI key: fall back to official default.
-    if matches!(
-        account.api_provider_mode,
-        CodexApiProviderMode::OpenaiBuiltin
-    ) && candidate
-        .as_ref()
-        .map(|url| is_unsafe_sidecar_upstream_base_url(url, collection))
-        .unwrap_or(false)
+    if matches!(account.api_provider_mode, CodexApiProviderMode::OpenaiBuiltin)
+        && candidate
+            .as_ref()
+            .map(|url| is_unsafe_sidecar_upstream_base_url(url, collection))
+            .unwrap_or(false)
     {
         return Some(DEFAULT_OPENAI_RESPONSES_BASE_URL.to_string());
     }
 
     // Empty base URL + OpenAI builtin → official default.
     if candidate.is_none()
-        && matches!(
-            account.api_provider_mode,
-            CodexApiProviderMode::OpenaiBuiltin
-        )
+        && matches!(account.api_provider_mode, CodexApiProviderMode::OpenaiBuiltin)
     {
         return Some(DEFAULT_OPENAI_RESPONSES_BASE_URL.to_string());
     }
@@ -16348,10 +16347,7 @@ fn account_upstream_base_url(account: &CodexAccount) -> String {
         }
     }
 
-    if matches!(
-        account.api_provider_mode,
-        CodexApiProviderMode::OpenaiBuiltin
-    ) {
+    if matches!(account.api_provider_mode, CodexApiProviderMode::OpenaiBuiltin) {
         return DEFAULT_OPENAI_RESPONSES_BASE_URL.to_string();
     }
 
@@ -20569,10 +20565,9 @@ mod tests {
         insert_local_access_usage_event, inspect_local_access_profile_config,
         is_codex_local_access_auth_text, is_codex_local_access_config_for_api_key,
         is_image_generation_capability_error, is_local_access_eligible_account,
-        is_local_access_gateway_base_url, is_provider_gateway_eligible_account,
-        is_responses_completion_event, is_stream_incomplete_error_message,
-        is_upstream_response_failed_error_message, legacy_stream_error_category,
-        local_access_chat_completions_url, lookup_codex_model_provider_base_url_in_dir,
+        is_provider_gateway_eligible_account, is_responses_completion_event,
+        is_stream_incomplete_error_message, is_upstream_response_failed_error_message,
+        legacy_stream_error_category, local_access_chat_completions_url,
         macos_proxy_url_from_scutil_map, max_credential_attempts_for_strategy,
         merge_collection_and_account_excluded_models, model_pricing,
         model_provider_direct_test_client_model, model_provider_test_uses_provider_gateway,
@@ -20582,13 +20577,15 @@ mod tests {
         pin_account_to_front_for_strategy, prepare_gateway_request,
         prepare_gateway_request_with_default_service_tier, prepare_sidecar_launch_config_in_dir,
         prepare_websocket_initial_request, profile_base_url_matches,
+        is_local_access_gateway_base_url, lookup_codex_model_provider_base_url_in_dir,
+        resolve_sidecar_upstream_base_url, resolve_sidecar_upstream_base_url_with,
+        sidecar_codex_key_config_value,
         provider_gateway_bound_oauth_account_id_for_account,
         provider_gateway_default_model_for_account,
         provider_gateway_image_generation_mode_for_account, provider_gateway_model_slots,
         provider_gateway_models_for_account, read_http_request, recover_invalid_stats_file,
         remove_account_refs_from_collection, remove_codex_local_access_config,
         reprice_request_logs_for_collection, request_image_generation_mode, resolve_plan_rank,
-        resolve_sidecar_upstream_base_url, resolve_sidecar_upstream_base_url_with,
         resolve_supported_model_alias, resolve_upstream_target,
         restore_config_toml_from_takeover_backup, sanitize_collection_with_accounts,
         scutil_proxy_map, should_retry_single_account_upstream_status,
@@ -20596,11 +20593,10 @@ mod tests {
         sidecar_api_key_account_scope_values, sidecar_auth_file_name,
         sidecar_auth_json_for_account, sidecar_auths_dir,
         sidecar_cached_account_usable_after_prepare_error, sidecar_codex_api_key_auth_id,
-        sidecar_codex_key_config_value, sidecar_config_fingerprint,
-        sidecar_payload_default_service_tier, sidecar_quota_reserve_snapshot_value,
-        sidecar_routing_strategy_value, sidecar_stable_id, supported_codex_model_ids,
-        system_proxy_target_scheme, system_proxy_value_url, validate_client_model_visible,
-        visible_codex_model_ids_for_api_key, websocket_accept_value,
+        sidecar_config_fingerprint, sidecar_payload_default_service_tier,
+        sidecar_quota_reserve_snapshot_value, sidecar_routing_strategy_value, sidecar_stable_id,
+        supported_codex_model_ids, system_proxy_target_scheme, system_proxy_value_url,
+        validate_client_model_visible, visible_codex_model_ids_for_api_key, websocket_accept_value,
         websocket_connect_error_from_http_response, windows_proxy_url_from_server,
         windows_reg_dword_enabled, windows_reg_query_map,
         write_local_access_profile_model_override, write_local_access_profile_takeover,
@@ -25303,9 +25299,11 @@ data: {"error":{"code":"server_error","type":"upstream","message":"stream aborte
             Some("https://relay.example/v1")
         );
         // Avoid mutating process-global COCKPIT_TOOLS_DATA_DIR (races other tests).
-        let resolved = resolve_sidecar_upstream_base_url_with(&account, &collection, |id, name| {
-            lookup_codex_model_provider_base_url_in_dir(&data_dir, id, name)
-        });
+        let resolved = resolve_sidecar_upstream_base_url_with(
+            &account,
+            &collection,
+            |id, name| lookup_codex_model_provider_base_url_in_dir(&data_dir, id, name),
+        );
         assert_eq!(resolved.as_deref(), Some("https://relay.example/v1"));
 
         // sidecar_codex_key_config_value uses the same resolve rules with production lookup;

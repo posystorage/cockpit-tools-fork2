@@ -169,10 +169,10 @@ function normalizeCodexApiBaseUrlForMatch(rawValue?: string | null): string {
 }
 
 export function isCodexCockpitApiBaseUrl(rawValue?: string | null): boolean {
-  return (
-    normalizeCodexApiBaseUrlForMatch(rawValue) ===
-    normalizeCodexApiBaseUrlForMatch(COCKPIT_API_BASE_URL)
-  );
+  const expected = normalizeCodexApiBaseUrlForMatch(COCKPIT_API_BASE_URL);
+  if (!expected) return false;
+  const actual = normalizeCodexApiBaseUrlForMatch(rawValue);
+  return Boolean(actual) && actual === expected;
 }
 
 export interface CodexWorkspace {
