@@ -407,6 +407,7 @@ export function CodexLocalAccessModal({
   const customRoutingSelectAllRef = useRef<HTMLInputElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const testChatScrollRef = useRef<HTMLDivElement | null>(null);
+  const modalLifecycleRef = useRef({ isOpen: false, mode });
 
   const collection = state?.collection ?? null;
   const apiPortUrl = state?.apiPortUrl ?? "";
@@ -613,7 +614,14 @@ export function CodexLocalAccessModal({
   }, [isOpen, mode]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    const previousLifecycle = modalLifecycleRef.current;
+    modalLifecycleRef.current = { isOpen, mode };
+    const shouldInitialize =
+      isOpen && (!previousLifecycle.isOpen || previousLifecycle.mode !== mode);
+
+    // Service polling replaces collection arrays every few seconds. Only an
+    // actual modal open or mode change should reset transient dialog state.
+    if (!shouldInitialize) return;
     const shouldResetMembersDraft = mode !== "members" || !membersDraftDirty;
     if (shouldResetMembersDraft) {
       setQuery("");
