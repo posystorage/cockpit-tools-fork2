@@ -4948,16 +4948,13 @@
   },
   "apiKeyFun": {
     "eyebrow": "中継サービス",
-    "title": "APIKEY.FUN リレー",
-    "description": "Cockpit 公式パートナーの中継サービスで、安定したオープンで高コストパフォーマンスな大規模モデル API 接続を提供します。Claude、OpenAI、Gemini などの主要モデルに対応し、Codex、Gemini CLI、Claude Code などの開発ツールで統一して設定できます。Cockpit 専用リンクから登録すると、チャージが永久に最大 5% 割引になります。",
-    "register": "専用登録リンク",
-    "docs": "公式ドキュメント",
-    "viewNow": "今すぐ見る",
+    "title": "API リレー",
+    "description": "Claude、OpenAI、Gemini などの主要モデルに対応し、Codex、Gemini CLI、Claude Code などの開発ツールで統一して設定できます。",
     "queryTitle": "キー残高確認",
-    "queryDesc": "APIKEY.FUN の API Key を入力すると残高を自動確認します。",
+    "queryDesc": "API Relay の API Key を入力すると残高を自動確認します。",
     "keyNotSet": "キー未入力",
     "apiKeyLabel": "API キー",
-    "apiKeyPlaceholder": "APIKEY.FUN コンソールで作成した API Key を貼り付け",
+    "apiKeyPlaceholder": "API Relay コンソールで作成した API Key を貼り付け",
     "hideKey": "非表示",
     "showKey": "表示",
     "endpointLabel": "接続先",
@@ -4968,12 +4965,9 @@
     "saving": "書き込み中",
     "saveSuccess": "Codex Provider に書き込みました: {{name}}",
     "toolsTitle": "クライアント設定を書き込み",
-    "toolsDesc": "APIKEY.FUN ドキュメントと CC Switch の保存形式に沿って、ローカル設定ファイルへ直接書き込みます。",
     "endpoint": {
       "global": "グローバル回線",
-      "globalDesc": "多くのネットワーク環境向けの公式デフォルト API Base。",
-      "direct": "直通回線",
-      "directDesc": "低遅延が必要な用途向け。"
+      "direct": "直通回線"
     },
     "wireApi": {
       "responses": "Responses プロトコル",
@@ -5012,9 +5006,9 @@
       "geminiTitle": "Gemini CLI 設定",
       "geminiDesc": "~/.gemini/.env を書き込み、settings.json の認証方式を gemini-api-key に設定します。",
       "openclawTitle": "OpenClaw 設定",
-      "openclawDesc": "~/.openclaw/openclaw.json の models.providers.apikeyfun を書き込みます。",
+      "openclawDesc": "~/.openclaw/openclaw.json の models.providers.custom_relay を書き込みます。",
       "hermesTitle": "Hermes 設定",
-      "hermesDesc": "~/.hermes/config.yaml の custom_providers を書き込み、apikeyfun のデフォルトモデルへ切り替えます。",
+      "hermesDesc": "~/.hermes/config.yaml の custom_providers を書き込み、custom_relay のデフォルトモデルへ切り替えます。",
       "button": "設定を書き込む",
       "applying": "書き込み中",
       "success": "設定ファイルを書き込みました: {{paths}}",
@@ -5064,7 +5058,7 @@
       "claudeShort": "Claude CLI"
     },
     "prefill": {
-      "claudeDesktopReady": "APIKEY.FUN の設定を入力しました。Claude への追加を確認してください。"
+      "claudeDesktopReady": "API Relay の設定を入力しました。Claude への追加を確認してください。"
     },
     "copyKey": "Copy Key​",
     "clearKey": "Clear input​"
@@ -5228,7 +5222,7 @@
     "apiKey": {
       "desc": "Claude CLI API Key を独立した認証情報として保存します。切り替えまたは CLI 起動時にプロバイダーの env を Claude Code settings.json へ書き込み、Claude のログイン状態には書き込みません。",
       "nameLabel": "アカウント名",
-      "namePlaceholder": "任意、例 APIKEY.FUN",
+      "namePlaceholder": "任意、例 API Relay",
       "keyLabel": "APIキー",
       "placeholder": "プロバイダーの API Key を貼り付け",
       "hide": "API Key を隠す",

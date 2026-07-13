@@ -4948,16 +4948,13 @@
   },
   "apiKeyFun": {
     "eyebrow": "중계 서비스",
-    "title": "APIKEY.FUN 릴레이",
-    "description": "Cockpit 공식 파트너 중계 서비스로, 안정적이고 개방적이며 비용 효율적인 대형 모델 API 접속을 제공합니다. Claude, OpenAI, Gemini 등 주요 모델을 지원하며 Codex, Gemini CLI, Claude Code 및 기타 개발 도구에서 통합 구성하기에 적합합니다. Cockpit 전용 링크로 가입하면 충전 금액에 대해 영구적으로 최대 5% 할인을 받을 수 있습니다.",
-    "register": "전용 가입 링크",
-    "docs": "공식 문서",
-    "viewNow": "바로 보기",
+    "title": "API 릴레이",
+    "description": "Claude, OpenAI, Gemini 등 주요 모델을 지원하며 Codex, Gemini CLI, Claude Code 및 기타 개발 도구에서 통합 구성하기에 적합합니다.",
     "queryTitle": "키 잔액 조회",
-    "queryDesc": "APIKEY.FUN API Key를 입력하면 잔액을 자동으로 조회합니다.",
+    "queryDesc": "API Relay API Key를 입력하면 잔액을 자동으로 조회합니다.",
     "keyNotSet": "키 없음",
     "apiKeyLabel": "API 키",
-    "apiKeyPlaceholder": "APIKEY.FUN 콘솔에서 만든 API Key 붙여넣기",
+    "apiKeyPlaceholder": "API Relay 콘솔에서 만든 API Key 붙여넣기",
     "hideKey": "숨기기",
     "showKey": "표시",
     "endpointLabel": "연결 대상",
@@ -4968,12 +4965,9 @@
     "saving": "쓰는 중",
     "saveSuccess": "Codex Provider에 기록됨: {{name}}",
     "toolsTitle": "클라이언트 설정 쓰기",
-    "toolsDesc": "APIKEY.FUN 문서와 CC Switch 파일 구조에 맞춰 로컬 클라이언트 설정 파일에 직접 씁니다.",
     "endpoint": {
       "global": "글로벌 회선",
-      "globalDesc": "대부분의 네트워크 환경에 적합한 공식 기본 API Base입니다.",
-      "direct": "직접 연결",
-      "directDesc": "지연 시간에 민감한 상황에 적합합니다."
+      "direct": "직접 연결"
     },
     "wireApi": {
       "responses": "Responses 프로토콜",
@@ -5012,9 +5006,9 @@
       "geminiTitle": "Gemini CLI 설정",
       "geminiDesc": "~/.gemini/.env를 쓰고 settings.json 인증 모드를 gemini-api-key로 설정합니다.",
       "openclawTitle": "OpenClaw 설정",
-      "openclawDesc": "~/.openclaw/openclaw.json의 models.providers.apikeyfun을 씁니다.",
+      "openclawDesc": "~/.openclaw/openclaw.json의 models.providers.custom_relay을 씁니다.",
       "hermesTitle": "Hermes 설정",
-      "hermesDesc": "~/.hermes/config.yaml의 custom_providers를 쓰고 apikeyfun 기본 모델로 전환합니다.",
+      "hermesDesc": "~/.hermes/config.yaml의 custom_providers를 쓰고 custom_relay 기본 모델로 전환합니다.",
       "button": "설정 쓰기",
       "applying": "쓰는 중",
       "success": "설정 파일을 썼습니다: {{paths}}",
@@ -5064,7 +5058,7 @@
       "claudeShort": "Claude CLI"
     },
     "prefill": {
-      "claudeDesktopReady": "APIKEY.FUN 설정을 채웠습니다. Claude에 추가하려면 확인하세요."
+      "claudeDesktopReady": "API Relay 설정을 채웠습니다. Claude에 추가하려면 확인하세요."
     },
     "copyKey": "Copy Key​",
     "clearKey": "Clear input​"
@@ -5228,7 +5222,7 @@
     "apiKey": {
       "desc": "Claude CLI API Key를 독립 자격 증명으로 저장합니다. 전환 또는 CLI 실행 시 공급자 env를 Claude Code settings.json에 기록하며 Claude 로그인 상태에는 기록하지 않습니다.",
       "nameLabel": "계정 이름",
-      "namePlaceholder": "선택, 예: APIKEY.FUN",
+      "namePlaceholder": "선택, 예: API Relay",
       "keyLabel": "API 키",
       "placeholder": "공급자 API Key 붙여넣기",
       "hide": "API Key 숨기기",

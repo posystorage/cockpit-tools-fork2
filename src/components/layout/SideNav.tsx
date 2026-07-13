@@ -2,7 +2,7 @@ import { Settings, Rocket, GaugeCircle, LayoutGrid, SlidersHorizontal, FileText,
 import { useTranslation } from 'react-i18next';
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import apiKeyFunIcon from '../../assets/icons/apikey-fun.png';
+import { Network } from 'lucide-react';
 import { Page } from '../../types/navigation';
 import { isMenuVisiblePlatform, PlatformId, PLATFORM_PAGE_MAP } from '../../types/platform';
 import {
@@ -90,15 +90,7 @@ const CLASSIC_NAV_SCROLL_EPSILON = 4;
 
 function renderEntryIcon(entry: SideNavEntry, size: number) {
   if (entry.kind === 'api-relay') {
-    return (
-      <img
-        className="nav-item-icon"
-        src={apiKeyFunIcon}
-        alt=""
-        width={size}
-        height={size}
-      />
-    );
+    return <Network className="nav-item-icon" size={size} aria-hidden="true" />;
   }
 
   if (entry.group && entry.group.iconKind === 'custom' && entry.group.iconCustomDataUrl) {
@@ -279,7 +271,7 @@ export function SideNav({
     result.splice(insertIndex, 0, {
       id: API_RELAY_LAYOUT_ENTRY_ID,
       kind: 'api-relay',
-      label: t('nav.apiRelay', '中转站'),
+      label: t('nav.apiRelay', '自定义中转'),
       hidden: false,
       targetPlatformId: null,
       platformIds: [],

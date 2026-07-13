@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { openUrl } from '@tauri-apps/plugin-opener';
 import { useTranslation } from 'react-i18next';
 import {
   BookmarkPlus,
   CheckCircle2,
-  ExternalLink,
   Eye,
   EyeOff,
   KeyRound,
+  Network,
   Trash2,
   Copy,
   Pencil,
@@ -19,16 +18,12 @@ import {
   type ModelProviderModel,
   type ModelProviderUsageSummary,
 } from '../services/modelProviderUsageService';
-import {
-  APIKEY_FUN_REGISTER_URL,
-  APIKEY_FUN_SOURCE_TAG,
-} from '../utils/apikeyFunLinks';
+import { APIKEY_FUN_SOURCE_TAG } from '../utils/apikeyFunLinks';
 import {
   dispatchApiKeyFunPrefillEvent,
   getApiKeyFunPrefillPage,
   type ApiKeyFunPrefillTarget,
 } from '../utils/apiKeyFunPrefill';
-import apiKeyFunIcon from '../assets/icons/apikey-fun.png';
 import './ApiKeyFunPage.css';
 
 type ManagedApiKey = {
@@ -220,16 +215,6 @@ export function ApiKeyFunPage() {
     const timer = window.setTimeout(() => setSaveFlash(false), 1500);
     return () => window.clearTimeout(timer);
   }, [saveFlash]);
-
-  const openExternal = useCallback((url: string) => {
-    try {
-      void openUrl(url).catch(() => {
-        window.location.href = url;
-      });
-    } catch {
-      window.location.href = url;
-    }
-  }, []);
 
   // 自动额度查询
   useEffect(() => {
@@ -506,28 +491,19 @@ export function ApiKeyFunPage() {
     <div className="apikey-fun-page">
       <header className="apikey-fun-header-brand">
         <div className="apikey-fun-brand-main">
-          <img src={apiKeyFunIcon} alt="" className="apikey-fun-brand-logo" />
+          <Network className="apikey-fun-brand-logo" aria-hidden="true" />
           <div className="apikey-fun-brand-text">
             <div className="apikey-fun-eyebrow-container">
-              <span className="apikey-fun-eyebrow">{t('apiKeyFun.eyebrow', '中转站')}</span>
+              <span className="apikey-fun-eyebrow">{t('apiKeyFun.eyebrow', '自定义中转')}</span>
             </div>
-            <h1>{t('apiKeyFun.title', 'APIKEY.FUN 中转站')}</h1>
+            <h1>{t('apiKeyFun.title', '自定义中转')}</h1>
             <p>
               {t(
                 'apiKeyFun.description',
-                'Cockpit 官方合作中转站，为用户提供稳定、开放、高性价比的大模型 API 接入服务。支持 Claude、OpenAI、Gemini 等主流模型，适合在 Codex、Gemini CLI、Claude Code 及其他开发工具中统一配置使用。通过 Cockpit 专属链接注册，可享受最高充值永久 95 折优惠。',
+                '在本机管理自定义 API 中转地址、密钥、额度查询和可用模型。应用不会预设或推荐任何中转服务商。',
               )}
             </p>
           </div>
-        </div>
-        <div className="apikey-fun-brand-actions" style={{ display: APIKEY_FUN_REGISTER_URL ? undefined : 'none' }}>
-          <button
-            className="btn apikey-fun-register-btn"
-            onClick={() => openExternal(APIKEY_FUN_REGISTER_URL)}
-          >
-            <ExternalLink size={15} />
-            <span>{t('apiKeyFun.viewNow', '立即查看')}</span>
-          </button>
         </div>
       </header>
 
@@ -582,7 +558,7 @@ export function ApiKeyFunPage() {
                   <input
                     value={apiKey}
                     type={showApiKey ? 'text' : 'password'}
-                    placeholder={t('apiKeyFun.apiKeyPlaceholder', '粘贴 APIKEY.FUN 控制台创建的 API Key')}
+                    placeholder={t('apiKeyFun.apiKeyPlaceholder', '粘贴中转服务商提供的 API Key')}
                     onChange={(event) => {
                       setApiKey(event.target.value);
                       setUsageError(null);

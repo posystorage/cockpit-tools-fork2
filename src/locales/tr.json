@@ -4948,16 +4948,13 @@
   },
   "apiKeyFun": {
     "eyebrow": "Ara geçiş",
-    "title": "APIKEY.FUN relay",
-    "description": "Cockpit resmi iş ortağı ara geçiş hizmeti, büyük model API erişimi için kararlı, açık ve yüksek fiyat-performanslı bir çözüm sunar. Claude, OpenAI, Gemini gibi ana akım modelleri destekler; Codex, Gemini CLI, Claude Code ve diğer geliştirici araçlarında tek tip yapılandırma için uygundur. Cockpit özel bağlantısıyla kaydolarak yüklemelerde kalıcı olarak %5’e varan indirim alabilirsiniz.",
-    "register": "Özel kayıt linki",
-    "docs": "Resmi doküman",
-    "viewNow": "Hemen bak",
+    "title": "API relay",
+    "description": "Claude, OpenAI, Gemini gibi ana akım modelleri destekler; Codex, Gemini CLI, Claude Code ve diğer geliştirici araçlarında tek tip yapılandırma için uygundur.",
     "queryTitle": "Anahtar kotası",
-    "queryDesc": "Kotayı otomatik sorgulamak için APIKEY.FUN API Key girin.",
+    "queryDesc": "Kotayı otomatik sorgulamak için API Relay API Key girin.",
     "keyNotSet": "Anahtar yok",
     "apiKeyLabel": "API anahtarı",
-    "apiKeyPlaceholder": "APIKEY.FUN konsolunda oluşturulan API Key’i yapıştırın",
+    "apiKeyPlaceholder": "API Relay konsolunda oluşturulan API Key’i yapıştırın",
     "hideKey": "Gizle",
     "showKey": "Göster",
     "endpointLabel": "Bağlantı noktası",
@@ -4968,12 +4965,9 @@
     "saving": "Yazılıyor",
     "saveSuccess": "Codex Provider’a yazıldı: {{name}}",
     "toolsTitle": "İstemci config yaz",
-    "toolsDesc": "APIKEY.FUN dokümanına ve CC Switch dosya yapısına göre yerel istemci yapılandırma dosyalarını doğrudan yazar.",
     "endpoint": {
       "global": "Küresel hat",
-      "globalDesc": "Çoğu ağ ortamı için resmi varsayılan API Base.",
-      "direct": "Direkt hat",
-      "directDesc": "Gecikmeye duyarlı senaryolar için."
+      "direct": "Direkt hat"
     },
     "wireApi": {
       "responses": "Responses protokolü",
@@ -5012,9 +5006,9 @@
       "geminiTitle": "Gemini CLI ayarı",
       "geminiDesc": "~/.gemini/.env yazar ve settings.json auth modunu gemini-api-key yapar.",
       "openclawTitle": "OpenClaw ayarı",
-      "openclawDesc": "~/.openclaw/openclaw.json içine models.providers.apikeyfun yazar.",
+      "openclawDesc": "~/.openclaw/openclaw.json içine models.providers.custom_relay yazar.",
       "hermesTitle": "Hermes ayarı",
-      "hermesDesc": "~/.hermes/config.yaml içine custom_providers yazar ve apikeyfun varsayılan modeline geçer.",
+      "hermesDesc": "~/.hermes/config.yaml içine custom_providers yazar ve custom_relay varsayılan modeline geçer.",
       "button": "Config yaz",
       "applying": "Yazılıyor",
       "success": "Yapılandırma dosyaları yazıldı: {{paths}}",
@@ -5064,7 +5058,7 @@
       "claudeShort": "Claude CLI"
     },
     "prefill": {
-      "claudeDesktopReady": "APIKEY.FUN ayarları dolduruldu. Claude’a eklemek için onaylayın."
+      "claudeDesktopReady": "API Relay ayarları dolduruldu. Claude’a eklemek için onaylayın."
     },
     "copyKey": "Copy Key​",
     "clearKey": "Clear input​"
@@ -5228,7 +5222,7 @@
     "apiKey": {
       "desc": "Claude CLI API Key değerini ayrı kimlik bilgisi olarak kaydeder. Geçiş veya CLI başlatma sırasında sağlayıcı env değerlerini Claude Code settings.json içine yazar, Claude oturum durumuna yazmaz.",
       "nameLabel": "Hesap adı",
-      "namePlaceholder": "İsteğe bağlı, ör. APIKEY.FUN",
+      "namePlaceholder": "İsteğe bağlı, ör. API Relay",
       "keyLabel": "API anahtarı",
       "placeholder": "Sağlayıcı API Key yapıştırın",
       "hide": "API Key gizle",

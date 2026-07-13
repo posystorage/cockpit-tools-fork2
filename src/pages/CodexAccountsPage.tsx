@@ -3933,7 +3933,7 @@ export function CodexAccountsPage() {
         : undefined;
       const trimmedName = customProviderName.trim();
       const customProviderDisplayName =
-        trimmedName || (isApiKeyFunProvider ? "APIKEY.FUN" : undefined);
+        trimmedName || (isApiKeyFunProvider ? "Custom Relay" : undefined);
       return {
         apiProviderMode: "custom",
         apiProviderName: customProviderDisplayName,
@@ -5929,13 +5929,13 @@ export function CodexAccountsPage() {
     setManagedProviderApiKeyId("");
     setApiProviderPresetId(sponsorTemplate?.id ?? CODEX_API_PROVIDER_CUSTOM_ID);
     setNewManagedProviderNameInput(
-      sponsorTemplate?.name ?? request.providerName?.trim() ?? "APIKEY.FUN",
+      sponsorTemplate?.name ?? request.providerName?.trim() ?? "Custom Relay",
     );
     setAddStatus("idle");
     setAddMessage(
       t(
         "apiKeyFun.prefill.codexReady",
-        "已带入 APIKEY.FUN 配置，请确认后添加到 Codex。",
+        "已带入自定义中转配置，请确认后添加到 Codex。",
       ),
     );
   }, [

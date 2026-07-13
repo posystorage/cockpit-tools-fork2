@@ -4948,16 +4948,13 @@
   },
   "apiKeyFun": {
     "eyebrow": "وسيط",
-    "title": "ترحيل APIKEY.FUN",
-    "description": "وسيط Cockpit الشريك الرسمي يوفر وصولًا مستقرًا ومفتوحًا وعالي الكفاءة من حيث التكلفة إلى واجهات API للنماذج الكبيرة. يدعم نماذج رئيسية مثل Claude وOpenAI وGemini، وهو مناسب للتكوين الموحد في Codex وGemini CLI وClaude Code وأدوات التطوير الأخرى. عند التسجيل عبر رابط Cockpit الحصري، يمكنك الحصول على خصم دائم يصل إلى 5% على عمليات الشحن.",
-    "register": "رابط تسجيل حصري",
-    "docs": "الوثائق الرسمية",
-    "viewNow": "اعرض الآن",
+    "title": "ترحيل API",
+    "description": "يدعم نماذج رئيسية مثل Claude وOpenAI وGemini، وهو مناسب للتكوين الموحد في Codex وGemini CLI وClaude Code وأدوات التطوير الأخرى.",
     "queryTitle": "حصة المفتاح",
-    "queryDesc": "أدخل API Key من APIKEY.FUN لفحص الحصة تلقائيًا.",
+    "queryDesc": "أدخل API Key من API Relay لفحص الحصة تلقائيًا.",
     "keyNotSet": "لم يتم إدخال مفتاح",
     "apiKeyLabel": "مفتاح API",
-    "apiKeyPlaceholder": "الصق API Key الذي أنشأته في لوحة APIKEY.FUN",
+    "apiKeyPlaceholder": "الصق API Key الذي أنشأته في لوحة API Relay",
     "hideKey": "إخفاء",
     "showKey": "إظهار",
     "endpointLabel": "نقطة الوصول",
@@ -4968,12 +4965,9 @@
     "saving": "جارٍ الكتابة",
     "saveSuccess": "تمت الكتابة إلى Codex Provider: {{name}}",
     "toolsTitle": "كتابة إعدادات العميل",
-    "toolsDesc": "يكتب ملفات إعدادات العميل المحلية مباشرة وفق وثائق APIKEY.FUN وبنية ملفات CC Switch.",
     "endpoint": {
       "global": "مسار عالمي",
-      "globalDesc": "API Base الرسمي الافتراضي لمعظم بيئات الشبكة.",
-      "direct": "خط مباشر",
-      "directDesc": "مناسب للسيناريوهات الحساسة للتأخير."
+      "direct": "خط مباشر"
     },
     "wireApi": {
       "responses": "بروتوكول Responses",
@@ -5012,9 +5006,9 @@
       "geminiTitle": "إعداد Gemini CLI",
       "geminiDesc": "يكتب ~/.gemini/.env ويضبط وضع المصادقة في settings.json إلى gemini-api-key.",
       "openclawTitle": "إعداد OpenClaw",
-      "openclawDesc": "يكتب models.providers.apikeyfun في ~/.openclaw/openclaw.json.",
+      "openclawDesc": "يكتب models.providers.custom_relay في ~/.openclaw/openclaw.json.",
       "hermesTitle": "إعداد Hermes",
-      "hermesDesc": "يكتب custom_providers في ~/.hermes/config.yaml ويبدّل إلى نموذج apikeyfun الافتراضي.",
+      "hermesDesc": "يكتب custom_providers في ~/.hermes/config.yaml ويبدّل إلى نموذج custom_relay الافتراضي.",
       "button": "اكتب الإعدادات",
       "applying": "جارٍ الكتابة",
       "success": "تمت كتابة ملفات الإعدادات: {{paths}}",
@@ -5064,7 +5058,7 @@
       "claudeShort": "Claude CLI"
     },
     "prefill": {
-      "claudeDesktopReady": "تمت تعبئة إعدادات APIKEY.FUN. أكّد الإضافة إلى Claude."
+      "claudeDesktopReady": "تمت تعبئة إعدادات API Relay. أكّد الإضافة إلى Claude."
     },
     "copyKey": "Copy Key​",
     "clearKey": "Clear input​"
@@ -5228,7 +5222,7 @@
     "apiKey": {
       "desc": "احفظ API Key الخاص بـ Claude CLI كبيانات اعتماد مستقلة. عند التبديل أو تشغيل CLI تُكتب قيم env الخاصة بالمزود في Claude Code settings.json ولا تُكتب حالة تسجيل دخول Claude.",
       "nameLabel": "اسم الحساب",
-      "namePlaceholder": "اختياري، مثل APIKEY.FUN",
+      "namePlaceholder": "اختياري، مثل API Relay",
       "keyLabel": "مفتاح API",
       "placeholder": "الصق API Key للمزوّد",
       "hide": "إخفاء API Key",

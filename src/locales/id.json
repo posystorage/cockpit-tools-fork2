@@ -4948,16 +4948,13 @@
   },
   "apiKeyFun": {
     "eyebrow": "Perantara",
-    "title": "Relay APIKEY.FUN",
-    "description": "Relay mitra resmi Cockpit menyediakan akses API model besar yang stabil, terbuka, dan hemat biaya. Layanan ini mendukung model utama seperti Claude, OpenAI, dan Gemini, serta cocok untuk konfigurasi terpadu di Codex, Gemini CLI, Claude Code, dan alat pengembang lainnya. Dengan mendaftar melalui tautan eksklusif Cockpit, Anda bisa mendapatkan diskon isi ulang permanen hingga 5%.",
-    "register": "Tautan eksklusif",
-    "docs": "Dokumen resmi",
-    "viewNow": "Lihat sekarang",
+    "title": "Relay API",
+    "description": "Layanan ini mendukung model utama seperti Claude, OpenAI, dan Gemini, serta cocok untuk konfigurasi terpadu di Codex, Gemini CLI, Claude Code, dan alat pengembang lainnya.",
     "queryTitle": "Kuota kunci",
-    "queryDesc": "Masukkan API Key APIKEY.FUN untuk memeriksa kuota otomatis.",
+    "queryDesc": "Masukkan API Key API Relay untuk memeriksa kuota otomatis.",
     "keyNotSet": "Belum ada kunci",
     "apiKeyLabel": "Kunci API",
-    "apiKeyPlaceholder": "Tempel API Key yang dibuat di konsol APIKEY.FUN",
+    "apiKeyPlaceholder": "Tempel API Key yang dibuat di konsol API Relay",
     "hideKey": "Sembunyikan",
     "showKey": "Tampilkan",
     "endpointLabel": "Titik akses",
@@ -4968,12 +4965,9 @@
     "saving": "Menulis",
     "saveSuccess": "Ditulis ke Codex Provider: {{name}}",
     "toolsTitle": "Tulis config klien",
-    "toolsDesc": "Menulis file konfigurasi klien lokal sesuai dokumen APIKEY.FUN dan tata letak CC Switch.",
     "endpoint": {
       "global": "Jalur global",
-      "globalDesc": "API Base resmi bawaan untuk sebagian besar jaringan.",
-      "direct": "Jalur langsung",
-      "directDesc": "Untuk skenario yang sensitif terhadap latensi."
+      "direct": "Jalur langsung"
     },
     "wireApi": {
       "responses": "Protokol Responses",
@@ -5012,9 +5006,9 @@
       "geminiTitle": "Config Gemini CLI",
       "geminiDesc": "Menulis ~/.gemini/.env dan mengatur mode auth settings.json ke gemini-api-key.",
       "openclawTitle": "Config OpenClaw",
-      "openclawDesc": "Menulis models.providers.apikeyfun di ~/.openclaw/openclaw.json.",
+      "openclawDesc": "Menulis models.providers.custom_relay di ~/.openclaw/openclaw.json.",
       "hermesTitle": "Config Hermes",
-      "hermesDesc": "Menulis custom_providers di ~/.hermes/config.yaml dan beralih ke model default apikeyfun.",
+      "hermesDesc": "Menulis custom_providers di ~/.hermes/config.yaml dan beralih ke model default custom_relay.",
       "button": "Tulis config",
       "applying": "Menulis",
       "success": "File konfigurasi ditulis: {{paths}}",
@@ -5064,7 +5058,7 @@
       "claudeShort": "Claude CLI"
     },
     "prefill": {
-      "claudeDesktopReady": "Konfigurasi APIKEY.FUN sudah terisi. Konfirmasi untuk menambahkannya ke Claude."
+      "claudeDesktopReady": "Konfigurasi API Relay sudah terisi. Konfirmasi untuk menambahkannya ke Claude."
     },
     "copyKey": "Copy Key​",
     "clearKey": "Clear input​"
@@ -5228,7 +5222,7 @@
     "apiKey": {
       "desc": "Simpan API Key Claude CLI sebagai kredensial terpisah. Saat beralih atau menjalankan CLI, nilai env penyedia ditulis ke Claude Code settings.json tanpa menulis status masuk Claude.",
       "nameLabel": "Nama akun",
-      "namePlaceholder": "Opsional, mis. APIKEY.FUN",
+      "namePlaceholder": "Opsional, mis. API Relay",
       "keyLabel": "Kunci API",
       "placeholder": "Tempel API Key provider",
       "hide": "Sembunyikan API Key",

@@ -298,7 +298,7 @@
     "logs": "日志",
     "sponsors": "赞助商",
     "sponsorAppreciation": "赞赏",
-    "apiRelay": "中转站",
+    "apiRelay": "自定义中转",
     "instances": "应用多开",
     "manual": "使用手册",
     "quickUpdate": {
@@ -361,16 +361,13 @@
   },
   "apiKeyFun": {
     "eyebrow": "中转站",
-    "title": "APIKEY.FUN 中转站",
-    "description": "Cockpit 官方合作中转站，为用户提供稳定、开放、高性价比的大模型 API 接入服务。支持 Claude、OpenAI、Gemini 等主流模型，适合在 Codex、Gemini CLI、Claude Code 及其他开发工具中统一配置使用。通过 Cockpit 专属链接注册，可享受最高充值永久 95 折优惠。",
-    "register": "专属注册链接",
-    "docs": "官方文档",
-    "viewNow": "立即查看",
+    "title": "自定义中转",
+    "description": "支持 Claude、OpenAI、Gemini 等主流模型，适合在 Codex、Gemini CLI、Claude Code 及其他开发工具中统一配置使用。",
     "queryTitle": "密钥额度查询",
-    "queryDesc": "输入 APIKEY.FUN 的 API Key 后自动查询额度。",
+    "queryDesc": "输入 API Relay 的 API Key 后自动查询额度。",
     "keyNotSet": "未输入秘钥",
     "apiKeyLabel": "API 密钥",
-    "apiKeyPlaceholder": "粘贴 APIKEY.FUN 控制台创建的 API Key",
+    "apiKeyPlaceholder": "粘贴 API Relay 控制台创建的 API Key",
     "hideKey": "隐藏",
     "showKey": "显示",
     "endpointLabel": "接入端点",
@@ -381,12 +378,9 @@
     "saving": "写入中",
     "saveSuccess": "已写入 Codex Provider：{{name}}",
     "toolsTitle": "一键写入客户端",
-    "toolsDesc": "按 APIKEY.FUN 文档和 CC Switch 的落盘方式，直接写入本机客户端配置文件。",
     "endpoint": {
       "global": "全球线路",
-      "globalDesc": "官方默认 API Base，适合大多数网络环境。",
-      "direct": "专线直连",
-      "directDesc": "适合对延迟敏感的场景使用。"
+      "direct": "专线直连"
     },
     "wireApi": {
       "responses": "Responses 协议",
@@ -425,9 +419,9 @@
       "geminiTitle": "Gemini CLI 配置",
       "geminiDesc": "写入 ~/.gemini/.env，并把 settings.json 的认证模式设为 gemini-api-key。",
       "openclawTitle": "OpenClaw 配置",
-      "openclawDesc": "写入 ~/.openclaw/openclaw.json 的 models.providers.apikeyfun。",
+      "openclawDesc": "写入 ~/.openclaw/openclaw.json 的 models.providers.custom_relay。",
       "hermesTitle": "Hermes 配置",
-      "hermesDesc": "写入 ~/.hermes/config.yaml 的 custom_providers，并切到 apikeyfun 默认模型。",
+      "hermesDesc": "写入 ~/.hermes/config.yaml 的 custom_providers，并切到 custom_relay 默认模型。",
       "button": "写入配置",
       "applying": "写入中",
       "success": "已写入配置文件：{{paths}}",
@@ -479,7 +473,7 @@
       "claudeShort": "Claude CLI"
     },
     "prefill": {
-      "claudeDesktopReady": "已带入 APIKEY.FUN 配置，请确认后添加到 Claude。"
+      "claudeDesktopReady": "已带入 API Relay 配置，请确认后添加到 Claude。"
     }
   },
   "platformLayout": {
@@ -5237,7 +5231,7 @@
     "apiKey": {
       "desc": "保存 Claude CLI API Key 作为独立凭证；切换或启动 CLI 时会写入 Claude Code settings.json 的 env，不会写入 Claude 登录态。",
       "nameLabel": "账号名称",
-      "namePlaceholder": "可选，例如 APIKEY.FUN",
+      "namePlaceholder": "可选，例如 API Relay",
       "keyLabel": "API 密钥",
       "placeholder": "粘贴供应商 API Key",
       "hide": "隐藏 API Key",

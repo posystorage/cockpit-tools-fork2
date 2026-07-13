@@ -4948,16 +4948,13 @@
   },
   "apiKeyFun": {
     "eyebrow": "Шлюз",
-    "title": "Relay APIKEY.FUN",
-    "description": "Официальный партнерский relay Cockpit предоставляет стабильный, открытый и выгодный API-доступ к большим моделям. Поддерживаются Claude, OpenAI, Gemini и другие основные модели; сервис подходит для единой настройки в Codex, Gemini CLI, Claude Code и других инструментах разработки. При регистрации по эксклюзивной ссылке Cockpit можно получить постоянную скидку до 5% на пополнения.",
-    "register": "Эксклюзивная ссылка",
-    "docs": "Официальная документация",
-    "viewNow": "Смотреть",
+    "title": "Relay API",
+    "description": "Поддерживаются Claude, OpenAI, Gemini и другие основные модели; сервис подходит для единой настройки в Codex, Gemini CLI, Claude Code и других инструментах разработки.",
     "queryTitle": "Лимит ключа",
-    "queryDesc": "Введите API Key APIKEY.FUN, чтобы автоматически проверить лимит.",
+    "queryDesc": "Введите API Key API Relay, чтобы автоматически проверить лимит.",
     "keyNotSet": "Ключ не введён",
     "apiKeyLabel": "API-ключ",
-    "apiKeyPlaceholder": "Вставьте API Key из консоли APIKEY.FUN",
+    "apiKeyPlaceholder": "Вставьте API Key из консоли API Relay",
     "hideKey": "Скрыть",
     "showKey": "Показать",
     "endpointLabel": "Точка доступа",
@@ -4968,12 +4965,9 @@
     "saving": "Запись",
     "saveSuccess": "Записано в Codex Provider: {{name}}",
     "toolsTitle": "Записать конфиг клиента",
-    "toolsDesc": "Напрямую записывает локальные файлы конфигурации по документации APIKEY.FUN и структуре CC Switch.",
     "endpoint": {
       "global": "Глобальная сеть",
-      "globalDesc": "Официальный API Base по умолчанию для большинства сетей.",
-      "direct": "Прямая линия",
-      "directDesc": "Для сценариев, чувствительных к задержке."
+      "direct": "Прямая линия"
     },
     "wireApi": {
       "responses": "Протокол Responses",
@@ -5012,9 +5006,9 @@
       "geminiTitle": "Конфиг Gemini CLI",
       "geminiDesc": "Записывает ~/.gemini/.env и задаёт режим auth в settings.json как gemini-api-key.",
       "openclawTitle": "Конфиг OpenClaw",
-      "openclawDesc": "Записывает models.providers.apikeyfun в ~/.openclaw/openclaw.json.",
+      "openclawDesc": "Записывает models.providers.custom_relay в ~/.openclaw/openclaw.json.",
       "hermesTitle": "Конфиг Hermes",
-      "hermesDesc": "Записывает custom_providers в ~/.hermes/config.yaml и переключает на модель apikeyfun по умолчанию.",
+      "hermesDesc": "Записывает custom_providers в ~/.hermes/config.yaml и переключает на модель custom_relay по умолчанию.",
       "button": "Записать конфиг",
       "applying": "Запись",
       "success": "Файлы конфигурации записаны: {{paths}}",
@@ -5064,7 +5058,7 @@
       "claudeShort": "Claude CLI"
     },
     "prefill": {
-      "claudeDesktopReady": "Настройки APIKEY.FUN заполнены. Подтвердите добавление в Claude."
+      "claudeDesktopReady": "Настройки API Relay заполнены. Подтвердите добавление в Claude."
     },
     "copyKey": "Copy Key​",
     "clearKey": "Clear input​"
@@ -5228,7 +5222,7 @@
     "apiKey": {
       "desc": "Сохраняет API Key Claude CLI как отдельные учетные данные. При переключении или запуске CLI env провайдера записывается в Claude Code settings.json, без записи состояния входа Claude.",
       "nameLabel": "Имя аккаунта",
-      "namePlaceholder": "Необязательно, напр. APIKEY.FUN",
+      "namePlaceholder": "Необязательно, напр. API Relay",
       "keyLabel": "Ключ API",
       "placeholder": "Вставьте API Key провайдера",
       "hide": "Скрыть API Key",

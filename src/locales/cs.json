@@ -1270,7 +1270,7 @@
     "clearTagFilter": "Vymazat filtr štítku",
     "compact": {
       "hide": "Skrýt",
-      "show": "Zobrazit"
+      "show": "Open"
     },
     "deleteConfirm": {
       "multi": "Opravdu chcete smazat {{count}} vybraných účtů?",
@@ -4948,16 +4948,13 @@
   },
   "apiKeyFun": {
     "eyebrow": "Přepojení",
-    "title": "Relay APIKEY.FUN",
-    "description": "Oficiální partnerský relay Cockpit poskytuje stabilní, otevřený a cenově výhodný API přístup k velkým modelům. Podporuje hlavní modely jako Claude, OpenAI a Gemini a hodí se pro jednotnou konfiguraci v Codex, Gemini CLI, Claude Code a dalších vývojářských nástrojích. Registrací přes exkluzivní odkaz Cockpit můžete získat trvalou slevu až 5% na dobíjení.",
-    "register": "Exkluzivní odkaz",
-    "docs": "Oficiální dokumentace",
-    "viewNow": "Zobrazit",
+    "title": "Relay API",
+    "description": "Podporuje hlavní modely jako Claude, OpenAI a Gemini a hodí se pro jednotnou konfiguraci v Codex, Gemini CLI, Claude Code a dalších vývojářských nástrojích.",
     "queryTitle": "Kvóta klíče",
-    "queryDesc": "Zadejte API Key APIKEY.FUN pro automatickou kontrolu kvóty.",
+    "queryDesc": "Zadejte API Key API Relay pro automatickou kontrolu kvóty.",
     "keyNotSet": "Klíč nezadán",
     "apiKeyLabel": "Klíč API",
-    "apiKeyPlaceholder": "Vložte API Key vytvořený v konzoli APIKEY.FUN",
+    "apiKeyPlaceholder": "Vložte API Key vytvořený v konzoli API Relay",
     "hideKey": "Skrýt",
     "showKey": "Zobrazit",
     "endpointLabel": "Přístupový bod",
@@ -4968,12 +4965,9 @@
     "saving": "Zápis",
     "saveSuccess": "Zapsáno do Codex Provider: {{name}}",
     "toolsTitle": "Zapsat config klienta",
-    "toolsDesc": "Přímo zapisuje lokální konfigurační soubory podle dokumentace APIKEY.FUN a rozložení CC Switch.",
     "endpoint": {
       "global": "Globální linka",
-      "globalDesc": "Oficiální výchozí API Base pro většinu sítí.",
-      "direct": "Přímá linka",
-      "directDesc": "Pro scénáře citlivé na latenci."
+      "direct": "Přímá linka"
     },
     "wireApi": {
       "responses": "Protokol Responses",
@@ -5012,9 +5006,9 @@
       "geminiTitle": "Konfig Gemini CLI",
       "geminiDesc": "Zapíše ~/.gemini/.env a nastaví auth režim v settings.json na gemini-api-key.",
       "openclawTitle": "Konfig OpenClaw",
-      "openclawDesc": "Zapíše models.providers.apikeyfun do ~/.openclaw/openclaw.json.",
+      "openclawDesc": "Zapíše models.providers.custom_relay do ~/.openclaw/openclaw.json.",
       "hermesTitle": "Konfig Hermes",
-      "hermesDesc": "Zapíše custom_providers do ~/.hermes/config.yaml a přepne na výchozí model apikeyfun.",
+      "hermesDesc": "Zapíše custom_providers do ~/.hermes/config.yaml a přepne na výchozí model custom_relay.",
       "button": "Zapsat config",
       "applying": "Zápis",
       "success": "Konfigurační soubory zapsány: {{paths}}",
@@ -5064,7 +5058,7 @@
       "claudeShort": "Claude CLI"
     },
     "prefill": {
-      "claudeDesktopReady": "Nastavení APIKEY.FUN je vyplněno. Potvrďte přidání do Claude."
+      "claudeDesktopReady": "Nastavení API Relay je vyplněno. Potvrďte přidání do Claude."
     },
     "copyKey": "Copy Key​",
     "clearKey": "Clear input​"
@@ -5228,7 +5222,7 @@
     "apiKey": {
       "desc": "Uloží Claude CLI API Key jako samostatné přihlašovací údaje. Přepnutí nebo spuštění CLI zapíše env hodnoty poskytovatele do Claude Code settings.json a nezapisuje přihlášení Claude.",
       "nameLabel": "Název účtu",
-      "namePlaceholder": "Volitelné, např. APIKEY.FUN",
+      "namePlaceholder": "Volitelné, např. API Relay",
       "keyLabel": "Klíč API",
       "placeholder": "Vložte API Key poskytovatele",
       "hide": "Skrýt API Key",

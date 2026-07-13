@@ -270,7 +270,7 @@
     "switchClassicLayoutDontAskAgain": "不再顯示此提示",
     "switchClassicLayoutConfirm": "立即切換",
     "2faManager": "2FA 管理",
-    "apiRelay": "中轉站",
+    "apiRelay": "自訂中轉",
     "claude": "Claude"
   },
   "sponsors": {
@@ -4948,16 +4948,13 @@
   },
   "apiKeyFun": {
     "eyebrow": "中轉站",
-    "title": "APIKEY.FUN 中轉站",
-    "description": "Cockpit 官方合作中轉站，為使用者提供穩定、開放、高性價比的大模型 API 接入服務。支援 Claude、OpenAI、Gemini 等主流模型，適合在 Codex、Gemini CLI、Claude Code 及其他開發工具中統一配置使用。透過 Cockpit 專屬連結註冊，可享最高儲值永久 95 折優惠。",
-    "register": "專屬註冊連結",
-    "docs": "官方文件",
-    "viewNow": "立即查看",
+    "title": "自訂中轉",
+    "description": "支援 Claude、OpenAI、Gemini 等主流模型，適合在 Codex、Gemini CLI、Claude Code 及其他開發工具中統一配置使用。",
     "queryTitle": "金鑰額度查詢",
-    "queryDesc": "輸入 APIKEY.FUN 的 API Key 後會自動查詢額度。",
+    "queryDesc": "輸入 API Relay 的 API Key 後會自動查詢額度。",
     "keyNotSet": "尚未輸入金鑰",
     "apiKeyLabel": "API 金鑰",
-    "apiKeyPlaceholder": "貼上在 APIKEY.FUN 控制台建立的 API Key",
+    "apiKeyPlaceholder": "貼上在 API Relay 控制台建立的 API Key",
     "hideKey": "隱藏",
     "showKey": "顯示",
     "endpointLabel": "接入端點",
@@ -4968,12 +4965,9 @@
     "saving": "寫入中",
     "saveSuccess": "已寫入 Codex Provider：{{name}}",
     "toolsTitle": "一鍵寫入客戶端",
-    "toolsDesc": "依照 APIKEY.FUN 文件與 CC Switch 的落盤方式，直接寫入本機客戶端設定檔。",
     "endpoint": {
       "global": "全球線路",
-      "globalDesc": "官方預設 API Base，適合多數網路環境。",
-      "direct": "專線直連",
-      "directDesc": "適合對延遲敏感的場景。"
+      "direct": "專線直連"
     },
     "wireApi": {
       "responses": "Responses 協議",
@@ -5012,9 +5006,9 @@
       "geminiTitle": "Gemini CLI 設定",
       "geminiDesc": "寫入 ~/.gemini/.env，並把 settings.json 的認證模式設為 gemini-api-key。",
       "openclawTitle": "OpenClaw 設定",
-      "openclawDesc": "寫入 ~/.openclaw/openclaw.json 的 models.providers.apikeyfun。",
+      "openclawDesc": "寫入 ~/.openclaw/openclaw.json 的 models.providers.custom_relay。",
       "hermesTitle": "Hermes 設定",
-      "hermesDesc": "寫入 ~/.hermes/config.yaml 的 custom_providers，並切到 apikeyfun 預設模型。",
+      "hermesDesc": "寫入 ~/.hermes/config.yaml 的 custom_providers，並切到 custom_relay 預設模型。",
       "button": "寫入設定",
       "applying": "寫入中",
       "success": "已寫入設定檔：{{paths}}",
@@ -5064,7 +5058,7 @@
       "claudeShort": "Claude CLI"
     },
     "prefill": {
-      "claudeDesktopReady": "已帶入 APIKEY.FUN 設定，請確認後加入 Claude。"
+      "claudeDesktopReady": "已帶入 API Relay 設定，請確認後加入 Claude。"
     },
     "copyKey": "複製金鑰",
     "clearKey": "清除輸入"
@@ -5228,7 +5222,7 @@
     "apiKey": {
       "desc": "將 Claude CLI API Key 儲存為獨立憑證；切換或啟動 CLI 時會寫入 Claude Code settings.json 的 env，不會寫入 Claude 登入狀態。",
       "nameLabel": "帳號名稱",
-      "namePlaceholder": "選填，例如 APIKEY.FUN",
+      "namePlaceholder": "選填，例如 API Relay",
       "keyLabel": "API 金鑰",
       "placeholder": "貼上供應商 API Key",
       "hide": "隱藏 API Key",

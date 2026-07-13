@@ -4948,16 +4948,13 @@
   },
   "apiKeyFun": {
     "eyebrow": "Trung chuyển",
-    "title": "Relay APIKEY.FUN",
-    "description": "Relay đối tác chính thức của Cockpit cung cấp quyền truy cập API mô hình lớn ổn định, mở và có hiệu quả chi phí cao. Nền tảng hỗ trợ các mô hình phổ biến như Claude, OpenAI và Gemini, phù hợp để cấu hình thống nhất trong Codex, Gemini CLI, Claude Code và các công cụ phát triển khác. Đăng ký qua liên kết độc quyền của Cockpit để nhận ưu đãi nạp tiền vĩnh viễn lên tới 5%.",
-    "register": "Liên kết độc quyền",
-    "docs": "Tài liệu chính thức",
-    "viewNow": "Xem ngay",
+    "title": "Relay API",
+    "description": "Nền tảng hỗ trợ các mô hình phổ biến như Claude, OpenAI và Gemini, phù hợp để cấu hình thống nhất trong Codex, Gemini CLI, Claude Code và các công cụ phát triển khác.",
     "queryTitle": "Hạn mức khóa",
-    "queryDesc": "Nhập API Key APIKEY.FUN để tự động kiểm tra hạn mức.",
+    "queryDesc": "Nhập API Key API Relay để tự động kiểm tra hạn mức.",
     "keyNotSet": "Chưa nhập khóa",
     "apiKeyLabel": "Khóa API",
-    "apiKeyPlaceholder": "Dán API Key được tạo trong console APIKEY.FUN",
+    "apiKeyPlaceholder": "Dán API Key được tạo trong console API Relay",
     "hideKey": "Ẩn",
     "showKey": "Hiện",
     "endpointLabel": "Điểm kết nối",
@@ -4968,12 +4965,9 @@
     "saving": "Đang ghi",
     "saveSuccess": "Đã ghi vào Codex Provider: {{name}}",
     "toolsTitle": "Ghi cấu hình client",
-    "toolsDesc": "Ghi trực tiếp các tệp cấu hình cục bộ theo tài liệu APIKEY.FUN và bố cục tệp của CC Switch.",
     "endpoint": {
       "global": "Tuyến toàn cầu",
-      "globalDesc": "API Base mặc định chính thức, phù hợp hầu hết môi trường mạng.",
-      "direct": "Đường trực tiếp",
-      "directDesc": "Phù hợp tình huống cần độ trễ thấp."
+      "direct": "Đường trực tiếp"
     },
     "wireApi": {
       "responses": "Giao thức Responses",
@@ -5012,9 +5006,9 @@
       "geminiTitle": "Cấu hình Gemini CLI",
       "geminiDesc": "Ghi ~/.gemini/.env và đặt chế độ xác thực trong settings.json thành gemini-api-key.",
       "openclawTitle": "Cấu hình OpenClaw",
-      "openclawDesc": "Ghi models.providers.apikeyfun vào ~/.openclaw/openclaw.json.",
+      "openclawDesc": "Ghi models.providers.custom_relay vào ~/.openclaw/openclaw.json.",
       "hermesTitle": "Cấu hình Hermes",
-      "hermesDesc": "Ghi custom_providers vào ~/.hermes/config.yaml và chuyển sang mô hình mặc định apikeyfun.",
+      "hermesDesc": "Ghi custom_providers vào ~/.hermes/config.yaml và chuyển sang mô hình mặc định custom_relay.",
       "button": "Ghi cấu hình",
       "applying": "Đang ghi",
       "success": "Đã ghi tệp cấu hình: {{paths}}",
@@ -5064,7 +5058,7 @@
       "claudeShort": "Claude CLI"
     },
     "prefill": {
-      "claudeDesktopReady": "Đã điền cấu hình APIKEY.FUN. Hãy xác nhận để thêm vào Claude."
+      "claudeDesktopReady": "Đã điền cấu hình API Relay. Hãy xác nhận để thêm vào Claude."
     },
     "copyKey": "Copy Key​",
     "clearKey": "Clear input​"
@@ -5228,7 +5222,7 @@
     "apiKey": {
       "desc": "Lưu Claude CLI API Key như một thông tin xác thực riêng. Khi chuyển hoặc chạy CLI, các giá trị env của nhà cung cấp được ghi vào Claude Code settings.json, không ghi trạng thái đăng nhập Claude.",
       "nameLabel": "Tên tài khoản",
-      "namePlaceholder": "Tùy chọn, ví dụ APIKEY.FUN",
+      "namePlaceholder": "Tùy chọn, ví dụ API Relay",
       "keyLabel": "Khóa API",
       "placeholder": "Dán API Key của nhà cung cấp",
       "hide": "Ẩn API Key",

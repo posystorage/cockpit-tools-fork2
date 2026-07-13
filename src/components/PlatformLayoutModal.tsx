@@ -14,13 +14,13 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   GripVertical,
+  Network,
   Pencil,
   Plus,
   Trash2,
   Upload,
   X,
 } from 'lucide-react';
-import apiKeyFunIcon from '../assets/icons/apikey-fun.png';
 import { isMenuVisiblePlatform, MENU_VISIBLE_PLATFORM_IDS, PlatformId } from '../types/platform';
 import {
   API_RELAY_LAYOUT_ENTRY_ID,
@@ -472,7 +472,7 @@ export function PlatformLayoutModal({
       result.splice(insertIndex, 0, {
         id: API_RELAY_LAYOUT_ENTRY_ID,
         type: 'api-relay',
-        label: t('nav.apiRelay', '中转站'),
+        label: t('nav.apiRelay', '自定义中转'),
         hidden: !apiRelayDashboardVisible,
         group: null,
         defaultPlatformId: null,
@@ -1265,11 +1265,10 @@ export function PlatformLayoutModal({
 
                       <div className="platform-layout-icon">
                         {isApiRelayEntry ? (
-                          <img
-                            src={apiKeyFunIcon}
-                            alt=""
+                          <Network
                             className="platform-layout-group-icon"
-                            style={{ width: 18, height: 18 }}
+                            size={18}
+                            aria-hidden="true"
                           />
                         ) : entry.group ? (
                           renderGroupIcon(entry.group, 18)
@@ -1326,7 +1325,7 @@ export function PlatformLayoutModal({
                         className={`platform-layout-toggle ${isApiRelayEntry ? 'is-disabled' : ''}`}
                         title={
                           isApiRelayEntry
-                            ? t('platformLayout.apiRelayTrayDisabled', '中转站暂不支持菜单栏显示')
+                            ? t('platformLayout.apiRelayTrayDisabled', '自定义中转暂不支持菜单栏显示')
                             : undefined
                         }
                       >

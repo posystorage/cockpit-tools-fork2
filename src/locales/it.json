@@ -4948,16 +4948,13 @@
   },
   "apiKeyFun": {
     "eyebrow": "Intermediario",
-    "title": "Relay APIKEY.FUN",
-    "description": "Il relay partner ufficiale di Cockpit offre accesso API stabile, aperto e conveniente ai grandi modelli. Supporta modelli principali come Claude, OpenAI e Gemini ed è adatto a una configurazione unificata in Codex, Gemini CLI, Claude Code e altri strumenti di sviluppo. Registrandoti tramite il link esclusivo Cockpit, puoi ottenere uno sconto permanente fino al 5% sulle ricariche.",
-    "register": "Link esclusivo",
-    "docs": "Doc ufficiali",
-    "viewNow": "Vedi ora",
+    "title": "Relay API",
+    "description": "Supporta modelli principali come Claude, OpenAI e Gemini ed è adatto a una configurazione unificata in Codex, Gemini CLI, Claude Code e altri strumenti di sviluppo.",
     "queryTitle": "Quota chiave",
-    "queryDesc": "Inserisci una API Key APIKEY.FUN per controllare automaticamente la quota.",
+    "queryDesc": "Inserisci una API Key API Relay per controllare automaticamente la quota.",
     "keyNotSet": "Nessuna chiave",
     "apiKeyLabel": "Chiave API",
-    "apiKeyPlaceholder": "Incolla la API Key creata nella console APIKEY.FUN",
+    "apiKeyPlaceholder": "Incolla la API Key creata nella console API Relay",
     "hideKey": "Nascondi",
     "showKey": "Mostra",
     "endpointLabel": "Punto finale",
@@ -4968,12 +4965,9 @@
     "saving": "Scrittura",
     "saveSuccess": "Scritto in Codex Provider: {{name}}",
     "toolsTitle": "Scrivi config client",
-    "toolsDesc": "Scrive direttamente i file di configurazione locali seguendo la documentazione APIKEY.FUN e il layout di CC Switch.",
     "endpoint": {
       "global": "Globale rete",
-      "globalDesc": "API Base ufficiale predefinita per la maggior parte delle reti.",
-      "direct": "Linea diretta",
-      "directDesc": "Per scenari sensibili alla latenza."
+      "direct": "Linea diretta"
     },
     "wireApi": {
       "responses": "Protocollo Responses",
@@ -5012,9 +5006,9 @@
       "geminiTitle": "Config Gemini CLI",
       "geminiDesc": "Scrive ~/.gemini/.env e imposta in settings.json la modalità auth gemini-api-key.",
       "openclawTitle": "Config OpenClaw",
-      "openclawDesc": "Scrive models.providers.apikeyfun in ~/.openclaw/openclaw.json.",
+      "openclawDesc": "Scrive models.providers.custom_relay in ~/.openclaw/openclaw.json.",
       "hermesTitle": "Config Hermes",
-      "hermesDesc": "Scrive custom_providers in ~/.hermes/config.yaml e passa al modello predefinito apikeyfun.",
+      "hermesDesc": "Scrive custom_providers in ~/.hermes/config.yaml e passa al modello predefinito custom_relay.",
       "button": "Scrivi config",
       "applying": "Scrittura",
       "success": "File di configurazione scritti: {{paths}}",
@@ -5064,7 +5058,7 @@
       "claudeShort": "Claude CLI"
     },
     "prefill": {
-      "claudeDesktopReady": "La configurazione APIKEY.FUN è stata compilata. Conferma per aggiungerla a Claude."
+      "claudeDesktopReady": "La configurazione API Relay è stata compilata. Conferma per aggiungerla a Claude."
     },
     "copyKey": "Copy Key​",
     "clearKey": "Clear input​"
@@ -5228,7 +5222,7 @@
     "apiKey": {
       "desc": "Salva una API Key di Claude CLI come credenziale separata. Cambio o avvio CLI scrive i valori env del provider in Claude Code settings.json, senza scrivere lo stato di accesso di Claude.",
       "nameLabel": "Nome account",
-      "namePlaceholder": "Opzionale, es. APIKEY.FUN",
+      "namePlaceholder": "Opzionale, es. API Relay",
       "keyLabel": "Chiave API",
       "placeholder": "Incolla la API Key del provider",
       "hide": "Nascondi API Key",

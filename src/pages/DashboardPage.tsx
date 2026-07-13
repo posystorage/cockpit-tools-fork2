@@ -28,7 +28,7 @@ import {
   usePlatformLayoutStore,
 } from '../stores/usePlatformLayoutStore';
 import { Page } from '../types/navigation';
-import { Users, CheckCircle2, Sparkles, RotateCw, Play, Github, Tag, ChevronDown, EyeOff, X } from 'lucide-react';
+import { Users, CheckCircle2, Sparkles, RotateCw, Play, Github, Tag, ChevronDown, EyeOff, Network, X } from 'lucide-react';
 import { TagEditModal } from '../components/TagEditModal';
 import { Account } from '../types/account';
 import {
@@ -77,7 +77,6 @@ import {
   isCodexNewApiAccount,
 } from '../types/codex';
 import './DashboardPage.css';
-import apiKeyFunIcon from '../assets/icons/apikey-fun.png';
 import { RobotIcon } from '../components/icons/RobotIcon';
 import { CodexIcon } from '../components/icons/CodexIcon';
 import { WindsurfIcon } from '../components/icons/WindsurfIcon';
@@ -3742,10 +3741,10 @@ export function DashboardPage({
                 title={t('dashboard.apiRelay.openLocalConfig', '打开本地配置页')}
               >
                 <div className="stat-icon-bg info">
-                  <img src={apiKeyFunIcon} alt="" className="dashboard-api-relay-stat-icon" />
+                  <Network className="dashboard-api-relay-stat-icon" aria-hidden="true" />
                 </div>
                 <div className="stat-info">
-                  <span className="stat-label">{t('nav.apiRelay', '中转站')}</span>
+                  <span className="stat-label">{t('nav.apiRelay', '自定义中转')}</span>
                   <span className="stat-value">1</span>
                 </div>
               </button>

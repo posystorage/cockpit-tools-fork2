@@ -1385,7 +1385,7 @@ export function ClaudeAccountsPage({ subPlatform = 'desktop' }: ClaudeAccountsPa
         setApiBaseUrlInput(baseUrl);
         setApiProviderTemplateValues({});
         setApiKeyModelCatalogOverride(null);
-        setApiKeyNameInput(request.apiKeyName?.trim() || request.providerName?.trim() || 'APIKEY.FUN');
+        setApiKeyNameInput(request.apiKeyName?.trim() || request.providerName?.trim() || 'Custom Relay');
         setApiKeyInput(key);
         setApiKeyInputVisible(false);
         setDesktopGatewayAuthScheme('bearer');
@@ -1407,7 +1407,7 @@ export function ClaudeAccountsPage({ subPlatform = 'desktop' }: ClaudeAccountsPa
         setDesktopGatewayModelsError(null);
         setDesktopGatewayModelsMessage(t(
           'apiKeyFun.prefill.claudeDesktopReady',
-          '已带入 APIKEY.FUN 配置，请确认后添加到 Claude。',
+          '已带入自定义中转配置，请确认后添加到 Claude。',
         ));
         desktopGatewayModelsFetchSignatureRef.current = normalizedBaseUrl
           ? `${key}\n${normalizedBaseUrl}\nbearer`
@@ -1425,7 +1425,7 @@ export function ClaudeAccountsPage({ subPlatform = 'desktop' }: ClaudeAccountsPa
         setApiBaseUrlInput(request.baseUrl?.trim() || CLAUDE_APIKEY_FUN_BASE_URL);
         setApiProviderTemplateValues({});
         setApiKeyModelCatalogOverride(request.modelCatalog ?? null);
-        setApiKeyNameInput(request.apiKeyName?.trim() || request.providerName?.trim() || 'APIKEY.FUN');
+        setApiKeyNameInput(request.apiKeyName?.trim() || request.providerName?.trim() || 'Custom Relay');
         setApiKeyInput(key);
         setApiKeyInputVisible(false);
         setAddModalError(null);
