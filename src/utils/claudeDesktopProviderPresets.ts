@@ -702,7 +702,7 @@ export const CLAUDE_DESKTOP_GATEWAY_PROVIDER_PRESETS: readonly ClaudeDesktopGate
 ];
 
 export function getDefaultClaudeDesktopGatewayProviderPresetId(): string {
-  return CLAUDE_DESKTOP_GATEWAY_APIKEY_FUN_PROVIDER_ID;
+  return CLAUDE_DESKTOP_GATEWAY_PROVIDER_CUSTOM_ID;
 }
 
 export function findClaudeDesktopGatewayProviderPresetById(

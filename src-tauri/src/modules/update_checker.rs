@@ -392,7 +392,7 @@ fn load_update_settings_unlocked() -> Result<UpdateSettings, String> {
         settings.auto_check = false;
         settings.auto_install = false;
         settings.remind_on_update = false;
-        let _ = save_update_settings(&settings);
+        let _ = save_update_settings_unlocked(&settings);
     }
 
     Ok(settings)

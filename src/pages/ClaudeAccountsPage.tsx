@@ -1381,7 +1381,7 @@ export function ClaudeAccountsPage({ subPlatform = 'desktop' }: ClaudeAccountsPa
         setActiveSection('desktop');
         setShowAddModal(true);
         setAddTab('desktopGateway');
-        setApiProviderPresetId(CLAUDE_APIKEY_FUN_PROVIDER_ID);
+        setApiProviderPresetId(CLAUDE_DESKTOP_GATEWAY_PROVIDER_CUSTOM_ID);
         setApiBaseUrlInput(baseUrl);
         setApiProviderTemplateValues({});
         setApiKeyModelCatalogOverride(null);
@@ -1421,7 +1421,7 @@ export function ClaudeAccountsPage({ subPlatform = 'desktop' }: ClaudeAccountsPa
         setActiveSection('cli');
         setShowAddModal(true);
         setAddTab('apikey');
-        setApiProviderPresetId(CLAUDE_APIKEY_FUN_PROVIDER_ID);
+        setApiProviderPresetId(CLAUDE_API_PROVIDER_CUSTOM_ID);
         setApiBaseUrlInput(request.baseUrl?.trim() || CLAUDE_APIKEY_FUN_BASE_URL);
         setApiProviderTemplateValues({});
         setApiKeyModelCatalogOverride(request.modelCatalog ?? null);

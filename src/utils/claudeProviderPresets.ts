@@ -674,5 +674,5 @@ export function inferClaudeApiKeyField(
 }
 
 export function getDefaultClaudeApiProviderPresetId(): string {
-  return CLAUDE_APIKEY_FUN_PROVIDER_ID;
+  return CLAUDE_API_PROVIDER_CUSTOM_ID;
 }
