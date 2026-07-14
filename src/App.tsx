@@ -423,19 +423,6 @@ function getTraeAppPath(config: GeneralConfig, app: TraePlatformApp): string {
   }
 }
 
-function getTraeAppScanRoots(config: GeneralConfig, app: TraePlatformApp): string {
-  switch (app) {
-    case 'trae_solo':
-      return config.trae_solo_app_scan_roots;
-    case 'trae_cn':
-      return config.trae_cn_app_scan_roots;
-    case 'trae_solo_cn':
-      return config.trae_solo_cn_app_scan_roots;
-    case 'trae':
-    default:
-      return config.trae_app_scan_roots;
-  }
-}
 const TOP_RIGHT_AD_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 const REMOTE_CONFIG_FALLBACK_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 const EXTERNAL_IMPORT_DEDUPE_WINDOW_MS = 30 * 1000;
@@ -815,7 +802,6 @@ function MainApp() {
   const [appPathSetting, setAppPathSetting] = useState(false);
   const [appPathDetecting, setAppPathDetecting] = useState(false);
   const [appPathDraft, setAppPathDraft] = useState('');
-  const [appPathScanRootsDraft, setAppPathScanRootsDraft] = useState('');
   const [appLaunchCandidates, setAppLaunchCandidates] = useState<AppLaunchCandidate[]>([]);
   const [appPathActionError, setAppPathActionError] = useState('');
   const [appPathScanError, setAppPathScanError] = useState('');
@@ -902,21 +888,9 @@ function MainApp() {
         width: 'sm',
         actions: [
           {
-            id: 'check-update',
-            label: t('common.shared.externalImport.checkUpdate', '检查更新'),
-            variant: 'primary',
-            onClick: () => {
-              window.dispatchEvent(
-                new CustomEvent('update-check-requested', {
-                  detail: { source: 'manual' satisfies UpdateCheckSource },
-                }),
-              );
-            },
-          },
-          {
             id: 'close',
             label: t('common.close', '关闭'),
-            variant: 'secondary',
+            variant: 'primary',
           },
         ],
       });
@@ -3126,7 +3100,6 @@ function MainApp() {
     let active = true;
     if (!appPathMissing) {
       setAppPathDraft('');
-      setAppPathScanRootsDraft('');
       setAppLaunchCandidates([]);
       setAppPathDetecting(false);
       setAppPathActionError('');
@@ -3176,13 +3149,6 @@ function MainApp() {
             appPathMissing.retry?.kind === 'instance' &&
             isClaudeWindowsAppLaunchTarget(normalizedPath);
           setAppPathDraft(shouldClearClaudeDefaultTarget ? '' : normalizedPath);
-          setAppPathScanRootsDraft(
-            appPathMissing.app === 'claude'
-              ? config.claude_app_scan_roots || ''
-              : isTraePlatformApp(appPathMissing.app)
-                ? getTraeAppScanRoots(config, appPathMissing.app) || ''
-                : '',
-          );
           setAppPathCodexLaunchOnSwitch(config.codex_launch_on_switch ?? true);
         }
       } catch (error) {
@@ -3211,33 +3177,6 @@ function MainApp() {
     } catch (error) {
       console.error('选择应用路径失败:', error);
     }
-  };
-
-  const handlePickMissingAppScanRoot = async () => {
-    if (appPathSetting || appPathDetecting) return;
-    try {
-      const selected = await open({
-        multiple: false,
-        directory: true,
-      });
-      const path = Array.isArray(selected) ? selected[0] : selected;
-      if (path) {
-        setAppPathActionError('');
-        setAppPathScanError('');
-        setAppPathScanRootsDraft(path);
-        setAppLaunchCandidates([]);
-      }
-    } catch (error) {
-      console.error('选择 Claude 扫描范围失败:', error);
-    }
-  };
-
-  const handleClearMissingAppScanRoot = () => {
-    if (appPathSetting || appPathDetecting) return;
-    setAppPathActionError('');
-    setAppPathScanError('');
-    setAppPathScanRootsDraft('');
-    setAppLaunchCandidates([]);
   };
 
   const handleSaveMissingAppPath = async () => {
@@ -3269,16 +3208,6 @@ function MainApp() {
           ? 'antigravity_legacy_start_instance'
           : 'start_instance';
       await invoke('set_app_path', { app, path });
-      if (app === 'claude') {
-        await invoke('set_claude_app_scan_roots', {
-          scanRoots: appPathScanRootsDraft.trim(),
-        });
-      } else if (isTraePlatformApp(app)) {
-        await invoke('set_trae_app_scan_roots', {
-          app,
-          scanRoots: appPathScanRootsDraft.trim(),
-        });
-      }
       if (retry?.kind === 'switchAccount' && retry.accountId && app === 'zed') {
         await useZedAccountStore.getState().switchAccount(retry.accountId);
         setPage('zed');
@@ -3377,7 +3306,6 @@ function MainApp() {
       try {
         const candidates = await invoke<AppLaunchCandidate[]>('scan_app_launch_targets', {
           app: scanApp,
-          scanRoots: appPathScanRootsDraft.trim() || null,
         });
         setAppLaunchCandidates(candidates);
         if (appPathMissing.app === 'claude' && appPathMissing.retry?.kind === 'instance') {
@@ -3393,15 +3321,13 @@ function MainApp() {
             );
           }
         }
-        if (candidates.length === 0 && appPathMissing.app !== 'claude') {
+        if (candidates.length === 0) {
           setAppPathScanError(
-            t('appPath.missing.scanEmptyGeneric', '未扫描到 {{app}}，请手动选择路径或调整扫描范围。', {
-              app: appPathMissingAppName,
-            }),
-          );
-        } else if (candidates.length === 0) {
-          setAppPathScanError(
-            t('appPath.missing.claudeScanEmpty', '未扫描到 Claude Desktop，请手动选择 Claude.exe 或调整扫描范围。'),
+            t(
+              'appPath.missing.scanEmptyGeneric',
+              '未检测到正在运行的 {{app}}，请先启动应用后重试，或手动选择路径。',
+              { app: appPathMissingAppName },
+            ),
           );
         }
       } catch (error) {
@@ -3801,40 +3727,6 @@ function MainApp() {
                   <FolderOpen size={15} />
                   <span>{appPathMissingPathLabel}</span>
                 </div>
-                {isWindowsPlatform() ? (
-                  <div className="app-path-missing-scan-roots">
-                    <label>{t('appPath.missing.scanRoots', '扫描范围')}</label>
-                    <div className="app-path-missing-scan-root-row">
-                      <input
-                        type="text"
-                        className="qs-path-input app-path-missing-scan-roots-input"
-                        value={appPathScanRootsDraft}
-                        placeholder={t(
-                          'appPath.missing.scanRootsPlaceholder',
-                          '可选，选择一个目录或盘符；留空时按盘符扫描 WindowsApps 并补充开始菜单应用。',
-                        )}
-                        readOnly
-                        disabled={appPathMissingBusy}
-                      />
-                      <div className="qs-path-actions">
-                        <button
-                          className="qs-btn"
-                          onClick={handlePickMissingAppScanRoot}
-                          disabled={appPathMissingBusy}
-                        >
-                          {t('settings.general.codexPathSelect', '选择')}
-                        </button>
-                        <button
-                          className="qs-btn"
-                          onClick={handleClearMissingAppScanRoot}
-                          disabled={appPathMissingBusy || !appPathScanRootsDraft.trim()}
-                        >
-                          {t('common.clear', '清除')}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
                 <div className="qs-path-control">
                   <input
                     type="text"
@@ -3872,7 +3764,7 @@ function MainApp() {
                         appPathDetecting
                           ? t('common.loading', '加载中...')
                           : isWindowsPlatform()
-                            ? t('appPath.missing.scanApps', '扫描应用')
+                            ? t('appPath.missing.scanApps', '检测运行中应用')
                             : (
                             appPathMissing.app === 'vscode'
                               ? t('settings.general.vscodePathReset', '重置默认')
@@ -3897,7 +3789,7 @@ function MainApp() {
                       {isWindowsPlatform() ? (
                         appPathDetecting
                           ? t('common.loading', '加载中...')
-                          : t('appPath.missing.scanApps', '扫描应用')
+                          : t('appPath.missing.scanApps', '检测运行中应用')
                       ) : (
                         <RefreshCw size={12} className={appPathDetecting ? 'spin' : undefined} />
                       )}
