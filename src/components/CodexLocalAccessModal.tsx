@@ -1019,6 +1019,17 @@ export function CodexLocalAccessModal({
     return next;
   }, [selectedStatsWindow?.accounts]);
 
+  const activityByAccountId = useMemo(
+    () =>
+      new Map(
+        (state?.accountActivity ?? []).map((activity) => [
+          activity.accountId,
+          activity,
+        ]),
+      ),
+    [state?.accountActivity],
+  );
+
   const currentMemberStats = useMemo(() => {
     const currentIds = collection?.accountIds ?? [];
     return currentIds
@@ -1033,15 +1044,39 @@ export function CodexLocalAccessModal({
           account,
           presentation,
           stats: accountStats?.usage ?? null,
+          activity: activityByAccountId.get(account.id),
         };
       })
       .filter((item): item is NonNullable<typeof item> => Boolean(item))
       .sort((left, right) => {
+        const leftRunning = left.activity?.runningCount ?? 0;
+        const rightRunning = right.activity?.runningCount ?? 0;
+        if (leftRunning !== rightRunning) return rightRunning - leftRunning;
+
+        const leftRecent = Math.max(
+          left.activity?.lastFinishedAt ?? 0,
+          left.activity?.lastSelectedAt ?? 0,
+        );
+        const rightRecent = Math.max(
+          right.activity?.lastFinishedAt ?? 0,
+          right.activity?.lastSelectedAt ?? 0,
+        );
+        if ((leftRecent > 0) !== (rightRecent > 0)) {
+          return leftRecent > 0 ? -1 : 1;
+        }
+        if (leftRecent !== rightRecent) return rightRecent - leftRecent;
+
         const rightCount = right.stats?.requestCount ?? 0;
         const leftCount = left.stats?.requestCount ?? 0;
         return rightCount - leftCount;
       });
-  }, [collection?.accountIds, localAccessAccounts, t, windowStatsByAccountId]);
+  }, [
+    activityByAccountId,
+    collection?.accountIds,
+    localAccessAccounts,
+    t,
+    windowStatsByAccountId,
+  ]);
 
   const routingStrategyOptions = useMemo(
     () =>
@@ -2640,59 +2675,121 @@ export function CodexLocalAccessModal({
                       </div>
                     ) : (
                       currentMemberStats.map(
-                        ({ account, presentation, stats: accountStats }) => (
-                          <div
-                            key={account.id}
-                            className="codex-local-access-account-stat-row"
-                          >
-                            <div className="codex-local-access-account-stat-top">
-                              <div className="codex-local-access-account-stat-main">
-                                <span
-                                  className="group-account-email"
-                                  title={maskAccountText(
-                                    presentation.displayName,
+                        ({
+                          account,
+                          presentation,
+                          stats: accountStats,
+                          activity,
+                        }) => {
+                          const activityRunningCount =
+                            activity?.runningCount ?? 0;
+                          const activityRecentAt =
+                            activity?.lastFinishedAt ??
+                            activity?.lastSelectedAt ??
+                            0;
+                          const hasActivity =
+                            activityRunningCount > 0 || activityRecentAt > 0;
+                          const activityText =
+                            activityRunningCount > 0
+                              ? t(
+                                  "codex.apiService.accountActivity.running",
+                                  {
+                                    count: activityRunningCount,
+                                    defaultValue: "调度中 {{count}}",
+                                  },
+                                )
+                              : t(
+                                  "codex.apiService.accountActivity.recent",
+                                  {
+                                    seconds: Math.max(
+                                      0,
+                                      Math.floor(
+                                        (Date.now() - activityRecentAt) / 1000,
+                                      ),
+                                    ),
+                                    defaultValue: "刚调度 {{seconds}} 秒前",
+                                  },
+                                );
+                          const activityDetail = [
+                            activity?.lastModelId,
+                            activity?.lastApiKeyLabel,
+                            activity?.routingStrategy,
+                          ]
+                            .map((item) => item?.trim())
+                            .filter(Boolean)
+                            .join(" · ");
+
+                          return (
+                            <div
+                              key={account.id}
+                              className="codex-local-access-account-stat-row"
+                            >
+                              <div className="codex-local-access-account-stat-top">
+                                <div className="codex-local-access-account-stat-main">
+                                  {hasActivity && (
+                                    <span
+                                      className={`codex-local-access-account-stat-activity ${
+                                        activityRunningCount > 0
+                                          ? "is-running"
+                                          : "is-recent"
+                                      }`}
+                                      title={
+                                        activityDetail
+                                          ? `${activityText} · ${activityDetail}`
+                                          : activityText
+                                      }
+                                      aria-label={activityText}
+                                    >
+                                      <Activity size={11} />
+                                    </span>
                                   )}
-                                >
-                                  {maskAccountText(presentation.displayName)}
-                                </span>
-                                <span
-                                  className={`tier-badge ${presentation.planClass}`}
-                                >
-                                  {presentation.planLabel}
-                                </span>
-                              </div>
-                              <div className="codex-local-access-account-stat-block codex-local-access-account-stat-block-quota">
-                                {renderQuotaPreview(presentation, 3)}
-                              </div>
-                              <div className="codex-local-access-account-stat-block codex-local-access-account-stat-block-metrics">
-                                <div className="codex-local-access-account-stat-metrics">
-                                  <span className="codex-local-access-account-stat-pill">
-                                    {formatRequestResultDetail(accountStats)}
+                                  <span
+                                    className="group-account-email"
+                                    title={maskAccountText(
+                                      presentation.displayName,
+                                    )}
+                                  >
+                                    {maskAccountText(presentation.displayName)}
                                   </span>
-                                  <span className="codex-local-access-account-stat-pill">
-                                    {(accountStats?.totalTokens ?? 0) === 0
-                                      ? t(
-                                          "codex.localAccess.stats.accountTokens",
-                                          {
-                                            count: 0,
-                                            defaultValue: "0 Tokens",
-                                          },
-                                        )
-                                      : t(
-                                          "codex.localAccess.stats.accountTokensCompact",
-                                          {
-                                            value: formatCompactNumber(
-                                              accountStats?.totalTokens ?? 0,
-                                            ),
-                                            defaultValue: "{{value}}",
-                                          },
-                                        )}
+                                  <span
+                                    className={`tier-badge ${presentation.planClass}`}
+                                  >
+                                    {presentation.planLabel}
                                   </span>
+                                </div>
+                                <div className="codex-local-access-account-stat-block codex-local-access-account-stat-block-quota">
+                                  {renderQuotaPreview(presentation, 3)}
+                                </div>
+                                <div className="codex-local-access-account-stat-block codex-local-access-account-stat-block-metrics">
+                                  <div className="codex-local-access-account-stat-metrics">
+                                    <span className="codex-local-access-account-stat-pill">
+                                      {formatRequestResultDetail(accountStats)}
+                                    </span>
+                                    <span className="codex-local-access-account-stat-pill">
+                                      {(accountStats?.totalTokens ?? 0) === 0
+                                        ? t(
+                                            "codex.localAccess.stats.accountTokens",
+                                            {
+                                              count: 0,
+                                              defaultValue: "0 Tokens",
+                                            },
+                                          )
+                                        : t(
+                                            "codex.localAccess.stats.accountTokensCompact",
+                                            {
+                                              value: formatCompactNumber(
+                                                accountStats?.totalTokens ?? 0,
+                                              ),
+                                              defaultValue: "{{value}}",
+                                            },
+                                          )}
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
-                        ),
+                          );
+                        },
                       )
                     )}
                   </div>

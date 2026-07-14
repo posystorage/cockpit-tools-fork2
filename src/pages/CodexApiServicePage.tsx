@@ -107,6 +107,14 @@ interface ApiKeyPolicyDraft {
   excludedModels: string;
 }
 
+interface ApiKeyDraftSource {
+  id: string;
+  label: string;
+  modelPrefix: string;
+  allowedModels: string[];
+  excludedModels: string[];
+}
+
 interface TestChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -607,6 +615,21 @@ export function CodexApiServicePage() {
 
   const collection = state?.collection ?? null;
   const stats = state?.stats ?? null;
+  const apiKeyDraftSourceKey = JSON.stringify(
+    (collection?.apiKeys ?? []).map((apiKey) => ({
+      id: apiKey.id,
+      label: apiKey.label,
+      modelPrefix: apiKey.modelPrefix ?? "",
+      allowedModels: apiKey.allowedModels ?? [],
+      excludedModels: apiKey.excludedModels ?? [],
+    })),
+  );
+  const modelAliasesDraftSource = serializeModelAliases(
+    collection?.modelAliases,
+  );
+  const excludedModelsDraftSource = serializeModelRules(
+    collection?.excludedModels,
+  );
   const memberView = useCodexAccountOverviewMemberView({
     accounts,
     groups,
@@ -906,10 +929,6 @@ export function CodexApiServicePage() {
     const nextState = await codexLocalAccessService.getCodexLocalAccessState();
     if (!mountedRef.current) return nextState;
     setState(nextState);
-    setPortInput(
-      nextState.collection?.port ? String(nextState.collection.port) : "",
-    );
-    setProxyInput(nextState.collection?.upstreamProxyUrl ?? "");
     return nextState;
   }, []);
 
@@ -969,6 +988,14 @@ export function CodexApiServicePage() {
   useEffect(() => {
     persistRequestLogPageSize(requestLogPageSize);
   }, [requestLogPageSize]);
+
+  useEffect(() => {
+    setPortInput(collection?.port ? String(collection.port) : "");
+  }, [collection?.port]);
+
+  useEffect(() => {
+    setProxyInput(collection?.upstreamProxyUrl ?? "");
+  }, [collection?.upstreamProxyUrl]);
 
   useEffect(() => {
     setRequestLogPage(1);
@@ -1049,38 +1076,30 @@ export function CodexApiServicePage() {
   ]);
 
   useEffect(() => {
+    const apiKeys = JSON.parse(apiKeyDraftSourceKey) as ApiKeyDraftSource[];
     setApiKeyDrafts(
-      Object.fromEntries(
-        (collection?.apiKeys ?? []).map((apiKey) => [apiKey.id, apiKey.label]),
-      ),
+      Object.fromEntries(apiKeys.map((apiKey) => [apiKey.id, apiKey.label])),
     );
     setApiKeyPolicyDrafts(
       Object.fromEntries(
-        (collection?.apiKeys ?? []).map((apiKey) => [
+        apiKeys.map((apiKey) => [
           apiKey.id,
           {
-            modelPrefix: apiKey.modelPrefix ?? "",
+            modelPrefix: apiKey.modelPrefix,
             allowedModels: serializeModelRules(apiKey.allowedModels),
             excludedModels: serializeModelRules(apiKey.excludedModels),
           },
         ]),
       ),
     );
-  }, [collection?.apiKeys]);
+  }, [apiKeyDraftSourceKey]);
 
   useEffect(() => {
-    setModelAliasesText(serializeModelAliases(collection?.modelAliases));
-    setExcludedModelsText(serializeModelRules(collection?.excludedModels));
-    setAccountModelRuleDrafts(
-      Object.fromEntries(
-        (collection?.accountModelRules ?? []).map((rule) => [
-          rule.accountId,
-          serializeModelRules(rule.excludedModels),
-        ]),
-      ),
-    );
-    setAccountModelRuleSelected(new Set());
-    setAccountModelRuleBulkText("");
+    setModelAliasesText(modelAliasesDraftSource);
+    setExcludedModelsText(excludedModelsDraftSource);
+  }, [excludedModelsDraftSource, modelAliasesDraftSource]);
+
+  useEffect(() => {
     setSessionAffinityDraft(collection?.sessionAffinity ?? true);
     setSessionAffinityTtlDraft(
       formatSeconds(collection?.sessionAffinityTtlMs ?? 3600000),
@@ -1090,21 +1109,12 @@ export function CodexApiServicePage() {
       formatSeconds(collection?.maxRetryIntervalMs ?? 3000),
     );
     setDisableCoolingDraft(collection?.disableCooling ?? false);
-    setTimeoutDrafts(timeoutDraftsFromValue(collection?.timeouts));
-    setSelectedTimeoutPresetId(
-      collection?.activeTimeoutPresetId || "long_wait",
-    );
   }, [
-    collection?.modelAliases,
-    collection?.excludedModels,
-    collection?.accountModelRules,
     collection?.sessionAffinity,
     collection?.sessionAffinityTtlMs,
     collection?.maxRetryCredentials,
     collection?.maxRetryIntervalMs,
     collection?.disableCooling,
-    collection?.timeouts,
-    collection?.activeTimeoutPresetId,
   ]);
 
   useEffect(() => {
@@ -1124,23 +1134,6 @@ export function CodexApiServicePage() {
       behavior: "smooth",
     });
   }, [testChatMessages, testDialogOpen]);
-
-  useEffect(() => {
-    if (!pricingModalOpen) return;
-    setPricingDrafts(
-      modelPricingRows.map((item) => ({
-        modelId: item.modelId,
-        inputUsdPerMillion: formatPriceDraftValue(item.inputUsdPerMillion),
-        cachedInputUsdPerMillion: formatPriceDraftValue(
-          item.cachedInputUsdPerMillion,
-        ),
-        outputUsdPerMillion: formatPriceDraftValue(item.outputUsdPerMillion),
-        hasPreset: item.hasPreset,
-        custom: item.custom,
-      })),
-    );
-    setPricingError("");
-  }, [modelPricingRows, pricingModalOpen]);
 
   const runAction = async (
     task: () => Promise<unknown>,

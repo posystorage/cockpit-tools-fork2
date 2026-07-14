@@ -1951,6 +1951,38 @@
   overflow: hidden;
 }
 
+.codex-local-access-account-stat-activity {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(14, 165, 233, 0.14);
+  color: #0284c7;
+}
+
+.codex-local-access-account-stat-activity.is-running {
+  background: rgba(34, 197, 94, 0.16);
+  color: #15803d;
+}
+
+.codex-local-access-account-stat-activity.is-recent {
+  background: rgba(14, 165, 233, 0.14);
+  color: #0284c7;
+}
+
+[data-theme="dark"] .codex-local-access-account-stat-activity.is-running {
+  background: rgba(34, 197, 94, 0.22);
+  color: #86efac;
+}
+
+[data-theme="dark"] .codex-local-access-account-stat-activity.is-recent {
+  background: rgba(56, 189, 248, 0.18);
+  color: #7dd3fc;
+}
+
 .codex-local-access-account-stat-main .group-account-email {
   font-weight: 600;
   min-width: 0;
