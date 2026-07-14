@@ -28,7 +28,7 @@
 - 上游 release tag：`v1.3.1`；annotated tag object `b071a7de`，release commit `db5434d5`。
 - 升级分支：`codex/upgrade-upstream-v1.3.1`。
 - 升级前 fork HEAD：`988334a1`。
-- 最终合并提交必须保留真实双亲：第一父提交来自 fork `988334a1`，第二父提交为上游 release commit `db5434d5`。annotated tag object 只用于保存 tag 元数据，不是第二父提交。
+- 上游合并提交：`4813f6df`；第一父提交为 fork `988334a1`，第二父提交为上游 release commit `db5434d5`。annotated tag object 只用于保存 tag 元数据，不是第二父提交。
 
 本次接受的上游结构变化包括：移除 Gemini CLI 平台；新增 Codex SSH、Hermes 同步、PAT/批量导入队列；API 服务分档价格、长上下文、历史重算和备用成员入口；本机账号自动导入、加密存储、外连总开关、WebDAV 白名单；以及 Grok 修复和全局 reduced motion。上游“外连总开关”会同时影响 WebDAV，因此不能替代本 fork 对公告、远端配置和 updater 的精细硬关闭。
 
@@ -56,6 +56,7 @@
 | `2037224a` | 修复 Sub2API 用量/余额兼容 | 保留 URL 回退与宽容解析 |
 | `86771153` | 同步上游 `v1.3.0` | 仅为历史合并锚点 |
 | `db5434d5` | 上游 `v1.3.1` release commit | 当前上游锚点 |
+| `4813f6df` | 同步上游 `v1.3.1` | 当前 fork 合并锚点 |
 | `c36673db` | 恢复调度状态 5 秒轮询 | 保留轮询条件 |
 | `f868bb85` | 拒绝 `NaN`/无穷大计费值 | 保留数值安全检查 |
 | `bba625e4` | 将 APIKEY.FUN/赞助中转 UI 中性化 | 保留通用自定义中转能力 |
