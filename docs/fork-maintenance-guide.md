@@ -23,14 +23,18 @@
 
 ## 2. 当前基线与历史锚点
 
-当前已验证的同步状态（2026-07-15）：
+当前升级目标（2026-07-15，代码合并前记录）：
 
-- 上游 release tag：`v1.3.1`；annotated tag object `b071a7de`，release commit `db5434d5`。
-- 升级分支：`codex/upgrade-upstream-v1.3.1`。
-- 升级前 fork HEAD：`988334a1`。
-- 上游合并提交：`4813f6df`；第一父提交为 fork `988334a1`，第二父提交为上游 release commit `db5434d5`。annotated tag object 只用于保存 tag 元数据，不是第二父提交。
+- 上游 release tag：`v1.3.2`；annotated tag object `70edc038`，release commit `a84a97cb`。
+- 升级分支：`codex/upgrade-upstream-v1.3.2`。
+- 升级前产品代码基线：`ae0e6bd4`，其中上一轮 `v1.3.1` 合并锚点为 `4813f6df`。
+- 本次待创建的合并提交必须保留真实双亲：第一父提交为包含本段升级前文档的分支 tip，第二父提交为上游 release commit `a84a97cb`。合并完成后再把实际 merge hash 和双亲写回本文；annotated tag object 只用于保存 tag 元数据，不是第二父提交。
 
 本次接受的上游结构变化包括：移除 Gemini CLI 平台；新增 Codex SSH、Hermes 同步、PAT/批量导入队列；API 服务分档价格、长上下文、历史重算和备用成员入口；本机账号自动导入、加密存储、外连总开关、WebDAV 白名单；以及 Grok 修复和全局 reduced motion。上游“外连总开关”会同时影响 WebDAV，因此不能替代本 fork 对公告、远端配置和 updater 的精细硬关闭。
+
+`v1.3.2` 重点修复 API 服务升级后账号不显示或添加卡住：价格重算、统计维护和集合账号清理改为后台分批、单飞且带条件写回。该版本还把 Windows 应用检测改为仅检查运行进程并增加超时，补强禁用生图能力、Codex 会话筛选、账号异步读取防旧结果覆盖，并新增 Grok 官方鉴权同步开关。升级时必须接受这些非阻塞迁移和竞态修复；在 `codex_local_access.rs` 中只重接调度观测字段、selected/finish hook 和 state snapshot，不能恢复旧的同步迁移路径。
+
+`v1.3.2` 同时改动 `App.tsx`、`SettingsPage.tsx`、`src-tauri/src/lib.rs` 与 updater 配置。合并后除复核常规广告/updater 开关外，还要检查版本不兼容弹窗等次级入口：纯本地构建不能显示会触发已禁用 updater 的“检查更新”命令。
 
 `v1.3.1` 上游测试在 Windows 上还有三类平台假设，本次仅在 `#[cfg(test)]` 代码内修正：
 
@@ -57,6 +61,7 @@
 | `86771153` | 同步上游 `v1.3.0` | 仅为历史合并锚点 |
 | `db5434d5` | 上游 `v1.3.1` release commit | 当前上游锚点 |
 | `4813f6df` | 同步上游 `v1.3.1` | 当前 fork 合并锚点 |
+| `a84a97cb` | 上游 `v1.3.2` release commit | 当前升级目标 |
 | `c36673db` | 恢复调度状态 5 秒轮询 | 保留轮询条件 |
 | `f868bb85` | 拒绝 `NaN`/无穷大计费值 | 保留数值安全检查 |
 | `bba625e4` | 将 APIKEY.FUN/赞助中转 UI 中性化 | 保留通用自定义中转能力 |
