@@ -1,3 +1,5 @@
+import { neutralizeProviderPresets } from "./providerPresetPrivacy";
+
 export interface CodexApiProviderPreset {
   id: string;
   name: string;
@@ -17,7 +19,7 @@ export const COCKPIT_API_BASE_URL = "";
 
 const COCKPIT_API_HIDDEN_BASE_URLS = [COCKPIT_API_BASE_URL] as const;
 
-export const CODEX_API_PROVIDER_PRESETS: readonly CodexApiProviderPreset[] = [
+const RAW_CODEX_API_PROVIDER_PRESETS: readonly CodexApiProviderPreset[] = [
   {
     id: "openai_official",
     name: "OpenAI Official",
@@ -344,6 +346,10 @@ export const CODEX_API_PROVIDER_PRESETS: readonly CodexApiProviderPreset[] = [
     website: "https://therouter.ai/",
   },
 ];
+
+export const CODEX_API_PROVIDER_PRESETS = neutralizeProviderPresets(
+  RAW_CODEX_API_PROVIDER_PRESETS,
+);
 
 function normalizeCodexProviderBaseUrl(value: string): string | null {
   const trimmed = value.trim();

@@ -2,6 +2,7 @@ import type {
   ClaudeDesktopGatewayConnectionMode,
   ClaudeDesktopGatewayModelMapping,
 } from '../types/claude';
+import { neutralizeProviderPresets } from './providerPresetPrivacy';
 export type ClaudeDesktopGatewayAuthScheme = 'bearer' | 'x-api-key' | 'auto';
 export type ClaudeDesktopGatewayApiKeyField = 'ANTHROPIC_AUTH_TOKEN' | 'ANTHROPIC_API_KEY';
 
@@ -109,7 +110,7 @@ function repeatedMappedRoute(
   return brandedRoutes(upstreamModel, upstreamModel, upstreamModel, options);
 }
 
-export const CLAUDE_DESKTOP_GATEWAY_PROVIDER_PRESETS: readonly ClaudeDesktopGatewayProviderPreset[] = [
+const RAW_CLAUDE_DESKTOP_GATEWAY_PROVIDER_PRESETS: readonly ClaudeDesktopGatewayProviderPreset[] = [
   {
     id: 'anthropic_official',
     name: 'Anthropic Official',
@@ -700,6 +701,9 @@ export const CLAUDE_DESKTOP_GATEWAY_PROVIDER_PRESETS: readonly ClaudeDesktopGate
     modelMappings: directRoutes(),
   },
 ];
+
+export const CLAUDE_DESKTOP_GATEWAY_PROVIDER_PRESETS =
+  neutralizeProviderPresets(RAW_CLAUDE_DESKTOP_GATEWAY_PROVIDER_PRESETS);
 
 export function getDefaultClaudeDesktopGatewayProviderPresetId(): string {
   return CLAUDE_DESKTOP_GATEWAY_PROVIDER_CUSTOM_ID;

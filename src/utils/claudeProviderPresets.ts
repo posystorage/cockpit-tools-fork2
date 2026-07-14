@@ -1,4 +1,5 @@
 import { APIKEY_FUN_GLOBAL_ENDPOINT } from './apikeyFunLinks';
+import { neutralizeProviderPresets } from './providerPresetPrivacy';
 
 export type ClaudeApiKeyField = 'ANTHROPIC_AUTH_TOKEN' | 'ANTHROPIC_API_KEY';
 
@@ -542,7 +543,7 @@ const CC_SWITCH_DIRECT_CLAUDE_PROVIDER_PRESETS: readonly ClaudeApiProviderPreset
   }),
 ];
 
-export const CLAUDE_API_PROVIDER_PRESETS: readonly ClaudeApiProviderPreset[] = [
+const RAW_CLAUDE_API_PROVIDER_PRESETS: readonly ClaudeApiProviderPreset[] = [
   {
     id: 'anthropic_official',
     name: 'Anthropic Official',
@@ -627,6 +628,10 @@ export const CLAUDE_API_PROVIDER_PRESETS: readonly ClaudeApiProviderPreset[] = [
   },
   ...CC_SWITCH_DIRECT_CLAUDE_PROVIDER_PRESETS,
 ];
+
+export const CLAUDE_API_PROVIDER_PRESETS = neutralizeProviderPresets(
+  RAW_CLAUDE_API_PROVIDER_PRESETS,
+);
 
 export function findClaudeApiProviderPresetById(
   id?: string | null,

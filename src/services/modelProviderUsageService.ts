@@ -42,23 +42,7 @@ export interface ModelProviderUsageSummary {
 
 function buildUsageBaseUrlCandidates(baseUrl: string): string[] {
   const trimmed = baseUrl.trim();
-  if (!trimmed) return [];
-  const candidates = [trimmed];
-  try {
-    const parsed = new URL(trimmed);
-    const host = parsed.hostname.toLowerCase();
-    const path = parsed.pathname.replace(/\/+$/, '');
-    if (
-      (host === 'api.apikey.fun' || host === 'slb.apikey.fun') &&
-      (path === '' || path === '/')
-    ) {
-      const usageUrl = `${parsed.origin}/v1`;
-      if (!candidates.includes(usageUrl)) candidates.push(usageUrl);
-    }
-  } catch {
-    // keep the original value and let the backend return the validation error
-  }
-  return candidates;
+  return trimmed ? [trimmed] : [];
 }
 
 export async function queryModelProviderUsage(input: {
