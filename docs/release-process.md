@@ -90,6 +90,8 @@ node scripts/release/gen_checksums.cjs \
 4. VirusTotal 链接（可选但推荐）
 5. 已知误报说明（如有）
 
+Release workflow 默认从中英文 `CHANGELOG` 抽取当前版本章节。若 fork 的一次发布跨越多个上游版本，应在 `.github/workflows/release.yml` 的 `RELEASE_VERSIONS` 映射中按新到旧列出全部版本；`1.3.2` Release 固定合并 `1.3.2` 与 `1.3.1` 两份上游升级报告。
+
 补充说明（Homebrew 自维护 Tap）：
 
 1. 先上传 GitHub Release 资产，再推送 `Casks/cockpit-tools.rb` 更新，避免 cask 链接短暂 404。
