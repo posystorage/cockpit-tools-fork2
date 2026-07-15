@@ -3246,7 +3246,7 @@
         "pricingUnset": "未設定",
         "pricingReset": "重設",
         "pricingSaved": "價格設定已儲存",
-        "pricingInvalid": "價格必須是大於或等於 0 的數字，Token 閾值必須是正整數",
+        "pricingInvalid": "已填寫的價格必須是大於或等於 0 的數字，Token 閾值可留空或填寫正整數",
         "pricingReprice": "重算歷史估值",
         "pricingRepriced": "歷史估值已按目前價格重算",
         "pricingLongThreshold": "長上下文階梯閾值（tokens）",

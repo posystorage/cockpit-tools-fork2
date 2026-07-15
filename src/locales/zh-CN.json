@@ -3463,7 +3463,7 @@
         "pricingUnset": "未设置",
         "pricingReset": "重置",
         "pricingSaved": "价格设置已保存",
-        "pricingInvalid": "价格必须是大于或等于 0 的数字，Token 阈值必须是正整数",
+        "pricingInvalid": "已填写的价格必须是大于或等于 0 的数字，Token 阈值可留空或填写正整数",
         "pricingReprice": "重算历史估值",
         "pricingRepriced": "历史估值已按当前价格重算",
         "pricingLongThreshold": "长上下文阶梯阈值（tokens）",

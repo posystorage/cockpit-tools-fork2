@@ -44,6 +44,7 @@
 - 相对纯上游 `v1.3.2`，`codex_local_access.rs` 的产品代码差异仍收敛在调度观测字段、sidecar/legacy hook 和 state snapshot；上游后台统计维护、集合账号清理、单飞锁与条件写回原样保留。
 - 审计发现旧“外部导入版本过低”弹窗仍显示无效的“检查更新”按钮，本次已删除；设置页中被 `SHOW_UPDATE_UI=false` 隐藏的兼容代码未作无关重构。
 - 新增两项纯内存 Rust 回归测试，覆盖选择到完成的完整生命周期，以及同一请求重试切换账号后不遗留运行态。
+- 修复“模型与能力”价格设置的可选空值校验：`parseOptionalPositiveIntegerDraft()` 用 `null` 表示未填写 Token 阈值，保存校验只能拒绝非空且非法的值，不能把 `null` 当作错误。缓存、长上下文和 Priority 价格同样允许按模型能力留空；标准输入/输出价格仍是持久化自定义价格行的必填字段。后续同步价格表单时必须分别验证“空值合法”和“非空值格式合法”，不要把两种状态合并判断。
 
 本次验收结果：Rust 库测试 `576 passed / 0 failed / 2 ignored`；Node 测试 24 项；TypeScript、18 个 locale（各 4969 keys）、154 个 Provider 实际导出、Codex 辅助脚本和 Vite 生产构建均通过。当前环境没有 Go，因此 sidecar Go 测试未运行；Rust 测试仅为通过 build script 临时创建空 sidecar 占位文件，并已在测试结束时删除。全仓 `cargo fmt --check` 仍会命中上游 `v1.3.2` 自身的无关格式差异，本次没有为此格式化上游文件。
 

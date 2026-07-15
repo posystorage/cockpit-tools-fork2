@@ -2147,8 +2147,8 @@ export function CodexApiServicePage() {
         continue;
       }
       const tokenInvalid =
-        longContextThresholdTokens === null ||
-        !Number.isFinite(longContextThresholdTokens ?? 1);
+        longContextThresholdTokens !== null &&
+        !Number.isFinite(longContextThresholdTokens);
       const inputInvalid = input === null || !Number.isFinite(input);
       const cachedInvalid = cached !== null && !Number.isFinite(cached);
       const outputInvalid = output === null || !Number.isFinite(output);
@@ -2170,7 +2170,7 @@ export function CodexApiServicePage() {
         setPricingError(
           t(
             "codex.apiService.models.pricingInvalid",
-            "价格必须是大于或等于 0 的数字，Token 阈值必须是正整数",
+            "已填写的价格必须是大于或等于 0 的数字，Token 阈值可留空或填写正整数",
           ),
         );
         return;

@@ -26,6 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **Fixed Model & Capabilities pricing settings being impossible to save when optional preset values were empty**: cached, long-context, Priority prices, and the token threshold may stay empty when a model does not use them; numeric validation now applies only to entered values.
 - **Fixed Codex session-type filtering being inconsistent with bulk actions**: visible groups, selected sessions, and stale selections now follow the active conversation / external / subagent filter.
 - **Fixed older asynchronous account requests overwriting newer add, delete, or switch results**: account lists and current-account state now accept only the latest response, avoiding regressions to an empty list or stale account.
 - **Fixed deactivated Codex workspaces still appearing healthy**: `deactivated_workspace` now surfaces as an abnormal account state.

@@ -3463,7 +3463,7 @@
         "pricingUnset": "Unset",
         "pricingReset": "Reset",
         "pricingSaved": "Pricing saved",
-        "pricingInvalid": "Prices must be numbers ≥ 0, and the token threshold must be a positive integer",
+        "pricingInvalid": "Entered prices must be numbers ≥ 0; leave the token threshold empty or enter a positive integer",
         "pricingReprice": "Reprice History",
         "pricingRepriced": "Historical estimates were recalculated with current prices",
         "pricingLongThreshold": "Long-context threshold (tokens)",
