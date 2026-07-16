@@ -17,6 +17,7 @@ import {
   queryModelProviderUsage,
   type ModelProviderUsageSummary,
 } from './modelProviderUsageService';
+import { moveCodexProviderApiKey } from '../utils/codexModelProviderApiKeyMove';
 
 export interface CodexModelProviderApiKey {
   id: string;
@@ -43,7 +44,6 @@ export interface CodexModelProvider {
   supportsWebsockets: boolean;
   enableModePreference?: CodexProviderEnableModePreference;
   boundOauthAccountId?: string | null;
-  boundOauthUseLocalGateway?: boolean;
   apiKeys: CodexModelProviderApiKey[];
   createdAt: number;
   updatedAt: number;
@@ -53,6 +53,7 @@ export type CodexModelProviderUsageSummary = ModelProviderUsageSummary;
 
 interface UpsertFromCredentialInput {
   providerId?: string | null;
+  previousProviderId?: string | null;
   providerName?: string | null;
   apiBaseUrl: string;
   apiKey: string;
@@ -275,7 +276,6 @@ function toValidProviderList(raw: unknown): CodexModelProvider[] {
     const boundOauthAccountId = normalizeBoundOauthAccountId(
       (item as { boundOauthAccountId?: unknown }).boundOauthAccountId,
     );
-    const hasBoundOauthUseLocalGateway = hasOwnProperty(item, 'boundOauthUseLocalGateway');
     const wireApi = normalizeWireApi((item as { wireApi?: unknown }).wireApi);
     providers.push({
       id: String((item as { id?: unknown }).id ?? createProviderId()),
@@ -307,12 +307,6 @@ function toValidProviderList(raw: unknown): CodexModelProvider[] {
         (item as { enableModePreference?: unknown }).enableModePreference,
       ),
       boundOauthAccountId,
-      boundOauthUseLocalGateway:
-        Boolean(boundOauthAccountId) &&
-        (
-          (item as { boundOauthUseLocalGateway?: unknown }).boundOauthUseLocalGateway === true ||
-          !hasBoundOauthUseLocalGateway
-        ),
       apiKeys: toValidApiKeys((item as { apiKeys?: unknown }).apiKeys, now),
       createdAt: Number((item as { createdAt?: unknown }).createdAt ?? now),
       updatedAt: Number((item as { updatedAt?: unknown }).updatedAt ?? now),
@@ -321,14 +315,14 @@ function toValidProviderList(raw: unknown): CodexModelProvider[] {
   return providers.sort((a, b) => a.createdAt - b.createdAt);
 }
 
-function hasLegacyBoundOauthProvider(raw: unknown): boolean {
+function hasRemovedImageGenerationSetting(raw: unknown): boolean {
   if (!Array.isArray(raw)) return false;
-  return raw.some((item) => {
-    if (!item || typeof item !== 'object') return false;
-    return Boolean(
-      normalizeBoundOauthAccountId((item as { boundOauthAccountId?: unknown }).boundOauthAccountId),
-    ) && !hasOwnProperty(item, 'boundOauthUseLocalGateway');
-  });
+  return raw.some(
+    (item) =>
+      Boolean(item) &&
+      typeof item === 'object' &&
+      hasOwnProperty(item, 'boundOauthUseLocalGateway'),
+  );
 }
 
 function hasLegacySupportsWebsocketsProvider(raw: unknown): boolean {
@@ -341,14 +335,14 @@ function hasLegacySupportsWebsocketsProvider(raw: unknown): boolean {
 
 async function loadProvidersFromDisk(): Promise<{
   providers: CodexModelProvider[];
-  migratedBoundOauthUseLocalGateway: boolean;
+  removedImageGenerationSetting: boolean;
   migratedSupportsWebsockets: boolean;
 }> {
   const raw = await invoke<string>('load_codex_model_providers');
   const parsed = JSON.parse(raw);
   return {
     providers: toValidProviderList(parsed),
-    migratedBoundOauthUseLocalGateway: hasLegacyBoundOauthProvider(parsed),
+    removedImageGenerationSetting: hasRemovedImageGenerationSetting(parsed),
     migratedSupportsWebsockets: hasLegacySupportsWebsocketsProvider(parsed),
   };
 }
@@ -363,7 +357,7 @@ async function ensureProvidersLoaded(): Promise<CodexModelProvider[]> {
   if (cachedProviders !== null) return cloneProviders(cachedProviders);
   const loadResult = await loadProvidersFromDisk().catch(() => ({
     providers: [],
-    migratedBoundOauthUseLocalGateway: false,
+    removedImageGenerationSetting: false,
     migratedSupportsWebsockets: false,
   }));
   const loadedProviders = loadResult.providers;
@@ -379,7 +373,7 @@ async function ensureProvidersLoaded(): Promise<CodexModelProvider[]> {
   if (
     loaded.length !== loadedProviders.length ||
     migration.changed ||
-    loadResult.migratedBoundOauthUseLocalGateway ||
+    loadResult.removedImageGenerationSetting ||
     loadResult.migratedSupportsWebsockets
   ) {
     await saveProvidersToDisk(loaded).catch(() => { });
@@ -462,7 +456,6 @@ export async function createCodexModelProvider(input: {
   enableModePreference?: CodexProviderEnableModePreference;
   integrationType?: 'sub2api' | 'new_api';
   boundOauthAccountId?: string | null;
-  boundOauthUseLocalGateway?: boolean;
   initialApiKey?: string;
   initialApiKeyName?: string;
 }): Promise<CodexModelProvider> {
@@ -496,9 +489,6 @@ export async function createCodexModelProvider(input: {
     supportsWebsockets: normalizeSupportsWebsockets(input.supportsWebsockets, wireApi, baseUrl),
     enableModePreference: normalizeEnableModePreference(input.enableModePreference),
     boundOauthAccountId: normalizeBoundOauthAccountId(input.boundOauthAccountId),
-    boundOauthUseLocalGateway:
-      Boolean(normalizeBoundOauthAccountId(input.boundOauthAccountId)) &&
-      input.boundOauthUseLocalGateway === true,
     apiKeys: [],
     createdAt: now,
     updatedAt: now,
@@ -529,7 +519,6 @@ export async function updateCodexModelProvider(
     enableModePreference?: CodexProviderEnableModePreference | null;
     integrationType?: 'sub2api' | 'new_api' | null;
     boundOauthAccountId?: string | null;
-    boundOauthUseLocalGateway?: boolean;
   },
 ): Promise<CodexModelProvider> {
   const providers = await ensureProvidersLoaded();
@@ -618,13 +607,6 @@ export async function updateCodexModelProvider(
       patch.boundOauthAccountId === null
         ? undefined
         : normalizeBoundOauthAccountId(patch.boundOauthAccountId);
-    if (!provider.boundOauthAccountId) {
-      provider.boundOauthUseLocalGateway = false;
-    }
-  }
-  if (patch.boundOauthUseLocalGateway !== undefined) {
-    provider.boundOauthUseLocalGateway =
-      Boolean(provider.boundOauthAccountId) && patch.boundOauthUseLocalGateway === true;
   }
   provider.updatedAt = Date.now();
   await writeProviders(providers);
@@ -823,7 +805,6 @@ export async function upsertCodexModelProviderFromCredential(
       supportsWebsockets: normalizeSupportsWebsockets(input.supportsWebsockets, wireApi, apiBaseUrl),
       enableModePreference: 'auto',
       boundOauthAccountId: undefined,
-      boundOauthUseLocalGateway: false,
       apiKeys: [],
       createdAt: now,
       updatedAt: now,
@@ -838,7 +819,15 @@ export async function upsertCodexModelProviderFromCredential(
     provider.sourceTag = sanitizeName(input.sourceTag ?? '') || undefined;
   }
 
-  ensureApiKeyOnProvider(provider, apiKey, input.apiKeyName);
+  const moveResult = moveCodexProviderApiKey(
+    providers,
+    input.previousProviderId,
+    provider.id,
+    apiKey,
+  );
+  if (moveResult === 'not_moved' || moveResult === 'name_conflict') {
+    ensureApiKeyOnProvider(provider, apiKey, input.apiKeyName);
+  }
   provider.baseUrl = apiBaseUrl;
   provider.modelCatalog =
     normalizeModelCatalog(input.modelCatalog) ??

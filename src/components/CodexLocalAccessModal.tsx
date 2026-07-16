@@ -56,6 +56,7 @@ import {
 } from "../utils/codexAccountOverview";
 import {
   formatCodexQuotaPoolPercent,
+  formatCodexQuotaPoolWindowLabel,
   summarizeCodexQuotaPool,
   type CodexQuotaPoolItem,
 } from "../utils/codexQuotaPool";
@@ -72,6 +73,13 @@ import {
 } from "./MultiSelectFilterDropdown";
 import { SingleSelectDropdown } from "./SingleSelectDropdown";
 import { PaginationControls } from "./PaginationControls";
+import { CodexStatsRangePicker } from "./CodexStatsRangePicker";
+import { queryCodexLocalAccessStats } from "../services/codexLocalAccessService";
+import {
+  buildCodexStatsTimeRange,
+  type CodexStatsRangeKey,
+  type CodexStatsTimeRange,
+} from "../utils/codexStatsRange";
 import { useEscClose } from "../hooks/useEscClose";
 import {
   buildPaginationPageSizeStorageKey,
@@ -151,7 +159,6 @@ interface CodexLocalAccessModalProps {
   portCleanupBusy: boolean;
 }
 
-type StatsRangeKey = "daily" | "weekly" | "monthly";
 type CopyableField = "apiPortUrl" | "baseUrl" | "apiKey" | "modelId";
 
 interface AccountPoolHealthSummary {
@@ -197,7 +204,7 @@ function normalizeAccessScope(value: string): CodexLocalAccessScope {
 
 function normalizeStatsRangeKey(
   value: string | null | undefined,
-): StatsRangeKey {
+): CodexStatsRangeKey {
   if (value === "weekly" || value === "monthly") {
     return value;
   }
@@ -225,7 +232,7 @@ function normalizeCustomRoutingWeight(value: number): number {
   );
 }
 
-function readStoredStatsRange(): StatsRangeKey {
+function readStoredStatsRange(): CodexStatsRangeKey {
   try {
     return normalizeStatsRangeKey(
       localStorage.getItem(CODEX_LOCAL_ACCESS_STATS_RANGE_STORAGE_KEY),
@@ -235,7 +242,7 @@ function readStoredStatsRange(): StatsRangeKey {
   }
 }
 
-function persistStatsRange(value: StatsRangeKey): void {
+function persistStatsRange(value: CodexStatsRangeKey): void {
   try {
     localStorage.setItem(CODEX_LOCAL_ACCESS_STATS_RANGE_STORAGE_KEY, value);
   } catch {
@@ -256,6 +263,14 @@ function formatLatencyMs(value: number): string {
   return `${Math.round(value)}ms`;
 }
 
+function formatUsdCost(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "$0.00";
+  if (value < 0.000001) return "<$0.000001";
+  if (value < 0.01) return `$${value.toFixed(6)}`;
+  if (value < 1) return `$${value.toFixed(4)}`;
+  return `$${value.toFixed(2)}`;
+}
+
 function createTestChatMessage(
   role: TestChatMessage["role"],
   content: string,
@@ -272,10 +287,15 @@ function createTestChatMessage(
 function formatQuotaPoolLabel(
   baseLabel: string,
   pool: CodexQuotaPoolItem,
-  hourlyLabel: string,
   weeklyLabel: string,
 ): string {
-  return `${baseLabel} · ${hourlyLabel} ${formatCodexQuotaPoolPercent(pool.hourly)} · ${weeklyLabel} ${formatCodexQuotaPoolPercent(pool.weekly)}`;
+  const quotaText = pool.windows
+    .map(
+      (window) =>
+        `${formatCodexQuotaPoolWindowLabel(window.label, weeklyLabel)} ${formatCodexQuotaPoolPercent(window.percentage)}`,
+    )
+    .join(" · ");
+  return quotaText ? `${baseLabel} · ${quotaText}` : baseLabel;
 }
 
 function summarizeQuotaPoolsByPlan(
@@ -368,9 +388,16 @@ export function CodexLocalAccessModal({
   const [keyVisible, setKeyVisible] = useState(false);
   const [copiedField, setCopiedField] = useState<CopyableField | null>(null);
   const [selectedModelId, setSelectedModelId] = useState("");
-  const [statsRange, setStatsRange] = useState<StatsRangeKey>(() =>
+  const [statsRange, setStatsRange] = useState<CodexStatsRangeKey>(() =>
     readStoredStatsRange(),
   );
+  const [statsTimeRange, setStatsTimeRange] = useState<CodexStatsTimeRange>(() =>
+    buildCodexStatsTimeRange(readStoredStatsRange()),
+  );
+  const [filteredStatsWindow, setFilteredStatsWindow] =
+    useState<CodexLocalAccessStatsWindow | null>(null);
+  const [statsRangeError, setStatsRangeError] = useState("");
+  const statsRequestSeqRef = useRef(0);
   const [customRoutingOpen, setCustomRoutingOpen] = useState(false);
   const [customRoutingQuery, setCustomRoutingQuery] = useState("");
   const [customRoutingFilterTypes, setCustomRoutingFilterTypes] = useState<
@@ -409,24 +436,8 @@ export function CodexLocalAccessModal({
     addressKind === "lan" && state?.lanBaseUrl ? state.lanBaseUrl : baseUrl;
   const modelIds = state?.modelIds ?? [];
   const stats = state?.stats;
-  const statsRangeOptions = useMemo(
-    () =>
-      [
-        { key: "daily", label: t("codex.localAccess.statsRange.daily", "日") },
-        {
-          key: "weekly",
-          label: t("codex.localAccess.statsRange.weekly", "周"),
-        },
-        {
-          key: "monthly",
-          label: t("codex.localAccess.statsRange.monthly", "月"),
-        },
-      ] satisfies Array<{ key: StatsRangeKey; label: string }>,
-    [t],
-  );
   const quotaPoolLabels = useMemo(
     () => ({
-      hourly: t("codex.localAccess.quotaPool.hourlyShort", "5h"),
       weekly: t("codex.localAccess.quotaPool.weeklyShort", "周"),
       title: t("codex.localAccess.quotaPool.title", "额度池"),
     }),
@@ -434,9 +445,10 @@ export function CodexLocalAccessModal({
   );
   const selectedStatsWindow =
     useMemo<CodexLocalAccessStatsWindow | null>(() => {
-      if (!stats) return null;
+      if (filteredStatsWindow) return filteredStatsWindow;
+      if (!stats || statsRange === "custom") return null;
       return stats[statsRange];
-    }, [stats, statsRange]);
+    }, [filteredStatsWindow, stats, statsRange]);
   const selectedTotals = selectedStatsWindow?.totals;
   const routingStrategy = collection?.routingStrategy ?? "auto";
   const accessScope = collection?.accessScope ?? "localhost";
@@ -515,6 +527,15 @@ export function CodexLocalAccessModal({
           reasoning: formatCompactNumber(selectedTotals?.reasoningTokens ?? 0),
           defaultValue: "缓存 {{cached}} / 思考 {{reasoning}}",
         }),
+      },
+      {
+        key: "cost",
+        label: t("codex.localAccess.stats.estimatedCost", "估算价值"),
+        value: formatUsdCost(selectedTotals?.estimatedCostUsd ?? 0),
+        detail: t(
+          "codex.localAccess.stats.estimatedCostDetail",
+          "按当前请求价格快照累计",
+        ),
       },
       {
         key: "latency",
@@ -701,6 +722,34 @@ export function CodexLocalAccessModal({
   }, [statsRange]);
 
   useEffect(() => {
+    if (!isOpen) return;
+    const requestSeq = ++statsRequestSeqRef.current;
+    setStatsRangeError("");
+    void queryCodexLocalAccessStats(statsTimeRange.startAt, statsTimeRange.endAt)
+      .then((window) => {
+        if (requestSeq === statsRequestSeqRef.current) setFilteredStatsWindow(window);
+      })
+      .catch((err) => {
+        if (requestSeq === statsRequestSeqRef.current) {
+          setStatsRangeError(String(err).replace(/^Error:\s*/, ""));
+        }
+      });
+  }, [isOpen, stats?.updatedAt, statsTimeRange.endAt, statsTimeRange.startAt]);
+
+  const handleStatsPresetChange = (
+    key: Exclude<CodexStatsRangeKey, "custom">,
+    range: CodexStatsTimeRange,
+  ) => {
+    setStatsRange(key);
+    setStatsTimeRange(range);
+  };
+
+  const handleCustomStatsRangeApply = (range: CodexStatsTimeRange) => {
+    setStatsRange("custom");
+    setStatsTimeRange(range);
+  };
+
+  useEffect(() => {
     if (!testDialogOpen) return;
     const node = testChatScrollRef.current;
     scrollElementTo(node, { top: node?.scrollHeight ?? 0 });
@@ -779,11 +828,9 @@ export function CodexLocalAccessModal({
       formatQuotaPoolLabel(
         t("common.shared.filter.all", { count: tierCounts.all }),
         quotaPoolSummary.all,
-        quotaPoolLabels.hourly,
         quotaPoolLabels.weekly,
       ),
     [
-      quotaPoolLabels.hourly,
       quotaPoolLabels.weekly,
       quotaPoolSummary.all,
       t,
@@ -805,13 +852,11 @@ export function CodexLocalAccessModal({
           label: formatQuotaPoolLabel(
             option.label,
             pool,
-            quotaPoolLabels.hourly,
             quotaPoolLabels.weekly,
           ),
         };
       }),
     [
-      quotaPoolLabels.hourly,
       quotaPoolLabels.weekly,
       quotaPoolByPlan,
       t,
@@ -1258,13 +1303,11 @@ export function CodexLocalAccessModal({
       formatQuotaPoolLabel(
         t("common.shared.filter.all", { count: customRoutingTierCounts.all }),
         customRoutingQuotaPoolSummary.all,
-        quotaPoolLabels.hourly,
         quotaPoolLabels.weekly,
       ),
     [
       customRoutingQuotaPoolSummary.all,
       customRoutingTierCounts.all,
-      quotaPoolLabels.hourly,
       quotaPoolLabels.weekly,
       t,
     ],
@@ -1287,7 +1330,6 @@ export function CodexLocalAccessModal({
           label: formatQuotaPoolLabel(
             option.label,
             pool,
-            quotaPoolLabels.hourly,
             quotaPoolLabels.weekly,
           ),
         };
@@ -1295,7 +1337,6 @@ export function CodexLocalAccessModal({
     [
       customRoutingQuotaPoolByPlan,
       customRoutingTierCounts,
-      quotaPoolLabels.hourly,
       quotaPoolLabels.weekly,
       t,
     ],
@@ -2268,30 +2309,15 @@ export function CodexLocalAccessModal({
                     <span>{t("codex.localAccess.statsTitle", "总量统计")}</span>
                   </div>
                   <div className="codex-local-access-summary-actions">
-                    <div
-                      className="codex-local-access-stats-range-tabs"
-                      role="tablist"
-                      aria-label={t(
-                        "codex.localAccess.statsRange.label",
-                        "统计范围",
-                      )}
-                    >
-                      {statsRangeOptions.map((option) => (
-                        <button
-                          key={option.key}
-                          type="button"
-                          role="tab"
-                          className={`codex-local-access-stats-range-tab${
-                            statsRange === option.key ? " is-active" : ""
-                          }`}
-                          aria-selected={statsRange === option.key}
-                          onClick={() => setStatsRange(option.key)}
-                          disabled={actionBusy}
-                        >
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
+                    <CodexStatsRangePicker
+                      value={statsRange}
+                      range={statsTimeRange}
+                      onPresetChange={handleStatsPresetChange}
+                      onCustomApply={handleCustomStatsRangeApply}
+                      disabled={actionBusy}
+                      error={statsRangeError}
+                      compact
+                    />
                     <button
                       type="button"
                       className="btn btn-danger btn-sm"
@@ -2399,14 +2425,18 @@ export function CodexLocalAccessModal({
                         <span className="codex-local-access-quota-pool-plan">
                           {item.key} ({item.count})
                         </span>
-                        <span className="codex-local-access-quota-pool-value">
-                          {quotaPoolLabels.hourly}{" "}
-                          {formatCodexQuotaPoolPercent(item.hourly)}
-                        </span>
-                        <span className="codex-local-access-quota-pool-value">
-                          {quotaPoolLabels.weekly}{" "}
-                          {formatCodexQuotaPoolPercent(item.weekly)}
-                        </span>
+                        {item.windows.map((window) => (
+                          <span
+                            key={window.key}
+                            className="codex-local-access-quota-pool-value"
+                          >
+                            {formatCodexQuotaPoolWindowLabel(
+                              window.label,
+                              quotaPoolLabels.weekly,
+                            )}{" "}
+                            {formatCodexQuotaPoolPercent(window.percentage)}
+                          </span>
+                        ))}
                       </div>
                     ))}
                   </div>

@@ -18,6 +18,8 @@ import {
   FolderPlus,
   Image,
   KeyRound,
+  Pin,
+  PinOff,
   Plus,
   Power,
   RefreshCw,
@@ -26,6 +28,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Trash2,
+  Undo2,
   Users,
   Wrench,
   X,
@@ -43,6 +46,12 @@ import {
 } from "../stores/usePlatformLayoutStore";
 import { getPlatformLabel } from "../utils/platformMeta";
 import { useCodexAccountStore } from "../stores/useCodexAccountStore";
+import {
+  isCodexApiKeyScopeAccountActive,
+  reconcileCodexApiKeyScopeAccountIds,
+  selectCodexApiKeyScopeAccounts,
+} from "../utils/codexApiKeyAccountScope";
+import { resolveCodexApiServiceCompatibilityBaseUrls } from "../utils/codexApiServiceCompatibility";
 import * as codexLocalAccessService from "../services/codexLocalAccessService";
 import * as codexInstanceService from "../services/codexInstanceService";
 import {
@@ -50,17 +59,21 @@ import {
   type CodexAccountGroup,
 } from "../services/codexAccountGroupService";
 import type { CodexAccount } from "../types/codex";
-import { CODEX_API_SERVICE_BIND_ID } from "../types/instance";
+import {
+  CODEX_API_SERVICE_BIND_ID,
+  type InstanceProfile,
+} from "../types/instance";
 import type {
   CodexLocalAccessAddressKind,
   CodexLocalAccessAccountActivity,
   CodexLocalAccessAccountModelRule,
+  CodexLocalAccessApiKey,
   CodexLocalAccessChatMessage,
   CodexLocalAccessChatStreamEvent,
   CodexLocalAccessClientBaseUrlHost,
+  CodexLocalAccessCollection,
   CodexLocalAccessCustomRoutingRule,
   CodexLocalAccessGatewayMode,
-  CodexLocalAccessImageGenerationMode,
   CodexLocalAccessModelAlias,
   CodexLocalAccessModelPricing,
   CodexLocalAccessRequestKind,
@@ -76,19 +89,25 @@ import type {
 import { buildCodexAccountPresentation } from "../presentation/platformAccountPresentation";
 import {
   formatCodexQuotaPoolPercent,
+  formatCodexQuotaPoolWindowLabel,
   summarizeCodexQuotaPool,
 } from "../utils/codexQuotaPool";
 import { filterCodexLocalAccessAccountIds } from "../utils/codexLocalAccessAccounts";
 import { scrollElementTo } from "../utils/reducedMotion";
 import { SingleSelectDropdown } from "../components/SingleSelectDropdown";
 import { CodexLocalAccessModal } from "../components/CodexLocalAccessModal";
+import { CodexStatsRangePicker } from "../components/CodexStatsRangePicker";
 import { PaginationControls } from "../components/PaginationControls";
 import { useCodexAccountOverviewMemberView } from "../hooks/useCodexAccountOverviewMemberView";
+import {
+  buildCodexStatsTimeRange,
+  type CodexStatsRangeKey,
+  type CodexStatsTimeRange,
+} from "../utils/codexStatsRange";
 import "./CodexApiServicePage.css";
 
 type ServiceTab = "overview" | "keys" | "accounts" | "models" | "logs";
 type StatsLogTab = "accounts" | "logs" | "models" | "keys";
-type StatsRangeKey = "daily" | "weekly" | "monthly";
 type CopyField =
   | "baseUrl"
   | "lanBaseUrl"
@@ -106,6 +125,8 @@ interface ApiKeyPolicyDraft {
   modelPrefix: string;
   allowedModels: string;
   excludedModels: string;
+  inheritAccountPool: boolean;
+  accountIds: string[];
 }
 
 interface ApiKeyDraftSource {
@@ -198,12 +219,12 @@ function persistAddressKind(value: CodexLocalAccessAddressKind): void {
   }
 }
 
-function normalizeStatsRange(value: string | null | undefined): StatsRangeKey {
+function normalizeStatsRange(value: string | null | undefined): CodexStatsRangeKey {
   if (value === "weekly" || value === "monthly") return value;
   return "daily";
 }
 
-function readStoredStatsRange(): StatsRangeKey {
+function readStoredStatsRange(): CodexStatsRangeKey {
   try {
     return normalizeStatsRange(localStorage.getItem(STATS_RANGE_STORAGE_KEY));
   } catch {
@@ -211,7 +232,7 @@ function readStoredStatsRange(): StatsRangeKey {
   }
 }
 
-function persistStatsRange(value: StatsRangeKey): void {
+function persistStatsRange(value: CodexStatsRangeKey): void {
   try {
     localStorage.setItem(STATS_RANGE_STORAGE_KEY, value);
   } catch {
@@ -406,6 +427,65 @@ function parseModelRuleText(value: string): string[] {
 
 function serializeModelRules(values: string[] | null | undefined): string {
   return (values ?? []).join("\n");
+}
+
+function apiKeyInheritsAccountPool(apiKey: CodexLocalAccessApiKey): boolean {
+  return (
+    apiKey.inheritAccountPool ?? ((apiKey.accountIds?.length ?? 0) === 0)
+  );
+}
+
+function apiKeyHasFixedAccountScope(
+  apiKey: CodexLocalAccessApiKey,
+  collection: CodexLocalAccessCollection | null,
+): boolean {
+  if (apiKey.providerGateway) return true;
+  const accountIds = apiKey.accountIds ?? [];
+  return Boolean(
+    collection?.boundOauthAccountId &&
+      collection.accountIds.length === 0 &&
+      accountIds.length === 1 &&
+      apiKey.id === `provider_gateway_${accountIds[0]}`,
+  );
+}
+
+function apiKeyPolicyDraftFromValue(
+  apiKey: CodexLocalAccessApiKey,
+): ApiKeyPolicyDraft {
+  return {
+    modelPrefix: apiKey.modelPrefix ?? "",
+    allowedModels: serializeModelRules(apiKey.allowedModels),
+    excludedModels: serializeModelRules(apiKey.excludedModels),
+    inheritAccountPool: apiKeyInheritsAccountPool(apiKey),
+    accountIds: apiKey.accountIds ?? [],
+  };
+}
+
+function sameStringList(left: string[], right: string[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
+function apiKeyPolicyDraftIsDirty(
+  apiKey: CodexLocalAccessApiKey,
+  draft: ApiKeyPolicyDraft,
+): boolean {
+  const persisted = apiKeyPolicyDraftFromValue(apiKey);
+  return (
+    draft.modelPrefix !== persisted.modelPrefix ||
+    draft.allowedModels !== persisted.allowedModels ||
+    draft.excludedModels !== persisted.excludedModels ||
+    draft.inheritAccountPool !== persisted.inheritAccountPool ||
+    !sameStringList(draft.accountIds, persisted.accountIds)
+  );
+}
+
+function toggleStringSelection(values: string[], value: string): string[] {
+  return values.includes(value)
+    ? values.filter((item) => item !== value)
+    : [...values, value];
 }
 
 function parseModelAliasText(value: string): CodexLocalAccessModelAlias[] {
@@ -603,6 +683,44 @@ function gatewayModeLabel(
   return t("codex.apiService.logs.gatewayModeUnknown", "模式未知");
 }
 
+/** 与后端写入 x-cockpit-instance-id 一致：profile 目录 basename */
+function clientInstanceIdFromUserDataDir(userDataDir: string): string {
+  const normalized = userDataDir.trim().replace(/[/\\]+$/, "");
+  if (!normalized) return "";
+  const parts = normalized.split(/[/\\]/).filter(Boolean);
+  return parts[parts.length - 1] ?? "";
+}
+
+function instanceDisplayName(
+  instance: InstanceProfile,
+  t: ReturnType<typeof useTranslation>["t"],
+): string {
+  if (instance.isDefault) {
+    return t("instances.defaultName", "默认实例");
+  }
+  const name = instance.name?.trim();
+  return name || instance.id;
+}
+
+function resolveClientInstanceLabel(
+  clientInstanceId: string | null | undefined,
+  instances: InstanceProfile[],
+  t: ReturnType<typeof useTranslation>["t"],
+): string {
+  const id = clientInstanceId?.trim() ?? "";
+  if (!id) {
+    return t("codex.apiService.logs.instanceUnknown", "实例 -");
+  }
+  const matched = instances.find((instance) => {
+    const dirId = clientInstanceIdFromUserDataDir(instance.userDataDir || "");
+    return dirId === id || instance.id === id;
+  });
+  if (matched) {
+    return instanceDisplayName(matched, t);
+  }
+  return id;
+}
+
 export function CodexApiServicePage() {
   const { t } = useTranslation();
   const { platformGroups } = usePlatformLayoutStore();
@@ -617,9 +735,15 @@ export function CodexApiServicePage() {
   const [groups, setGroups] = useState<CodexAccountGroup[]>([]);
   const [activeTab, setActiveTab] = useState<ServiceTab>("overview");
   const [statsLogTab, setStatsLogTab] = useState<StatsLogTab>("logs");
-  const [statsRange, setStatsRange] = useState<StatsRangeKey>(() =>
+  const [statsRange, setStatsRange] = useState<CodexStatsRangeKey>(() =>
     readStoredStatsRange(),
   );
+  const [statsTimeRange, setStatsTimeRange] = useState<CodexStatsTimeRange>(() =>
+    buildCodexStatsTimeRange(readStoredStatsRange()),
+  );
+  const [filteredStatsWindow, setFilteredStatsWindow] =
+    useState<CodexLocalAccessStatsWindow | null>(null);
+  const [statsRangeError, setStatsRangeError] = useState("");
   const [addressKind, setAddressKind] = useState<CodexLocalAccessAddressKind>(
     () => readStoredAddressKind(),
   );
@@ -677,6 +801,9 @@ export function CodexApiServicePage() {
   const [maxRetryCredentialsDraft, setMaxRetryCredentialsDraft] = useState("0");
   const [maxRetryIntervalDraft, setMaxRetryIntervalDraft] = useState("3");
   const [disableCoolingDraft, setDisableCoolingDraft] = useState(false);
+  const [immediateSseResponseDraft, setImmediateSseResponseDraft] = useState(false);
+  const [maxConcurrentImageRequestsDraft, setMaxConcurrentImageRequestsDraft] =
+    useState("1");
   const [requestLogPage, setRequestLogPage] = useState(1);
   const [requestLogPageSize, setRequestLogPageSize] = useState(() =>
     readStoredRequestLogPageSize(),
@@ -694,9 +821,12 @@ export function CodexApiServicePage() {
   const [requestLogModelQuery, setRequestLogModelQuery] = useState("");
   const [requestLogAccountQuery, setRequestLogAccountQuery] = useState("");
   const [requestLogApiKeyQuery, setRequestLogApiKeyQuery] = useState("");
+  const [requestLogInstanceQuery, setRequestLogInstanceQuery] = useState("all");
   const [requestLogErrorQuery, setRequestLogErrorQuery] = useState("");
+  const [codexInstances, setCodexInstances] = useState<InstanceProfile[]>([]);
   const mountedRef = useRef(true);
   const stateRequestSeqRef = useRef(0);
+  const statsRequestSeqRef = useRef(0);
   const testChatScrollRef = useRef<HTMLDivElement | null>(null);
 
   const collection = state?.collection ?? null;
@@ -756,9 +886,13 @@ export function CodexApiServicePage() {
   );
   const selectedStatsWindow =
     useMemo<CodexLocalAccessStatsWindow | null>(() => {
-      if (!stats) return null;
+      if (filteredStatsWindow) return filteredStatsWindow;
+      if (!stats || statsRange === "custom") return null;
       return stats[statsRange];
-    }, [stats, statsRange]);
+    }, [filteredStatsWindow, stats, statsRange]);
+  const apiKeyStatsById = new Map(
+    (selectedStatsWindow?.apiKeys ?? []).map((item) => [item.apiKeyId, item]),
+  );
   const totals = selectedStatsWindow?.totals;
   const memberIds = collection?.accountIds ?? [];
   const localAccessAccounts = useMemo(() => accounts, [accounts]);
@@ -770,6 +904,10 @@ export function CodexApiServicePage() {
         )
         .filter((account): account is CodexAccount => Boolean(account)),
     [memberIds, localAccessAccounts],
+  );
+  const memberAccountIds = useMemo(
+    () => memberAccounts.map((account) => account.id),
+    [memberAccounts],
   );
   const accountDisplayNames = useMemo(() => {
     const next = new Map<string, string>();
@@ -808,12 +946,15 @@ export function CodexApiServicePage() {
     addressKind === "lan" && state?.lanBaseUrl ? state.lanBaseUrl : baseUrl;
   const accessScope = collection?.accessScope ?? "localhost";
   const clientBaseUrlHost = collection?.clientBaseUrlHost ?? "localhost";
-  const imageGenerationMode = collection?.imageGenerationMode ?? "enabled";
   const routingStrategy = collection?.routingStrategy ?? "auto";
   const gatewayMode = collection?.gatewayMode ?? "sidecar";
   const modelIds = state?.modelIds ?? [];
   const exampleModelId = modelIds[0] ?? "gpt-5.5";
   const exampleApiKey = collection?.apiKey || "<api-key>";
+  const compatibilityBaseUrls = useMemo(
+    () => resolveCodexApiServiceCompatibilityBaseUrls(displayBaseUrl),
+    [displayBaseUrl],
+  );
   const compatibilityExamples = useMemo(
     () => [
       {
@@ -828,7 +969,7 @@ export function CodexApiServicePage() {
           "Base URL uses /v1.",
         ),
         value: [
-          `OPENAI_BASE_URL=${displayBaseUrl}/v1`,
+          `OPENAI_BASE_URL=${compatibilityBaseUrls.openai}`,
           `OPENAI_API_KEY=${exampleApiKey}`,
           `OPENAI_MODEL=${exampleModelId}`,
         ].join("\n"),
@@ -842,7 +983,7 @@ export function CodexApiServicePage() {
           "Codex-native Responses entry.",
         ),
         value: [
-          `OPENAI_BASE_URL=${displayBaseUrl}/v1`,
+          `OPENAI_BASE_URL=${compatibilityBaseUrls.openai}`,
           `OPENAI_API_KEY=${exampleApiKey}`,
           `OPENAI_MODEL=${exampleModelId}`,
           "OPENAI_API_ENDPOINT=/responses",
@@ -860,7 +1001,7 @@ export function CodexApiServicePage() {
           "Use the same service key.",
         ),
         value: [
-          `ANTHROPIC_BASE_URL=${displayBaseUrl}`,
+          `ANTHROPIC_BASE_URL=${compatibilityBaseUrls.root}`,
           `ANTHROPIC_API_KEY=${exampleApiKey}`,
           `ANTHROPIC_MODEL=${exampleModelId}`,
         ].join("\n"),
@@ -874,7 +1015,7 @@ export function CodexApiServicePage() {
           "Base URL uses /v1beta.",
         ),
         value: [
-          `GEMINI_BASE_URL=${displayBaseUrl}/v1beta`,
+          `GEMINI_BASE_URL=${compatibilityBaseUrls.gemini}`,
           `GEMINI_API_KEY=${exampleApiKey}`,
           `GEMINI_MODEL=${exampleModelId}`,
         ].join("\n"),
@@ -888,13 +1029,13 @@ export function CodexApiServicePage() {
           "Use Authorization: Bearer.",
         ),
         value: [
-          `OLLAMA_HOST=${displayBaseUrl}`,
+          `OLLAMA_HOST=${compatibilityBaseUrls.root}`,
           `OLLAMA_API_KEY=${exampleApiKey}`,
           `OLLAMA_MODEL=${exampleModelId}`,
         ].join("\n"),
       },
     ],
-    [displayBaseUrl, exampleApiKey, exampleModelId, t],
+    [compatibilityBaseUrls, exampleApiKey, exampleModelId, t],
   );
   const modelPricingRows = useMemo<ModelPricingRow[]>(() => {
     const presetMap = new Map<string, CodexLocalAccessModelPricing>();
@@ -1110,6 +1251,7 @@ export function CodexApiServicePage() {
       .then((instances) => {
         const defaultInstance = instances.find((instance) => instance.isDefault);
         if (mountedRef.current) {
+          setCodexInstances(instances);
           setApiServiceIsCurrent(
             defaultInstance?.bindAccountId === CODEX_API_SERVICE_BIND_ID,
           );
@@ -1117,6 +1259,7 @@ export function CodexApiServicePage() {
       })
       .catch(() => {
         if (mountedRef.current) {
+          setCodexInstances([]);
           setApiServiceIsCurrent(false);
         }
       });
@@ -1206,6 +1349,34 @@ export function CodexApiServicePage() {
   }, [statsRange]);
 
   useEffect(() => {
+    const requestSeq = ++statsRequestSeqRef.current;
+    setStatsRangeError("");
+    void codexLocalAccessService
+      .queryCodexLocalAccessStats(statsTimeRange.startAt, statsTimeRange.endAt)
+      .then((window) => {
+        if (!mountedRef.current || requestSeq !== statsRequestSeqRef.current) return;
+        setFilteredStatsWindow(window);
+      })
+      .catch((err) => {
+        if (!mountedRef.current || requestSeq !== statsRequestSeqRef.current) return;
+        setStatsRangeError(String(err).replace(/^Error:\s*/, ""));
+      });
+  }, [statsTimeRange.endAt, statsTimeRange.startAt, stats?.updatedAt]);
+
+  const handleStatsPresetChange = (
+    key: Exclude<CodexStatsRangeKey, "custom">,
+    range: CodexStatsTimeRange,
+  ) => {
+    setStatsRange(key);
+    setStatsTimeRange(range);
+  };
+
+  const handleCustomStatsRangeApply = (range: CodexStatsTimeRange) => {
+    setStatsRange("custom");
+    setStatsTimeRange(range);
+  };
+
+  useEffect(() => {
     persistAddressKind(addressKind);
   }, [addressKind]);
 
@@ -1225,6 +1396,8 @@ export function CodexApiServicePage() {
     setRequestLogPage(1);
   }, [
     statsRange,
+    statsTimeRange.startAt,
+    statsTimeRange.endAt,
     requestLogPageSize,
     requestLogKindFilter,
     requestLogStatusFilter,
@@ -1232,6 +1405,7 @@ export function CodexApiServicePage() {
     requestLogModelQuery,
     requestLogAccountQuery,
     requestLogApiKeyQuery,
+    requestLogInstanceQuery,
     requestLogErrorQuery,
   ]);
 
@@ -1250,10 +1424,14 @@ export function CodexApiServicePage() {
       .queryCodexLocalAccessRequestLogs({
         page: requestLogPage,
         pageSize: requestLogPageSize,
-        statsRange,
+        statsRange: statsRange === "custom" ? null : statsRange,
+        startAt: statsTimeRange.startAt,
+        endAt: statsTimeRange.endAt,
         modelQuery: requestLogModelQuery,
         accountQuery: requestLogAccountQuery,
         apiKeyQuery: requestLogApiKeyQuery,
+        instanceQuery:
+          requestLogInstanceQuery === "all" ? null : requestLogInstanceQuery,
         gatewayMode:
           requestLogGatewayModeFilter === "all"
             ? null
@@ -1287,6 +1465,8 @@ export function CodexApiServicePage() {
     activeTab,
     statsLogTab,
     statsRange,
+    statsTimeRange.startAt,
+    statsTimeRange.endAt,
     requestLogPage,
     requestLogPageSize,
     requestLogKindFilter,
@@ -1295,6 +1475,7 @@ export function CodexApiServicePage() {
     requestLogModelQuery,
     requestLogAccountQuery,
     requestLogApiKeyQuery,
+    requestLogInstanceQuery,
     requestLogErrorQuery,
     stats?.updatedAt,
   ]);
@@ -1304,16 +1485,17 @@ export function CodexApiServicePage() {
     setApiKeyDrafts(
       Object.fromEntries(apiKeys.map((apiKey) => [apiKey.id, apiKey.label])),
     );
-    setApiKeyPolicyDrafts(
+    setApiKeyPolicyDrafts((currentDrafts) =>
       Object.fromEntries(
-        apiKeys.map((apiKey) => [
-          apiKey.id,
-          {
-            modelPrefix: apiKey.modelPrefix,
-            allowedModels: serializeModelRules(apiKey.allowedModels),
-            excludedModels: serializeModelRules(apiKey.excludedModels),
-          },
-        ]),
+        (collection?.apiKeys ?? []).map((apiKey) => {
+          const currentDraft = currentDrafts[apiKey.id];
+          return [
+            apiKey.id,
+            currentDraft && apiKeyPolicyDraftIsDirty(apiKey, currentDraft)
+              ? currentDraft
+              : apiKeyPolicyDraftFromValue(apiKey),
+          ];
+        }),
       ),
     );
   }, [apiKeyDraftSourceKey]);
@@ -1333,12 +1515,24 @@ export function CodexApiServicePage() {
       formatSeconds(collection?.maxRetryIntervalMs ?? 3000),
     );
     setDisableCoolingDraft(collection?.disableCooling ?? false);
+    setImmediateSseResponseDraft(collection?.immediateSseResponse ?? false);
+    setMaxConcurrentImageRequestsDraft(
+      String(collection?.maxConcurrentImageRequests ?? 1),
+    );
+    setTimeoutDrafts(timeoutDraftsFromValue(collection?.timeouts));
+    setSelectedTimeoutPresetId(
+      collection?.activeTimeoutPresetId || "long_wait",
+    );
   }, [
     collection?.sessionAffinity,
     collection?.sessionAffinityTtlMs,
     collection?.maxRetryCredentials,
     collection?.maxRetryIntervalMs,
     collection?.disableCooling,
+    collection?.immediateSseResponse,
+    collection?.maxConcurrentImageRequests,
+    collection?.timeouts,
+    collection?.activeTimeoutPresetId,
   ]);
 
   useEffect(() => {
@@ -1626,25 +1820,6 @@ export function CodexApiServicePage() {
     );
   };
 
-  const handleUpdateImageMode = async (value: string) => {
-    const mode = (
-      value === "images_only" || value === "disabled" ? value : "enabled"
-    ) as CodexLocalAccessImageGenerationMode;
-    await runAction(
-      async () => {
-        const next =
-          await codexLocalAccessService.updateCodexLocalAccessImageGenerationMode(
-            mode,
-          );
-        setState(next);
-      },
-      t(
-        "codex.localAccess.imageGenerationSaveSuccess",
-        "image_generation 设置已更新",
-      ),
-    );
-  };
-
   const handleUpdateRouting = async (value: string) => {
     await runAction(
       async () => {
@@ -1802,6 +1977,35 @@ export function CodexApiServicePage() {
   const handleSaveApiKeyPolicy = async (apiKeyId: string) => {
     const draft = apiKeyPolicyDrafts[apiKeyId];
     if (!draft) return;
+    const apiKey = collection?.apiKeys.find((item) => item.id === apiKeyId);
+    if (!apiKey) return;
+    const accountIds = reconcileCodexApiKeyScopeAccountIds({
+      accounts: localAccessAccounts,
+      restrictFreeAccounts: collection?.restrictFreeAccounts ?? true,
+      persistedAccountIds: apiKey.accountIds ?? [],
+      draftAccountIds: draft.accountIds,
+    });
+    if (
+      apiKeyHasFixedAccountScope(apiKey, collection) &&
+      (draft.inheritAccountPool || accountIds.length === 0)
+    ) {
+      setError(
+        t(
+          "codex.apiService.keys.accountScopeFixed",
+          "此 Key 已固定绑定账号，不能继承服务池或清空账号范围",
+        ),
+      );
+      return;
+    }
+    if (!draft.inheritAccountPool && accountIds.length === 0) {
+      setError(
+        t(
+          "codex.apiService.keys.accountScopeRequired",
+          "自定义账号池至少需要选择 1 个账号",
+        ),
+      );
+      return;
+    }
     await runAction(
       async () => {
         const next = await codexLocalAccessService.updateCodexLocalAccessApiKey(
@@ -1810,12 +2014,61 @@ export function CodexApiServicePage() {
             modelPrefix: draft.modelPrefix.trim(),
             allowedModels: parseModelRuleText(draft.allowedModels),
             excludedModels: parseModelRuleText(draft.excludedModels),
+            accountIds,
+            inheritAccountPool: draft.inheritAccountPool,
           },
         );
         setState(next);
+        const savedApiKey = next.collection?.apiKeys.find(
+          (item) => item.id === apiKeyId,
+        );
+        if (savedApiKey) {
+          setApiKeyPolicyDrafts((drafts) => ({
+            ...drafts,
+            [apiKeyId]: apiKeyPolicyDraftFromValue(savedApiKey),
+          }));
+        }
       },
-      t("codex.apiService.keys.policySaved", "Key 模型策略已保存"),
+      t("codex.apiService.keys.policySaved", "Key 策略已保存"),
     );
+  };
+
+  const handleSetApiKeyAccountPriority = async (
+    apiKey: CodexLocalAccessApiKey,
+    draft: ApiKeyPolicyDraft,
+    accountId: string,
+  ) => {
+    if (
+      draft.inheritAccountPool ||
+      !draft.accountIds.includes(accountId) ||
+      !apiKey.accountIds?.includes(accountId)
+    ) {
+      return;
+    }
+    const priorityRank = (apiKey.priorityAccountIds ?? []).indexOf(accountId);
+    const pinned = priorityRank !== 0;
+    await runAction(
+      async () => {
+        const next =
+          await codexLocalAccessService.setCodexLocalAccessApiKeyAccountPriority(
+            apiKey.id,
+            accountId,
+            pinned,
+          );
+        setState(next);
+      },
+      pinned
+        ? t("codex.apiService.keys.accountPrioritySaved", "已置顶账号")
+        : t("codex.apiService.keys.accountPriorityCleared", "已取消置顶账号"),
+    );
+  };
+
+  const handleResetApiKeyPolicy = (apiKey: CodexLocalAccessApiKey) => {
+    setApiKeyPolicyDrafts((drafts) => ({
+      ...drafts,
+      [apiKey.id]: apiKeyPolicyDraftFromValue(apiKey),
+    }));
+    setError("");
   };
 
   const handleToggleApiKey = async (apiKeyId: string, enabled: boolean) => {
@@ -2146,9 +2399,18 @@ export function CodexApiServicePage() {
       if (unsetUnknown) {
         continue;
       }
-      const tokenInvalid =
-        longContextThresholdTokens !== null &&
-        !Number.isFinite(longContextThresholdTokens);
+      // 阈值可空：非长上下文模型（如 gpt-5.4-mini）不填是合法的。
+      // 仅当用户填写了内容但不是正整数（解析为 NaN）时才拦截。
+      // 若填写了任一长上下文价格档，则必须同时提供合法阈值。
+      const hasLongContextTier =
+        (standardLongInput != null && Number.isFinite(standardLongInput)) ||
+        (standardLongOutput != null && Number.isFinite(standardLongOutput)) ||
+        (standardLongCached != null && Number.isFinite(standardLongCached));
+      const tokenInvalid = hasLongContextTier
+        ? longContextThresholdTokens === null ||
+          !Number.isFinite(longContextThresholdTokens)
+        : longContextThresholdTokens != null &&
+          !Number.isFinite(longContextThresholdTokens);
       const inputInvalid = input === null || !Number.isFinite(input);
       const cachedInvalid = cached !== null && !Number.isFinite(cached);
       const outputInvalid = output === null || !Number.isFinite(output);
@@ -2170,7 +2432,7 @@ export function CodexApiServicePage() {
         setPricingError(
           t(
             "codex.apiService.models.pricingInvalid",
-            "已填写的价格必须是大于或等于 0 的数字，Token 阈值可留空或填写正整数",
+            "价格必须是大于或等于 0 的数字，Token 阈值必须是正整数",
           ),
         );
         return;
@@ -2284,6 +2546,21 @@ export function CodexApiServicePage() {
       );
       return;
     }
+    const maxConcurrentImageRequests = parseIntegerDraft(
+      maxConcurrentImageRequestsDraft,
+      1,
+      16,
+    );
+    if (maxConcurrentImageRequests === null) {
+      setError(
+        t("codex.apiService.validation.numberRange", {
+          min: 1,
+          max: 16,
+          defaultValue: "Please enter a number between {{min}} and {{max}}",
+        }),
+      );
+      return;
+    }
     await runAction(
       async () => {
         const next =
@@ -2293,6 +2570,8 @@ export function CodexApiServicePage() {
             maxRetryCredentials,
             maxRetryIntervalMs: maxRetryIntervalSeconds * 1000,
             disableCooling: disableCoolingDraft,
+            immediateSseResponse: immediateSseResponseDraft,
+            maxConcurrentImageRequests,
           });
         setState(next);
       },
@@ -2671,24 +2950,14 @@ export function CodexApiServicePage() {
     { value: "localhost", label: "localhost" },
     { value: "127.0.0.1", label: "127.0.0.1" },
   ];
-  const imageModeOptions = [
-    {
-      value: "enabled",
-      label: t("codex.localAccess.imageGenerationMode.enabled", "启用"),
-    },
-    {
-      value: "images_only",
-      label: t("codex.localAccess.imageGenerationMode.imagesOnly", "仅图片"),
-    },
-    {
-      value: "disabled",
-      label: t("codex.localAccess.imageGenerationMode.disabled", "禁用"),
-    },
-  ];
   const routingOptions = [
     {
       value: "auto",
       label: t("codex.localAccess.routingStrategy.auto", "自动（推荐）"),
+    },
+    {
+      value: "random",
+      label: t("codex.localAccess.routingStrategy.random", "随机分散"),
     },
     {
       value: "single_account",
@@ -2725,20 +2994,14 @@ export function CodexApiServicePage() {
       label: t("codex.localAccess.routingStrategy.custom", "自定义"),
     },
   ];
-  const statsRangeOptions = [
-    {
-      key: "daily" as const,
-      label: t("codex.localAccess.statsRange.daily", "日"),
-    },
-    {
-      key: "weekly" as const,
-      label: t("codex.localAccess.statsRange.weekly", "周"),
-    },
-    {
-      key: "monthly" as const,
-      label: t("codex.localAccess.statsRange.monthly", "月"),
-    },
-  ];
+  const selectedStatsRangeTitle =
+    statsRange === "daily"
+      ? t("codex.apiService.statsRange.today", "Today")
+      : statsRange === "weekly"
+        ? t("codex.apiService.statsRange.thisWeek", "This week")
+        : statsRange === "monthly"
+          ? t("codex.apiService.statsRange.thisMonth", "This month")
+          : `${statsTimeRange.startInput} - ${statsTimeRange.endInput}`;
   const requestLogKindOptions: Array<{
     value: RequestLogKindFilter;
     label: string;
@@ -2766,6 +3029,27 @@ export function CodexApiServicePage() {
     },
     { value: "failed", label: t("codex.localAccess.requestLogFailed", "失败") },
   ];
+  const requestLogInstanceOptions = useMemo(() => {
+    const options: Array<{ value: string; label: string }> = [
+      {
+        value: "all",
+        label: t("codex.apiService.logs.allInstances", "全部实例"),
+      },
+    ];
+    const seen = new Set<string>(["all"]);
+    for (const instance of codexInstances) {
+      const value =
+        clientInstanceIdFromUserDataDir(instance.userDataDir || "") ||
+        instance.id;
+      if (!value || seen.has(value)) continue;
+      seen.add(value);
+      options.push({
+        value,
+        label: instanceDisplayName(instance, t),
+      });
+    }
+    return options;
+  }, [codexInstances, t]);
   const requestLogGatewayModeOptions: Array<{
     value: RequestLogGatewayModeFilter;
     label: string;
@@ -2867,11 +3151,11 @@ export function CodexApiServicePage() {
       key: "tokens",
       label: t("codex.localAccess.stats.tokens", "总 Token 数"),
       value: formatCompactNumber(totals?.totalTokens ?? 0),
-      detail: t("codex.localAccess.stats.tokensDetail", {
+      detail: `${t("codex.localAccess.stats.tokensDetail", {
         input: formatCompactNumber(totals?.inputTokens ?? 0),
         output: formatCompactNumber(totals?.outputTokens ?? 0),
         defaultValue: "输入 {{input}} / 输出 {{output}}",
-      }),
+      })} / ${t("codex.localAccess.stats.cached", "缓存")} ${formatCompactNumber(totals?.cachedTokens ?? 0)}`,
     },
     {
       key: "cost",
@@ -2908,6 +3192,7 @@ export function CodexApiServicePage() {
     requestLogKindFilter !== "all" ||
     requestLogStatusFilter !== "all" ||
     requestLogGatewayModeFilter !== "all" ||
+    requestLogInstanceQuery !== "all" ||
     requestLogModelQuery.trim() ||
     requestLogAccountQuery.trim() ||
     requestLogApiKeyQuery.trim() ||
@@ -2920,6 +3205,7 @@ export function CodexApiServicePage() {
     setRequestLogModelQuery("");
     setRequestLogAccountQuery("");
     setRequestLogApiKeyQuery("");
+    setRequestLogInstanceQuery("all");
     setRequestLogErrorQuery("");
   };
 
@@ -3090,6 +3376,32 @@ export function CodexApiServicePage() {
             )}
           </div>
         )}
+
+        <section className="codex-api-service-usage-toolbar">
+          <div className="codex-api-service-usage-context">
+            <Activity size={16} />
+            <div>
+              <strong>
+                {t("codex.apiService.usage.title", "用量统计")}
+              </strong>
+              <span>
+                {selectedStatsRangeTitle}
+                {stats?.updatedAt
+                  ? ` · ${t("codex.apiService.usage.lastRecorded", "最近入账")} ${formatDateTime(stats.updatedAt)}`
+                  : ""}
+              </span>
+            </div>
+          </div>
+          <CodexStatsRangePicker
+            value={statsRange}
+            range={statsTimeRange}
+            onPresetChange={handleStatsPresetChange}
+            onCustomApply={handleCustomStatsRangeApply}
+            disabled={busy}
+            error={statsRangeError}
+            compact
+          />
+        </section>
 
         <section className="codex-api-service-summary-grid">
           {summaryCards.map((item) => (
@@ -3311,10 +3623,18 @@ export function CodexApiServicePage() {
                 ) : (
                   quotaPoolSummary.visiblePlans.map((item) => (
                     <span key={item.key}>
-                      {item.key} ({item.count}) · 5h{" "}
-                      {formatCodexQuotaPoolPercent(item.hourly)} ·{" "}
-                      {t("codex.localAccess.quotaPool.weeklyShort", "周")}{" "}
-                      {formatCodexQuotaPoolPercent(item.weekly)}
+                      {item.key} ({item.count})
+                      {item.windows.length > 0
+                        ? ` · ${item.windows
+                            .map(
+                              (window) =>
+                                `${formatCodexQuotaPoolWindowLabel(
+                                  window.label,
+                                  t("codex.localAccess.quotaPool.weeklyShort", "周"),
+                                )} ${formatCodexQuotaPoolPercent(window.percentage)}`,
+                            )
+                            .join(" · ")}`
+                        : ""}
                     </span>
                   ))
                 )}
@@ -3385,22 +3705,57 @@ export function CodexApiServicePage() {
           <section className="codex-api-service-panel">
             <div className="codex-api-service-panel-head">
               <h2>{t("codex.localAccess.apiKeysTitle", "客户端 Key")}</h2>
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                onClick={() => void handleCreateApiKey()}
-                disabled={busy || !collection}
-              >
-                <Plus size={14} />
-                {t("codex.localAccess.apiKeyAdd", "新增 Key")}
-              </button>
+              <div className="codex-api-service-head-actions">
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => void handleCreateApiKey()}
+                  disabled={busy || !collection}
+                >
+                  <Plus size={14} />
+                  {t("codex.localAccess.apiKeyAdd", "新增 Key")}
+                </button>
+              </div>
             </div>
             <div className="codex-api-service-table">
               {(collection?.apiKeys ?? []).map((apiKey) => {
                 const labelDraft = apiKeyDrafts[apiKey.id] ?? apiKey.label;
-                const keyStats = selectedStatsWindow?.apiKeys.find(
-                  (item) => item.apiKeyId === apiKey.id,
+                const policyDraft =
+                  apiKeyPolicyDrafts[apiKey.id] ??
+                  apiKeyPolicyDraftFromValue(apiKey);
+                const persistedInheritAccountPool =
+                  apiKeyInheritsAccountPool(apiKey);
+                const persistedAccountIds = apiKey.accountIds ?? [];
+                const accountScopeLocked = apiKeyHasFixedAccountScope(
+                  apiKey,
+                  collection,
                 );
+                const keySelectableAccounts = selectCodexApiKeyScopeAccounts({
+                  accounts: localAccessAccounts,
+                  restrictFreeAccounts: collection?.restrictFreeAccounts ?? true,
+                  scopedAccountIds: apiKey.accountIds ?? [],
+                });
+                const keySelectableAccountIds = keySelectableAccounts.map(
+                  (account) => account.id,
+                );
+                const keySelectableAccountIdSet = new Set(
+                  keySelectableAccounts.map((account) => account.id),
+                );
+                const policyDirty = apiKeyPolicyDraftIsDirty(
+                  apiKey,
+                  policyDraft,
+                );
+                const customScopeInvalid =
+                  !policyDraft.inheritAccountPool &&
+                  policyDraft.accountIds.length === 0;
+                const keyStats = apiKeyStatsById.get(apiKey.id);
+                const keyUsage = keyStats?.usage;
+                const keySuccessRate =
+                  keyUsage && keyUsage.requestCount > 0
+                    ? Math.round(
+                        (keyUsage.successCount / keyUsage.requestCount) * 100,
+                      )
+                    : 0;
                 const policyExpanded = expandedApiKeyPolicyIds.has(apiKey.id);
                 return (
                   <div key={apiKey.id} className="codex-api-service-key-card">
@@ -3434,9 +3789,11 @@ export function CodexApiServicePage() {
                           ? t("common.enabled", "已启用")
                           : t("common.disabled", "已停用")}
                       </span>
-                      <span>{formatDateTime(apiKey.lastUsedAt)}</span>
-                      <span>
-                        {formatCompactNumber(keyStats?.usage.requestCount ?? 0)}
+                      <span className="codex-api-service-key-last-used">
+                        <small>
+                          {t("codex.apiService.keys.lastUsed", "最近使用")}
+                        </small>
+                        <strong>{formatDateTime(apiKey.lastUsedAt)}</strong>
                       </span>
                       <div className="codex-api-service-row-actions">
                         <button
@@ -3445,6 +3802,7 @@ export function CodexApiServicePage() {
                           onClick={() =>
                             void handleCopy(`apiKey:${apiKey.id}`, apiKey.key)
                           }
+                          title={t("common.copy", "复制")}
                         >
                           {copiedField === `apiKey:${apiKey.id}` ? (
                             <Check size={14} />
@@ -3459,6 +3817,11 @@ export function CodexApiServicePage() {
                             void handleToggleApiKey(apiKey.id, !apiKey.enabled)
                           }
                           disabled={busy}
+                          title={
+                            apiKey.enabled
+                              ? t("common.disable", "停用")
+                              : t("common.enable", "启用")
+                          }
                         >
                           <Power size={14} />
                         </button>
@@ -3467,6 +3830,10 @@ export function CodexApiServicePage() {
                           className="folder-icon-btn"
                           onClick={() => void handleRotateApiKey(apiKey.id)}
                           disabled={busy}
+                          title={t(
+                            "codex.localAccess.apiKeyRotate",
+                            "轮换 Key",
+                          )}
                         >
                           <RefreshCw size={14} />
                         </button>
@@ -3477,9 +3844,85 @@ export function CodexApiServicePage() {
                           disabled={
                             busy || (collection?.apiKeys.length ?? 0) <= 1
                           }
+                          title={t("common.delete", "删除")}
                         >
                           <Trash2 size={14} />
                         </button>
+                      </div>
+                    </div>
+                    <div className="api-key-details-row">
+                      <div
+                        className={`api-key-routing-summary ${
+                          !persistedInheritAccountPool &&
+                          persistedAccountIds.length === 0
+                            ? "warning"
+                            : ""
+                        }`}
+                      >
+                        <Route size={16} />
+                        <div>
+                          <span>
+                            {t("codex.apiService.keys.routingAccounts", "分流账号")}
+                          </span>
+                          <strong>
+                            {persistedInheritAccountPool
+                              ? t(
+                                  "codex.apiService.keys.accountScopeInheritedCount",
+                                  "继承服务池 · {{count}} 个账号",
+                                  { count: memberIds.length },
+                                )
+                              : persistedAccountIds.length === 0
+                                ? t(
+                                    "codex.apiService.keys.accountScopeUnavailable",
+                                    "无可用账号",
+                                  )
+                                : t(
+                                    "codex.apiService.keys.accountScopeCount",
+                                    "自定义 · {{selected}}/{{total}} 个账号",
+                                    {
+                                      selected: persistedAccountIds.length,
+                                      total: keySelectableAccountIds.length,
+                                    },
+                                  )}
+                          </strong>
+                        </div>
+                      </div>
+                      <div
+                        key={`${statsRange}:${statsTimeRange.startAt}:${statsTimeRange.endAt}`}
+                        className="api-key-usage-grid"
+                        aria-live="polite"
+                        aria-label={`${selectedStatsRangeTitle} Key 用量`}
+                      >
+                        <div className="api-key-usage-grid-head">
+                          <Activity size={14} />
+                          <span>{selectedStatsRangeTitle}</span>
+                        </div>
+                        <div>
+                          <span>
+                            {t("codex.localAccess.stats.requests", "请求")}
+                          </span>
+                          <strong>
+                            {formatCompactNumber(keyUsage?.requestCount ?? 0)}
+                          </strong>
+                        </div>
+                        <div>
+                          <span>Token</span>
+                          <strong>{formatAccountTokenUsage(keyUsage)}</strong>
+                        </div>
+                        <div>
+                          <span>
+                            {t("codex.localAccess.stats.successRateLabel", "成功率")}
+                          </span>
+                          <strong>{keySuccessRate}%</strong>
+                        </div>
+                        <div>
+                          <span>
+                            {t("codex.localAccess.stats.estimatedCost", "估算费用")}
+                          </span>
+                          <strong>
+                            {formatUsdCost(keyUsage?.estimatedCostUsd ?? 0)}
+                          </strong>
+                        </div>
                       </div>
                     </div>
                     <button
@@ -3493,11 +3936,19 @@ export function CodexApiServicePage() {
                         <span>
                           {t(
                             "codex.apiService.keys.advancedPolicyTitle",
-                            "高级功能：模型策略",
+                            "账号池与模型策略",
                           )}
                         </span>
                       </span>
                       <span className="codex-api-service-key-advanced-state">
+                        {policyDirty && (
+                          <span className="api-key-policy-dirty">
+                            {t(
+                              "codex.apiService.keys.unsaved",
+                              "未保存",
+                            )}
+                          </span>
+                        )}
                         {policyExpanded
                           ? t("common.collapse", "收起")
                           : t("common.expand", "展开")}
@@ -3506,6 +3957,249 @@ export function CodexApiServicePage() {
                     </button>
                     {policyExpanded && (
                       <div className="codex-api-service-key-policy">
+                        <div className="api-key-account-scope">
+                          <div className="api-key-account-scope-header">
+                            <span>
+                              {t(
+                                "codex.apiService.keys.accountScope",
+                                "账号轮转范围",
+                              )}
+                            </span>
+                            <span className="api-key-account-scope-hint">
+                              {accountScopeLocked
+                                ? t(
+                                    "codex.apiService.keys.accountScopeFixed",
+                                    "此 Key 已固定绑定账号，不能继承服务池或清空账号范围",
+                                  )
+                                : policyDraft.inheritAccountPool
+                                  ? t(
+                                      "codex.apiService.keys.accountScopeInherit",
+                                      "随服务账号池自动更新",
+                                    )
+                                  : customScopeInvalid
+                                    ? t(
+                                        "codex.apiService.keys.accountScopeRequired",
+                                        "自定义账号池至少需要选择 1 个账号",
+                                      )
+                                    : t(
+                                        "codex.apiService.keys.accountScopeSelected",
+                                        "已选择 {{count}} 个账号",
+                                        { count: policyDraft.accountIds.length },
+                                      )}
+                            </span>
+                          </div>
+                          <div
+                            className="api-key-account-scope-mode"
+                            role="group"
+                            aria-label={t(
+                              "codex.apiService.keys.accountScope",
+                              "账号轮转范围",
+                            )}
+                          >
+                            <button
+                              type="button"
+                              className={
+                                policyDraft.inheritAccountPool ? "active" : ""
+                              }
+                              aria-pressed={policyDraft.inheritAccountPool}
+                              onClick={() =>
+                                setApiKeyPolicyDrafts((drafts) => ({
+                                  ...drafts,
+                                  [apiKey.id]: {
+                                    ...(drafts[apiKey.id] ?? policyDraft),
+                                    inheritAccountPool: true,
+                                  },
+                                }))
+                              }
+                              disabled={busy || accountScopeLocked}
+                              title={
+                                accountScopeLocked
+                                  ? t(
+                                      "codex.apiService.keys.accountScopeFixed",
+                                      "此 Key 已固定绑定账号，不能继承服务池或清空账号范围",
+                                    )
+                                  : undefined
+                              }
+                            >
+                              {t(
+                                "codex.apiService.keys.accountScopeModeInherit",
+                                "继承服务池",
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              className={
+                                policyDraft.inheritAccountPool ? "" : "active"
+                              }
+                              aria-pressed={!policyDraft.inheritAccountPool}
+                              onClick={() =>
+                                setApiKeyPolicyDrafts((drafts) => {
+                                  const currentDraft =
+                                    drafts[apiKey.id] ?? policyDraft;
+                                  const reusableAccountIds =
+                                    currentDraft.accountIds.filter((accountId) =>
+                                      keySelectableAccountIdSet.has(accountId),
+                                    );
+                                  return {
+                                    ...drafts,
+                                    [apiKey.id]: {
+                                      ...currentDraft,
+                                      inheritAccountPool: false,
+                                      accountIds:
+                                        reusableAccountIds.length > 0
+                                          ? reusableAccountIds
+                                          : memberAccountIds,
+                                    },
+                                  };
+                                })
+                              }
+                              disabled={
+                                busy ||
+                                accountScopeLocked ||
+                                keySelectableAccounts.length === 0
+                              }
+                            >
+                              {t(
+                                "codex.apiService.keys.accountScopeModeCustom",
+                                "自定义账号池",
+                              )}
+                            </button>
+                          </div>
+                          {keySelectableAccounts.length === 0 ? (
+                            <div className="codex-api-service-empty">
+                              {t(
+                                "codex.localAccess.emptyMembers",
+                                "当前集合暂无账号",
+                              )}
+                            </div>
+                          ) : (
+                            <div className="api-key-account-scope-grid">
+                              {keySelectableAccounts.map((account) => {
+                                const presentation =
+                                  buildCodexAccountPresentation(account, t);
+                                const accountSelected =
+                                  isCodexApiKeyScopeAccountActive({
+                                    accountId: account.id,
+                                    inheritAccountPool:
+                                      policyDraft.inheritAccountPool,
+                                    accountIds: policyDraft.accountIds,
+                                    inheritedAccountIds: memberAccountIds,
+                                  });
+                                const canPinAccount =
+                                  !policyDraft.inheritAccountPool &&
+                                  !accountScopeLocked &&
+                                  !policyDirty &&
+                                  apiKey.accountIds?.includes(account.id);
+                                const priorityRank = (
+                                  apiKey.priorityAccountIds ?? []
+                                ).indexOf(account.id);
+                                const isPrioritizedAccount = priorityRank >= 0;
+                                const isTopPriorityAccount = priorityRank === 0;
+                                return (
+                                  <div
+                                    key={account.id}
+                                    className={`api-key-account-scope-item${
+                                      isPrioritizedAccount ? " is-preferred" : ""
+                                    }`}
+                                  >
+                                    <label className="api-key-account-scope-selection">
+                                      <input
+                                        type="checkbox"
+                                        checked={accountSelected}
+                                        onChange={() =>
+                                          setApiKeyPolicyDrafts((drafts) => {
+                                            const currentDraft =
+                                              drafts[apiKey.id] ?? policyDraft;
+                                            const accountIds = toggleStringSelection(
+                                              currentDraft.accountIds,
+                                              account.id,
+                                            );
+                                            return {
+                                              ...drafts,
+                                              [apiKey.id]: {
+                                                ...currentDraft,
+                                                accountIds,
+                                              },
+                                            };
+                                          })
+                                        }
+                                        disabled={
+                                          busy ||
+                                          policyDraft.inheritAccountPool ||
+                                          accountScopeLocked
+                                        }
+                                      />
+                                      <span>
+                                        <strong title={presentation.displayName}>
+                                          {maskAccountText(
+                                            presentation.displayName,
+                                          )}
+                                        </strong>
+                                        <small>{presentation.planLabel}</small>
+                                      </span>
+                                    </label>
+                                    <button
+                                      type="button"
+                                      className="api-key-account-priority-btn"
+                                      data-priority-rank={
+                                        isPrioritizedAccount
+                                          ? priorityRank + 1
+                                          : undefined
+                                      }
+                                      aria-label={
+                                        isTopPriorityAccount
+                                          ? t(
+                                              "codex.apiService.keys.accountPriorityClear",
+                                              "取消置顶账号",
+                                            )
+                                          : isPrioritizedAccount
+                                            ? t(
+                                                "codex.apiService.keys.accountPriorityPromote",
+                                                "提升为最高优先级",
+                                              )
+                                          : t(
+                                              "codex.apiService.keys.accountPrioritySet",
+                                              "置顶账号优先调用",
+                                            )
+                                      }
+                                      aria-pressed={isPrioritizedAccount}
+                                      title={
+                                        isTopPriorityAccount
+                                          ? t(
+                                              "codex.apiService.keys.accountPriorityClear",
+                                              "取消置顶账号",
+                                            )
+                                          : isPrioritizedAccount
+                                            ? t(
+                                                "codex.apiService.keys.accountPriorityPromote",
+                                                "提升为最高优先级",
+                                              )
+                                          : t(
+                                              "codex.apiService.keys.accountPrioritySet",
+                                              "置顶账号优先调用",
+                                            )
+                                      }
+                                      onClick={() =>
+                                        void handleSetApiKeyAccountPriority(
+                                          apiKey,
+                                          policyDraft,
+                                          account.id,
+                                        )
+                                      }
+                                      disabled={busy || !canPinAccount}
+                                    >
+                                      {isTopPriorityAccount ? (
+                                        <PinOff size={14} />
+                                      ) : (
+                                        <Pin size={14} />
+                                      )}
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
                         <div className="codex-api-service-policy-grid">
                           <label>
                             <span>
@@ -3515,18 +4209,12 @@ export function CodexApiServicePage() {
                               )}
                             </span>
                             <input
-                              value={
-                                apiKeyPolicyDrafts[apiKey.id]?.modelPrefix ?? ""
-                              }
+                              value={policyDraft.modelPrefix}
                               onChange={(event) =>
                                 setApiKeyPolicyDrafts((drafts) => ({
                                   ...drafts,
                                   [apiKey.id]: {
-                                    ...(drafts[apiKey.id] ?? {
-                                      modelPrefix: "",
-                                      allowedModels: "",
-                                      excludedModels: "",
-                                    }),
+                                    ...(drafts[apiKey.id] ?? policyDraft),
                                     modelPrefix: event.target.value,
                                   },
                                 }))
@@ -3546,19 +4234,12 @@ export function CodexApiServicePage() {
                               )}
                             </span>
                             <textarea
-                              value={
-                                apiKeyPolicyDrafts[apiKey.id]?.allowedModels ??
-                                ""
-                              }
+                              value={policyDraft.allowedModels}
                               onChange={(event) =>
                                 setApiKeyPolicyDrafts((drafts) => ({
                                   ...drafts,
                                   [apiKey.id]: {
-                                    ...(drafts[apiKey.id] ?? {
-                                      modelPrefix: "",
-                                      allowedModels: "",
-                                      excludedModels: "",
-                                    }),
+                                    ...(drafts[apiKey.id] ?? policyDraft),
                                     allowedModels: event.target.value,
                                   },
                                 }))
@@ -3578,19 +4259,12 @@ export function CodexApiServicePage() {
                               )}
                             </span>
                             <textarea
-                              value={
-                                apiKeyPolicyDrafts[apiKey.id]?.excludedModels ??
-                                ""
-                              }
+                              value={policyDraft.excludedModels}
                               onChange={(event) =>
                                 setApiKeyPolicyDrafts((drafts) => ({
                                   ...drafts,
                                   [apiKey.id]: {
-                                    ...(drafts[apiKey.id] ?? {
-                                      modelPrefix: "",
-                                      allowedModels: "",
-                                      excludedModels: "",
-                                    }),
+                                    ...(drafts[apiKey.id] ?? policyDraft),
                                     excludedModels: event.target.value,
                                   },
                                 }))
@@ -3605,11 +4279,25 @@ export function CodexApiServicePage() {
                           <div className="codex-api-service-policy-actions">
                             <button
                               type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => handleResetApiKeyPolicy(apiKey)}
+                              disabled={busy || !policyDirty}
+                            >
+                              <Undo2 size={14} />
+                              {t(
+                                "codex.apiService.keys.resetPolicy",
+                                "撤销修改",
+                              )}
+                            </button>
+                            <button
+                              type="button"
                               className="btn btn-secondary btn-sm"
                               onClick={() =>
                                 void handleSaveApiKeyPolicy(apiKey.id)
                               }
-                              disabled={busy}
+                              disabled={
+                                busy || !policyDirty || customScopeInvalid
+                              }
                             >
                               <Check size={14} />
                               {t(
@@ -3897,6 +4585,40 @@ export function CodexApiServicePage() {
                     disabled={busy || !collection}
                   />
                 </label>
+                <label>
+                  <span>
+                    {t(
+                      "codex.apiService.routing.immediateSseResponse",
+                      "SSE 立即返回 200",
+                    )}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={immediateSseResponseDraft}
+                    onChange={(event) =>
+                      setImmediateSseResponseDraft(event.target.checked)
+                    }
+                    disabled={busy || !collection || gatewayMode !== "sidecar"}
+                  />
+                </label>
+                <label>
+                  <span>
+                    {t(
+                      "codex.apiService.routing.maxConcurrentImageRequests",
+                      "Image requests per account",
+                    )}
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={16}
+                    value={maxConcurrentImageRequestsDraft}
+                    onChange={(event) =>
+                      setMaxConcurrentImageRequestsDraft(event.target.value)
+                    }
+                    disabled={busy || !collection || gatewayMode !== "sidecar"}
+                  />
+                </label>
               </div>
             </section>
           </div>
@@ -3955,24 +4677,6 @@ export function CodexApiServicePage() {
                   </h2>
                 </div>
                 <div className="codex-api-service-config-list">
-                  <label>
-                    <span>
-                      {t(
-                        "codex.localAccess.imageGenerationLabel",
-                        "image_generation",
-                      )}
-                    </span>
-                    <SingleSelectDropdown
-                      value={imageGenerationMode}
-                      options={imageModeOptions}
-                      onChange={(value) => void handleUpdateImageMode(value)}
-                      disabled={busy || !collection}
-                      ariaLabel={t(
-                        "codex.localAccess.imageGenerationLabel",
-                        "image_generation",
-                      )}
-                    />
-                  </label>
                   <label>
                     <span>
                       {t("codex.localAccess.accessScopeLabel", "访问范围")}
@@ -4070,18 +4774,6 @@ export function CodexApiServicePage() {
                 ))}
               </div>
               <div className="codex-api-service-head-actions">
-                <div className="codex-api-service-range-tabs">
-                  {statsRangeOptions.map((option) => (
-                    <button
-                      key={option.key}
-                      type="button"
-                      className={statsRange === option.key ? "active" : ""}
-                      onClick={() => setStatsRange(option.key)}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
                 <button
                   type="button"
                   className="btn btn-danger btn-sm"
@@ -4291,6 +4983,24 @@ export function CodexApiServicePage() {
                     />
                   </label>
                   <label>
+                    <span>
+                      {t("codex.apiService.logs.instanceFilter", "实例")}
+                    </span>
+                    <SingleSelectDropdown
+                      value={requestLogInstanceQuery}
+                      options={requestLogInstanceOptions}
+                      onChange={setRequestLogInstanceQuery}
+                      ariaLabel={t(
+                        "codex.apiService.logs.instanceFilter",
+                        "实例",
+                      )}
+                      placeholder={t(
+                        "codex.apiService.logs.allInstances",
+                        "全部实例",
+                      )}
+                    />
+                  </label>
+                  <label>
                     <span>{t("codex.apiService.logs.kindFilter", "类型")}</span>
                     <SingleSelectDropdown
                       value={requestLogKindFilter}
@@ -4416,6 +5126,23 @@ export function CodexApiServicePage() {
                           <span>{requestKindLabel(event.requestKind, t)}</span>
                           <span>
                             {event.apiKeyLabel || event.apiKeyId || "-"}
+                          </span>
+                          <span
+                            title={
+                              event.clientInstanceId
+                                ? `${resolveClientInstanceLabel(
+                                    event.clientInstanceId,
+                                    codexInstances,
+                                    t,
+                                  )} (${event.clientInstanceId})`
+                                : undefined
+                            }
+                          >
+                            {resolveClientInstanceLabel(
+                              event.clientInstanceId,
+                              codexInstances,
+                              t,
+                            )}
                           </span>
                           <span>
                             {maskAccountText(accountDisplayName)}

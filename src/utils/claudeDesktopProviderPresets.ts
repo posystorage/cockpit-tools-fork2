@@ -320,9 +320,17 @@ const RAW_CLAUDE_DESKTOP_GATEWAY_PROVIDER_PRESETS: readonly ClaudeDesktopGateway
     baseUrls: ['https://api.minimaxi.com/anthropic'],
     authScheme: 'bearer',
     connectionMode: 'local_mapping',
-    website: 'https://platform.minimaxi.com',
+    website: 'https://platform.minimaxi.com/docs',
     apiKeyUrl: 'https://platform.minimaxi.com/subscribe/coding-plan',
-    modelMappings: repeatedMappedRoute('MiniMax-M2.7'),
+    modelMappings: [
+      createRoute('claude-sonnet-4-6', 'MiniMax-M3', {
+        labelOverride: 'MiniMax-M3',
+        supports1m: true,
+      }),
+      createRoute('claude-haiku-4-5', 'MiniMax-M2.7', {
+        labelOverride: 'MiniMax-M2.7',
+      }),
+    ],
   },
   {
     id: 'minimax_global',
@@ -330,9 +338,17 @@ const RAW_CLAUDE_DESKTOP_GATEWAY_PROVIDER_PRESETS: readonly ClaudeDesktopGateway
     baseUrls: ['https://api.minimax.io/anthropic'],
     authScheme: 'bearer',
     connectionMode: 'local_mapping',
-    website: 'https://platform.minimax.io',
+    website: 'https://platform.minimax.io/docs',
     apiKeyUrl: 'https://platform.minimax.io/subscribe/coding-plan',
-    modelMappings: repeatedMappedRoute('MiniMax-M2.7'),
+    modelMappings: [
+      createRoute('claude-sonnet-4-6', 'MiniMax-M3', {
+        labelOverride: 'MiniMax-M3',
+        supports1m: true,
+      }),
+      createRoute('claude-haiku-4-5', 'MiniMax-M2.7', {
+        labelOverride: 'MiniMax-M2.7',
+      }),
+    ],
   },
   {
     id: 'bailing',

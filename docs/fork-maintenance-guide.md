@@ -23,21 +23,22 @@
 
 ## 2. 当前基线与历史锚点
 
-### 2.1 `v1.3.6` 升级前审计（2026-07-16）
+### 2.1 `v1.3.6` 已验证基线（2026-07-16）
 
-本轮目标是从已验证 fork HEAD `6f84cae8` 升级到上游 `v1.3.6`。上游没有发布 `v1.3.3` tag；`release: v1.3.3` 提交包含在后续 `v1.3.4` 中。目标 release 链如下：
+本轮从已验证 fork HEAD `6f84cae8` 升级到上游 `v1.3.6`。上游没有发布 `v1.3.3` tag；`release: v1.3.3` 提交包含在后续 `v1.3.4` 中。release 链如下：
 
 - `v1.3.4`：annotated tag object `f1cccf71`，release commit `2d8f0fc2`。
 - `v1.3.5`：annotated tag object `8b9d522e`，release commit `2c6412c0`。
 - `v1.3.6`：annotated tag object `5cb09b0f`，release commit `072f05f0`。
 - 升级分支：`codex/upgrade-upstream-v1.3.6`。
 - 升级前 fork HEAD：`6f84cae8`；上一上游锚点仍为 `v1.3.2` release commit `a84a97cb`。
+- 合并提交父节点：fork 文档准备提交 `e9a528d6` 与上游 release commit `072f05f0`；实际合并提交见本节后续记录。
 
-`v1.3.2..v1.3.6` 共涉及 60 个提交、142 个文件，净变化约为 22868 行新增、4138 行删除。升级前 fork 相对纯上游 `v1.3.2` 有 70 个差异文件，其中 41 个与本轮上游变更相交。不修改工作树的 `git merge-tree` 预演只产生三个显式冲突文件：
+`v1.3.2..v1.3.6` 共涉及 60 个提交、142 个文件，净变化约为 22868 行新增、4138 行删除。升级前 fork 相对纯上游 `v1.3.2` 有 70 个差异文件，其中 41 个与本轮上游变更相交。`git merge-tree` 预演与真实合并都只产生三个显式冲突文件：
 
 - `Casks/cockpit-tools.rb`：fork 删除、上游更新；继续保持删除。
-- `src-tauri/src/modules/codex_local_access.rs`：冲突集中在测试模块 import；产品代码可自动合并，解决时合并上游测试依赖与 fork 调度观测测试依赖。
-- `src/pages/CodexApiServicePage.tsx`：接受上游 API Key 策略草稿保护、SSE/生图并发/超时草稿字段和价格校验实现，同时保留 fork 的调度显示与轮询草稿隔离。
+- `src-tauri/src/modules/codex_local_access.rs`：冲突集中在测试模块 import；合并上游测试依赖与 fork 调度观测测试依赖，并删除重复 import。产品路径由双方改动自动合并。
+- `src/pages/CodexApiServicePage.tsx`：接受上游 API Key 策略草稿保护、SSE/生图并发/超时草稿字段和价格校验实现，同时保留 fork 的调度显示与轮询草稿隔离；价格提示也使用上游原文。
 
 用户已明确批准以下上游产品行为：
 
@@ -45,13 +46,25 @@
 2. 接受撤销多任务后台导入队列，恢复单会话批量导入弹框。
 3. 接受 Windows NSIS `installMode = "currentUser"`，安装与更新默认不再申请管理员权限。
 
-价格设置的临时 fork 补丁由上游 `v1.3.5` 实现取代。上游规则是：非长上下文模型允许 Token 阈值为空；填写非法阈值时拦截；填写任一标准长上下文价格时必须同时提供合法阈值。升级时删除 fork 的宽松 `tokenInvalid` 分支，采用上游条件校验，但可保留 fork 更清晰的中英文提示。本文后续价格边界也以该条件规则为准。
+价格设置的临时 fork 补丁已由上游 `v1.3.5` 实现完整取代。上游规则是：非长上下文模型允许 Token 阈值为空；填写非法阈值时拦截；填写任一标准长上下文价格时必须同时提供合法阈值。校验分支、注释和 `pricingInvalid` fallback 提示均跟随上游，不再维护 fork 版本。本文后续价格边界以该条件规则为准。
 
 `v1.3.2` 的“Codex API 服务已启动，但 Codex 配置未接管本地 API”不是端口占用，也不是 fork 合并引入。现场日志显示 sidecar 已在 `127.0.0.1:23948` ready，随后才出现接管复检警告，且后续 `/v1/responses` 正常工作；日志中没有 bind/`AddrInUse` 错误。现场配置绑定 OAuth，Base URL 与 Client Key 均匹配，但 `v1.3.2` 复检无条件要求 `requires_openai_auth=false`，与自身写出的 OAuth 配置矛盾。上游 `v1.3.4` 已改为 OAuth/API Key 双路径校验、补齐 actor header 投影并增加回归测试。本轮直接接受上游修复；升级后用现有绑定 OAuth 配置复测，不先增加 fork 特判或压制警告。
 
-升级前虚拟合并已确认：公告、远端配置、更新检查后端和 release workflow 未被上游改动；自动合并结果仍保留 fork 的前端禁用常量、空远端 URL、fork updater 身份、Provider 归一化出口、New API/Sub2API 查询规则及调度观测字段和 hook。真实合并后仍须按第 10 节完整验证，尤其覆盖随机路由、Client Key 账号池、Responses Lite/WebSocket 和并发生图的新终止路径。
+实际合并树已确认：公告、远端配置、更新检查后端和 release workflow 未被上游改动；前端禁用常量、空远端 URL、fork updater 身份、三个 Provider 归一化出口、New API/Sub2API 查询规则及调度观测字段和 hook 均保留。调度观测继续覆盖 legacy HTTP/WebSocket、sidecar `auth_selected`、Responses Lite 和并发生图的 selected/finish 路径，没有进入路由、冷却或额度决策。新增 MiniMax 等上游预设仍统一经过 `neutralizeProviderPresets()`。
 
-### 2.2 `v1.3.2` 已验证基线
+上游撤销全局后台导入队列后，遗留的 `tests/codexBatchImportPortal.test.ts` 仍断言旧 Portal/全局任务栈。合并时把该测试改为验证上游当前的页面内单会话、隐藏任务和直接重开行为；未恢复已移除的多会话状态。
+
+本轮自动化验收结果：
+
+- TypeScript 检查、Vite 生产构建、18 个 locale（各 5020 keys）、154 个 Provider 运行时导出和两个 Codex 辅助脚本通过。
+- Node 测试 61 项通过，其中额度池测试因应用源码使用 bundler 风格无扩展名导入，使用 esbuild 打包同一测试后执行。
+- `cockpit-tools` Rust lib 测试 629 项通过；接管判定 5 项、调度活动 2 项、Sub2API URL 和数值解析测试均单独复跑通过。
+- `cockpit-core` 上游基线为 84 passed / 2 failed / 1 ignored；两个失败均位于上游未改动的 Codex 重授权测试，并会共享账号数据目录，不属于本轮三组 fork 行为。
+- 当前机器没有 Go，Sidecar Go 测试未运行；Rust 测试通过被 Git 忽略的空 sidecar 占位文件跳过 Go build。全仓 `cargo fmt --check` 仍命中上游自身的大量格式差异，本轮未格式化无关文件。
+
+Windows 本地运行 Rust 测试前必须为每个测试进程设置独立的 `COCKPIT_TOOLS_DATA_DIR`。只设置 `HOME`、`CODEX_HOME` 或 `COCKPIT_TOOLS_TEST_DATA_DIR` 不足以隔离 `cockpit-core`；上游部分测试会访问真实 `~/.antigravity_cockpit`。测试失败后也不能直接删除真实目录，应先根据测试前备份、明确的测试账号 ID/邮箱和时间戳制定最小恢复方案。
+
+### 2.2 `v1.3.2` 上一已验证基线
 
 当前已验证的同步状态（2026-07-15）：
 
@@ -103,8 +116,9 @@
 | `86771153` | 同步上游 `v1.3.0` | 仅为历史合并锚点 |
 | `db5434d5` | 上游 `v1.3.1` release commit | 上一上游锚点 |
 | `4813f6df` | 同步上游 `v1.3.1` | 上一 fork 合并锚点 |
-| `a84a97cb` | 上游 `v1.3.2` release commit | 当前上游锚点 |
-| `ed818e5e` | 同步上游 `v1.3.2` | 当前 fork 合并锚点 |
+| `a84a97cb` | 上游 `v1.3.2` release commit | 上一上游锚点 |
+| `ed818e5e` | 同步上游 `v1.3.2` | 上一 fork 合并锚点 |
+| `072f05f0` | 上游 `v1.3.6` release commit | 当前上游锚点 |
 | `c36673db` | 恢复调度状态 5 秒轮询 | 保留轮询条件 |
 | `f868bb85` | 拒绝 `NaN`/无穷大计费值 | 保留数值安全检查 |
 | `bba625e4` | 将 APIKEY.FUN/赞助中转 UI 中性化 | 保留通用自定义中转能力 |
@@ -462,10 +476,13 @@ npm run typecheck
 npm run check:provider-presets
 npm run build
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+$env:COCKPIT_TOOLS_DATA_DIR = Join-Path $PWD "target/test-data-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
 注意：`npm run build` 会先运行版本同步脚本。执行后检查 Git 状态，确认版本文件变化来自目标 release，而不是意外脏改。
+
+Windows 上不得在未设置 `COCKPIT_TOOLS_DATA_DIR` 时运行 Rust 账号测试。该变量必须指向 workspace 内新建的测试专用目录；`HOME`、`CODEX_HOME` 和 `COCKPIT_TOOLS_TEST_DATA_DIR` 不能替代它。若本机没有 Go，可用已忽略的目标名 sidecar 占位文件配合 `COCKPIT_SKIP_CLIPROXY_BUILD=1` 只验证 Rust，但发布构建仍必须由 CI 真实编译并测试 Go sidecar。
 
 ### 10.2 去广告/外链扫描
 
@@ -503,5 +520,5 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 - 三组 fork 行为逐项通过本文验收。
 - 相对新上游的差异已收敛到本文热点和必要发布文件。
 - 没有冲突标记、重复实现、非预期 referral URL 或默认商业服务。
-- 前后端检查和 Rust 测试通过；不能运行的检查已记录原因。
+- 前后端检查和目标 Rust 测试通过；不能运行或纯上游已知失败的检查已记录原因。
 - 本文的当前基线、已知缺口状态和新增热点已经更新。

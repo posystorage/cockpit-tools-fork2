@@ -242,7 +242,7 @@
     "settings": "Ustawienia",
     "codex": "Codex​",
     "githubCopilot": "GitHub Copilot​",
-    "windsurf": "Windsurf​",
+    "windsurf": "Devin​",
     "dashboard": "Panel",
     "morePlatforms": "Więcej platform",
     "instances": "Multi-Instancja",
@@ -588,7 +588,7 @@
       "themeDark": "Ciemny",
       "themeSystem": "Systemowy",
       "uiScale": "Skala interfejsu",
-      "uiScaleDesc": "Dostosuj skalę interfejsu",
+      "uiScaleDesc": "Dostosuj skalę interfejsu (⌘+/⌘- lub Ctrl+/Ctrl-, ⌘0/Ctrl+0 reset)",
       "defaultTerminal": "Domyślny terminal",
       "defaultTerminalDesc": "Terminal używany podczas otwierania CLI",
       "terminalSystem": "Domyślny systemowy",
@@ -667,10 +667,10 @@
       "githubCopilotSettingsTitle": "Ustawienia GitHub Copilot",
       "ghcpAutoRefresh": "Automatyczne odświeżanie limitu GitHub Copilot",
       "ghcpAutoRefreshDesc": "Częstotliwość aktualizacji w tle",
-      "windsurfSettingsTitle": "Ustawienia Windsurf",
-      "windsurfAutoRefresh": "Automatyczne odświeżanie limitu Windsurf",
+      "windsurfSettingsTitle": "Ustawienia Devin",
+      "windsurfAutoRefresh": "Automatyczne odświeżanie limitu Devin",
       "windsurfAutoRefreshDesc": "Częstotliwość aktualizacji w tle",
-      "windsurfAppPath": "Ścieżka aplikacji Windsurf",
+      "windsurfAppPath": "Ścieżka aplikacji Devin",
       "windsurfAppPathDesc": "Pozostaw puste, aby użyć domyślnej ścieżki",
       "windsurfAppPathPlaceholder": "Domyślna ścieżka",
       "windsurfPathSelect": "Wybierz",
@@ -1195,7 +1195,11 @@
         "tooMany": "Możesz dodać maksymalnie {{max}} tagów"
       },
       "notesLabel": "Notatka",
-      "notesPlaceholder": "Wpisz notatkę. Pozostaw puste, aby wyczyścić"
+      "notesPlaceholder": "Wpisz notatkę. Pozostaw puste, aby wyczyścić",
+      "confirmGlobalDelete": "Usunąć tag \"{{targetTag}}\" ze wszystkich kont? Tej operacji nie można cofnąć.",
+      "globalDeleteHint": "Usuń ten tag globalnie",
+      "globalDeleteFailed": "Nie udało się globalnie usunąć tagu",
+      "globalRenameHint": "Zmień globalnie nazwę tego tagu"
     },
     "groupByTag": "Grupuj według taga",
     "untagged": "Bez taga",
@@ -1914,6 +1918,7 @@
         "requestsDetail": "OK {{success}} / Błąd {{failed}} / Anul. {{canceled}} / Źródło {{upstreamFailed}} / Niepeł. {{incomplete}}",
         "tokens": "Tokeny",
         "tokensDetail": "Wejście {{input}} / Wyjście {{output}}",
+        "cached": "Pamięć podręczna",
         "specialTokens": "Cache / Rozumowanie",
         "specialTokensDetail": "Cache {{cached}} / Rozumowanie {{reasoning}}",
         "avgLatency": "Śr. opóźnienie",
@@ -1954,6 +1959,7 @@
         "planHighFirst": "Najpierw wyższy plan",
         "planLowFirst": "Najpierw niższy plan",
         "expirySoonFirst": "Najbliższe wygaśnięcie",
+        "random": "Losowo",
         "custom": "Niestandardowe"
       },
       "statusUnconfigured": "Nieskonfigurowane",
@@ -1976,7 +1982,12 @@
         "label": "Zakres statystyk",
         "daily": "Dzień",
         "weekly": "Tydzień",
-        "monthly": "Miesiąc"
+        "monthly": "Miesiąc",
+        "custom": "Własny",
+        "start": "Początek",
+        "end": "Koniec",
+        "apply": "Zastosuj",
+        "invalid": "Czas zakończenia nie może być wcześniejszy niż rozpoczęcia"
       },
       "enableBeforeActivateTitle": "Usługa nie jest włączona",
       "enableBeforeActivateMessage": "Usługa API jest obecnie wyłączona i trzeba ją najpierw włączyć. Włączyć i przełączyć teraz?",
@@ -2157,7 +2168,10 @@
       "refreshFailedBadge": "Odświeżenie nieudane",
       "generic": "Odświeżenie limitu nie powiodło się, spróbuj ponownie później",
       "deactivatedWorkspace": "Obszar roboczy jest wyłączony, przełącz konto lub ponownie autoryzuj",
-      "requestFailedManualRetry": "Sprawdź sieć. Nie pobrano najnowszego limitu. Odśwież i spróbuj ponownie."
+      "requestFailedManualRetry": "Sprawdź sieć. Nie pobrano najnowszego limitu. Odśwież i spróbuj ponownie.",
+      "httpStatusSummary": "Błąd API {{status}}",
+      "viewDetails": "Szczegóły",
+      "detailTitle": "Szczegóły błędu"
     },
     "plan": {
       "free": "FREE​",
@@ -3194,6 +3208,11 @@
         "models": "Modele i możliwości",
         "logs": "Statystyki i dzienniki"
       },
+      "statsRange": {
+        "today": "Dzisiaj",
+        "thisWeek": "Ten tydzień",
+        "thisMonth": "Ten miesiąc"
+      },
       "healthTitle": "Kondycja usługi",
       "compat": {
         "title": "Zgodność protokołów",
@@ -3271,6 +3290,24 @@
       "keys": {
         "policyTitle": "Polityka modeli",
         "advancedPolicyTitle": "Zaawansowane: polityka modeli",
+        "accountScope": "Zakres rotacji kont",
+        "accountScopeInherit": "Automatycznie używaj puli kont usługi",
+        "accountScopeFixed": "Ten klucz jest przypisany do swojego konta i nie może dziedziczyć puli usługi",
+        "accountScopeSelected": "Wybrano konta: {{count}}",
+        "accountScopeInheritedCount": "Pula kont: dziedziczone {{count}}",
+        "accountScopeUnavailable": "Pula kont: brak dostępnych kont",
+        "accountScopeCount": "Pula kont: {{selected}}/{{total}}",
+        "accountScopeRequired": "Wybierz co najmniej jedno konto do własnej puli",
+        "accountScopeModeInherit": "Dziedzicz pulę usługi",
+        "accountScopeModeCustom": "Własna pula kont",
+        "accountPrioritySet": "Przypnij konto do routingu priorytetowego",
+        "accountPriorityPromote": "Przenieś konto na najwyższy priorytet",
+        "accountPriorityClear": "Usuń przypięcie konta priorytetowego",
+        "accountPrioritySaved": "Przypięto konto priorytetowe",
+        "accountPriorityCleared": "Usunięto przypięcie konta priorytetowego",
+        "usageRange": "Okres użycia klucza API",
+        "unsaved": "Niezapisane",
+        "resetPolicy": "Odrzuć zmiany",
         "modelPrefix": "Prefiks modelu",
         "modelPrefixPlaceholder": "Przykład: codex",
         "allowedModels": "Dozwolone modele",
@@ -3288,6 +3325,8 @@
         "maxRetryInterval": "Czas retry",
         "disableCooling": "Wyłącz cooldown",
         "saveOptions": "Zapisz opcje",
+        "immediateSseResponse": "Natychmiastowe SSE 200",
+        "maxConcurrentImageRequests": "Żądania obrazów na konto",
         "optionsSaved": "Opcje routingu zapisane"
       },
       "validation": {
@@ -3449,7 +3488,10 @@
       "checkAccounts": "Sprawdź konta",
       "importAndAddToApiService": "Importuj + API",
       "importAndAddToApiServiceSuccess": "Zaimportowano i dodano do usługi API",
-      "addToApiServiceFailed": "Zaimportowano, ale dodanie do usługi API nie powiodło się: {{error}}"
+      "addToApiServiceFailed": "Zaimportowano, ale dodanie do usługi API nie powiodło się: {{error}}",
+      "cancelAndDismiss": "Anuluj i odrzuć",
+      "bulkTagsLabel": "Tagi po imporcie",
+      "bulkTagsPlaceholder": "Opcjonalnie; oddziel przecinkami lub spacjami"
     },
     "autoRepairMode": {
       "label": "Logika autonaprawy",
@@ -3495,7 +3537,10 @@
       "chipTags": "Tagi",
       "chipSearch": "Szukaj",
       "chipPlan": "Taryfa",
-      "chipFolder": "Katalog"
+      "chipFolder": "Katalog",
+      "authError": "Błąd auth",
+      "zeroQuota": "0% limitu",
+      "expired": "Wygasło"
     },
     "accessTokenImport": {
       "nameRequired": "Podaj nazwę konta",
@@ -3561,7 +3606,9 @@
       "serverListLead": "Wybierz cel synchronizacji",
       "serverCount": "{{count}} serwerów",
       "autoSyncBadge": "Automatyczny"
-    }
+    },
+    "exportAuthFailed": "Eksport błędów",
+    "exportAuthFailedTitle": "Eksportuj konta z błędem auth"
   },
   "githubCopilot": {
     "title": "Zarządzanie kontami GitHub Copilot",
@@ -3777,8 +3824,8 @@
     "inputPercent": "Wpisz procent",
     "inputCredits": "Wpisz kredyty",
     "windsurf": {
-      "title": "Ustawienia Windsurf",
-      "appPath": "Ścieżka Windsurf"
+      "title": "Ustawienia Devin",
+      "appPath": "Ścieżka Devin"
     },
     "windsurfRefreshInterval": "Automatyczne odświeżanie limitu",
     "kiro": {
@@ -3882,21 +3929,21 @@
     }
   },
   "windsurf": {
-    "title": "Zarządzanie kontami Windsurf",
+    "title": "Zarządzanie kontami Devin",
     "instances": {
       "unsupported": {
-        "desc": "Multi-instancja Windsurf jest obecnie dostępna tylko na macOS."
+        "desc": "Multi-instancja Devin jest obecnie dostępna tylko na macOS."
       }
     },
     "empty": {
       "description": "Kliknij „Dodaj konto”, aby rozpocząć"
     },
     "addModal": {
-      "title": "Dodaj konto Windsurf",
+      "title": "Dodaj konto Devin",
       "password": "Logowanie e-mailem"
     },
     "password": {
-      "desc": "Zaloguj się adresem e-mail i hasłem konta Windsurf, aby automatycznie pobrać klucz API i dane konta.",
+      "desc": "Zaloguj się adresem e-mail i hasłem konta Devin, aby automatycznie pobrać klucz API i dane konta.",
       "emailPlaceholder": "Adres e-mail",
       "passwordPlaceholder": "Hasło",
       "empty": "Wpisz e-mail i hasło",
@@ -3943,14 +3990,14 @@
       "batchFailureMore": "{{count}} kolejnych nie powiodło się"
     },
     "oauth": {
-      "desc": "Kliknij poniżej i dokończ autoryzację Windsurf w przeglądarce."
+      "desc": "Kliknij poniżej i dokończ autoryzację Devin w przeglądarce."
     },
     "token": {
-      "desc": "Wklej token dostępu Windsurf lub wyeksportowane dane JSON."
+      "desc": "Wklej token dostępu Devin lub wyeksportowane dane JSON."
     },
     "import": {
-      "localDesc": "Importuj konta Windsurf z lokalnie zalogowanych sesji.",
-      "localClient": "Importuj z lokalnego Windsurf"
+      "localDesc": "Importuj konta Devin z lokalnie zalogowanych sesji.",
+      "localClient": "Importuj z lokalnego Devin"
     },
     "credits": {
       "title": "Plan​",
@@ -3974,15 +4021,15 @@
       "autoRecharge": "Automatyczne doładowanie",
       "remaining": "Pozostało {{value}}"
     },
-    "injectToVSCode": "Przełącz do Windsurf",
-    "injectSuccess": "Przełączenie zakończone. Windsurf uruchamia się.",
-    "injectRequireClose": "Zamknij Windsurf przed przełączeniem.",
+    "injectToVSCode": "Przełącz do Devin",
+    "injectSuccess": "Przełączenie zakończone. Devin uruchamia się.",
+    "injectRequireClose": "Zamknij Devin przed przełączeniem.",
     "flowNotice": {
-      "title": "Przewodnik po kontach Windsurf (kliknij, aby rozwinąć/zwinąć)",
-      "desc": "Przełączanie konta wymaga odczytu lokalnego magazynu uwierzytelniania Windsurf oraz użycia systemowej usługi poświadczeń do odszyfrowania i ponownego zapisu; dane są przetwarzane wyłącznie lokalnie.",
-      "inject": "Przełączanie jednym kliknięciem: to narzędzie odczytuje lokalny materiał szyfrujący Windsurf (DPAPI/Keychain/Secret Service), odszyfrowuje sesję uwierzytelniania w state.vscdb, podmienia token Windsurf i ponownie szyfruje dane — wszystko lokalnie na Twoim urządzeniu.",
-      "reason": "Zakres uprawnień: odczyt bazy uwierzytelniania Windsurf (state.vscdb) oraz użycie szyfrowania systemowego (Windows DPAPI / macOS Keychain / Linux Secret Service) do odszyfrowania i ponownego zapisu.",
-      "storage": "Zakres odczytu: przetwarzane są tylko dane związane z sesją logowania Windsurf; wszystkie procesy są wykonywane lokalnie."
+      "title": "Przewodnik po kontach Devin (kliknij, aby rozwinąć/zwinąć)",
+      "desc": "Przełączanie konta wymaga odczytu lokalnego magazynu uwierzytelniania Devin oraz użycia systemowej usługi poświadczeń do odszyfrowania i ponownego zapisu; dane są przetwarzane wyłącznie lokalnie.",
+      "inject": "Przełączanie jednym kliknięciem: to narzędzie odczytuje lokalny materiał szyfrujący Devin (DPAPI/Keychain/Secret Service), odszyfrowuje sesję uwierzytelniania w state.vscdb, podmienia token Devin i ponownie szyfruje dane — wszystko lokalnie na Twoim urządzeniu.",
+      "reason": "Zakres uprawnień: odczyt bazy uwierzytelniania Devin (state.vscdb) oraz użycie szyfrowania systemowego (Windows DPAPI / macOS Keychain / Linux Secret Service) do odszyfrowania i ponownego zapisu.",
+      "storage": "Zakres odczytu: przetwarzane są tylko dane związane z sesją logowania Devin; wszystkie procesy są wykonywane lokalnie."
     }
   },
   "kiro": {
@@ -4160,7 +4207,7 @@
       "goSettings": "Przejdź do ustawień",
       "goVerification": "Przejdź do weryfikacji wakeup",
       "goWakeup": "Przejdź do zadań wakeup",
-      "goWindsurf": "Przejdź do Windsurf",
+      "goWindsurf": "Przejdź do Devin",
       "openLayout": "Otwórz układ platform"
     },
     "antigravity": {
@@ -4277,11 +4324,11 @@
     "navTitle": "Podręcznik użytkownika",
     "providers": {
       "cautions": {
-        "0": "Przed ryzykownymi lub masowymi akcjami w Codex / GitHub Copilot / Windsurf / Kiro wykonaj kopię zapasową.",
-        "1": "Przed uruchomieniem w Codex / GitHub Copilot / Windsurf / Kiro sprawdź filtry i zakres celu."
+        "0": "Przed ryzykownymi lub masowymi akcjami w Codex / GitHub Copilot / Devin / Kiro wykonaj kopię zapasową.",
+        "1": "Przed uruchomieniem w Codex / GitHub Copilot / Devin / Kiro sprawdź filtry i zakres celu."
       },
       "keywords": {
-        "0": "Platformy Codex / GitHub Copilot / Windsurf / Kiro",
+        "0": "Platformy Codex / GitHub Copilot / Devin / Kiro",
         "1": "przewodnik",
         "2": "przepływ",
         "3": "konto",
@@ -4289,17 +4336,17 @@
         "5": "diagnoza"
       },
       "outcomes": {
-        "0": "Zrozum, co daje Codex / GitHub Copilot / Windsurf / Kiro.",
-        "1": "Stosuj zalecany przepływ w Codex / GitHub Copilot / Windsurf / Kiro, aby ograniczyć błędy.",
-        "2": "Przed skalowaniem potwierdź jedno udane wykonanie w Codex / GitHub Copilot / Windsurf / Kiro."
+        "0": "Zrozum, co daje Codex / GitHub Copilot / Devin / Kiro.",
+        "1": "Stosuj zalecany przepływ w Codex / GitHub Copilot / Devin / Kiro, aby ograniczyć błędy.",
+        "2": "Przed skalowaniem potwierdź jedno udane wykonanie w Codex / GitHub Copilot / Devin / Kiro."
       },
       "steps": {
-        "0": "Otwórz stronę Codex / GitHub Copilot / Windsurf / Kiro.",
-        "1": "Ukończ podstawową konfigurację i wymagane powiązania w Codex / GitHub Copilot / Windsurf / Kiro.",
-        "2": "Wykonaj jedną ręczną operację w Codex / GitHub Copilot / Windsurf / Kiro, aby zweryfikować wynik."
+        "0": "Otwórz stronę Codex / GitHub Copilot / Devin / Kiro.",
+        "1": "Ukończ podstawową konfigurację i wymagane powiązania w Codex / GitHub Copilot / Devin / Kiro.",
+        "2": "Wykonaj jedną ręczną operację w Codex / GitHub Copilot / Devin / Kiro, aby zweryfikować wynik."
       },
-      "summary": "Ta sekcja wyjaśnia użycie Codex / GitHub Copilot / Windsurf / Kiro w codziennym workflow.",
-      "title": "Platformy Codex / GitHub Copilot / Windsurf / Kiro"
+      "summary": "Ta sekcja wyjaśnia użycie Codex / GitHub Copilot / Devin / Kiro w codziennym workflow.",
+      "title": "Platformy Codex / GitHub Copilot / Devin / Kiro"
     },
     "quickStart": {
       "cautions": {
@@ -4732,7 +4779,12 @@
       "streakDays": "{{days}} dni",
       "streakRewardCountdown": "Do nagrody bonusowej pozostało {{days}} dni",
       "streakRewardToday": "Nagroda bonusowa dostępna dzisiaj!",
-      "recentDates": "Ostatnie: "
+      "recentDates": "Ostatnie: ",
+      "claimed": "Odebrano",
+      "queryFailed": "Zapytanie nieudane",
+      "retry": "Ponów",
+      "inactive": "Niedostępne",
+      "inactiveHint": "Check-in nieaktywny dla tego konta"
     }
   },
   "zcode": {
@@ -5176,13 +5228,13 @@
     },
     "import": {
       "pasteTab": "Wklej JSON",
-      "pasteDesc": "Wklej oficjalny plik auth.json z Grok CLI. Poświadczenia są przetwarzane wyłącznie przez lokalny backend. Cockpit eksportuje tylko ukryte metadane, które nie pozwalają odtworzyć logowania.",
+      "pasteDesc": "Wklej oficjalny auth.json Grok CLI lub pełny JSON konta wyeksportowany z tej aplikacji (możliwy reimport). Dane logowania tylko lokalnie.",
       "pastePlaceholder": "Wklej JSON konta Grok",
       "pasteAction": "Importuj JSON",
-      "localDesc": "Zaimportuj bieżące konto z domyślnego ~/.grok/auth.json. Przy wyborze pliku użyj oficjalnego auth.json z Grok CLI.",
+      "localDesc": "Import z ~/.grok/auth.json albo wybierz oficjalny auth.json / pełny JSON eksportu z tej aplikacji.",
       "localClient": "Importuj z lokalnego Grok CLI",
       "apiKeyTab": "Klucz API",
-      "apiKeyDesc": "Wklej klucz API xAI (oficjalny XAI_API_KEY). Wstrzykiwany przy starcie. Możesz też wkleić oficjalny auth.json (OAuth).",
+      "apiKeyDesc": "Wklej klucz API xAI (oficjalny XAI_API_KEY / xai-…). Wstrzykiwany jako zmienna środowiskowa przy starcie CLI; nie nadpisuje oficjalnego logowania OAuth.",
       "apiKeyPlaceholder": "wklej xai-…",
       "apiKeyAction": "Dodaj API Key"
     },
