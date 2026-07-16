@@ -32,7 +32,7 @@
 - `v1.3.6`：annotated tag object `5cb09b0f`，release commit `072f05f0`。
 - 升级分支：`codex/upgrade-upstream-v1.3.6`。
 - 升级前 fork HEAD：`6f84cae8`；上一上游锚点仍为 `v1.3.2` release commit `a84a97cb`。
-- 合并提交父节点：fork 文档准备提交 `e9a528d6` 与上游 release commit `072f05f0`；实际合并提交见本节后续记录。
+- 合并提交：`7ad378f4`；父节点为 fork 文档准备提交 `e9a528d6` 与上游 release commit `072f05f0`。
 
 `v1.3.2..v1.3.6` 共涉及 60 个提交、142 个文件，净变化约为 22868 行新增、4138 行删除。升级前 fork 相对纯上游 `v1.3.2` 有 70 个差异文件，其中 41 个与本轮上游变更相交。`git merge-tree` 预演与真实合并都只产生三个显式冲突文件：
 
@@ -119,6 +119,7 @@ Windows 本地运行 Rust 测试前必须为每个测试进程设置独立的 `C
 | `a84a97cb` | 上游 `v1.3.2` release commit | 上一上游锚点 |
 | `ed818e5e` | 同步上游 `v1.3.2` | 上一 fork 合并锚点 |
 | `072f05f0` | 上游 `v1.3.6` release commit | 当前上游锚点 |
+| `7ad378f4` | 同步上游 `v1.3.6` | 当前 fork 合并锚点 |
 | `c36673db` | 恢复调度状态 5 秒轮询 | 保留轮询条件 |
 | `f868bb85` | 拒绝 `NaN`/无穷大计费值 | 保留数值安全检查 |
 | `bba625e4` | 将 APIKEY.FUN/赞助中转 UI 中性化 | 保留通用自定义中转能力 |
