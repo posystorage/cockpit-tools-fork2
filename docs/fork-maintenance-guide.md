@@ -23,6 +23,36 @@
 
 ## 2. 当前基线与历史锚点
 
+### 2.1 `v1.3.6` 升级前审计（2026-07-16）
+
+本轮目标是从已验证 fork HEAD `6f84cae8` 升级到上游 `v1.3.6`。上游没有发布 `v1.3.3` tag；`release: v1.3.3` 提交包含在后续 `v1.3.4` 中。目标 release 链如下：
+
+- `v1.3.4`：annotated tag object `f1cccf71`，release commit `2d8f0fc2`。
+- `v1.3.5`：annotated tag object `8b9d522e`，release commit `2c6412c0`。
+- `v1.3.6`：annotated tag object `5cb09b0f`，release commit `072f05f0`。
+- 升级分支：`codex/upgrade-upstream-v1.3.6`。
+- 升级前 fork HEAD：`6f84cae8`；上一上游锚点仍为 `v1.3.2` release commit `a84a97cb`。
+
+`v1.3.2..v1.3.6` 共涉及 60 个提交、142 个文件，净变化约为 22868 行新增、4138 行删除。升级前 fork 相对纯上游 `v1.3.2` 有 70 个差异文件，其中 41 个与本轮上游变更相交。不修改工作树的 `git merge-tree` 预演只产生三个显式冲突文件：
+
+- `Casks/cockpit-tools.rb`：fork 删除、上游更新；继续保持删除。
+- `src-tauri/src/modules/codex_local_access.rs`：冲突集中在测试模块 import；产品代码可自动合并，解决时合并上游测试依赖与 fork 调度观测测试依赖。
+- `src/pages/CodexApiServicePage.tsx`：接受上游 API Key 策略草稿保护、SSE/生图并发/超时草稿字段和价格校验实现，同时保留 fork 的调度显示与轮询草稿隔离。
+
+用户已明确批准以下上游产品行为：
+
+1. 接受移除 `image_generation` 禁用功能，并把旧 `Disabled` / `ImagesOnly` 配置迁移为 `Enabled`。
+2. 接受撤销多任务后台导入队列，恢复单会话批量导入弹框。
+3. 接受 Windows NSIS `installMode = "currentUser"`，安装与更新默认不再申请管理员权限。
+
+价格设置的临时 fork 补丁由上游 `v1.3.5` 实现取代。上游规则是：非长上下文模型允许 Token 阈值为空；填写非法阈值时拦截；填写任一标准长上下文价格时必须同时提供合法阈值。升级时删除 fork 的宽松 `tokenInvalid` 分支，采用上游条件校验，但可保留 fork 更清晰的中英文提示。本文后续价格边界也以该条件规则为准。
+
+`v1.3.2` 的“Codex API 服务已启动，但 Codex 配置未接管本地 API”不是端口占用，也不是 fork 合并引入。现场日志显示 sidecar 已在 `127.0.0.1:23948` ready，随后才出现接管复检警告，且后续 `/v1/responses` 正常工作；日志中没有 bind/`AddrInUse` 错误。现场配置绑定 OAuth，Base URL 与 Client Key 均匹配，但 `v1.3.2` 复检无条件要求 `requires_openai_auth=false`，与自身写出的 OAuth 配置矛盾。上游 `v1.3.4` 已改为 OAuth/API Key 双路径校验、补齐 actor header 投影并增加回归测试。本轮直接接受上游修复；升级后用现有绑定 OAuth 配置复测，不先增加 fork 特判或压制警告。
+
+升级前虚拟合并已确认：公告、远端配置、更新检查后端和 release workflow 未被上游改动；自动合并结果仍保留 fork 的前端禁用常量、空远端 URL、fork updater 身份、Provider 归一化出口、New API/Sub2API 查询规则及调度观测字段和 hook。真实合并后仍须按第 10 节完整验证，尤其覆盖随机路由、Client Key 账号池、Responses Lite/WebSocket 和并发生图的新终止路径。
+
+### 2.2 `v1.3.2` 已验证基线
+
 当前已验证的同步状态（2026-07-15）：
 
 - 上游 release tag：`v1.3.2`；annotated tag object `70edc038`，release commit `a84a97cb`。
