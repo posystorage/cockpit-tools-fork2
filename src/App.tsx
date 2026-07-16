@@ -23,7 +23,7 @@ import { AnnouncementHost } from './components/AnnouncementCenter';
 import { CodexBatchImportGlobalTask } from './components/CodexBatchImportGlobalTask';
 import { TopCenterPromoBanner } from './components/TopCenterPromoBanner';
 import type { QuickSettingsType } from './components/QuickSettingsPopover';
-import type { Page } from './types/navigation';
+import { isMainWindowNavigablePage, type Page } from './types/navigation';
 import type { TopRightAd } from './types/topRightAd';
 import { useAutoRefresh } from './hooks/useAutoRefresh';
 import { useEasterEggTrigger } from './hooks/useEasterEggTrigger';
@@ -3377,15 +3377,8 @@ function MainApp() {
       .then((target) => {
         if (!target) return;
         const page = String(target);
-        if (
-          page === 'overview' ||
-          page === 'codex' ||
-          page === 'codex-api-service' ||
-          page === 'settings' ||
-          page === 'dashboard' ||
-          page === 'manual'
-        ) {
-          setPage(page as Page);
+        if (isMainWindowNavigablePage(page)) {
+          setPage(page);
         }
       })
       .catch(() => {
@@ -3398,33 +3391,8 @@ function MainApp() {
 
         listen<string>('tray:navigate', (event) => {
           const target = String(event.payload || '');
-          switch (target) {
-            case 'overview':
-            case 'api-relay':
-            case 'codex':
-            case 'codex-api-service':
-            case 'claude':
-            case 'claude-cli':
-            case 'github-copilot':
-            case 'windsurf':
-            case 'kiro':
-            case 'cursor':
-            case 'grok':
-            case 'codebuddy':
-            case 'codebuddy-cn':
-            case 'qoder':
-            case 'trae':
-            case 'trae-solo':
-            case 'trae-cn':
-            case 'trae-solo-cn':
-            case 'workbuddy':
-            case 'zed':
-            case 'manual':
-            case 'settings':
-              setPage(target as Page);
-              break;
-            default:
-              break;
+          if (isMainWindowNavigablePage(target)) {
+            setPage(target);
           }
         }).then((fn) => { unlisten = fn; });
 
