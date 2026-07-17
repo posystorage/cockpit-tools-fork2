@@ -310,6 +310,14 @@ Provider 目录处理边界：
 
 升级重点：上游若重构请求执行路径，必须逐一检查“选中后记录”和所有 terminal path 的 finish；只补成功路径会造成永久“调度中”。
 
+Sidecar 选择事件所有权：
+
+- `sidecars/cockpit-cliproxy/main.go` 的 `recordingSelector` 位于完整选择器链最外层，负责在最终账号返回后记录计费账号并且发送一次 `auth_selected`。
+- `cockpitSelector` 只负责实际选择和填写候选/可用账号诊断计数，不得再直接发送 `auth_selected`，否则普通选择会产生重复事件。
+- `SessionAffinitySelector.Pick()` 在 cache hit 和 fallback cache hit 时会直接返回缓存账号，不进入 fallback `cockpitSelector`。因此调度事件不得放回 `cockpitSelector.Pick()`；否则同一会话的首次请求可显示“调度中”，后续请求会漏报。
+- `recordingSelector` 注入每次选择独享的诊断上下文：普通路径使用 `cockpitSelector` 给出的精确计数；未进入根选择器的 affinity cache-hit 路径使用外层候选集补算。诊断数据只用于事件展示，不能参与选择。
+- `TestRecordingSelectorRecordsSessionAffinityCacheHit` 必须同时验证计费账号元数据，以及首次选择和 cache hit 都各发送且只发送一次选择事件。
+
 ### 5.3 前端显示与轮询
 
 显示位置：
@@ -334,6 +342,17 @@ Provider 目录处理边界：
 - 隐私：不记录 API Key secret；UI 继续使用现有账号脱敏函数。
 - 性能：不新增独立高频 command；复用已有 state snapshot 和条件轮询。
 - 兼容：sidecar 与 legacy gateway 两条路径都要覆盖。
+
+### 5.5 OAuth 保留额度窗口语义
+
+OpenAI 的 `primary_window`/`secondary_window` 表示窗口顺序，不保证永久等于“5 小时/周”。OpenAI 暂停短窗口时，唯一的周窗口可能作为 `primary_window` 返回；上游前端也已有 `hourly_window_minutes=10080` 但实际显示为 Weekly 的兼容行为。
+
+- `quota_reserve_windows_snapshot()` 必须优先使用实际窗口分钟数分类：达到一周的窗口使用周保留阈值，较短窗口使用五小时保留阈值。
+- 只有旧持久化数据缺少窗口分钟数时，才兼容回退为 primary 使用五小时阈值、secondary 使用周阈值。
+- Rust legacy 路由的屏蔽判断、`quota_reserve_status` 告警和写给 Sidecar 的 `quota-reserve.json` 必须共用同一份语义解析结果，不能分别按字段位置判断。
+- OpenAI 恢复 `primary=300 分钟`、`secondary=10080 分钟` 后，两组阈值应自动同时恢复生效；不得通过永久交换 primary/secondary 字段修复周窗口。
+- Sidecar 继续接收已有 `hourly*`/`weekly*` JSON 契约，但这些字段必须由 Rust 按真实时长完成语义归一化后再写出。
+- 回归检查至少覆盖 weekly-only primary、恢复后的 5 小时+周双窗口，以及缺少窗口时长的旧数据兼容。
 
 ## 6. 修改集 C：上游计费、用量与余额查询
 
@@ -499,10 +518,11 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 1. 启动 Codex API 服务并加入至少两个账号。
 2. 发起普通、流式和 WebSocket 请求（若该模式受支持）。
 3. 确认被选账号在 5 秒内显示“调度中”。
-4. 请求结束后显示“刚调度”，约 30 秒后消失。
-5. 失败、取消和重试后不能永久显示“调度中”。
-6. 在成员、自定义路由、模型规则或 API Key 对话框中编辑未保存内容，等待至少两轮轮询，草稿不能被重置。
-7. 停止服务后确认轮询停止，无持续 command 或控制台报错。
+4. 开启 session affinity，使用完全相同的会话标识连续发起至少两个请求；首次 cache miss 和后续 cache hit 都必须显示“调度中”，Sidecar 每个请求只输出一条 `auth_selected`。
+5. 请求结束后显示“刚调度”，约 30 秒后消失。
+6. 失败、取消和重试后不能永久显示“调度中”。
+7. 在成员、自定义路由、模型规则或 API Key 对话框中编辑未保存内容，等待至少两轮轮询，草稿不能被重置。
+8. 停止服务后确认轮询停止，无持续 command 或控制台报错。
 
 ### 10.4 计费查询手工检查
 

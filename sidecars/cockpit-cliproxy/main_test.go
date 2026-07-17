@@ -1417,7 +1417,21 @@ func TestRecordingSelectorRecordsSessionAffinityCacheHit(t *testing.T) {
 		TTL:      time.Hour,
 	})
 	tracker := newRequestUsageTracker()
-	selector := &recordingSelector{inner: affinity, manifest: m, tracker: tracker}
+	selectedRequestIDs := make([]string, 0, 2)
+	selector := &recordingSelector{
+		inner:    affinity,
+		manifest: m,
+		tracker:  tracker,
+		onSelected: func(ctx context.Context, selected *coreauth.Auth, provider, model string, candidateAuths, availableAuths int) {
+			selectedRequestIDs = append(selectedRequestIDs, internallogging.GetRequestID(ctx))
+			if selected != auth || provider != "codex" || model != "gpt-5.5" {
+				t.Fatalf("unexpected selection event: auth=%#v provider=%q model=%q", selected, provider, model)
+			}
+			if candidateAuths != 1 || availableAuths != 1 {
+				t.Fatalf("unexpected selection counts: candidates=%d available=%d", candidateAuths, availableAuths)
+			}
+		},
+	}
 	headers := make(http.Header)
 	headers.Set("X-Session-ID", "session-selected")
 	opts := cliproxyexecutor.Options{Headers: headers}
@@ -1432,6 +1446,9 @@ func TestRecordingSelectorRecordsSessionAffinityCacheHit(t *testing.T) {
 	}
 	if fallback.count != 1 {
 		t.Fatalf("expected second pick to use affinity cache, fallback count=%d", fallback.count)
+	}
+	if !reflect.DeepEqual(selectedRequestIDs, []string{"req-first", "req-cache"}) {
+		t.Fatalf("expected one selection event per request, got %#v", selectedRequestIDs)
 	}
 
 	payload, ok := tracker.finalize("req-cache", usageFinalizeInput{

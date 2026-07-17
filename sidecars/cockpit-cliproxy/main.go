@@ -50,11 +50,12 @@ import (
 type contextKey string
 
 const (
-	clientAPIKeyContextKey      contextKey = "cockpitClientAPIKey"
-	requestKindContextKey       contextKey = "cockpitRequestKind"
-	requestModelContextKey      contextKey = "cockpitRequestModel"
-	clientInstanceIDContextKey  contextKey = "cockpitClientInstanceId"
-	clientInstanceIDHeaderName  = "X-Cockpit-Instance-Id"
+	clientAPIKeyContextKey             contextKey = "cockpitClientAPIKey"
+	requestKindContextKey              contextKey = "cockpitRequestKind"
+	requestModelContextKey             contextKey = "cockpitRequestModel"
+	clientInstanceIDContextKey         contextKey = "cockpitClientInstanceId"
+	authSelectionDiagnosticsContextKey contextKey = "cockpitAuthSelectionDiagnostics"
+	clientInstanceIDHeaderName                    = "X-Cockpit-Instance-Id"
 )
 
 const ginUserAPIKeyKey = "userApiKey"
@@ -1772,9 +1773,16 @@ type cockpitSelector struct {
 }
 
 type recordingSelector struct {
-	inner    coreauth.Selector
-	manifest *manifest
-	tracker  *requestUsageTracker
+	inner      coreauth.Selector
+	manifest   *manifest
+	tracker    *requestUsageTracker
+	onSelected func(context.Context, *coreauth.Auth, string, string, int, int)
+}
+
+type authSelectionDiagnostics struct {
+	candidateAuths int
+	availableAuths int
+	recorded       bool
 }
 
 type imageRequestSelector struct {
@@ -1800,11 +1808,33 @@ func (s *imageRequestSelector) Stop() {
 }
 
 func (s *recordingSelector) Pick(ctx context.Context, provider, model string, opts cliproxyexecutor.Options, auths []*coreauth.Auth) (*coreauth.Auth, error) {
-	auth, err := s.inner.Pick(ctx, provider, model, opts, auths)
-	if err != nil || auth == nil || s.tracker == nil {
+	diagnostics := &authSelectionDiagnostics{}
+	selectionCtx := ctx
+	if selectionCtx == nil {
+		selectionCtx = context.Background()
+	}
+	selectionCtx = context.WithValue(selectionCtx, authSelectionDiagnosticsContextKey, diagnostics)
+	auth, err := s.inner.Pick(selectionCtx, provider, model, opts, auths)
+	if err != nil || auth == nil {
 		return auth, err
 	}
-	s.tracker.recordSelectedAccount(internallogging.GetRequestID(ctx), accountForAuthInManifest(s.manifest, auth), auth.ID)
+	if s.tracker != nil {
+		s.tracker.recordSelectedAccount(internallogging.GetRequestID(selectionCtx), accountForAuthInManifest(s.manifest, auth), auth.ID)
+	}
+	if s.onSelected != nil {
+		candidateAuths := diagnostics.candidateAuths
+		availableAuths := diagnostics.availableAuths
+		if !diagnostics.recorded {
+			candidateAuths = len(auths)
+			now := time.Now()
+			for _, candidate := range auths {
+				if authAvailable(candidate, model, now) {
+					availableAuths++
+				}
+			}
+		}
+		s.onSelected(selectionCtx, auth, provider, model, candidateAuths, availableAuths)
+	}
 	return auth, nil
 }
 
@@ -2058,6 +2088,11 @@ func (s *cockpitSelector) Pick(ctx context.Context, provider, model string, opts
 	if len(available) == 0 {
 		return nil, noAuthAvailableError(quotaReserveReasons)
 	}
+	if diagnostics, _ := ctx.Value(authSelectionDiagnosticsContextKey).(*authSelectionDiagnostics); diagnostics != nil {
+		diagnostics.candidateAuths = len(auths)
+		diagnostics.availableAuths = len(available)
+		diagnostics.recorded = true
+	}
 
 	s.mu.Lock()
 	start := s.cursor
@@ -2080,7 +2115,6 @@ func (s *cockpitSelector) Pick(ctx context.Context, provider, model string, opts
 			changed := s.tracker.imageJobChangeSignal()
 			for _, candidate := range s.orderImageAuths(available, start) {
 				if s.tracker.tryReserveImageJob(requestID, candidate.ID, s.maxConcurrentImageRequests()) {
-					s.emitAuthSelected(ctx, candidate, provider, model, len(auths), len(available))
 					return candidate, nil
 				}
 			}
@@ -2092,7 +2126,6 @@ func (s *cockpitSelector) Pick(ctx context.Context, provider, model string, opts
 		}
 	}
 	selected := ordered[0]
-	s.emitAuthSelected(ctx, selected, provider, model, len(auths), len(available))
 	return selected, nil
 }
 
@@ -2912,9 +2945,18 @@ func buildCoreAuthManager(cfg *config.Config, selector coreauth.Selector, hook c
 	if dirSetter, ok := tokenStore.(interface{ SetBaseDir(string) }); ok && cfg != nil {
 		dirSetter.SetBaseDir(cfg.AuthDir)
 	}
+	var onSelected func(context.Context, *coreauth.Auth, string, string, int, int)
+	if cockpit, ok := selector.(*cockpitSelector); ok {
+		onSelected = cockpit.emitAuthSelected
+	}
 	selector = buildCoreAuthSelector(cfg, selector, m, quota)
-	if tracker != nil {
-		selector = &recordingSelector{inner: selector, manifest: m, tracker: tracker}
+	if tracker != nil || onSelected != nil {
+		selector = &recordingSelector{
+			inner:      selector,
+			manifest:   m,
+			tracker:    tracker,
+			onSelected: onSelected,
+		}
 	}
 	return coreauth.NewManager(tokenStore, selector, hook)
 }

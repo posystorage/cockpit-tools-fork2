@@ -145,6 +145,7 @@ const CUSTOM_ROUTING_WEIGHT_MIN: u32 = 1;
 const CUSTOM_ROUTING_WEIGHT_MAX: u32 = 100;
 const BOUND_OAUTH_QUOTA_RESERVE_MIN_PERCENT: i32 = 1;
 const BOUND_OAUTH_QUOTA_RESERVE_MAX_PERCENT: i32 = 100;
+const BOUND_OAUTH_WEEKLY_WINDOW_MINUTES: i64 = 7 * 24 * 60;
 const BOUND_OAUTH_QUOTA_RESERVE_MAX_SNAPSHOT_AGE_SECONDS: i64 = 3 * 60;
 const BOUND_OAUTH_QUOTA_RESERVE_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 const BOUND_OAUTH_QUOTA_RESERVE_MONITOR_TICK: Duration = Duration::from_secs(5);
@@ -1599,6 +1600,83 @@ fn valid_quota_remaining_percent(value: i32) -> Option<i32> {
     (0..=100).contains(&value).then_some(value)
 }
 
+#[derive(Clone, Copy, Debug)]
+struct QuotaReserveWindowSnapshot {
+    present: Option<bool>,
+    remaining_percent: Option<i32>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct QuotaReserveWindowsSnapshot {
+    hourly: QuotaReserveWindowSnapshot,
+    weekly: QuotaReserveWindowSnapshot,
+}
+
+fn quota_window_uses_weekly_reserve(window_minutes: Option<i64>, fallback_weekly: bool) -> bool {
+    window_minutes
+        .filter(|minutes| *minutes > 0)
+        .map(|minutes| minutes >= BOUND_OAUTH_WEEKLY_WINDOW_MINUTES - 1)
+        .unwrap_or(fallback_weekly)
+}
+
+fn merge_quota_reserve_window(
+    target: &mut QuotaReserveWindowSnapshot,
+    present: Option<bool>,
+    remaining_percent: Option<i32>,
+) {
+    if present == Some(false) {
+        return;
+    }
+    if target.present == Some(false) {
+        target.present = present;
+        target.remaining_percent = remaining_percent;
+        return;
+    }
+    if present == Some(true) {
+        target.present = Some(true);
+    }
+    target.remaining_percent = match (target.remaining_percent, remaining_percent) {
+        (Some(current), Some(next)) => Some(current.min(next)),
+        _ => None,
+    };
+}
+
+fn quota_reserve_windows_snapshot(
+    quota: &crate::models::codex::CodexQuota,
+) -> QuotaReserveWindowsSnapshot {
+    let absent = QuotaReserveWindowSnapshot {
+        present: Some(false),
+        remaining_percent: None,
+    };
+    let mut windows = QuotaReserveWindowsSnapshot {
+        hourly: absent,
+        weekly: absent,
+    };
+    let candidates = [
+        (
+            quota.hourly_window_minutes,
+            false,
+            quota.hourly_window_present,
+            valid_quota_remaining_percent(quota.hourly_percentage),
+        ),
+        (
+            quota.weekly_window_minutes,
+            true,
+            quota.weekly_window_present,
+            valid_quota_remaining_percent(quota.weekly_percentage),
+        ),
+    ];
+    for (window_minutes, fallback_weekly, present, remaining_percent) in candidates {
+        let target = if quota_window_uses_weekly_reserve(window_minutes, fallback_weekly) {
+            &mut windows.weekly
+        } else {
+            &mut windows.hourly
+        };
+        merge_quota_reserve_window(target, present, remaining_percent);
+    }
+    windows
+}
+
 fn quota_refresh_fail_closed_for_account(account_id: &str) -> bool {
     bound_oauth_quota_refresh_failures()
         .lock()
@@ -1646,14 +1724,15 @@ fn bound_oauth_quota_reserve_blocks_account(
     let Some(quota) = fresh_quota_for_bound_oauth_reserve(account) else {
         return true;
     };
+    let windows = quota_reserve_windows_snapshot(quota);
 
     quota_reserve_window_blocks(
-        quota.hourly_window_present,
-        valid_quota_remaining_percent(quota.hourly_percentage),
+        windows.hourly.present,
+        windows.hourly.remaining_percent,
         reserve.hourly_percent,
     ) || quota_reserve_window_blocks(
-        quota.weekly_window_present,
-        valid_quota_remaining_percent(quota.weekly_percentage),
+        windows.weekly.present,
+        windows.weekly.remaining_percent,
         reserve.weekly_percent,
     )
 }
@@ -1676,17 +1755,18 @@ fn build_quota_reserve_status(
 
     let mut effective: Option<(&str, i32, i32)> = None;
     if let Some(quota) = quota {
+        let windows = quota_reserve_windows_snapshot(quota);
         let candidates = [
             (
                 "hourly",
-                quota.hourly_window_present,
-                valid_quota_remaining_percent(quota.hourly_percentage),
+                windows.hourly.present,
+                windows.hourly.remaining_percent,
                 reserve.hourly_percent,
             ),
             (
                 "weekly",
-                quota.weekly_window_present,
-                valid_quota_remaining_percent(quota.weekly_percentage),
+                windows.weekly.present,
+                windows.weekly.remaining_percent,
                 reserve.weekly_percent,
             ),
         ];
@@ -10121,14 +10201,13 @@ fn sidecar_quota_reserve_snapshot_value(
     }
 
     let quota = fresh_quota_for_bound_oauth_reserve(account);
+    let windows = quota.map(quota_reserve_windows_snapshot);
     Some(json!({
         "snapshotUpdatedAtUnixSeconds": account.usage_updated_at,
-        "hourlyRemainingPercent": quota
-            .and_then(|quota| valid_quota_remaining_percent(quota.hourly_percentage)),
-        "weeklyRemainingPercent": quota
-            .and_then(|quota| valid_quota_remaining_percent(quota.weekly_percentage)),
-        "hourlyWindowPresent": quota.and_then(|quota| quota.hourly_window_present),
-        "weeklyWindowPresent": quota.and_then(|quota| quota.weekly_window_present),
+        "hourlyRemainingPercent": windows.and_then(|windows| windows.hourly.remaining_percent),
+        "weeklyRemainingPercent": windows.and_then(|windows| windows.weekly.remaining_percent),
+        "hourlyWindowPresent": windows.and_then(|windows| windows.hourly.present),
+        "weeklyWindowPresent": windows.and_then(|windows| windows.weekly.present),
         "hourlyThresholdPercent": reserve.hourly_percent,
         "weeklyThresholdPercent": reserve.weekly_percent,
     }))
@@ -25386,6 +25465,57 @@ wire_api = "responses"
     }
 
     #[test]
+    fn bound_oauth_quota_reserve_uses_actual_window_duration() {
+        let reserve = CodexLocalAccessQuotaReserve {
+            hourly_percent: 20,
+            weekly_percent: 5,
+        };
+        let mut weekly_primary =
+            test_oauth_account_with_quota("weekly-primary", 10, 100, Some(true), Some(false));
+        weekly_primary
+            .quota
+            .as_mut()
+            .expect("quota")
+            .hourly_window_minutes = Some(10_080);
+
+        assert!(!bound_oauth_quota_reserve_blocks_account(
+            &reserve,
+            Some(&weekly_primary),
+        ));
+        weekly_primary
+            .quota
+            .as_mut()
+            .expect("quota")
+            .hourly_percentage = 5;
+        assert!(bound_oauth_quota_reserve_blocks_account(
+            &reserve,
+            Some(&weekly_primary),
+        ));
+
+        let restored_dual =
+            test_oauth_account_with_quota("restored-dual", 20, 90, Some(true), Some(true));
+        assert!(bound_oauth_quota_reserve_blocks_account(
+            &reserve,
+            Some(&restored_dual),
+        ));
+
+        let mut legacy =
+            test_oauth_account_with_quota("legacy", 21, 6, Some(true), Some(true));
+        let legacy_quota = legacy.quota.as_mut().expect("quota");
+        legacy_quota.hourly_window_minutes = None;
+        legacy_quota.weekly_window_minutes = None;
+        assert!(!bound_oauth_quota_reserve_blocks_account(
+            &reserve,
+            Some(&legacy),
+        ));
+        legacy.quota.as_mut().expect("quota").weekly_percentage = 5;
+        assert!(bound_oauth_quota_reserve_blocks_account(
+            &reserve,
+            Some(&legacy),
+        ));
+    }
+
+    #[test]
     fn bound_oauth_quota_reserve_filters_only_the_bound_account() {
         let reserve = CodexLocalAccessQuotaReserve {
             hourly_percent: 20,
@@ -25433,9 +25563,31 @@ wire_api = "responses"
             json!(account.usage_updated_at)
         );
         assert_eq!(snapshot["hourlyRemainingPercent"], json!(75));
-        assert_eq!(snapshot["weeklyRemainingPercent"], json!(40));
+        assert_eq!(snapshot["weeklyRemainingPercent"], Value::Null);
         assert_eq!(snapshot["hourlyWindowPresent"], json!(true));
         assert_eq!(snapshot["weeklyWindowPresent"], json!(false));
+    }
+
+    #[test]
+    fn sidecar_snapshot_maps_weekly_primary_to_weekly_reserve() {
+        let mut collection = test_local_access_collection(vec!["account-bound".to_string()]);
+        collection.bound_oauth_account_id = Some("account-bound".to_string());
+        collection.bound_oauth_quota_reserve = Some(CodexLocalAccessQuotaReserve {
+            hourly_percent: 20,
+            weekly_percent: 5,
+        });
+        let mut account =
+            test_oauth_account_with_quota("account-bound", 10, 100, Some(true), Some(false));
+        account.quota.as_mut().expect("quota").hourly_window_minutes = Some(10_080);
+
+        let snapshot = sidecar_quota_reserve_snapshot_value(&collection, &account)
+            .expect("quota reserve snapshot should exist");
+        assert_eq!(snapshot["hourlyRemainingPercent"], Value::Null);
+        assert_eq!(snapshot["weeklyRemainingPercent"], json!(10));
+        assert_eq!(snapshot["hourlyWindowPresent"], json!(false));
+        assert_eq!(snapshot["weeklyWindowPresent"], json!(true));
+        assert_eq!(snapshot["hourlyThresholdPercent"], json!(20));
+        assert_eq!(snapshot["weeklyThresholdPercent"], json!(5));
     }
 
     #[test]

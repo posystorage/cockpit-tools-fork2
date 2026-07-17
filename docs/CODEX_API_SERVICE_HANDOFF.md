@@ -84,9 +84,13 @@ profile, especially for WSL.
   delay.
 - Named API keys can be disabled, limited by allowed/excluded models, and assigned
   a model prefix. The primary collection key remains for backward compatibility.
-- Bound OAuth quota reserve can exclude an OAuth account when its fresh hourly or
-  weekly quota snapshot drops below the configured threshold. A failed refresh is
-  fail-closed for that reserve decision.
+- Bound OAuth quota reserve can exclude an OAuth account when its fresh short or
+  weekly quota snapshot drops below the configured threshold. Window semantics
+  come from the reported duration, not permanently from primary/secondary
+  position: a weekly-only `primary_window` must use the weekly threshold, while a
+  restored 300-minute primary plus 10080-minute secondary uses both thresholds.
+  Old snapshots without duration metadata retain the positional fallback. A
+  failed refresh is fail-closed for that reserve decision.
 - Model aliases and filters affect both model discovery and request rewriting.
   Update both paths together and test an alias plus a rejected model.
 - Image behavior is separately configurable: enabled, images-only, or disabled.
