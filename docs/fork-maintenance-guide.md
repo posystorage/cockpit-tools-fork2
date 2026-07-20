@@ -23,7 +23,42 @@
 
 ## 2. 当前基线与历史锚点
 
-### 2.1 `v1.3.6` 已验证基线（2026-07-16）
+### 2.1 `v1.3.10` 已验证基线（2026-07-20）
+
+本轮从已验证 fork `1.3.6b2`（`3be46a02`）升级到上游 `v1.3.10`，合并提交为 `50cf4c74`，父节点是 fork `3be46a02` 与上游 release commit `b331b093`。升级分支为 `codex/upgrade-upstream-v1.3.10`。release 链如下：
+
+- `v1.3.7`：release commit `16c4d02b`，Codex API 服务成为独立平台入口。
+- `v1.3.8`：release commit `fb291416`，已有 Codex 账号可直接加入 API 服务，并修复 Responses 流和工具兼容。
+- `v1.3.9`：release commit `72eff4a4`，修复 Responses Lite 协作工具、流内过载重试和删除账号残留。
+- `v1.3.10`：annotated tag object `59f5640f`，release commit `b331b093`，增加 ChatGPT 客户端账号数/额度注入、逐账号导入进度和删除后的后台账号池清理。
+
+`v1.3.6..v1.3.10` 涉及 30 个非合并提交、175 个文件，净变化为 13424 行新增、9765 行删除。真实合并与预演一致，只有三个显式冲突文件：
+
+- `Casks/cockpit-tools.rb`：fork 删除、上游更新；继续保持删除。
+- `sidecars/cockpit-cliproxy/main.go`：冲突只在 context key 常量区；同时保留 fork 的 `authSelectionDiagnosticsContextKey` 和上游的 `cockpitQuotaPath`。
+- `src/pages/CodexAccountsPage.tsx`：三个冲突块均来自上游删除旧 API 服务成员预览；接受上游删除，不在普通 Codex 账号页恢复重复成员面板。
+
+独立平台化后的长期裁决：
+
+1. `codex_api_service` 是独立、无账号平台 ID，页面路由为 `codex-api-service`；接受上游导航、布局迁移和页面入口。
+2. Codex 账号页与 API 服务页首次访问后保持挂载。API 服务主成员卡片是“调度中/刚调度”的唯一常驻页面展示位置；统计账号卡片不重复实时 badge。
+3. `CodexLocalAccessModal` 仍由两个页面复用，继续保留活动排序和标记。普通账号页保留 5 秒 state 轮询，使从该页打开的管理弹框仍能实时更新，但不再计算旧成员预览的活动排序、隐藏数或 ResizeObserver。
+4. Sidecar 的 `recordingSelector` 继续位于 session affinity、图片、备用账号和额度保留选择器的最外层。上游新增 alpha search、Responses 重试和 scheduler health 都使用同一个 `coreauth.Manager`，不得把 `auth_selected` 发送移回 `cockpitSelector.Pick()`。
+5. 上游 `schedulerAvailable/schedulerReason/schedulerNextRetryAt` 属于账号可用性健康信息，与 fork 的易失调度活动并存；两者不得合并成同一状态或互相驱动。
+
+自动合并审计还发现两个非显式冲突问题：
+
+- 上游在自动更新设置前新增“记住主窗口位置和大小”，导致 fork 的 `SHOW_UPDATE_UI` 条件自动包住两个同级 JSX 元素并误隐藏窗口设置。合并后把条件下移，只隐藏自动更新与更新提醒，窗口记忆功能跟随上游。
+- 上游把批量导入弹框迁移到 `createPortal(..., document.body)`，以免 Codex 页面常驻隐藏后遮挡弹框。fork 继续保留单会话后台任务模型，只把 Portal 回归测试更新为验证 `document.body`，不恢复上游已被本 fork 撤销的多任务队列断言。
+
+本轮验收结果：
+
+- TypeScript `tsc --noEmit` 通过；Vite 生产构建通过，转换 2119 个模块并生成独立 `CodexApiServicePage` chunk。
+- Provider 隐私扫描通过，共检查 154 个运行时预设；调度、API Key scope、兼容 URL、逐项导入、账号加入和 Portal 等 Node 定向测试 24 项通过。
+- Rust `cockpit-tools` lib 共 673 项：`671 passed / 0 failed / 2 ignored`。另行复跑调度活动 2 项、OAuth 实际窗口和周窗口 Sidecar 映射各 1 项、Sub2API URL/数值各 1 项、配置接管 4 项、异步删除 1 项，全部通过。
+- 本机没有 Go，`TestRecordingSelectorRecordsSessionAffinityCacheHit` 等 Sidecar Go 测试未执行；发布 CI 必须真实编译并运行 Go 测试。纯源码复核确认根选择器不再直接发送事件，外层记录器测试仍验证首次选择和 affinity cache hit 各发送一次。
+
+### 2.2 `v1.3.6` 已验证基线（2026-07-16）
 
 本轮从已验证 fork HEAD `6f84cae8` 升级到上游 `v1.3.6`。上游没有发布 `v1.3.3` tag；`release: v1.3.3` 提交包含在后续 `v1.3.4` 中。release 链如下：
 
@@ -64,7 +99,7 @@
 
 Windows 本地运行 Rust 测试前必须为每个测试进程设置独立的 `COCKPIT_TOOLS_DATA_DIR`。只设置 `HOME`、`CODEX_HOME` 或 `COCKPIT_TOOLS_TEST_DATA_DIR` 不足以隔离 `cockpit-core`；上游部分测试会访问真实 `~/.antigravity_cockpit`。测试失败后也不能直接删除真实目录，应先根据测试前备份、明确的测试账号 ID/邮箱和时间戳制定最小恢复方案。
 
-### 2.2 `v1.3.2` 上一已验证基线
+### 2.3 `v1.3.2` 上一已验证基线
 
 当前已验证的同步状态（2026-07-15）：
 
@@ -118,8 +153,10 @@ Windows 本地运行 Rust 测试前必须为每个测试进程设置独立的 `C
 | `4813f6df` | 同步上游 `v1.3.1` | 上一 fork 合并锚点 |
 | `a84a97cb` | 上游 `v1.3.2` release commit | 上一上游锚点 |
 | `ed818e5e` | 同步上游 `v1.3.2` | 上一 fork 合并锚点 |
-| `072f05f0` | 上游 `v1.3.6` release commit | 当前上游锚点 |
-| `7ad378f4` | 同步上游 `v1.3.6` | 当前 fork 合并锚点 |
+| `072f05f0` | 上游 `v1.3.6` release commit | 上一上游锚点 |
+| `7ad378f4` | 同步上游 `v1.3.6` | 上一 fork 合并锚点 |
+| `b331b093` | 上游 `v1.3.10` release commit | 当前上游锚点 |
+| `50cf4c74` | 同步上游 `v1.3.10` | 当前 fork 合并锚点 |
 | `c36673db` | 恢复调度状态 5 秒轮询 | 保留轮询条件 |
 | `f868bb85` | 拒绝 `NaN`/无穷大计费值 | 保留数值安全检查 |
 | `bba625e4` | 将 APIKEY.FUN/赞助中转 UI 中性化 | 保留通用自定义中转能力 |
@@ -322,15 +359,17 @@ Sidecar 选择事件所有权：
 
 显示位置：
 
-- `src/pages/CodexAccountsPage.tsx`：API 服务账号池摘要、调度优先排序、运行/最近活动标记。
 - `src/pages/CodexApiServicePage.tsx`：成员卡片显示“调度中 N”或“刚调度 N 秒前”，tooltip 展示模型/API Key 标签/策略。
 - `src/components/CodexLocalAccessModal.tsx`：按账号统计行显示活动标记。
-- `src/pages/CodexApiServicePage.css`、`src/components/CodexLocalAccessModal.css`、`src/styles/pages/codex.css`：活动状态样式。
+- `src/pages/CodexApiServicePage.css`、`src/components/CodexLocalAccessModal.css`：活动状态样式。
+
+从 `v1.3.7` 开始，API 服务使用独立平台 ID `codex_api_service` 和页面 `codex-api-service`。普通 `CodexAccountsPage` 不再拥有成员逐卡预览，不能为了保留调度观测而恢复该旧面板；它只保留服务状态、额度池、健康摘要以及可打开共享管理弹框所需的 state。
 
 轮询契约：
 
 - 仅当 `state.running=true` 时，每 5 秒调用 `getCodexLocalAccessState()`。
 - 页面卸载或服务停止时清除 interval。
+- 两个 Codex 页面首次访问后保持挂载；访问过两页时会各自维护只读轮询。它们使用独立 state 和请求序号保护，不会互相覆盖。
 - 轮询结果只更新服务 state，不应重置用户正在编辑的表单、成员选择、自定义路由、模型规则或密钥草稿。
 - `CodexLocalAccessModal` 只在真正打开或 mode 改变时初始化瞬态状态。
 - `CodexApiServicePage` 的服务端 state 与本地 draft 必须分离。

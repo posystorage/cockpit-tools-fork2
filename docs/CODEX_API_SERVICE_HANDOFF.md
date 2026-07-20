@@ -22,6 +22,12 @@ Codex CLI / selected Codex profile
 React page -> Tauri invoke -> Rust collection/runtime -> sidecar config + manifest
 ```
 
+Since upstream v1.3.7 the service is an accountless platform with platform ID
+`codex_api_service` and page ID `codex-api-service`. The Codex accounts page and
+service page remain mounted after their first visit. Keep service-member activity
+on the service page and shared management modal; do not restore the removed member
+preview on the ordinary Codex accounts page.
+
 The implementation has two gateway modes:
 
 - `sidecar` is the default. Rust materializes config and credentials, then starts
@@ -67,6 +73,7 @@ the same client contract:
 - `/v1/responses` and `/v1/responses/compact`
 - `/backend-api/codex/*`, including responses WebSocket traffic
 - `/v1/images/generations` and `/v1/images/edits`
+- `/v1/cockpit/quota` for the authenticated client-key quota snapshot
 
 The default bind is loopback (`127.0.0.1`). The user can choose LAN scope
 (`0.0.0.0`), which expands exposure but still requires a generated API key. Client
@@ -82,6 +89,8 @@ profile, especially for WSL.
 - Session affinity is enabled by default. Routing also observes cooldown and
   account-health state; retries are bounded by the configured credential count and
   delay.
+- Responses WebSocket routing is a collection setting and defaults to disabled.
+  Provider gateways remain excluded from the Codex OAuth WebSocket path.
 - Named API keys can be disabled, limited by allowed/excluded models, and assigned
   a model prefix. The primary collection key remains for backward compatibility.
 - Bound OAuth quota reserve can exclude an OAuth account when its fresh short or
@@ -160,8 +169,11 @@ it can contain credentials.
 
 ## Completed And Next Work
 
-Completed: repository import, source map, service-flow review, and this handoff
-document.
+Completed: repository import, source map, service-flow review, duration-aware OAuth
+quota reserve, read-only scheduling activity, and the upstream v1.3.10 independent
+platform migration. The v1.3.10 merge keeps activity in the primary service member
+cards and shared modal, while scheduler availability remains a separate health
+signal.
 
 Before implementing a change, identify whether it belongs to the UI contract,
 Rust legacy proxy, generated sidecar contract, or all three. Test both the
