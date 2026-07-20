@@ -497,6 +497,7 @@
       "noneRunning": "Работающих инстансов не найдено",
       "syncThreadsNeedTwo": "Для синхронизации тредов требуется как минимум два экземпляра",
       "launchPrepared": "Команда запуска готова",
+      "codexManagedStoreLaunchUnsafe": "Windows Store не может надежно передать каталог экземпляра, поэтому открытие учетной записи по умолчанию заблокировано. Переключите этот экземпляр в режим запуска CLI и повторите попытку. Подробности: {{detail}}",
       "speedUpdated": "Скорость обновлена"
     },
     "runningDialog": {
@@ -611,6 +612,8 @@
       "closeBehaviorQuit": "Закрыть приложение",
       "startupMinimized": "Запускать свернутым",
       "startupMinimizedDesc": "Автоматически сворачивает главное окно после запуска приложения; восстановить можно из Dock, панели задач или трея",
+      "rememberMainWindowState": "Запоминать положение и размер окна",
+      "rememberMainWindowStateDesc": "Восстанавливает положение и размер после перезапуска или открытия из трея; по умолчанию выключено",
       "minimizeBehavior": "Поведение при сворачивании окна (только macOS)",
       "minimizeBehaviorDesc": "Выберите, оставлять ли окно при сворачивании в Dock и строке меню или только в строке меню",
       "minimizeBehaviorDockAndTray": "Dock + строка меню (рекомендуется)",
@@ -650,6 +653,11 @@
       "codexPathReset": "Сбросить по умолчанию",
       "codexSyncWsl": "Синхронизировать Codex с WSL",
       "codexSyncWslDesc": "После переключения учетной записи Codex по умолчанию auth.json и config.toml также записываются в каталог Codex в WSL.",
+      "codexAppUiInjection": "Квота службы API",
+      "codexAppUiInjectionDesc": "После перезапуска экземпляра Codex показывать под полем ввода количество аккаунтов, недельную и 5-часовую квоты службы API Cockpit Tools. Cockpit Tools должен продолжать работать в фоне; обновление прекращается после полного выхода из приложения или при отсутствии сети.",
+      "codexAppUiInjectionPoolLabel": "Аккаунты",
+      "codexAppUiInjectionWeeklyLabel": "Неделя",
+      "codexAppUiInjectionFiveHourLabel": "5 ч",
       "codexWslConfigDir": "Каталог Codex в WSL",
       "codexWslConfigDirDesc": "Укажите каталог .codex внутри WSL. Поддерживаются пути \\\\wsl.localhost\\.",
       "codexWslConfigDirPlaceholder": "Пример: \\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex",
@@ -1270,7 +1278,9 @@
         "renameFailed": "Не удалось переименовать группу: {{error}}",
         "deleteFailed": "Не удалось удалить группу: {{error}}",
         "addFailed": "Не удалось добавить в группу: {{error}}",
-        "createAndAddFailed": "Не удалось создать группу и добавить: {{error}}"
+        "createAndAddFailed": "Не удалось создать группу и добавить: {{error}}",
+        "quotaRefreshFailed": "Не удалось изменить настройку обновления квоты: {{error}}",
+        "notFound": "Группа не найдена"
       },
       "addAccounts": "Добавить аккаунты",
       "editTitle": "Редактировать группу",
@@ -1278,7 +1288,14 @@
       "currentGroupLabel": "Текущая группа",
       "accountPickerEmpty": "Подходящих аккаунтов не найдено",
       "filterHint": "Для фильтра выбрано групп: {{count}}",
-      "filterToggle": "Отметьте, чтобы фильтровать по этой группе"
+      "filterToggle": "Отметьте, чтобы фильтровать по этой группе",
+      "quotaRefresh": "Обновление квоты",
+      "quotaRefreshOffBadge": "Не обновлять",
+      "quotaRefreshOffHint": "Эта группа не обновляется; автоматическое и полное обновление пропускают её аккаунты",
+      "refreshForceHint": "Если политика не наследуется, группу всё равно можно обновить вручную",
+      "quotaRefreshInherit": "Наследовать от платформы",
+      "quotaRefreshPolicyHint": "Политика группы имеет наивысший приоритет: наследование от платформы, свой интервал или отключение",
+      "quotaRefreshMinutesBadge": "{{count}} мин"
     },
     "switchHistory": {
       "title": "История переключений",
@@ -1867,6 +1884,7 @@
         "freeUnsupported": "Бесплатные аккаунты пока не поддерживаются.",
         "restrictFreeToggle": "Ограничить Free-аккаунты",
         "chatApiKeyUnsupported": "Chat Completions не поддерживается",
+        "pendingOauthUnsupported": "Ожидает: нельзя",
         "freeNoticeRestricted": "Free-аккаунты ограничены. Отключите это, чтобы их выбирать.",
         "freeNoticeUnstable": "Прокси Free-аккаунтов может быть нестабильным. Используйте с осторожностью.",
         "restrictFreeDisableConfirmTitle": "Разрешить Free-аккаунты",
@@ -1894,6 +1912,10 @@
       "testConnectFailed": "Не удалось подключиться к {{url}}. Убедитесь, что API-сервис запущен, порт не изменён и ничего его не блокирует.",
       "testAuthFailed": "Сервис доступен, но аутентификация не прошла: {{detail}}. Проверьте ключ API-сервиса или состояние входа в аккаунт.",
       "testServiceUnavailable": "Сервис доступен, но сейчас недоступен: {{detail}}. Проверьте, включён ли сервис, не пуста ли коллекция аккаунтов и доступны ли аккаунты.",
+      "gatewayErrors": {
+        "authUnavailable": "Сейчас нет доступного для маршрутизации аккаунта. Аккаунт может быть на паузе, не авторизован или ограничен квотой. Проверьте состояние в API-сервисе Cockpit Tools.",
+        "authNotFound": "В коллекции нет настроенного доступного аккаунта. Добавьте или включите аккаунт в API-сервисе Cockpit Tools."
+      },
       "testRateLimited": "Сервис доступен, но upstream ограничен или квота исчерпана: {{detail}}.",
       "testHttpFailed": "Сервис доступен, но запрос вернул HTTP {{status}}: {{detail}}.",
       "activateAction": "Запустить API-сервис",
@@ -2112,7 +2134,31 @@
         "allAvailable": "Все OK {{count}}",
         "availableRatio": "Рабочие {{available}}/{{total}}",
         "issueSummary": "Сбой {{abnormal}} · Пауза {{cooldown}}",
-        "detail": "OK {{available}}/{{total}}, сбой {{abnormal}}, пауза {{cooldown}}, нет {{missing}}, auth {{authError}}, квота {{quotaLimited}}"
+        "detail": "OK {{available}}/{{total}}, сбой {{abnormal}}, пауза {{cooldown}}, нет {{missing}}, auth {{authError}}, квота {{quotaLimited}}",
+        "openDetails": "Показать проблемные аккаунты",
+        "recover": "Восстановить статус",
+        "recoverSuccess": "Запрошено восстановление {{count}} аккаунт(ов)",
+        "dialog": {
+          "title": "Проблемные аккаунты",
+          "description": "Эти состояния получены от планировщика OAuth Sidecar. Восстановление сбрасывает паузу и повторяет попытку.",
+          "noIssues": "Проблемных аккаунтов нет",
+          "missing": "Аккаунт отсутствует",
+          "cooldown": "На паузе",
+          "quota": "Квота ограничена",
+          "missingDetail": "Аккаунта больше нет в списке",
+          "cooldownModel": "Модель {{model}} на паузе",
+          "cooldownUntil": "Модель {{model}} на паузе до {{time}}",
+          "authDetail": "Авторизация OAuth могла истечь. Авторизуйтесь снова.",
+          "quotaDetail": "Квота временно недоступна. Подождите или проверьте тариф.",
+          "paymentDetail": "Тариф или оплата недоступны. Проверьте подписку.",
+          "modelDetail": "Аккаунт не поддерживает запрошенную модель.",
+          "upstreamDetail": "Вышестоящий сервис временно недоступен. Попытка будет повторена.",
+          "disabledDetail": "Аккаунт отключён. Сначала включите его.",
+          "unavailableDetail": "Sidecar сейчас не считает аккаунт доступным для планирования.",
+          "recover": "Восстановить",
+          "recovering": "Восстановление…",
+          "recoverAll": "Восстановить все"
+        }
       },
       "testChatModel": "Модель",
       "testChatClear": "Очистить чат",
@@ -3237,7 +3283,9 @@
       },
       "accountHealth": {
         "failures": "{{count}} сбоев подряд",
-        "image": "Изображения {{status}}"
+        "image": "Изображения {{status}}",
+        "unavailable": "Временно недоступен",
+        "authError": "Ошибка аутентификации"
       },
       "models": {
         "availableTitle": "Доступные модели",
@@ -3321,6 +3369,7 @@
         "optionsTitle": "Параметры маршрута",
         "sessionAffinity": "Привязка сессии",
         "sessionAffinityTtl": "TTL привязки",
+        "responsesWebsockets": "Responses через WebSocket",
         "maxRetryCredentials": "Аккаунты retry",
         "maxRetryInterval": "Ожидание retry",
         "disableCooling": "Отключить cooldown",
@@ -4078,10 +4127,21 @@
       "description": "Нажмите «Добавить учетную запись», чтобы начать управлять своими учетными записями Kiro."
     },
     "addModal": {
-      "title": "Добавить аккаунт Киро"
+      "title": "Добавить аккаунт Киро",
+      "idc": "Вход через AWS"
     },
     "oauth": {
       "desc": "Нажмите кнопку ниже и завершите авторизацию Kiro в своем браузере."
+    },
+    "idc": {
+      "builderId": "Аккаунт AWS Builder ID",
+      "enterprise": "Корпоративный аккаунт",
+      "desc": "Завершите авторизацию AWS IAM Identity Center в браузере. Аккаунт будет сохранён автоматически.",
+      "region": "Регион AWS",
+      "startUrl": "Начальный URL IAM Identity Center",
+      "start": "Начать корпоративный вход",
+      "regionRequired": "Введите регион AWS",
+      "startUrlRequired": "Введите начальный URL IAM Identity Center"
     },
     "token": {
       "desc": "Вставьте свой токен доступа Kiro или экспортированные данные JSON."
@@ -4614,7 +4674,18 @@
       "payAsYouGoConsuming": "Оплата по факту: расходуется",
       "payAsYouGoEnabled": "Оплата по факту: включена",
       "payAsYouGoEmpty": "Оплата по факту: --",
-      "payAsYouGoLabel": "Использование по требованию"
+      "payAsYouGoLabel": "Использование по требованию",
+      "statusSynced": "Статус: синхр.",
+      "statusSyncedPending": "Статус: синхр., остаток уточн.",
+      "fastAvailable": "Быстрые: {{times}}",
+      "fastTimes": "{{count}}",
+      "fastUnlimited": "Безлимит",
+      "fastPerMonth": "Быстрые/мес: {{count}}",
+      "fastChannelPerMonth": "Экспресс: {{count}}/мес",
+      "fastChannelStatus": "Экспресс: {{status}}",
+      "freeRemainingUnknown": "Free ост.: --",
+      "timesRemainingUnknown": "Ост.: --",
+      "soloParallel": "Пакет: Solo ×{{count}}"
     },
     "flowNotice": {
       "title": "Руководство по аккаунту Trae (нажмите, чтобы развернуть или свернуть)",
@@ -4626,6 +4697,10 @@
       "permissionWithPlatform": "Область разрешений: чтение и запись полей входа в локальном storage.json {{platform}} для импорта аккаунта, переключения и отображения плана. Все данные обрабатываются локально.",
       "networkGlobal": "Сеть: OAuth-вход {{platform}}, обновление токенов и запросы плана обращаются к официальным API trae.ai / traeapi.us. Локальные файлы аккаунтов и сырые данные не загружаются в сторонние сервисы.",
       "networkCn": "Сеть: OAuth-вход {{platform}}, обновление токенов и запросы плана обращаются к официальным API trae.cn / trae.com.cn. Локальные файлы аккаунтов и сырые данные не загружаются в сторонние сервисы."
+    },
+    "token": {
+      "jsonOnlyDesc": "Вставьте полный JSON аккаунта Trae CN. Сырой token не поддерживается.",
+      "jsonOnlyPlaceholder": "Полный Trae CN JSON..."
     }
   },
   "codebuddyCn": {

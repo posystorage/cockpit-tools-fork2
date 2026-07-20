@@ -3,16 +3,26 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 describe("codex batch import single-session rendering", () => {
-  it("renders the active batch import modal inside the accounts page", () => {
+  it("renders the active batch import modal through document.body", () => {
     const source = readFileSync(
       `${process.cwd()}/src/pages/CodexAccountsPage.tsx`,
       "utf8",
     );
 
+    const overlayIndex = source.indexOf(
+      'className="modal-overlay codex-batch-import-overlay"',
+    );
+    const createPortalIndex = source.lastIndexOf("createPortal(", overlayIndex);
+    const documentBodyIndex = source.indexOf("document.body", overlayIndex);
+
+    assert.notEqual(overlayIndex, -1, "batch import overlay should exist");
     assert.ok(
-      source.includes("{batchImportOpen && (") &&
-        source.includes('className="modal-overlay codex-batch-import-overlay"'),
-      "the single active batch import should render from page state",
+      source.includes("{batchImportOpen && createPortal(") &&
+        createPortalIndex !== -1 &&
+        documentBodyIndex !== -1 &&
+        createPortalIndex < overlayIndex &&
+        overlayIndex < documentBodyIndex,
+      "the single active batch import should render in a document.body portal",
     );
   });
 

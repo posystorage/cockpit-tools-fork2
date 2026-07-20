@@ -144,6 +144,7 @@ interface GeneralConfig {
   codex_auto_refresh_minutes: number;
   claude_auto_refresh_minutes: number;
   codex_sync_wsl: boolean;
+  codex_app_ui_injection_enabled?: boolean;
   codex_wsl_config_dir: string;
   ghcp_auto_refresh_minutes: number;
   windsurf_auto_refresh_minutes: number;
@@ -157,6 +158,7 @@ interface GeneralConfig {
   tray_icon_style?: 'template' | 'color';
   floating_card_show_on_startup?: boolean;
   startup_minimized?: boolean;
+  remember_main_window_state?: boolean;
   /** `last` = restore previous page; otherwise a page id like `dashboard` / `codex` */
   startup_page?: string;
   floating_card_always_on_top?: boolean;
@@ -297,11 +299,13 @@ const FALLBACK_PLATFORM_SETTINGS_ORDER: Record<PlatformId, number> = {
   antigravity: 0,
   antigravity_ide: 1,
   codex: 2,
-  claude_manager: 3,
-  'github-copilot': 4,
-  windsurf: 5,
-  kiro: 6,
-  cursor: 7,  grok: 9,
+  codex_api_service: 3,
+  claude_manager: 4,
+  'github-copilot': 5,
+  windsurf: 6,
+  kiro: 7,
+  cursor: 8,
+  grok: 9,
   codebuddy: 10,
   codebuddy_cn: 11,
   qoder: 12,
@@ -481,6 +485,7 @@ export function SettingsPage() {
   const [codexAutoRefresh, setCodexAutoRefresh] = useState('10');
   const [claudeAutoRefresh, setClaudeAutoRefresh] = useState('10');
   const [codexSyncWsl, setCodexSyncWsl] = useState(false);
+  const [codexAppUiInjectionEnabled, setCodexAppUiInjectionEnabled] = useState(true);
   const [codexWslConfigDir, setCodexWslConfigDir] = useState('');
   const [ghcpAutoRefresh, setGhcpAutoRefresh] = useState('10');
   const [windsurfAutoRefresh, setWindsurfAutoRefresh] = useState('10');
@@ -498,6 +503,7 @@ export function SettingsPage() {
   const [trayIconStyle, setTrayIconStyle] = useState<'template' | 'color'>('template');
   const [floatingCardShowOnStartup, setFloatingCardShowOnStartup] = useState(false);
   const [startupMinimized, setStartupMinimized] = useState(false);
+  const [rememberMainWindowState, setRememberMainWindowState] = useState(false);
   const [startupPage, setStartupPage] = useState('last');
   const [floatingCardAlwaysOnTop, setFloatingCardAlwaysOnTop] = useState(false);
   const [appAutoLaunchEnabled, setAppAutoLaunchEnabled] = useState(false);
@@ -1017,6 +1023,7 @@ export function SettingsPage() {
       codex_auto_refresh_minutes: codexAutoRefreshNum,
       claude_auto_refresh_minutes: claudeAutoRefreshNum,
       codex_sync_wsl: codexSyncWsl,
+      codex_app_ui_injection_enabled: codexAppUiInjectionEnabled,
       codex_wsl_config_dir: codexWslConfigDir,
       ghcp_auto_refresh_minutes: ghcpAutoRefreshNum,
       windsurf_auto_refresh_minutes: windsurfAutoRefreshNum,
@@ -1040,6 +1047,7 @@ export function SettingsPage() {
       tray_icon_style: isMacOS ? trayIconStyle : undefined,
       floating_card_show_on_startup: floatingCardShowOnStartup,
       startup_minimized: startupMinimized,
+      remember_main_window_state: rememberMainWindowState,
       startup_page: startupPage || 'last',
       floating_card_always_on_top: floatingCardAlwaysOnTop,
       app_auto_launch_enabled: appAutoLaunchEnabled,
@@ -1225,6 +1233,7 @@ export function SettingsPage() {
     codexAutoRefresh,
     claudeAutoRefresh,
     codexSyncWsl,
+    codexAppUiInjectionEnabled,
     codexWslConfigDir,
     ghcpAutoRefresh,
     windsurfAutoRefresh,
@@ -1247,6 +1256,7 @@ export function SettingsPage() {
     isMacOS,
     floatingCardShowOnStartup,
     startupMinimized,
+    rememberMainWindowState,
     startupPage,
     floatingCardAlwaysOnTop,
     appAutoLaunchEnabled,
@@ -1575,6 +1585,7 @@ export function SettingsPage() {
       setCodexAutoRefresh(String(config.codex_auto_refresh_minutes ?? 10));
       setClaudeAutoRefresh(String(config.claude_auto_refresh_minutes ?? 10));
       setCodexSyncWsl(Boolean(config.codex_sync_wsl ?? false));
+      setCodexAppUiInjectionEnabled(Boolean(config.codex_app_ui_injection_enabled ?? false));
       setCodexWslConfigDir(config.codex_wsl_config_dir || '');
       setGhcpAutoRefresh(String(config.ghcp_auto_refresh_minutes ?? 10));
       setWindsurfAutoRefresh(String(config.windsurf_auto_refresh_minutes ?? 10));
@@ -1588,6 +1599,7 @@ export function SettingsPage() {
       setTrayIconStyle(config.tray_icon_style === 'color' ? 'color' : 'template');
       setFloatingCardShowOnStartup(config.floating_card_show_on_startup ?? false);
       setStartupMinimized(config.startup_minimized ?? false);
+      setRememberMainWindowState(config.remember_main_window_state ?? false);
       setStartupPage((config.startup_page || 'last').trim() || 'last');
       setFloatingCardAlwaysOnTop(config.floating_card_always_on_top ?? false);
       setAppAutoLaunchEnabled(config.app_auto_launch_enabled ?? false);
@@ -3256,6 +3268,30 @@ export function SettingsPage() {
                 </div>
               </div>
 
+              <div className="settings-row">
+                <div className="row-label">
+                  <div className="row-title">
+                    {t('settings.general.rememberMainWindowState', '记住主窗口位置和大小')}
+                  </div>
+                  <div className="row-desc">
+                    {t(
+                      'settings.general.rememberMainWindowStateDesc',
+                      '重启或从托盘重新打开时恢复主窗口位置和大小；默认关闭'
+                    )}
+                  </div>
+                </div>
+                <div className="row-control">
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={rememberMainWindowState}
+                      onChange={(event) => setRememberMainWindowState(event.target.checked)}
+                    />
+                    <span className="slider"></span>
+                  </label>
+                </div>
+              </div>
+
               {SHOW_UPDATE_UI && (
               <div className="settings-row">
                 <div className="row-label">
@@ -4363,6 +4399,23 @@ export function SettingsPage() {
                   )}
                 </>
               )}
+
+              <div className="settings-row">
+                <div className="row-label">
+                  <div className="row-title">{t('settings.general.codexAppUiInjection')}</div>
+                  <div className="row-desc">{t('settings.general.codexAppUiInjectionDesc')}</div>
+                </div>
+                <div className="row-control">
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={codexAppUiInjectionEnabled}
+                      onChange={(event) => setCodexAppUiInjectionEnabled(event.target.checked)}
+                    />
+                    <span className="slider"></span>
+                  </label>
+                </div>
+              </div>
 
               <CodexSshSyncSettingsControl variant="settings" />
 

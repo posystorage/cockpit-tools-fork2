@@ -497,6 +497,7 @@
       "noneRunning": "Nie znaleziono uruchomionych instancji",
       "syncThreadsNeedTwo": "Do synchronizacji wątków wymagane są co najmniej dwie instancje",
       "launchPrepared": "Polecenie uruchomienia jest gotowe",
+      "codexManagedStoreLaunchUnsafe": "Windows Store nie może niezawodnie przekazać katalogu instancji, dlatego zablokowano otwarcie konta domyślnego. Zmień tryb uruchamiania tej instancji na CLI i spróbuj ponownie. Szczegóły: {{detail}}",
       "speedUpdated": "Szybkość zaktualizowana"
     },
     "runningDialog": {
@@ -611,6 +612,8 @@
       "closeBehaviorQuit": "Zamknij aplikację",
       "startupMinimized": "Uruchamiaj zminimalizowane",
       "startupMinimizedDesc": "Automatycznie minimalizuje główne okno po starcie aplikacji; przywrócisz je z Docka, paska zadań lub zasobnika",
+      "rememberMainWindowState": "Zapamiętaj położenie i rozmiar okna",
+      "rememberMainWindowStateDesc": "Przywraca położenie i rozmiar po ponownym uruchomieniu lub otwarciu z zasobnika; domyślnie wyłączone",
       "minimizeBehavior": "Zachowanie przy minimalizacji okna (tylko macOS)",
       "minimizeBehaviorDesc": "Wybierz, czy po zminimalizowaniu okno ma pozostać w Docku i pasku menu, czy tylko w pasku menu",
       "minimizeBehaviorDockAndTray": "Dock + pasek menu (zalecane)",
@@ -650,6 +653,11 @@
       "codexPathReset": "Przywróć domyślne",
       "codexSyncWsl": "Synchronizuj Codex z WSL",
       "codexSyncWslDesc": "Po przełączeniu domyślnego konta Codex pliki auth.json i config.toml są też zapisywane w katalogu Codex w WSL.",
+      "codexAppUiInjection": "Limit usługi API",
+      "codexAppUiInjectionDesc": "Po ponownym uruchomieniu instancji Codex pokaż pod kompozytorem liczbę kont oraz tygodniowy i 5-godzinny limit usługi API Cockpit Tools. Cockpit Tools musi działać w tle; aktualizacje zatrzymują się po całkowitym zamknięciu aplikacji lub przy braku sieci.",
+      "codexAppUiInjectionPoolLabel": "Konta",
+      "codexAppUiInjectionWeeklyLabel": "Tydzień",
+      "codexAppUiInjectionFiveHourLabel": "5 godz.",
       "codexWslConfigDir": "Katalog Codex w WSL",
       "codexWslConfigDirDesc": "Wpisz katalog .codex w WSL. Ścieżki \\\\wsl.localhost\\ są obsługiwane.",
       "codexWslConfigDirPlaceholder": "Przykład: \\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex",
@@ -1270,7 +1278,9 @@
         "renameFailed": "Nie udało się zmienić nazwy grupy: {{error}}",
         "deleteFailed": "Nie udało się usunąć grupy: {{error}}",
         "addFailed": "Nie udało się dodać do grupy: {{error}}",
-        "createAndAddFailed": "Nie udało się utworzyć grupy i dodać: {{error}}"
+        "createAndAddFailed": "Nie udało się utworzyć grupy i dodać: {{error}}",
+        "quotaRefreshFailed": "Nie udało się zaktualizować ustawienia odświeżania limitu: {{error}}",
+        "notFound": "Nie znaleziono grupy"
       },
       "addAccounts": "Dodaj konta",
       "editTitle": "Edytuj grupę",
@@ -1278,7 +1288,14 @@
       "currentGroupLabel": "Bieżąca grupa",
       "accountPickerEmpty": "Brak pasujących kont",
       "filterHint": "Wybrano {{count}} grup do filtrowania",
-      "filterToggle": "Zaznacz, aby filtrować według tej grupy"
+      "filterToggle": "Zaznacz, aby filtrować według tej grupy",
+      "quotaRefresh": "Odświeżanie limitu",
+      "quotaRefreshOffBadge": "Bez odświeżania",
+      "quotaRefreshOffHint": "Ta grupa nie jest odświeżana; automatyczne i pełne odświeżanie pomija jej konta",
+      "refreshForceHint": "Gdy zasada nie dziedziczy ustawień, grupę nadal można odświeżyć ręcznie",
+      "quotaRefreshInherit": "Dziedzicz z platformy",
+      "quotaRefreshPolicyHint": "Zasada grupy ma najwyższy priorytet: dziedziczenie z platformy, własny interwał lub wyłączenie",
+      "quotaRefreshMinutesBadge": "{{count}} minuty"
     },
     "switchHistory": {
       "title": "Historia przełączeń",
@@ -1867,6 +1884,7 @@
         "freeUnsupported": "Bezpłatne konta nie są jeszcze obsługiwane",
         "restrictFreeToggle": "Ogranicz konta Free",
         "chatApiKeyUnsupported": "Chat Completions nieobsługiwane",
+        "pendingOauthUnsupported": "Oczekujące wykluczone",
         "freeNoticeRestricted": "Konta Free są ograniczone. Wyłącz tę opcję, aby je wybrać.",
         "freeNoticeUnstable": "Proxy kont Free może być niestabilne. Używaj ostrożnie.",
         "restrictFreeDisableConfirmTitle": "Zezwól na konta Free",
@@ -1894,6 +1912,10 @@
       "testConnectFailed": "Nie można połączyć się z {{url}}. Sprawdź, czy usługa API działa, port się nie zmienił i nic go nie blokuje.",
       "testAuthFailed": "Usługa jest osiągalna, ale uwierzytelnianie nie powiodło się: {{detail}}. Sprawdź klucz usługi API lub stan logowania konta.",
       "testServiceUnavailable": "Usługa jest osiągalna, ale obecnie niedostępna: {{detail}}. Sprawdź, czy usługa jest włączona, kolekcja kont nie jest pusta i konta są używalne.",
+      "gatewayErrors": {
+        "authUnavailable": "Obecnie nie ma konta dostępnego do routingu. Konto może być w czasie oczekiwania, bez autoryzacji lub ograniczone limitem. Sprawdź jego stan w usłudze API Cockpit Tools.",
+        "authNotFound": "W puli kont nie skonfigurowano użytecznego konta. Dodaj lub włącz konto w usłudze API Cockpit Tools."
+      },
       "testRateLimited": "Usługa jest osiągalna, ale upstream jest ograniczony lub limit został wyczerpany: {{detail}}.",
       "testHttpFailed": "Usługa jest osiągalna, ale żądanie zwróciło HTTP {{status}}: {{detail}}.",
       "activateAction": "Uruchom usługę API",
@@ -2112,7 +2134,31 @@
         "allAvailable": "Wszystkie OK {{count}}",
         "availableRatio": "Dobre {{available}}/{{total}}",
         "issueSummary": "Błąd {{abnormal}} · Pauza {{cooldown}}",
-        "detail": "OK {{available}}/{{total}}, błąd {{abnormal}}, pauza {{cooldown}}, brak {{missing}}, auth {{authError}}, limit {{quotaLimited}}"
+        "detail": "OK {{available}}/{{total}}, błąd {{abnormal}}, pauza {{cooldown}}, brak {{missing}}, auth {{authError}}, limit {{quotaLimited}}",
+        "openDetails": "Pokaż konta z problemami",
+        "recover": "Przywróć stan",
+        "recoverSuccess": "Zażądano przywrócenia {{count}} kont(a)",
+        "dialog": {
+          "title": "Konta z problemami",
+          "description": "Te stany pochodzą z harmonogramu OAuth Sidecar. Przywrócenie usuwa pauzę i ponawia próbę.",
+          "noIssues": "Brak kont z problemami",
+          "missing": "Brak konta",
+          "cooldown": "Wstrzymane",
+          "quota": "Limit kwoty",
+          "missingDetail": "Konta nie ma już na liście",
+          "cooldownModel": "Model {{model}} jest wstrzymany",
+          "cooldownUntil": "Model {{model}} jest wstrzymany do {{time}}",
+          "authDetail": "Autoryzacja OAuth mogła wygasnąć. Autoryzuj ponownie.",
+          "quotaDetail": "Limit jest tymczasowo niedostępny. Poczekaj lub sprawdź plan.",
+          "paymentDetail": "Plan lub płatność są niedostępne. Sprawdź subskrypcję.",
+          "modelDetail": "To konto nie obsługuje żądanego modelu.",
+          "upstreamDetail": "Usługa nadrzędna jest chwilowo niedostępna. Próba zostanie ponowiona.",
+          "disabledDetail": "Konto jest wyłączone. Najpierw je włącz.",
+          "unavailableDetail": "Sidecar nie uznaje teraz tego konta za dostępne.",
+          "recover": "Przywróć",
+          "recovering": "Przywracanie…",
+          "recoverAll": "Przywróć wszystkie"
+        }
       },
       "testChatModel": "Model ID",
       "testChatClear": "Wyczyść czat",
@@ -3237,7 +3283,9 @@
       },
       "accountHealth": {
         "failures": "{{count}} kolejnych niepowodzeń",
-        "image": "Obrazy {{status}}"
+        "image": "Obrazy {{status}}",
+        "unavailable": "Tymczasowo niedostępne",
+        "authError": "Błąd uwierzytelniania"
       },
       "models": {
         "availableTitle": "Dostępne modele",
@@ -3321,6 +3369,7 @@
         "optionsTitle": "Opcje routingu",
         "sessionAffinity": "Przywiązanie sesji",
         "sessionAffinityTtl": "TTL przywiązania",
+        "responsesWebsockets": "Responses przez WebSocket",
         "maxRetryCredentials": "Konta retry",
         "maxRetryInterval": "Czas retry",
         "disableCooling": "Wyłącz cooldown",
@@ -4078,10 +4127,21 @@
       "description": "Kliknij „Dodaj konto”, aby rozpocząć zarządzanie swoimi kontami Kiro"
     },
     "addModal": {
-      "title": "Dodaj konto Kiro"
+      "title": "Dodaj konto Kiro",
+      "idc": "Logowanie AWS"
     },
     "oauth": {
       "desc": "Kliknij poniższy przycisk i dokończ autoryzację Kiro w swojej przeglądarce."
+    },
+    "idc": {
+      "builderId": "Konto AWS Builder ID",
+      "enterprise": "Konto firmowe",
+      "desc": "Ukończ autoryzację AWS IAM Identity Center w przeglądarce. Konto zostanie zapisane automatycznie.",
+      "region": "Region AWS",
+      "startUrl": "Początkowy adres URL IAM Identity Center",
+      "start": "Rozpocznij logowanie firmowe",
+      "regionRequired": "Wpisz region AWS",
+      "startUrlRequired": "Wpisz początkowy adres URL IAM Identity Center"
     },
     "token": {
       "desc": "Wklej token dostępu Kiro lub wyeksportowane dane JSON."
@@ -4614,7 +4674,18 @@
       "payAsYouGoConsuming": "Rozliczanie za uzycie: w trakcie zuzycia",
       "payAsYouGoEnabled": "Rozliczanie za uzycie: wlaczone",
       "payAsYouGoEmpty": "Rozliczanie za uzycie: --",
-      "payAsYouGoLabel": "Uzycie na zadanie"
+      "payAsYouGoLabel": "Uzycie na zadanie",
+      "statusSynced": "Status: sync",
+      "statusSyncedPending": "Status: sync, reszta do potw.",
+      "fastAvailable": "Szybkie: {{times}}",
+      "fastTimes": "{{count}}",
+      "fastUnlimited": "Bez limitu",
+      "fastPerMonth": "Szybkie/mc: {{count}}",
+      "fastChannelPerMonth": "Express: {{count}}/mc",
+      "fastChannelStatus": "Szybki kanał: {{status}}",
+      "freeRemainingUnknown": "Free zostało: --",
+      "timesRemainingUnknown": "Zostało: --",
+      "soloParallel": "Pakiet: Solo ×{{count}}"
     },
     "flowNotice": {
       "title": "Przewodnik po kontach Trae (kliknij, aby rozwinac/zwinac)",
@@ -4626,6 +4697,10 @@
       "permissionWithPlatform": "Zakres uprawnień: odczyt i zapis pól logowania w lokalnym storage.json {{platform}} na potrzeby importu konta, przełączania kont i wyświetlania planu. Wszystkie dane są przetwarzane lokalnie.",
       "networkGlobal": "Zakres sieci: logowanie OAuth, odświeżanie tokenów i zapytania planu {{platform}} wywołują oficjalne API trae.ai / traeapi.us. Lokalne pliki kont i surowa zawartość nie są wysyłane do usług zewnętrznych.",
       "networkCn": "Zakres sieci: logowanie OAuth, odświeżanie tokenów i zapytania planu {{platform}} wywołują oficjalne API trae.cn / trae.com.cn. Lokalne pliki kont i surowa zawartość nie są wysyłane do usług zewnętrznych."
+    },
+    "token": {
+      "jsonOnlyDesc": "Wklej pełny JSON konta Trae CN. Surowy token nie jest obsługiwany.",
+      "jsonOnlyPlaceholder": "Pełny JSON Trae CN..."
     }
   },
   "codebuddyCn": {

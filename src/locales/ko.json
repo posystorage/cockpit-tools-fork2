@@ -497,6 +497,7 @@
       "noneRunning": "실행 중인 인스턴스를 찾을 수 없습니다",
       "syncThreadsNeedTwo": "스레드를 동기화하려면 인스턴스가 두 개 이상 필요합니다",
       "launchPrepared": "실행 명령이 준비되었습니다",
+      "codexManagedStoreLaunchUnsafe": "Windows Store에서 인스턴스 디렉터리를 안정적으로 전달할 수 없어 기본 계정 열기를 차단했습니다. 이 인스턴스의 실행 방식을 CLI로 변경한 후 다시 시도하세요. 세부 정보: {{detail}}",
       "speedUpdated": "속도가 업데이트되었습니다"
     },
     "runningDialog": {
@@ -611,6 +612,8 @@
       "closeBehaviorQuit": "애플리케이션 종료",
       "startupMinimized": "최소화로 시작",
       "startupMinimizedDesc": "앱 실행이 끝나면 기본 창을 자동으로 최소화하고 Dock, 작업 표시줄 또는 트레이에서 복원할 수 있습니다",
+      "rememberMainWindowState": "기본 창 위치 및 크기 기억",
+      "rememberMainWindowStateDesc": "재시작하거나 트레이에서 다시 열 때 창 위치와 크기를 복원합니다. 기본값은 꺼짐입니다",
       "minimizeBehavior": "창 최소화 동작 (macOS 전용)",
       "minimizeBehaviorDesc": "창을 최소화할 때 Dock과 메뉴 막대에 모두 유지할지, 메뉴 막대에만 유지할지 선택",
       "minimizeBehaviorDockAndTray": "Dock + 메뉴 막대 (기본값 권장)",
@@ -650,6 +653,11 @@
       "codexPathReset": "기본값으로 재설정",
       "codexSyncWsl": "Codex를 WSL에 동기화",
       "codexSyncWslDesc": "기본 Codex 계정을 전환한 뒤 auth.json과 config.toml도 WSL의 Codex 디렉터리에 씁니다.",
+      "codexAppUiInjection": "API 서비스 할당량",
+      "codexAppUiInjectionDesc": "Codex 인스턴스를 다시 시작하면 입력창 아래에 Cockpit Tools API 서비스의 계정 수와 주간 및 5시간 할당량을 표시합니다. Cockpit Tools를 백그라운드에서 계속 실행해야 하며, 완전히 종료하거나 네트워크를 사용할 수 없으면 업데이트가 중지됩니다.",
+      "codexAppUiInjectionPoolLabel": "계정",
+      "codexAppUiInjectionWeeklyLabel": "주",
+      "codexAppUiInjectionFiveHourLabel": "5시간",
       "codexWslConfigDir": "WSL Codex 디렉터리",
       "codexWslConfigDirDesc": "WSL 안의 .codex 디렉터리를 입력하세요. \\\\wsl.localhost\\ 경로를 지원합니다.",
       "codexWslConfigDirPlaceholder": "예: \\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex",
@@ -1270,7 +1278,9 @@
         "renameFailed": "그룹 이름 변경 실패: {{error}}",
         "deleteFailed": "그룹 삭제 실패: {{error}}",
         "addFailed": "그룹 추가 실패: {{error}}",
-        "createAndAddFailed": "그룹 생성 및 추가 실패: {{error}}"
+        "createAndAddFailed": "그룹 생성 및 추가 실패: {{error}}",
+        "quotaRefreshFailed": "할당량 새로고침 설정을 업데이트하지 못했습니다: {{error}}",
+        "notFound": "그룹을 찾을 수 없습니다"
       },
       "addAccounts": "계정 추가",
       "editTitle": "그룹 편집",
@@ -1278,7 +1288,14 @@
       "currentGroupLabel": "현재 그룹",
       "accountPickerEmpty": "일치하는 계정이 없습니다",
       "filterHint": "필터링할 그룹 {{count}}개 선택됨",
-      "filterToggle": "이 그룹으로 필터링하려면 선택"
+      "filterToggle": "이 그룹으로 필터링하려면 선택",
+      "quotaRefresh": "할당량 새로고침",
+      "quotaRefreshOffBadge": "새로고침 안 함",
+      "quotaRefreshOffHint": "이 그룹은 새로고침하지 않으며 자동 및 전체 새로고침에서 그룹 계정을 건너뜁니다",
+      "refreshForceHint": "정책이 플랫폼 상속이 아니어도 이 그룹을 수동으로 새로고침할 수 있습니다",
+      "quotaRefreshInherit": "플랫폼 설정 상속",
+      "quotaRefreshPolicyHint": "그룹 할당량 새로고침 정책이 최우선입니다: 플랫폼 상속, 사용자 지정 간격 또는 끄기",
+      "quotaRefreshMinutesBadge": "{{count}}분"
     },
     "switchHistory": {
       "title": "전환 기록",
@@ -1867,6 +1884,7 @@
         "freeUnsupported": "무료 계정은 아직 지원되지 않습니다",
         "restrictFreeToggle": "Free 계정 제한",
         "chatApiKeyUnsupported": "Chat Completions 미지원",
+        "pendingOauthUnsupported": "미인증 추가 불가",
         "freeNoticeRestricted": "Free 계정은 제한됩니다. 선택하려면 이 옵션을 끄세요.",
         "freeNoticeUnstable": "Free 계정 프록시는 불안정할 수 있습니다. 주의해서 사용하세요.",
         "restrictFreeDisableConfirmTitle": "Free 계정 허용",
@@ -1894,6 +1912,10 @@
       "testConnectFailed": "{{url}}에 연결할 수 없습니다. API 서비스가 실행 중인지, 포트가 변경되지 않았는지, 차단되지 않았는지 확인하세요.",
       "testAuthFailed": "서비스에 연결되었지만 인증에 실패했습니다: {{detail}}. API 서비스 키 또는 계정 로그인 상태를 확인하세요.",
       "testServiceUnavailable": "서비스에 연결되었지만 현재 사용할 수 없습니다: {{detail}}. 서비스가 활성화되어 있는지, 계정 모음이 비어 있지 않은지, 계정을 사용할 수 있는지 확인하세요.",
+      "gatewayErrors": {
+        "authUnavailable": "현재 라우팅할 수 있는 계정이 없습니다. 계정이 대기 중이거나 인증되지 않았거나 할당량이 제한되었을 수 있습니다. Cockpit Tools API 서비스에서 상태를 확인하세요.",
+        "authNotFound": "계정 풀에 사용 가능한 계정이 설정되어 있지 않습니다. Cockpit Tools API 서비스에서 계정을 추가하거나 활성화하세요."
+      },
       "testRateLimited": "서비스에 연결되었지만 업스트림 제한 또는 할당량 부족입니다: {{detail}}.",
       "testHttpFailed": "서비스에 연결되었지만 요청이 HTTP {{status}}를 반환했습니다: {{detail}}.",
       "activateAction": "API 서비스 시작",
@@ -2112,7 +2134,31 @@
         "allAvailable": "모두 정상 {{count}}",
         "availableRatio": "정상 {{available}}/{{total}}",
         "issueSummary": "이상 {{abnormal}} · 쿨다운 {{cooldown}}",
-        "detail": "정상 {{available}}/{{total}}, 이상 {{abnormal}}, 쿨다운 {{cooldown}}, 누락 {{missing}}, 인증 {{authError}}, 할당량 {{quotaLimited}}"
+        "detail": "정상 {{available}}/{{total}}, 이상 {{abnormal}}, 쿨다운 {{cooldown}}, 누락 {{missing}}, 인증 {{authError}}, 할당량 {{quotaLimited}}",
+        "openDetails": "이상 계정 보기",
+        "recover": "계정 상태 복구",
+        "recoverSuccess": "{{count}}개 계정 복구를 요청했습니다",
+        "dialog": {
+          "title": "이상 계정",
+          "description": "이 상태는 Sidecar OAuth 스케줄러에서 가져옵니다. 복구하면 대기 상태를 지우고 계정을 다시 시도합니다.",
+          "noIssues": "이상 계정이 없습니다",
+          "missing": "계정 누락",
+          "cooldown": "대기 중",
+          "quota": "할당량 제한",
+          "missingDetail": "계정이 목록에 없습니다",
+          "cooldownModel": "모델 {{model}}이 대기 중입니다",
+          "cooldownUntil": "모델 {{model}}은 {{time}}까지 대기합니다",
+          "authDetail": "OAuth 인증이 만료되었을 수 있습니다. 다시 인증하세요.",
+          "quotaDetail": "할당량을 일시적으로 사용할 수 없습니다. 복구를 기다리거나 요금제를 확인하세요.",
+          "paymentDetail": "요금제 또는 결제 상태를 확인하세요.",
+          "modelDetail": "이 계정은 요청한 모델을 지원하지 않습니다.",
+          "upstreamDetail": "업스트림 서비스에 일시적인 문제가 있습니다. 복구 후 다시 시도합니다.",
+          "disabledDetail": "이 계정은 비활성화되었습니다. 먼저 활성화하세요.",
+          "unavailableDetail": "Sidecar가 현재 이 계정을 예약 가능으로 보지 않습니다.",
+          "recover": "복구",
+          "recovering": "복구 중…",
+          "recoverAll": "모두 복구"
+        }
       },
       "testChatModel": "모델",
       "testChatClear": "대화 지우기",
@@ -3237,7 +3283,9 @@
       },
       "accountHealth": {
         "failures": "연속 실패 {{count}}회",
-        "image": "이미지 {{status}}"
+        "image": "이미지 {{status}}",
+        "unavailable": "일시적으로 사용 불가",
+        "authError": "인증 오류"
       },
       "models": {
         "availableTitle": "사용 가능 모델",
@@ -3321,6 +3369,7 @@
         "optionsTitle": "라우팅 옵션",
         "sessionAffinity": "세션 고정",
         "sessionAffinityTtl": "고정 TTL",
+        "responsesWebsockets": "WebSocket Responses 전송",
         "maxRetryCredentials": "재시도 계정",
         "maxRetryInterval": "재시도 대기",
         "disableCooling": "쿨다운 끄기",
@@ -4078,10 +4127,21 @@
       "description": "Kiro 계정 관리를 시작하려면 \"계정 추가\"를 클릭하세요."
     },
     "addModal": {
-      "title": "키로 계정 추가"
+      "title": "키로 계정 추가",
+      "idc": "AWS SSO 로그인"
     },
     "oauth": {
       "desc": "아래 버튼을 클릭하고 브라우저에서 Kiro 인증을 완료하세요."
+    },
+    "idc": {
+      "builderId": "AWS Builder ID 계정",
+      "enterprise": "기업 계정",
+      "desc": "브라우저에서 AWS IAM Identity Center 인증을 완료하면 계정이 자동으로 저장됩니다.",
+      "region": "AWS 리전",
+      "startUrl": "IAM Identity Center 시작 URL",
+      "start": "기업 로그인 시작",
+      "regionRequired": "AWS 리전을 입력하세요",
+      "startUrlRequired": "IAM Identity Center 시작 URL을 입력하세요"
     },
     "token": {
       "desc": "Kiro 액세스 토큰이나 내보낸 JSON 데이터를 붙여넣으세요."
@@ -4614,7 +4674,18 @@
       "payAsYouGoConsuming": "종량제 사용: 사용 중",
       "payAsYouGoEnabled": "종량제 사용: 활성화됨",
       "payAsYouGoEmpty": "종량제 사용: --",
-      "payAsYouGoLabel": "종량제 사용"
+      "payAsYouGoLabel": "종량제 사용",
+      "statusSynced": "상태: 동기화됨",
+      "statusSyncedPending": "상태: 동기화됨, 잔여량 확인 중",
+      "fastAvailable": "빠른 요청 {{times}}",
+      "fastTimes": "{{count}}회",
+      "fastUnlimited": "무제한",
+      "fastPerMonth": "빠른 요청/월: {{count}}",
+      "fastChannelPerMonth": "빠른 채널: {{count}}/월",
+      "fastChannelStatus": "빠른 채널: {{status}}",
+      "freeRemainingUnknown": "무료 잔여: --",
+      "timesRemainingUnknown": "남은 횟수: --",
+      "soloParallel": "혜택: Solo 병렬 {{count}}"
     },
     "flowNotice": {
       "title": "Trae 계정 안내 (클릭하여 펼치기/접기)",
@@ -4626,6 +4697,10 @@
       "permissionWithPlatform": "권한 범위: 계정 가져오기, 계정 전환 주입, 플랜 표시를 위해 로컬 {{platform}} storage.json의 로그인 관련 필드를 읽고 씁니다. 모든 데이터는 로컬에서만 처리됩니다.",
       "networkGlobal": "네트워크 범위: {{platform}} OAuth 로그인, 토큰 갱신, 플랜 조회는 공식 trae.ai / traeapi.us API를 호출합니다. 로컬 계정 파일과 원본 저장 내용은 타사 서비스로 업로드되지 않습니다.",
       "networkCn": "네트워크 범위: {{platform}} OAuth 로그인, 토큰 갱신, 플랜 조회는 공식 trae.cn / trae.com.cn API를 호출합니다. 로컬 계정 파일과 원본 저장 내용은 타사 서비스로 업로드되지 않습니다."
+    },
+    "token": {
+      "jsonOnlyDesc": "전체 Trae CN 계정 JSON을 붙여넣으세요. 불안정한 식별·로그인 상태를 피하기 위해 원시 토큰은 지원하지 않습니다.",
+      "jsonOnlyPlaceholder": "전체 Trae CN JSON 붙여넣기..."
     }
   },
   "codebuddyCn": {

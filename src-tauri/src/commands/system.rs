@@ -86,6 +86,8 @@ pub struct GeneralConfig {
     pub codex_auto_refresh_minutes: i32,
     /// Codex 切号时是否同步覆盖 WSL 配置 (Windows Only)
     pub codex_sync_wsl: bool,
+    /// 是否启用 Codex 客户端中的 API 服务额度显示注入
+    pub codex_app_ui_injection_enabled: bool,
     /// Codex WSL 配置目录 (Windows Only)
     pub codex_wsl_config_dir: String,
     /// Zed 自动刷新间隔（分钟），-1 表示禁用
@@ -131,6 +133,8 @@ pub struct GeneralConfig {
     pub floating_card_show_on_startup: bool,
     /// 是否在启动后自动最小化主窗口
     pub startup_minimized: bool,
+    /// 是否记住主窗口尺寸和位置
+    pub remember_main_window_state: bool,
     /// 启动默认页面：`last` 或具体页面 id
     pub startup_page: String,
     /// 悬浮卡片是否默认置顶
@@ -1022,6 +1026,7 @@ fn is_general_config_patch_field(key: &str) -> bool {
             | "auto_refresh_minutes"
             | "codex_auto_refresh_minutes"
             | "codex_sync_wsl"
+            | "codex_app_ui_injection_enabled"
             | "codex_wsl_config_dir"
             | "zed_auto_refresh_minutes"
             | "ghcp_auto_refresh_minutes"
@@ -1046,6 +1051,7 @@ fn is_general_config_patch_field(key: &str) -> bool {
             | "tray_icon_style"
             | "floating_card_show_on_startup"
             | "startup_minimized"
+            | "remember_main_window_state"
             | "startup_page"
             | "floating_card_always_on_top"
             | "app_auto_launch_enabled"
@@ -1217,8 +1223,7 @@ fn apply_general_config_updates(
     macro_rules! normalize_app_path_field {
         ($key:literal, $field:ident) => {
             if updates.contains_key($key) {
-                next.$field =
-                    modules::process::normalize_windows_user_facing_path(&next.$field);
+                next.$field = modules::process::normalize_windows_user_facing_path(&next.$field);
             }
         };
     }
@@ -2491,6 +2496,7 @@ pub fn get_general_config(app: tauri::AppHandle) -> Result<GeneralConfig, String
         auto_refresh_minutes: user_config.auto_refresh_minutes,
         codex_auto_refresh_minutes: user_config.codex_auto_refresh_minutes,
         codex_sync_wsl: user_config.codex_sync_wsl,
+        codex_app_ui_injection_enabled: user_config.codex_app_ui_injection_enabled,
         codex_wsl_config_dir: user_config.codex_wsl_config_dir,
         zed_auto_refresh_minutes: user_config.zed_auto_refresh_minutes,
         ghcp_auto_refresh_minutes: user_config.ghcp_auto_refresh_minutes,
@@ -2515,6 +2521,7 @@ pub fn get_general_config(app: tauri::AppHandle) -> Result<GeneralConfig, String
         tray_icon_style: user_config.tray_icon_style.as_str().to_string(),
         floating_card_show_on_startup: user_config.floating_card_show_on_startup,
         startup_minimized: user_config.startup_minimized,
+        remember_main_window_state: user_config.remember_main_window_state,
         startup_page: config::normalize_startup_page(&user_config.startup_page),
         floating_card_always_on_top: user_config.floating_card_always_on_top,
         app_auto_launch_enabled,
@@ -2740,8 +2747,8 @@ pub fn patch_general_config(
         language_changed = previous_language != current.language;
         token_keeper_enabled_changed =
             previous_token_keeper_enabled != current.token_keeper_enabled;
-        auto_import_from_local_enabled_changed = previous_auto_import_from_local_enabled
-            != current.auto_import_from_local_enabled;
+        auto_import_from_local_enabled_changed =
+            previous_auto_import_from_local_enabled != current.auto_import_from_local_enabled;
         floating_always_on_top_changed =
             previous_floating_always_on_top != current.floating_card_always_on_top;
         #[cfg(target_os = "macos")]
@@ -2822,11 +2829,9 @@ pub async fn scan_auto_local_import(
     modules::auto_local_import::scan_now(app).await
 }
 
-
 // --- Codex SSH sync (#1404 vertical slice) ---
 #[tauri::command]
-pub fn codex_ssh_list_servers(
-) -> Result<modules::codex_ssh::CodexSshListResult, String> {
+pub fn codex_ssh_list_servers() -> Result<modules::codex_ssh::CodexSshListResult, String> {
     let (servers, selected_id) = modules::codex_ssh::list_servers()?;
     Ok(modules::codex_ssh::CodexSshListResult {
         servers,
@@ -3023,16 +3028,16 @@ pub fn save_general_config(
         modules::process::normalize_windows_user_facing_path(&vscode_app_path);
     let normalized_codex_wsl_config_dir =
         codex_wsl_config_dir.map(|value| value.trim().to_string());
-    let normalized_claude_path = claude_app_path
-        .map(|value| modules::process::normalize_windows_user_facing_path(&value));
+    let normalized_claude_path =
+        claude_app_path.map(|value| modules::process::normalize_windows_user_facing_path(&value));
     let normalized_claude_app_scan_roots =
         claude_app_scan_roots.map(|value| value.trim().to_string());
     let normalized_codex_specified_app_path = codex_specified_app_path
         .map(|value| modules::process::normalize_windows_user_facing_path(&value));
     let normalized_zed_path =
         zed_app_path.map(|value| modules::process::normalize_windows_user_facing_path(&value));
-    let normalized_windsurf_path = windsurf_app_path
-        .map(|value| modules::process::normalize_windows_user_facing_path(&value));
+    let normalized_windsurf_path =
+        windsurf_app_path.map(|value| modules::process::normalize_windows_user_facing_path(&value));
     let normalized_kiro_path =
         kiro_app_path.map(|value| modules::process::normalize_windows_user_facing_path(&value));
     let normalized_cursor_path =
@@ -3808,10 +3813,7 @@ pub fn handle_window_close(
     match action.as_str() {
         "minimize" => {
             if let Err(err) = modules::floating_card_window::destroy_main_window_to_tray(&window) {
-                modules::logger::log_warn(&format!(
-                    "[Window] 销毁主窗口失败，回退隐藏: {}",
-                    err
-                ));
+                modules::logger::log_warn(&format!("[Window] 销毁主窗口失败，回退隐藏: {}", err));
                 let _ = window.hide();
                 modules::process_memory::trim_idle_process_memory();
             }

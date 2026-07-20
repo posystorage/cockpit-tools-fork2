@@ -544,6 +544,7 @@
       "noneRunning": "لا توجد مثيلات قيد التشغيل حاليًا",
       "syncThreadsNeedTwo": "يلزم وجود مثيلين على الأقل لمزامنة السلاسل",
       "launchPrepared": "أمر التشغيل جاهز",
+      "codexManagedStoreLaunchUnsafe": "يتعذر على Windows Store تمرير مجلد المثيل بشكل موثوق، لذا تم منع فتح الحساب الافتراضي. غيّر طريقة تشغيل هذا المثيل إلى CLI ثم أعد المحاولة. التفاصيل: {{detail}}",
       "speedUpdated": "تم تحديث السرعة"
     },
     "runningDialog": {
@@ -655,6 +656,8 @@
       "closeBehaviorQuit": "إنهاء التطبيق",
       "startupMinimized": "بدء التشغيل مصغّرًا",
       "startupMinimizedDesc": "تصغير النافذة الرئيسية تلقائيًا بعد اكتمال تشغيل التطبيق؛ يمكن استعادتها من Dock أو شريط المهام أو الدرج",
+      "rememberMainWindowState": "تذكّر موضع النافذة الرئيسية وحجمها",
+      "rememberMainWindowStateDesc": "استعادة موضع النافذة وحجمها بعد إعادة التشغيل أو فتحها من الدرج؛ معطّل افتراضيًا",
       "minimizeBehavior": "سلوك تصغير النافذة (macOS فقط)",
       "minimizeBehaviorDesc": "اختر ما إذا كانت النافذة عند تصغيرها تبقى في Dock وشريط القوائم، أو في شريط القوائم فقط",
       "minimizeBehaviorDockAndTray": "Dock + شريط القوائم (موصى به)",
@@ -694,6 +697,11 @@
       "codexPathReset": "إعادة التعيين إلى الافتراضي",
       "codexSyncWsl": "مزامنة Codex مع WSL",
       "codexSyncWslDesc": "بعد تبديل حساب Codex الافتراضي، تتم كتابة auth.json و config.toml أيضًا إلى مجلد إعدادات Codex في WSL.",
+      "codexAppUiInjection": "عرض حصة خدمة API",
+      "codexAppUiInjectionDesc": "بعد إعادة تشغيل مثيل Codex، اعرض عدد حسابات خدمة API في Cockpit Tools وحصتي الأسبوع و5 ساعات أسفل منطقة الكتابة. يجب إبقاء Cockpit Tools قيد التشغيل في الخلفية؛ يتوقف التحديث عند إغلاقه تمامًا أو عند عدم توفر الشبكة.",
+      "codexAppUiInjectionPoolLabel": "الحسابات",
+      "codexAppUiInjectionWeeklyLabel": "أسبوع",
+      "codexAppUiInjectionFiveHourLabel": "5 س",
       "codexWslConfigDir": "مجلد Codex في WSL",
       "codexWslConfigDirDesc": "أدخل مجلد .codex داخل WSL. مسارات \\\\wsl.localhost\\ مدعومة.",
       "codexWslConfigDirPlaceholder": "مثال: \\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex",
@@ -1317,7 +1325,9 @@
         "renameFailed": "فشل إعادة تسمية المجموعة: {{error}}",
         "deleteFailed": "فشل حذف المجموعة: {{error}}",
         "addFailed": "فشل الإضافة إلى المجموعة: {{error}}",
-        "createAndAddFailed": "فشل الإنشاء والإضافة: {{error}}"
+        "createAndAddFailed": "فشل الإنشاء والإضافة: {{error}}",
+        "quotaRefreshFailed": "فشل تحديث إعداد تحديث الحصة: {{error}}",
+        "notFound": "المجموعة غير موجودة"
       },
       "addAccounts": "إضافة حسابات",
       "editTitle": "تحرير المجموعة",
@@ -1325,7 +1335,14 @@
       "currentGroupLabel": "المجموعة الحالية",
       "accountPickerEmpty": "لا توجد حسابات مطابقة",
       "filterHint": "تم تحديد {{count}} مجموعة للتصفية",
-      "filterToggle": "حدّد للتصفية حسب هذه المجموعة"
+      "filterToggle": "حدّد للتصفية حسب هذه المجموعة",
+      "quotaRefresh": "تحديث الحصة",
+      "quotaRefreshOffBadge": "بدون تحديث",
+      "quotaRefreshOffHint": "لن تُحدَّث هذه المجموعة؛ سيتخطى التحديث التلقائي والكامل حساباتها",
+      "refreshForceHint": "لا يزال بإمكانك تحديث هذه المجموعة يدويًا عندما لا تكون سياستها هي التوريث",
+      "quotaRefreshInherit": "توريث إعداد المنصة",
+      "quotaRefreshPolicyHint": "سياسة تحديث حصة المجموعة لها الأولوية القصوى: توريث إعداد المنصة أو فاصل مخصص أو إيقاف التحديث",
+      "quotaRefreshMinutesBadge": "{{count}} د"
     },
     "switchHistory": {
       "title": "سجل التبديل",
@@ -1914,6 +1931,7 @@
         "freeUnsupported": "الحسابات المجانية غير مدعومة بعد",
         "restrictFreeToggle": "تقييد الحسابات المجانية",
         "chatApiKeyUnsupported": "Chat Completions غير مدعوم",
+        "pendingOauthUnsupported": "معلّق: غير مسموح",
         "freeNoticeRestricted": "الحسابات المجانية مقيّدة. عطّل هذا الخيار لتحديدها.",
         "freeNoticeUnstable": "قد يكون وكيل الحسابات المجانية غير مستقر. استخدمه بحذر.",
         "restrictFreeDisableConfirmTitle": "السماح بالحسابات المجانية",
@@ -1941,6 +1959,10 @@
       "testConnectFailed": "لا يمكن الاتصال بـ {{url}}. تأكد من تشغيل خدمة API، وأن المنفذ لم يتغير، ولا يوجد ما يحظره.",
       "testAuthFailed": "الخدمة قابلة للوصول، لكن المصادقة فشلت: {{detail}}. تحقق من مفتاح خدمة API أو حالة تسجيل الدخول للحساب.",
       "testServiceUnavailable": "الخدمة قابلة للوصول، لكنها غير متاحة حاليًا: {{detail}}. تحقق من تفعيل الخدمة، أو من أن مجموعة الحسابات ليست فارغة، أو من صلاحية الحسابات.",
+      "gatewayErrors": {
+        "authUnavailable": "لا يوجد حاليًا حساب قابل للتوجيه. قد يكون الحساب في فترة تهدئة أو بلا مصادقة أو مقيّدًا بالحصّة. تحقّق من حالته في خدمة API داخل Cockpit Tools.",
+        "authNotFound": "لا يوجد حساب صالح مُعدّ في مجموعة الحسابات. أضف حسابًا أو فعّله في خدمة API داخل Cockpit Tools."
+      },
       "testRateLimited": "الخدمة قابلة للوصول، لكن upstream مقيّد أو الحصة نفدت: {{detail}}.",
       "testHttpFailed": "الخدمة قابلة للوصول، لكن الطلب أعاد HTTP {{status}}: {{detail}}.",
       "activateAction": "تشغيل خدمة API",
@@ -2159,7 +2181,31 @@
         "allAvailable": "كلها سليمة {{count}}",
         "availableRatio": "سليم {{available}}/{{total}}",
         "issueSummary": "خلل {{abnormal}} · تهدئة {{cooldown}}",
-        "detail": "سليم {{available}}/{{total}}، خلل {{abnormal}}، تهدئة {{cooldown}}، مفقود {{missing}}، مصادقة {{authError}}، حصة {{quotaLimited}}"
+        "detail": "سليم {{available}}/{{total}}، خلل {{abnormal}}، تهدئة {{cooldown}}، مفقود {{missing}}، مصادقة {{authError}}، حصة {{quotaLimited}}",
+        "openDetails": "عرض الحسابات التي بها مشاكل",
+        "recover": "استعادة حالة الحساب",
+        "recoverSuccess": "طُلبت الاستعادة لـ {{count}} حساب",
+        "dialog": {
+          "title": "حسابات بها مشاكل",
+          "description": "تأتي هذه الحالات من مجدول OAuth في Sidecar. تمسح الاستعادة فترة الانتظار وتعيد محاولة الحساب.",
+          "noIssues": "لا توجد حسابات بها مشاكل",
+          "missing": "الحساب مفقود",
+          "cooldown": "قيد الانتظار",
+          "quota": "الحصة محدودة",
+          "missingDetail": "لم يعد الحساب موجودًا في القائمة",
+          "cooldownModel": "النموذج {{model}} قيد الانتظار",
+          "cooldownUntil": "النموذج {{model}} قيد الانتظار حتى {{time}}",
+          "authDetail": "ربما انتهت صلاحية تفويض OAuth. أعد التفويض ثم حاول.",
+          "quotaDetail": "الحصة غير متاحة مؤقتًا. انتظر أو تحقق من الخطة.",
+          "paymentDetail": "الخطة أو حالة الدفع غير متاحة. تحقق من الاشتراك.",
+          "modelDetail": "هذا الحساب لا يدعم النموذج المطلوب.",
+          "upstreamDetail": "الخدمة العليا غير متاحة مؤقتًا. ستتم إعادة المحاولة.",
+          "disabledDetail": "هذا الحساب معطل. فعّله أولًا.",
+          "unavailableDetail": "لا يعتبر Sidecar هذا الحساب قابلًا للجدولة حاليًا.",
+          "recover": "استعادة",
+          "recovering": "جارٍ الاستعادة…",
+          "recoverAll": "استعادة الكل"
+        }
       },
       "testChatModel": "النموذج",
       "testChatClear": "مسح المحادثة",
@@ -3284,7 +3330,9 @@
       },
       "accountHealth": {
         "failures": "{{count}} إخفاقات متتالية",
-        "image": "الصور {{status}}"
+        "image": "الصور {{status}}",
+        "unavailable": "غير متاح مؤقتًا",
+        "authError": "خطأ في المصادقة"
       },
       "models": {
         "availableTitle": "النماذج المتاحة",
@@ -3368,6 +3416,7 @@
         "optionsTitle": "خيارات التوجيه",
         "sessionAffinity": "تثبيت الجلسة",
         "sessionAffinityTtl": "TTL للتثبيت",
+        "responsesWebsockets": "استجابات WebSocket",
         "maxRetryCredentials": "حسابات retry",
         "maxRetryInterval": "انتظار retry",
         "disableCooling": "تعطيل cooldown",
@@ -4125,10 +4174,21 @@
       "description": "انقر على \"إضافة حساب\" لبدء إدارة حسابات Kiro"
     },
     "addModal": {
-      "title": "إضافة حساب Kiro"
+      "title": "إضافة حساب Kiro",
+      "idc": "مركز هوية AWS"
     },
     "oauth": {
       "desc": "انقر الزر أدناه وأكمل تفويض Kiro في المتصفح."
+    },
+    "idc": {
+      "builderId": "حساب AWS Builder ID",
+      "enterprise": "حساب مؤسسي",
+      "desc": "أكمل تفويض AWS IAM Identity Center في المتصفح، وسيُحفظ الحساب تلقائياً.",
+      "region": "منطقة AWS",
+      "startUrl": "عنوان بدء IAM Identity Center",
+      "start": "بدء تسجيل دخول المؤسسة",
+      "regionRequired": "أدخل منطقة AWS",
+      "startUrlRequired": "أدخل عنوان بدء IAM Identity Center"
     },
     "token": {
       "desc": "الصق رمز وصول Kiro أو بيانات JSON المصدّرة."
@@ -4661,7 +4721,18 @@
       "payAsYouGoConsuming": "الاستخدام حسب الطلب: قيد الاستهلاك",
       "payAsYouGoEnabled": "الاستخدام حسب الطلب: مفعل",
       "payAsYouGoEmpty": "الاستخدام حسب الطلب: --",
-      "payAsYouGoLabel": "الاستخدام حسب الطلب"
+      "payAsYouGoLabel": "الاستخدام حسب الطلب",
+      "statusSynced": "الحالة: متزامن",
+      "statusSyncedPending": "الحالة: متزامن، المتبقي قيد التأكيد",
+      "fastAvailable": "سريع متبقي {{times}}",
+      "fastTimes": "{{count}}",
+      "fastUnlimited": "غير محدود",
+      "fastPerMonth": "سريع/شهر: {{count}}",
+      "fastChannelPerMonth": "Express: {{count}}/شهر",
+      "fastChannelStatus": "قناة سريعة: {{status}}",
+      "freeRemainingUnknown": "Free متبقي: --",
+      "timesRemainingUnknown": "المتبقي: --",
+      "soloParallel": "حزمة: Solo ×{{count}}"
     },
     "flowNotice": {
       "title": "دليل حساب Trae (انقر للتوسيع أو الطي)",
@@ -4673,6 +4744,10 @@
       "permissionWithPlatform": "نطاق الأذونات: قراءة وكتابة حقول تسجيل الدخول في ملف storage.json المحلي الخاص بـ {{platform}} لاستيراد الحساب وحقن تبديل الحساب وعرض الخطة. تتم معالجة كل البيانات محليًا فقط.",
       "networkGlobal": "نطاق الشبكة: تسجيل دخول OAuth وتحديث الرمز واستعلامات الخطة في {{platform}} تستدعي واجهات trae.ai / traeapi.us الرسمية. لا يتم رفع ملفات الحساب المحلية أو محتوى التخزين الخام إلى خدمات طرف ثالث.",
       "networkCn": "نطاق الشبكة: تسجيل دخول OAuth وتحديث الرمز واستعلامات الخطة في {{platform}} تستدعي واجهات trae.cn / trae.com.cn الرسمية. لا يتم رفع ملفات الحساب المحلية أو محتوى التخزين الخام إلى خدمات طرف ثالث."
+    },
+    "token": {
+      "jsonOnlyDesc": "الصق JSON حساب Trae CN الكامل. الرمز الخام غير مدعوم.",
+      "jsonOnlyPlaceholder": "JSON Trae CN كامل..."
     }
   },
   "codebuddyCn": {

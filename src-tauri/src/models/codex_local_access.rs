@@ -478,6 +478,8 @@ pub struct CodexLocalAccessCollection {
     #[serde(default)]
     pub session_affinity_default_enabled_migrated: bool,
     #[serde(default)]
+    pub responses_websockets_enabled: bool,
+    #[serde(default)]
     pub max_retry_credentials: u16,
     #[serde(default = "default_max_retry_interval_ms")]
     pub max_retry_interval_ms: u64,
@@ -713,6 +715,9 @@ pub struct CodexLocalAccessAccountHealth {
     pub last_failure_message: Option<String>,
     pub image_generation_status: CodexLocalAccessImageGenerationStatus,
     pub image_generation_checked_at: Option<i64>,
+    pub scheduler_available: Option<bool>,
+    pub scheduler_reason: Option<String>,
+    pub scheduler_next_retry_at: Option<i64>,
     pub cooldowns: Vec<CodexLocalAccessAccountCooldown>,
 }
 

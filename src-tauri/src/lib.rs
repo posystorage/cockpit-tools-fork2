@@ -403,34 +403,31 @@ pub fn run() {
 
             {
                 let app_handle = app.handle().clone();
-                std::thread::spawn(move || {
-                    match app_handle.deep_link().get_current() {
-                        Ok(Some(urls)) => {
-                            let args: Vec<String> =
-                                urls.iter().map(|url| url.to_string()).collect();
-                            logger::log_info(&format!(
-                                "[DeepLink] 启动时 get_current 命中: url_count={}, urls={:?}",
-                                args.len(),
-                                summarize_deep_link_args(&args)
-                            ));
-                            let zcode_oauth_handled = handle_zcode_oauth_deep_links(&args);
-                            let handled = zcode_oauth_handled
-                                || modules::external_import::handle_external_import_args(
-                                    &app_handle,
-                                    &args,
-                                    "deep-link-current",
-                                );
-                            logger::log_info(&format!(
-                                "[DeepLink] get_current 外部导入处理结果: handled={}",
-                                handled
-                            ));
-                        }
-                        Ok(None) => {
-                            logger::log_info("[DeepLink] 启动时 get_current: empty");
-                        }
-                        Err(err) => {
-                            logger::log_warn(&format!("[DeepLink] get_current 失败: {}", err));
-                        }
+                std::thread::spawn(move || match app_handle.deep_link().get_current() {
+                    Ok(Some(urls)) => {
+                        let args: Vec<String> = urls.iter().map(|url| url.to_string()).collect();
+                        logger::log_info(&format!(
+                            "[DeepLink] 启动时 get_current 命中: url_count={}, urls={:?}",
+                            args.len(),
+                            summarize_deep_link_args(&args)
+                        ));
+                        let zcode_oauth_handled = handle_zcode_oauth_deep_links(&args);
+                        let handled = zcode_oauth_handled
+                            || modules::external_import::handle_external_import_args(
+                                &app_handle,
+                                &args,
+                                "deep-link-current",
+                            );
+                        logger::log_info(&format!(
+                            "[DeepLink] get_current 外部导入处理结果: handled={}",
+                            handled
+                        ));
+                    }
+                    Ok(None) => {
+                        logger::log_info("[DeepLink] 启动时 get_current: empty");
+                    }
+                    Err(err) => {
+                        logger::log_warn(&format!("[DeepLink] get_current 失败: {}", err));
                     }
                 });
             }
@@ -785,6 +782,7 @@ pub fn run() {
             commands::codex::add_codex_account_with_api_key,
             commands::codex::update_codex_account_name,
             commands::codex::update_codex_api_key_credentials,
+            commands::codex::sync_codex_api_key_provider_accounts,
             commands::codex::update_codex_api_key_bound_oauth_account,
             commands::codex::is_codex_oauth_port_in_use,
             commands::codex::close_codex_oauth_port,
@@ -817,6 +815,7 @@ pub fn run() {
             commands::codex::codex_local_access_save_accounts,
             commands::codex::codex_local_access_append_accounts,
             commands::codex::codex_local_access_remove_account,
+            commands::codex::codex_local_access_recover_accounts,
             commands::codex::codex_local_access_rotate_api_key,
             commands::codex::codex_local_access_update_bound_oauth_account,
             commands::codex::codex_local_access_clear_stats,
@@ -1248,6 +1247,7 @@ pub fn run() {
                     api.prevent_exit();
                     modules::logger::log_info("[Window] 主窗口已销毁，应用继续在托盘运行");
                 } else {
+                    modules::codex_app_injection::stop_all();
                     tauri::async_runtime::spawn(async {
                         modules::codex_local_access::shutdown_local_access_gateway_for_app_exit()
                             .await;
@@ -1255,6 +1255,7 @@ pub fn run() {
                 }
             }
             RunEvent::Exit => {
+                modules::codex_app_injection::stop_all();
                 tauri::async_runtime::spawn(async {
                     modules::codex_local_access::shutdown_local_access_gateway_for_app_exit().await;
                 });

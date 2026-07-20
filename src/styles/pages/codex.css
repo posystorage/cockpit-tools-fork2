@@ -771,26 +771,6 @@
   gap: 8px;
 }
 
-.codex-local-access-member-summary {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 20px;
-  padding: 0 2px;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 650;
-  line-height: 1.2;
-  font-variant-numeric: tabular-nums;
-}
-
-.codex-local-access-member-summary-sort {
-  margin-left: auto;
-  color: var(--text-secondary);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
 .codex-local-access-preview {
   flex: 1 1 auto;
   width: 100%;
@@ -1044,35 +1024,6 @@
   white-space: nowrap;
 }
 
-.codex-local-access-member-email-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.codex-local-access-member-activity {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
-  background: rgba(14, 165, 233, 0.14);
-  color: #0284c7;
-}
-
-.codex-local-access-member-activity.is-running {
-  background: rgba(34, 197, 94, 0.16);
-  color: #15803d;
-}
-
-.codex-local-access-member-activity.is-recent {
-  background: rgba(14, 165, 233, 0.14);
-  color: #0284c7;
-}
-
 .codex-local-access-member-text,
 .codex-local-access-member-plan {
   display: inline-flex;
@@ -1139,6 +1090,11 @@
 }
 
 .codex-local-access-health-summary {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -1151,6 +1107,16 @@
   font-weight: 700;
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
+}
+
+.codex-local-access-health-summary:hover,
+.codex-local-access-health-summary:focus-visible {
+  color: #059669;
+}
+
+.codex-local-access-health-summary.has-issue:hover,
+.codex-local-access-health-summary.has-issue:focus-visible {
+  color: #d97706;
 }
 
 .codex-local-access-health-summary.has-issue {
@@ -1817,16 +1783,6 @@
 [data-theme="dark"] .codex-local-access-member-quota.critical {
   background: rgba(239, 68, 68, 0.2);
   color: #fca5a5;
-}
-
-[data-theme="dark"] .codex-local-access-member-activity.is-running {
-  background: rgba(34, 197, 94, 0.22);
-  color: #86efac;
-}
-
-[data-theme="dark"] .codex-local-access-member-activity.is-recent {
-  background: rgba(56, 189, 248, 0.18);
-  color: #7dd3fc;
 }
 
 [data-theme="dark"] .codex-local-access-status.running {
@@ -4245,6 +4201,29 @@
   color: white;
 }
 
+.codex-account-card .codex-local-access-inline-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--primary);
+  font-family: inherit;
+  line-height: 1.2;
+  cursor: pointer;
+  appearance: none;
+}
+
+.codex-account-card .codex-local-access-inline-add:hover:not(:disabled) {
+  border-color: rgba(37, 99, 235, 0.36);
+  background: rgba(37, 99, 235, 0.14);
+}
+
+.codex-account-card .codex-local-access-inline-add:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
 /* Compact 布局（新增，不影响原 grid/list） */
 .codex-accounts-page .codex-compact-list {
   display: grid;
@@ -4420,7 +4399,8 @@
   transition: all 0.15s ease;
 }
 
-.codex-accounts-page .codex-compact-note-btn {
+.codex-accounts-page .codex-compact-note-btn,
+.codex-accounts-page .codex-compact-api-service-btn {
   width: 22px;
   height: 22px;
   border-radius: var(--radius-md);
@@ -4436,10 +4416,16 @@
 }
 
 .codex-accounts-page .codex-compact-note-btn:hover,
-.codex-accounts-page .codex-compact-note-btn.has-note {
+.codex-accounts-page .codex-compact-note-btn.has-note,
+.codex-accounts-page .codex-compact-api-service-btn:hover:not(:disabled) {
   color: var(--primary);
   border-color: rgba(37, 99, 235, 0.22);
   background: rgba(37, 99, 235, 0.08);
+}
+
+.codex-accounts-page .codex-compact-api-service-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .codex-accounts-page .codex-compact-switch-btn:hover:not(:disabled) {
@@ -4973,7 +4959,8 @@
   white-space: nowrap;
 }
 
-.codex-accounts-page .codex-account-note-chip {
+.codex-accounts-page .codex-account-note-chip,
+.codex-add-modal .codex-account-note-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -4992,11 +4979,13 @@
   transition: all 0.15s ease;
 }
 
-.codex-accounts-page .codex-account-note-chip svg {
+.codex-accounts-page .codex-account-note-chip svg,
+.codex-add-modal .codex-account-note-chip svg {
   flex-shrink: 0;
 }
 
-.codex-accounts-page .codex-account-note-chip span {
+.codex-accounts-page .codex-account-note-chip span,
+.codex-add-modal .codex-account-note-chip span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5004,7 +4993,9 @@
 }
 
 .codex-accounts-page .codex-account-note-chip:hover,
-.codex-accounts-page .codex-account-note-chip.has-note {
+.codex-accounts-page .codex-account-note-chip.has-note,
+.codex-add-modal .codex-account-note-chip:hover,
+.codex-add-modal .codex-account-note-chip.has-note {
   color: var(--primary);
   border-color: rgba(37, 99, 235, 0.28);
   background: rgba(37, 99, 235, 0.08);

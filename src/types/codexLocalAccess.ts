@@ -132,6 +132,7 @@ export interface CodexLocalAccessCollection {
   sessionAffinity: boolean;
   sessionAffinityTtlMs: number;
   sessionAffinityDefaultEnabledMigrated?: boolean;
+  responsesWebsocketsEnabled: boolean;
   maxRetryCredentials: number;
   maxRetryIntervalMs: number;
   timeouts: CodexLocalAccessTimeouts;
@@ -282,6 +283,9 @@ export interface CodexLocalAccessAccountHealth {
   lastFailureMessage: string | null;
   imageGenerationStatus: CodexLocalAccessImageGenerationStatus;
   imageGenerationCheckedAt: number | null;
+  schedulerAvailable: boolean | null;
+  schedulerReason: string | null;
+  schedulerNextRetryAt: number | null;
   cooldowns: CodexLocalAccessAccountCooldown[];
 }
 
@@ -354,7 +358,11 @@ export interface CodexLocalAccessState {
 
 export interface CodexLocalAccessAppendAccountSkipped {
   accountId: string;
-  reason: "not_found" | "chat_completions_api_key" | "free_restricted";
+  reason:
+    | "not_found"
+    | "chat_completions_api_key"
+    | "free_restricted"
+    | "pending_oauth";
 }
 
 export interface CodexLocalAccessAppendAccountsResult {

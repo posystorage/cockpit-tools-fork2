@@ -80,6 +80,7 @@ const ollamaBridgeVersion = "0.18.3"
 const maxImageUploadBytes int64 = 64 * 1024 * 1024
 const codexAlphaSearchPath = "/v1/alpha/search"
 const codexDirectAlphaSearchPath = "/backend-api/codex/alpha/search"
+const cockpitQuotaPath = "/v1/cockpit/quota"
 const defaultCodexAlphaSearchURL = "https://chatgpt.com/backend-api/codex/alpha/search"
 const maxCodexAlphaSearchRequestBytes = 16 << 20
 const maxCodexAlphaSearchResponseBytes = 32 << 20
@@ -93,15 +94,15 @@ var (
 )
 
 type manifest struct {
-	APIKeys            []apiKeySpec        `json:"apiKeys"`
-	Accounts           []accountSpec       `json:"accounts"`
-	ModelIDs           []string            `json:"modelIds"`
-	ModelAliases       []modelAliasSpec    `json:"modelAliases"`
-	ExcludedModels     []string            `json:"excludedModels"`
-	RoutingStrategy    string              `json:"routingStrategy"`
-	CustomRoutingRules []customRoutingRule `json:"customRoutingRules"`
-	ImmediateSSEResponse       bool              `json:"immediateSseResponse"`
-	MaxConcurrentImageRequests int               `json:"maxConcurrentImageRequests"`
+	APIKeys                    []apiKeySpec        `json:"apiKeys"`
+	Accounts                   []accountSpec       `json:"accounts"`
+	ModelIDs                   []string            `json:"modelIds"`
+	ModelAliases               []modelAliasSpec    `json:"modelAliases"`
+	ExcludedModels             []string            `json:"excludedModels"`
+	RoutingStrategy            string              `json:"routingStrategy"`
+	CustomRoutingRules         []customRoutingRule `json:"customRoutingRules"`
+	ImmediateSSEResponse       bool                `json:"immediateSseResponse"`
+	MaxConcurrentImageRequests int                 `json:"maxConcurrentImageRequests"`
 	DebugLogs                  *bool               `json:"debugLogs,omitempty"`
 
 	apiKeyByValue     map[string]*apiKeySpec
@@ -115,15 +116,17 @@ type manifest struct {
 }
 
 type apiKeySpec struct {
-	ID              string               `json:"id"`
-	Label           string               `json:"label"`
-	Key             string               `json:"key"`
-	ProviderGateway *providerGatewaySpec `json:"providerGateway,omitempty"`
-	AccountIDs      []string             `json:"accountIds"`
-	ModelPrefix     string               `json:"modelPrefix,omitempty"`
-	AllowedModels   []string             `json:"allowedModels"`
-	ExcludedModels  []string             `json:"excludedModels"`
-	Enabled         bool                 `json:"enabled"`
+	ID                  string               `json:"id"`
+	Label               string               `json:"label"`
+	Key                 string               `json:"key"`
+	ProviderGateway     *providerGatewaySpec `json:"providerGateway,omitempty"`
+	BoundOAuth          bool                 `json:"boundOAuth,omitempty"`
+	AccountIDs          []string             `json:"accountIds"`
+	ModelPrefix         string               `json:"modelPrefix,omitempty"`
+	ResponsesWebsockets bool                 `json:"responsesWebsockets,omitempty"`
+	AllowedModels       []string             `json:"allowedModels"`
+	ExcludedModels      []string             `json:"excludedModels"`
+	Enabled             bool                 `json:"enabled"`
 }
 
 type apiKeyPriorityState struct {
@@ -340,6 +343,9 @@ type requestDiagnosticPayload struct {
 	HTTPStatus      int    `json:"httpStatus,omitempty"`
 	Retryable       *bool  `json:"retryable,omitempty"`
 	RetryAfterMS    int64  `json:"retryAfterMs,omitempty"`
+	AuthAvailable   *bool  `json:"authAvailable,omitempty"`
+	NextRetryAtMS   int64  `json:"nextRetryAtMs,omitempty"`
+	AuthStateReason string `json:"authStateReason,omitempty"`
 }
 
 const executorWaitLogInterval = 30 * time.Second
@@ -912,7 +918,7 @@ func (p *requestPolicy) middleware() gin.HandlerFunc {
 		if spec != nil && isModelsRequest(c.Request) {
 			models := clientCatalogModelsForAPIKey(p.manifest, spec)
 			if isCodexClientModelsRequest(c.Request) {
-				c.JSON(http.StatusOK, buildCodexClientModelsResponse(models))
+				c.JSON(http.StatusOK, buildCodexClientModelsResponse(models, spec))
 			} else {
 				c.JSON(http.StatusOK, buildModelsResponse(models))
 			}
@@ -1206,15 +1212,15 @@ func buildOllamaShowResponse(model string, modifiedAt time.Time) gin.H {
 			"display_name":                displayNameForModel(model),
 			"input_modalities":            []string{"text", "image"},
 			"context_length":              contextLength,
-			"supported_reasoning_efforts": []string{"low", "medium", "high"},
-			"default_reasoning_effort":    "medium",
+			"supported_reasoning_efforts": ollamaReasoningEfforts(model),
+			"default_reasoning_effort":    ollamaDefaultReasoningEffort(model),
 		},
 	}
 }
 
 func ollamaModelFamily(model string) string {
 	normalized := strings.ToLower(strings.TrimSpace(model))
-	for _, prefix := range []string{"gpt-5.5", "gpt-5.4", "gpt-5.3", "gpt-5.2", "gpt-5.1", "gpt-oss", "codex"} {
+	for _, prefix := range []string{"gpt-5.6", "gpt-5.5", "gpt-5.4", "gpt-5.3", "gpt-5.2", "gpt-5.1", "gpt-oss", "codex"} {
 		if strings.HasPrefix(normalized, prefix) {
 			return prefix
 		}
@@ -1232,6 +1238,8 @@ func ollamaModelFamily(model string) string {
 
 func ollamaContextLength(model string) int {
 	switch {
+	case strings.HasPrefix(model, "gpt-5.6"):
+		return 372000
 	case strings.HasPrefix(model, "gpt-5.5"), strings.HasPrefix(model, "gpt-5.4"):
 		return 400000
 	case strings.HasPrefix(model, "gpt-5.3"), strings.HasPrefix(model, "gpt-5.2"), strings.HasPrefix(model, "gpt-5.1"):
@@ -1241,34 +1249,107 @@ func ollamaContextLength(model string) int {
 	}
 }
 
-func buildCodexClientModelsResponse(models []string) gin.H {
+func ollamaReasoningEfforts(model string) []string {
+	switch {
+	case strings.HasPrefix(model, "gpt-5.6-sol"), strings.HasPrefix(model, "gpt-5.6-terra"):
+		return []string{"low", "medium", "high", "xhigh", "max", "ultra"}
+	case strings.HasPrefix(model, "gpt-5.6-luna"), strings.HasPrefix(model, "gpt-5.6"):
+		return []string{"low", "medium", "high", "xhigh", "max"}
+	default:
+		return []string{"low", "medium", "high", "xhigh"}
+	}
+}
+
+func ollamaDefaultReasoningEffort(model string) string {
+	if strings.HasPrefix(model, "gpt-5.6-sol") {
+		return "low"
+	}
+	return "medium"
+}
+
+func buildCodexClientModelsResponse(models []string, spec *apiKeySpec) gin.H {
 	sourceModels := make([]map[string]any, 0, len(models))
 	for _, model := range models {
 		displayName := displayNameForModel(model)
-		sourceModels = append(sourceModels, map[string]any{
-			"id":             model,
-			"display_name":   displayName,
-			"description":    displayName,
-			"context_length": 272000,
-		})
+		entry := map[string]any{
+			"id":           model,
+			"display_name": displayName,
+			"description":  displayName,
+		}
+		// Only seed context_length for non-template models. Template models keep
+		// official context/service-tier values from codex_client_models.json.
+		if cw := ollamaContextLength(model); cw > 0 {
+			entry["context_length"] = cw
+		}
+		sourceModels = append(sourceModels, entry)
 	}
-	response := gin.H(sdkopenai.CodexClientModelsResponse(sourceModels))
+	response := gin.H(sdkopenai.CodexClientModelsResponseWithProviders(sourceModels, func(string) []string {
+		if spec != nil && spec.ProviderGateway != nil {
+			return []string{"provider-gateway"}
+		}
+		return []string{"codex"}
+	}))
 	if data, ok := response["models"].([]map[string]any); ok {
 		hydrateCodexCompatibilityModels(data)
-		for index, model := range data {
+		preferWebsockets := spec != nil && spec.ProviderGateway == nil && spec.ResponsesWebsockets
+		for _, model := range data {
+			model["prefer_websockets"] = preferWebsockets
+			if spec != nil && spec.ProviderGateway != nil {
+				applyProviderGatewayCodexInputModalities(model, spec.ProviderGateway)
+			}
 			slug, _ := model["slug"].(string)
 			if isHiddenCodexClientModel(slug) {
 				model["visibility"] = "hide"
 			}
-			model["max_context_window"] = 1000000
-			model["priority"] = 1000 + index
-			model["additional_speed_tiers"] = []any{}
-			model["service_tiers"] = []any{}
-			model["availability_nux"] = nil
-			model["upgrade"] = nil
+			// Preserve template priority/context/service_tiers. Only fill gaps
+			// for synthesized models that lack official catalog fields.
+			if _, ok := model["max_context_window"]; !ok {
+				if cw := intModelValueAny(model["context_window"]); cw > 0 {
+					model["max_context_window"] = cw
+				}
+			}
+			if _, ok := model["additional_speed_tiers"]; !ok {
+				model["additional_speed_tiers"] = []any{}
+			}
+			if _, ok := model["service_tiers"]; !ok {
+				model["service_tiers"] = []any{}
+			}
+			if _, ok := model["availability_nux"]; !ok {
+				model["availability_nux"] = nil
+			}
+			if _, ok := model["upgrade"]; !ok {
+				model["upgrade"] = nil
+			}
 		}
 	}
 	return response
+}
+
+func applyProviderGatewayCodexInputModalities(model map[string]any, gateway *providerGatewaySpec) {
+	slug, _ := model["slug"].(string)
+	slug = strings.TrimSpace(slug)
+	supportsImage := providerGatewayModelSupportsVision(gateway, slug) ||
+		strings.TrimSpace(providerGatewayVisionRoutingModel(gateway)) != ""
+	if supportsImage {
+		model["input_modalities"] = []any{"text", "image"}
+		model["supports_image_detail_original"] = true
+		return
+	}
+	model["input_modalities"] = []any{"text"}
+	delete(model, "supports_image_detail_original")
+}
+
+func intModelValueAny(value any) int {
+	switch v := value.(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	default:
+		return 0
+	}
 }
 
 func hydrateCodexCompatibilityModels(models []map[string]any) {
@@ -1304,6 +1385,14 @@ func displayNameForModel(model string) string {
 		return "GPT-5 Codex"
 	case "gpt-5-codex-mini":
 		return "GPT-5 Codex Mini"
+	case "gpt-5.6-sol":
+		return "GPT-5.6-Sol"
+	case "gpt-5.6-terra":
+		return "GPT-5.6-Terra"
+	case "gpt-5.6-luna":
+		return "GPT-5.6-Luna"
+	case "gpt-5.5":
+		return "GPT-5.5"
 	case "gpt-5.4":
 		return "GPT-5.4"
 	case "gpt-5.4-mini":
@@ -1571,9 +1660,6 @@ func providerGatewayValueHasVisionInput(value any) bool {
 		if typ, _ := typed["type"].(string); strings.EqualFold(strings.TrimSpace(typ), "input_image") || strings.EqualFold(strings.TrimSpace(typ), "image_url") {
 			return true
 		}
-		if _, ok := typed["image_url"]; ok {
-			return true
-		}
 		for _, child := range typed {
 			if providerGatewayValueHasVisionInput(child) {
 				return true
@@ -1587,6 +1673,58 @@ func providerGatewayValueHasVisionInput(value any) bool {
 		}
 	}
 	return false
+}
+
+const providerGatewayOmittedImageText = "[Image omitted because the current model does not support image input.]"
+
+func omitProviderGatewayVisionInput(body []byte, sourceFormat sdktranslator.Format) ([]byte, int, error) {
+	var payload any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, 0, err
+	}
+	textType := "text"
+	if sourceFormatEqual(sourceFormat, sdktranslator.FormatOpenAIResponse) {
+		textType = "input_text"
+	}
+	omitted, count := omitProviderGatewayVisionValue(payload, textType)
+	if count == 0 {
+		return body, 0, nil
+	}
+	normalized, err := json.Marshal(omitted)
+	if err != nil {
+		return nil, 0, err
+	}
+	return normalized, count, nil
+}
+
+func omitProviderGatewayVisionValue(value any, textType string) (any, int) {
+	switch typed := value.(type) {
+	case map[string]any:
+		typ, _ := typed["type"].(string)
+		if strings.EqualFold(strings.TrimSpace(typ), "input_image") || strings.EqualFold(strings.TrimSpace(typ), "image_url") {
+			return map[string]any{
+				"type": textType,
+				"text": providerGatewayOmittedImageText,
+			}, 1
+		}
+		count := 0
+		for key, child := range typed {
+			next, childCount := omitProviderGatewayVisionValue(child, textType)
+			typed[key] = next
+			count += childCount
+		}
+		return typed, count
+	case []any:
+		count := 0
+		for index, child := range typed {
+			next, childCount := omitProviderGatewayVisionValue(child, textType)
+			typed[index] = next
+			count += childCount
+		}
+		return typed, count
+	default:
+		return value, 0
+	}
 }
 
 func stripModelPrefix(model string, spec *apiKeySpec) string {
@@ -2863,23 +3001,35 @@ func (h *authHook) OnResult(ctx context.Context, result coreauth.Result) {
 		retryAfterMS = result.RetryAfter.Milliseconds()
 	}
 	success := result.Success
+	var authAvailable *bool
+	if result.AuthStateKnown {
+		value := result.AuthAvailable
+		authAvailable = &value
+	}
+	nextRetryAtMS := int64(0)
+	if !result.NextRetryAt.IsZero() {
+		nextRetryAtMS = result.NextRetryAt.UnixMilli()
+	}
 	h.emitter.emit(requestDiagnosticPayload{
-		Type:         "auth_result",
-		RequestID:    internallogging.GetRequestID(ctx),
-		Provider:     result.Provider,
-		Model:        model,
-		AuthID:       result.AuthID,
-		AccountID:    stringFromAccount(account, "id"),
-		AccountEmail: stringFromAccount(account, "email"),
-		APIKeyID:     stringFromAPIKey(spec, "id"),
-		APIKeyLabel:  stringFromAPIKey(spec, "label"),
-		RequestKind:  requestKind,
-		Success:      &success,
-		HTTPStatus:   status,
-		ErrorCode:    errorCode,
-		ErrorMessage: errorMessage,
-		Retryable:    retryablePtr,
-		RetryAfterMS: retryAfterMS,
+		Type:            "auth_result",
+		RequestID:       internallogging.GetRequestID(ctx),
+		Provider:        result.Provider,
+		Model:           model,
+		AuthID:          result.AuthID,
+		AccountID:       stringFromAccount(account, "id"),
+		AccountEmail:    stringFromAccount(account, "email"),
+		APIKeyID:        stringFromAPIKey(spec, "id"),
+		APIKeyLabel:     stringFromAPIKey(spec, "label"),
+		RequestKind:     requestKind,
+		Success:         &success,
+		HTTPStatus:      status,
+		ErrorCode:       errorCode,
+		ErrorMessage:    errorMessage,
+		Retryable:       retryablePtr,
+		RetryAfterMS:    retryAfterMS,
+		AuthAvailable:   authAvailable,
+		NextRetryAtMS:   nextRetryAtMS,
+		AuthStateReason: result.AuthStateReason,
 	})
 }
 
@@ -3359,9 +3509,9 @@ func readManifestCodexTokenAuth(account *accountSpec, authDir, path string) (*co
 		Status:   status,
 		Disabled: disabled,
 		Attributes: map[string]string{
-			"path":        path,
-			"auth_kind":   manifestAccountAuthKind(account),
-			"websockets":  "true",
+			"path":       path,
+			"auth_kind":  manifestAccountAuthKind(account),
+			"websockets": "true",
 		},
 		Metadata:        metadata,
 		CreatedAt:       info.ModTime(),
@@ -3709,9 +3859,11 @@ type relayServer struct {
 	runtime            executorRuntime
 	cfg                *config.Config
 	manifest           *manifest
+	authManager        *coreauth.Manager
 	emitter            *eventEmitter
 	policy             *requestPolicy
 	responsesWebsocket gin.HandlerFunc
+	quotaPoolStatePath string
 }
 
 func (s *relayServer) router() *gin.Engine {
@@ -3720,6 +3872,8 @@ func (s *relayServer) router() *gin.Engine {
 	router.Use(corsMiddleware())
 	router.Use(s.policy.middleware())
 	router.GET("/v1/models", s.handleModels)
+	router.GET(cockpitQuotaPath, s.handleCockpitQuota)
+	router.POST("/v1/cockpit/auth/reset", s.handleResetAuthState)
 	// Codex Responses WebSocket upgrade uses GET /v1/responses (not POST/SSE).
 	router.GET("/v1/responses", s.handleResponsesWebsocket)
 	router.POST("/v1/responses", s.handleResponses)
@@ -3748,6 +3902,252 @@ func (s *relayServer) router() *gin.Engine {
 	return router
 }
 
+type quotaPoolWindowState struct {
+	Present          *bool  `json:"present,omitempty"`
+	RemainingPercent *int   `json:"remainingPercent,omitempty"`
+	WindowMinutes    *int64 `json:"windowMinutes,omitempty"`
+	ResetAt          *int64 `json:"resetAt,omitempty"`
+}
+
+type quotaPoolAccountState struct {
+	Primary   *quotaPoolWindowState `json:"primary,omitempty"`
+	Secondary *quotaPoolWindowState `json:"secondary,omitempty"`
+	UpdatedAt *int64                `json:"updatedAt,omitempty"`
+}
+
+type quotaPoolStateFile struct {
+	Accounts map[string]quotaPoolAccountState `json:"accounts"`
+}
+
+type cockpitQuotaResponse struct {
+	Version                  int    `json:"version"`
+	Scope                    string `json:"scope"`
+	RemainingPercent         *int   `json:"remainingPercent,omitempty"`
+	WeeklyRemainingPercent   *int   `json:"weeklyRemainingPercent,omitempty"`
+	FiveHourRemainingPercent *int   `json:"fiveHourRemainingPercent,omitempty"`
+	AccountCount             int    `json:"accountCount"`
+	IncludedAccountCount     int    `json:"includedAccountCount"`
+	MissingAccountCount      int    `json:"missingAccountCount"`
+	UpdatedAt                int64  `json:"updatedAt,omitempty"`
+	Stale                    bool   `json:"stale"`
+}
+
+func readQuotaPoolState(path string) (quotaPoolStateFile, error) {
+	content, err := os.ReadFile(strings.TrimSpace(path))
+	if err != nil {
+		return quotaPoolStateFile{}, err
+	}
+	var state quotaPoolStateFile
+	if err := json.Unmarshal(content, &state); err != nil {
+		return quotaPoolStateFile{}, err
+	}
+	if state.Accounts == nil {
+		state.Accounts = make(map[string]quotaPoolAccountState)
+	}
+	return state, nil
+}
+
+func quotaWindowPresent(window *quotaPoolWindowState) bool {
+	return window != nil && (window.Present == nil || *window.Present)
+}
+
+func quotaWindowValue(window *quotaPoolWindowState) (int, int64, bool) {
+	if !quotaWindowPresent(window) || window.RemainingPercent == nil {
+		return 0, 0, false
+	}
+	minutes := int64(10080)
+	if window.WindowMinutes != nil && *window.WindowMinutes > 0 {
+		minutes = *window.WindowMinutes
+	}
+	return *window.RemainingPercent, minutes, true
+}
+
+func buildCockpitQuotaResponse(spec *apiKeySpec, state quotaPoolStateFile, now time.Time) cockpitQuotaResponse {
+	accountIDs := make([]string, 0)
+	if spec != nil {
+		accountIDs = normalizeStringList(spec.AccountIDs)
+	}
+	result := cockpitQuotaResponse{
+		Version:      1,
+		Scope:        "api_key_account_pool",
+		AccountCount: len(accountIDs),
+	}
+	total := 0
+	hasValue := false
+	weeklyTotal := 0
+	fiveHourTotal := 0
+	hasWeekly := false
+	hasFiveHour := false
+	for _, accountID := range accountIDs {
+		item, ok := state.Accounts[accountID]
+		if !ok {
+			result.MissingAccountCount++
+			continue
+		}
+		primaryValue, primaryMinutes, primaryOK := quotaWindowValue(item.Primary)
+		secondaryValue, secondaryMinutes, secondaryOK := quotaWindowValue(item.Secondary)
+		value, ok := 0, false
+		switch {
+		case primaryOK && secondaryOK && primaryMinutes <= secondaryMinutes:
+			value, ok = primaryValue, true
+		case primaryOK && secondaryOK:
+			value, ok = secondaryValue, true
+		case primaryOK:
+			value, ok = primaryValue, true
+		case secondaryOK:
+			value, ok = secondaryValue, true
+		}
+		if !ok {
+			result.MissingAccountCount++
+			continue
+		}
+		total += value
+		hasValue = true
+		if primaryOK && primaryMinutes >= 5*24*60 {
+			weeklyTotal += primaryValue
+			hasWeekly = true
+		}
+		if secondaryOK && secondaryMinutes >= 5*24*60 {
+			weeklyTotal += secondaryValue
+			hasWeekly = true
+		}
+		if primaryOK && primaryMinutes > 0 && primaryMinutes <= 6*60 {
+			fiveHourTotal += primaryValue
+			hasFiveHour = true
+		}
+		if secondaryOK && secondaryMinutes > 0 && secondaryMinutes <= 6*60 {
+			fiveHourTotal += secondaryValue
+			hasFiveHour = true
+		}
+		result.IncludedAccountCount++
+		if item.UpdatedAt != nil {
+			if *item.UpdatedAt > result.UpdatedAt {
+				result.UpdatedAt = *item.UpdatedAt
+			}
+			if now.Unix()-*item.UpdatedAt > 15*60 {
+				result.Stale = true
+			}
+		}
+	}
+	if hasValue {
+		result.RemainingPercent = &total
+	}
+	if hasWeekly {
+		result.WeeklyRemainingPercent = &weeklyTotal
+	}
+	if hasFiveHour {
+		result.FiveHourRemainingPercent = &fiveHourTotal
+	}
+	return result
+}
+
+func (s *relayServer) handleCockpitQuota(c *gin.Context) {
+	spec, ok := s.requireAPIKey(c)
+	if !ok {
+		return
+	}
+	if strings.TrimSpace(s.quotaPoolStatePath) == "" {
+		c.JSON(http.StatusOK, cockpitQuotaResponse{Version: 1, Scope: "api_key_account_pool"})
+		return
+	}
+	state, err := readQuotaPoolState(s.quotaPoolStatePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			c.JSON(http.StatusOK, cockpitQuotaResponse{Version: 1, Scope: "api_key_account_pool"})
+			return
+		}
+		writeAPIError(c, http.StatusServiceUnavailable, "quota state unavailable", "quota_state_unavailable")
+		return
+	}
+	response := buildCockpitQuotaResponse(spec, state, time.Now())
+	if response.RemainingPercent == nil && spec != nil && spec.ProviderGateway != nil {
+		upstreamURL, urlErr := providerGatewayURL(spec.ProviderGateway.BaseURL, cockpitQuotaPath)
+		if urlErr == nil {
+			request, requestErr := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, upstreamURL, nil)
+			if requestErr == nil {
+				request.Header.Set("Authorization", "Bearer "+spec.ProviderGateway.APIKey)
+				client := &http.Client{Timeout: 2 * time.Second}
+				if upstream, doErr := client.Do(request); doErr == nil {
+					defer upstream.Body.Close()
+					if upstream.StatusCode == http.StatusOK {
+						var upstreamResponse cockpitQuotaResponse
+						if json.NewDecoder(upstream.Body).Decode(&upstreamResponse) == nil {
+							c.JSON(http.StatusOK, upstreamResponse)
+							return
+						}
+					}
+				}
+			}
+		}
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+type resetAuthStateRequest struct {
+	AccountIDs []string `json:"accountIds"`
+}
+
+func (s *relayServer) handleResetAuthState(c *gin.Context) {
+	spec, ok := s.requireAPIKey(c)
+	if !ok {
+		return
+	}
+	if s.authManager == nil || s.manifest == nil {
+		writeAPIError(c, http.StatusServiceUnavailable, "auth manager unavailable", "service_unavailable")
+		return
+	}
+
+	var req resetAuthStateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeAPIError(c, http.StatusBadRequest, "invalid request body", "invalid_request")
+		return
+	}
+
+	accountIDs := normalizeStringList(req.AccountIDs)
+	if len(accountIDs) == 0 {
+		writeAPIError(c, http.StatusBadRequest, "accountIds is required", "invalid_request")
+		return
+	}
+
+	allowed := make(map[string]struct{}, len(spec.AccountIDs))
+	for _, accountID := range spec.AccountIDs {
+		allowed[strings.TrimSpace(accountID)] = struct{}{}
+	}
+	type resetTarget struct {
+		accountID string
+		authID    string
+	}
+	targets := make([]resetTarget, 0, len(accountIDs))
+	for _, accountID := range accountIDs {
+		account := s.manifest.accountByID[accountID]
+		if account == nil || strings.TrimSpace(account.AuthID) == "" {
+			continue
+		}
+		if len(allowed) > 0 {
+			if _, ok := allowed[accountID]; !ok {
+				continue
+			}
+		}
+		targets = append(targets, resetTarget{accountID: accountID, authID: account.AuthID})
+	}
+	if len(targets) == 0 {
+		writeAPIError(c, http.StatusNotFound, "no resettable accounts found", "account_not_found")
+		return
+	}
+
+	resetAccountIDs := make([]string, 0, len(targets))
+	for _, target := range targets {
+		if auth, _ := s.authManager.ResetAuthState(c.Request.Context(), target.authID); auth != nil {
+			resetAccountIDs = append(resetAccountIDs, target.accountID)
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"status":     "ok",
+		"reset":      len(resetAccountIDs),
+		"accountIds": resetAccountIDs,
+	})
+}
+
 func corsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
@@ -3768,7 +4168,7 @@ func (s *relayServer) handleModels(c *gin.Context) {
 	}
 	models := clientCatalogModelsForAPIKey(s.manifest, spec)
 	if isCodexClientModelsRequest(c.Request) {
-		c.JSON(http.StatusOK, buildCodexClientModelsResponse(models))
+		c.JSON(http.StatusOK, buildCodexClientModelsResponse(models, spec))
 		return
 	}
 	c.JSON(http.StatusOK, buildModelsResponse(models))
@@ -3779,7 +4179,21 @@ func (s *relayServer) handleResponses(c *gin.Context) {
 }
 
 func (s *relayServer) handleResponsesWebsocket(c *gin.Context) {
-	if _, ok := s.requireAPIKey(c); !ok {
+	spec, ok := s.requireAPIKey(c)
+	if !ok {
+		return
+	}
+	if spec.ProviderGateway != nil {
+		writeAPIError(
+			c,
+			http.StatusBadRequest,
+			"provider gateway does not support responses websocket",
+			"websocket_not_supported",
+		)
+		return
+	}
+	if !spec.ResponsesWebsockets {
+		writeAPIError(c, http.StatusBadRequest, "responses websocket is disabled", "websocket_disabled")
 		return
 	}
 	if s.responsesWebsocket == nil {
@@ -4769,6 +5183,11 @@ func (s *relayServer) handleExecutorBody(c *gin.Context, spec *apiKeySpec, body 
 		writeAPIError(c, http.StatusBadRequest, "model is required", "invalid_request")
 		return
 	}
+	canonicalModel := canonicalModelForClientModel(s.manifest, spec, model)
+	if sourceFormatEqual(sourceFormat, sdktranslator.FormatOpenAI) && isGPTImageGenerationModel(canonicalModel) {
+		writeAPIError(c, http.StatusBadRequest, "This model is not supported on the Chat Completions endpoint", "invalid_request")
+		return
+	}
 
 	if spec.ProviderGateway != nil {
 		s.handleProviderGatewayRequest(c, spec.ProviderGateway, body, model, sourceFormat, fixedAlt)
@@ -4812,22 +5231,39 @@ func (s *relayServer) handleProviderGatewayRequest(c *gin.Context, gateway *prov
 	if providerGatewayRequestHasVisionInput(body) && !supportsVision {
 		visionRoutingModel := providerGatewayVisionRoutingModel(gateway)
 		if strings.TrimSpace(visionRoutingModel) == "" {
-			writeAPIError(c, http.StatusBadRequest, fmt.Sprintf("model %s does not support image input", upstreamModel), "unsupported_image_input")
-			return
-		}
-		originalModel := upstreamModel
-		upstreamModel = visionRoutingModel
-		if s.emitter != nil {
-			s.emitter.emit(requestDiagnosticPayload{
-				Type:         "provider_gateway_vision_routed",
-				RequestID:    internallogging.GetRequestID(c.Request.Context()),
-				Method:       c.Request.Method,
-				Path:         requestPath(c.Request),
-				RequestKind:  requestKindFromPath(requestPath(c.Request)),
-				Model:        upstreamModel,
-				Transport:    diagnosticTransport(c.Request),
-				ErrorMessage: fmt.Sprintf("routed image input from %s to %s", originalModel, upstreamModel),
-			})
+			omittedBody, omittedCount, err := omitProviderGatewayVisionInput(body, sourceFormat)
+			if err != nil || omittedCount == 0 {
+				writeAPIError(c, http.StatusBadRequest, fmt.Sprintf("model %s does not support image input", upstreamModel), "unsupported_image_input")
+				return
+			}
+			body = omittedBody
+			if s.emitter != nil {
+				s.emitter.emit(requestDiagnosticPayload{
+					Type:         "provider_gateway_vision_omitted",
+					RequestID:    internallogging.GetRequestID(c.Request.Context()),
+					Method:       c.Request.Method,
+					Path:         requestPath(c.Request),
+					RequestKind:  requestKindFromPath(requestPath(c.Request)),
+					Model:        upstreamModel,
+					Transport:    diagnosticTransport(c.Request),
+					ErrorMessage: fmt.Sprintf("omitted %d image input item(s) for text-only model", omittedCount),
+				})
+			}
+		} else {
+			originalModel := upstreamModel
+			upstreamModel = visionRoutingModel
+			if s.emitter != nil {
+				s.emitter.emit(requestDiagnosticPayload{
+					Type:         "provider_gateway_vision_routed",
+					RequestID:    internallogging.GetRequestID(c.Request.Context()),
+					Method:       c.Request.Method,
+					Path:         requestPath(c.Request),
+					RequestKind:  requestKindFromPath(requestPath(c.Request)),
+					Model:        upstreamModel,
+					Transport:    diagnosticTransport(c.Request),
+					ErrorMessage: fmt.Sprintf("routed image input from %s to %s", originalModel, upstreamModel),
+				})
+			}
 		}
 	}
 	upstreamPath := "/v1/responses"
@@ -5026,7 +5462,7 @@ func (s *relayServer) writeProviderGatewayChatStream(c *gin.Context, body io.Rea
 	}
 	if err := scanner.Err(); err != nil {
 		s.emitExecutorDiagnostic(c, "provider_gateway_stream_scan_failed", model, "provider_gateway_chat_stream", startedAt, err.Error())
-		writeStreamTerminalError(c, err)
+		writeStreamTerminalErrorForFormat(c, err, sdktranslator.FormatOpenAIResponse)
 		flusher.Flush()
 		return
 	}
@@ -5104,7 +5540,7 @@ func (s *relayServer) writeProviderGatewayTranslatedChatStream(c *gin.Context, b
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		writeStreamTerminalError(c, err)
+		writeStreamTerminalErrorForFormat(c, err, targetFormat)
 		flusher.Flush()
 	}
 }
@@ -5272,7 +5708,7 @@ func (s *relayServer) handleStream(c *gin.Context, body []byte, model string, so
 	if err != nil {
 		s.emitExecutorDiagnostic(c, "executor_failed", model, "execute_stream", startedAt, err.Error())
 		if immediateSSE {
-			writeStreamTerminalError(c, err)
+			writeStreamTerminalErrorForFormat(c, err, sourceFormat)
 			immediateFlusher.Flush()
 			return
 		}
@@ -5282,7 +5718,7 @@ func (s *relayServer) handleStream(c *gin.Context, body []byte, model string, so
 	if result == nil || result.Chunks == nil {
 		s.emitExecutorDiagnostic(c, "executor_failed", model, "execute_stream", startedAt, "upstream stream is unavailable")
 		if immediateSSE {
-			writeStreamTerminalError(c, relayStatusError{status: http.StatusBadGateway, message: "upstream stream is unavailable"})
+			writeStreamTerminalErrorForFormat(c, relayStatusError{status: http.StatusBadGateway, message: "upstream stream is unavailable"}, sourceFormat)
 			immediateFlusher.Flush()
 		} else {
 			writeAPIError(c, http.StatusBadGateway, "upstream stream is unavailable", "bad_gateway")
@@ -5328,7 +5764,7 @@ func (s *relayServer) handleStream(c *gin.Context, body []byte, model string, so
 			endReason = "stream_idle_timeout"
 			err := relayTimeoutError{phase: "stream_idle", timeout: timeouts.idle}
 			s.emitExecutorDiagnostic(c, "stream_idle_timeout", model, "stream_loop", startedAt, err.Error())
-			writeStreamTerminalError(c, err)
+			writeStreamTerminalErrorForFormat(c, err, sourceFormat)
 			flusher.Flush()
 			return
 		case <-c.Request.Context().Done():
@@ -5366,7 +5802,7 @@ func (s *relayServer) handleStream(c *gin.Context, body []byte, model string, so
 			if chunk.Err != nil {
 				endReason = "stream_error"
 				s.emitExecutorDiagnostic(c, "stream_error", model, "stream_loop", startedAt, chunk.Err.Error())
-				writeStreamTerminalError(c, chunk.Err)
+				writeStreamTerminalErrorForFormat(c, chunk.Err, sourceFormat)
 				flusher.Flush()
 				return
 			}
@@ -5977,7 +6413,7 @@ func ollamaThinkingEffort(value any) string {
 	switch v := value.(type) {
 	case string:
 		switch strings.ToLower(strings.TrimSpace(v)) {
-		case "low", "medium", "high", "xhigh":
+		case "low", "medium", "high", "xhigh", "max", "ultra":
 			return strings.ToLower(strings.TrimSpace(v))
 		case "true":
 			return "medium"
@@ -6596,6 +7032,10 @@ func modelBase(model string) string {
 	return model
 }
 
+func isGPTImageGenerationModel(model string) bool {
+	return strings.HasPrefix(modelBase(model), "gpt-image-")
+}
+
 func jsonContainsImageGenerationTool(body []byte) bool {
 	if len(bytes.TrimSpace(body)) == 0 {
 		return false
@@ -6878,6 +7318,19 @@ func writeStreamTerminalError(c *gin.Context, err error) {
 	_, _ = fmt.Fprintf(c.Writer, "data: %s\n\n", string(payload))
 }
 
+func writeStreamTerminalErrorForFormat(c *gin.Context, err error, sourceFormat sdktranslator.Format) {
+	if c == nil {
+		return
+	}
+	if !sourceFormatEqual(sourceFormat, sdktranslator.FormatOpenAIResponse) {
+		writeStreamTerminalError(c, err)
+		return
+	}
+	status := statusCodeFromError(err)
+	eventName, payload := sdkhandlers.BuildOpenAIResponsesStreamTerminalEvent(status, err, 0)
+	_, _ = fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", eventName, string(payload))
+}
+
 type relayStreamFrameMode int
 
 const (
@@ -7019,7 +7472,7 @@ func (f *responsesSSEFramer) WriteChunk(w io.Writer, chunk []byte) error {
 		if frameLen == 0 {
 			break
 		}
-		if err := writeResponsesSSEChunk(w, f.pending[:frameLen]); err != nil {
+		if err := writeResponsesSSEFrame(w, f.pending[:frameLen]); err != nil {
 			return err
 		}
 		copy(f.pending, f.pending[frameLen:])
@@ -7032,7 +7485,7 @@ func (f *responsesSSEFramer) WriteChunk(w io.Writer, chunk []byte) error {
 	if !responsesSSECanEmitWithoutDelimiter(f.pending) {
 		return nil
 	}
-	if err := writeResponsesSSEChunk(w, f.pending); err != nil {
+	if err := writeResponsesSSEFrame(w, f.pending); err != nil {
 		return err
 	}
 	f.pending = f.pending[:0]
@@ -7051,10 +7504,82 @@ func (f *responsesSSEFramer) Flush(w io.Writer) error {
 		f.pending = f.pending[:0]
 		return nil
 	}
-	if err := writeResponsesSSEChunk(w, f.pending); err != nil {
+	if err := writeResponsesSSEFrame(w, f.pending); err != nil {
 		return err
 	}
 	f.pending = f.pending[:0]
+	return nil
+}
+
+const (
+	maxResponsesConcatenatedJSONDocuments = 16
+	maxResponsesConcatenatedJSONBytes     = 16 * 1024 * 1024
+)
+
+func splitResponsesConcatenatedJSONDocuments(payload []byte) ([][]byte, bool) {
+	payload = bytes.TrimSpace(payload)
+	if len(payload) == 0 || len(payload) > maxResponsesConcatenatedJSONBytes || json.Valid(payload) {
+		return nil, false
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	documents := make([][]byte, 0, 2)
+	for {
+		var raw json.RawMessage
+		err := decoder.Decode(&raw)
+		if err != nil {
+			if errors.Is(err, io.EOF) && len(documents) > 1 {
+				return documents, true
+			}
+			return nil, false
+		}
+
+		raw = bytes.TrimSpace(raw)
+		var envelope struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(raw, &envelope); err != nil {
+			return nil, false
+		}
+		eventType := strings.TrimSpace(envelope.Type)
+		if eventType == "" || strings.ContainsAny(eventType, "\r\n") {
+			return nil, false
+		}
+		if len(documents) == maxResponsesConcatenatedJSONDocuments {
+			return nil, false
+		}
+		documents = append(documents, bytes.Clone(raw))
+	}
+}
+
+func writeResponsesSSEFrame(w io.Writer, chunk []byte) error {
+	payload, ok := responsesSSEDataPayload(chunk)
+	if !ok {
+		return writeResponsesSSEChunk(w, chunk)
+	}
+	documents, repaired := splitResponsesConcatenatedJSONDocuments(payload)
+	if !repaired {
+		return writeResponsesSSEChunk(w, chunk)
+	}
+
+	for _, document := range documents {
+		var envelope struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(document, &envelope); err != nil {
+			return err
+		}
+		frame := make([]byte, 0, len(document)+len(envelope.Type)+17)
+		frame = append(frame, "event: "...)
+		frame = append(frame, strings.TrimSpace(envelope.Type)...)
+		frame = append(frame, '\n')
+		frame = append(frame, "data: "...)
+		frame = append(frame, document...)
+		frame = append(frame, '\n', '\n')
+		if err := writeResponsesSSEChunk(w, frame); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -7121,7 +7646,45 @@ func responsesSSECanEmitWithoutDelimiter(chunk []byte) bool {
 	if responsesSSENeedsMoreData(trimmed) {
 		return false
 	}
-	return isSSEFieldChunk(trimmed) || bytes.HasPrefix(trimmed, []byte("{")) || bytes.HasPrefix(trimmed, []byte("["))
+	if payload, ok := responsesSSEDataPayload(trimmed); ok {
+		if bytes.Equal(bytes.TrimSpace(payload), []byte("[DONE]")) {
+			return true
+		}
+		if json.Valid(payload) {
+			return true
+		}
+		_, repaired := splitResponsesConcatenatedJSONDocuments(payload)
+		return repaired
+	}
+	return isSSEFieldChunk(trimmed)
+}
+
+func responsesSSEDataPayload(chunk []byte) ([]byte, bool) {
+	trimmed := bytes.TrimSpace(chunk)
+	if len(trimmed) == 0 {
+		return nil, false
+	}
+	if bytes.HasPrefix(trimmed, []byte("{")) || bytes.HasPrefix(trimmed, []byte("[")) {
+		return trimmed, true
+	}
+
+	lines := bytes.Split(bytes.ReplaceAll(trimmed, []byte("\r\n"), []byte("\n")), []byte("\n"))
+	dataLines := make([][]byte, 0, 1)
+	for _, line := range lines {
+		line = bytes.TrimSpace(line)
+		if !bytes.HasPrefix(line, []byte("data:")) {
+			continue
+		}
+		value := line[len("data:"):]
+		if len(value) > 0 && value[0] == ' ' {
+			value = value[1:]
+		}
+		dataLines = append(dataLines, value)
+	}
+	if len(dataLines) == 0 {
+		return nil, false
+	}
+	return bytes.Join(dataLines, []byte("\n")), true
 }
 
 func responsesSSENeedsMoreData(chunk []byte) bool {
@@ -7204,6 +7767,7 @@ func main() {
 	configPath := flag.String("config", "", "CLIProxyAPI config file")
 	manifestPath := flag.String("manifest", "", "Cockpit sidecar manifest file")
 	quotaReserveStatePath := flag.String("quota-reserve-state", "", "Cockpit OAuth quota reserve state file")
+	quotaPoolStatePath := flag.String("quota-pool-state", "", "Cockpit account-pool quota state file")
 	parentPID := flag.Int("parent-pid", 0, "Cockpit Tools parent process id")
 	flag.Parse()
 
@@ -7282,9 +7846,11 @@ func main() {
 		runtime:            runtime,
 		cfg:                cfg,
 		manifest:           m,
+		authManager:        coreManager,
 		emitter:            emitter,
 		policy:             policy,
 		responsesWebsocket: responsesHandler.ResponsesWebsocket,
+		quotaPoolStatePath: *quotaPoolStatePath,
 	}
 	if err := runRelayHTTPServer(ctx, cfg, relay.router(), emitter); err != nil && !errors.Is(err, context.Canceled) {
 		emitter.emit(map[string]any{"type": "error", "message": err.Error()})

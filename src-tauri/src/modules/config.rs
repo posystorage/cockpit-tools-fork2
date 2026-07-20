@@ -104,6 +104,9 @@ pub struct UserConfig {
     /// Codex 切号时是否同步覆盖 WSL 配置 (Windows Only)
     #[serde(default = "default_codex_sync_wsl")]
     pub codex_sync_wsl: bool,
+    /// 是否启用 Codex 客户端中的 API 服务额度显示注入
+    #[serde(default = "default_codex_app_ui_injection_enabled")]
+    pub codex_app_ui_injection_enabled: bool,
     /// Codex WSL 配置目录 (Windows Only)
     #[serde(default = "default_codex_wsl_config_dir")]
     pub codex_wsl_config_dir: String,
@@ -173,6 +176,9 @@ pub struct UserConfig {
     /// 是否在启动后自动最小化主窗口
     #[serde(default = "default_startup_minimized")]
     pub startup_minimized: bool,
+    /// 是否记住主窗口尺寸和位置
+    #[serde(default = "default_remember_main_window_state")]
+    pub remember_main_window_state: bool,
     /// 启动默认页面：`last` 表示恢复上次页面，其它为页面 id（如 dashboard、codex）
     #[serde(default = "default_startup_page")]
     pub startup_page: String,
@@ -659,6 +665,9 @@ fn default_codex_auto_refresh() -> i32 {
 fn default_codex_sync_wsl() -> bool {
     false
 }
+fn default_codex_app_ui_injection_enabled() -> bool {
+    true
+}
 fn default_codex_wsl_config_dir() -> String {
     String::new()
 }
@@ -717,6 +726,9 @@ fn default_floating_card_show_on_startup() -> bool {
     false
 }
 fn default_startup_minimized() -> bool {
+    false
+}
+fn default_remember_main_window_state() -> bool {
     false
 }
 fn default_startup_page() -> String {
@@ -1091,6 +1103,7 @@ impl Default for UserConfig {
             auto_refresh_minutes: default_auto_refresh(),
             codex_auto_refresh_minutes: default_codex_auto_refresh(),
             codex_sync_wsl: default_codex_sync_wsl(),
+            codex_app_ui_injection_enabled: default_codex_app_ui_injection_enabled(),
             codex_wsl_config_dir: default_codex_wsl_config_dir(),
             zed_auto_refresh_minutes: default_zed_auto_refresh(),
             ghcp_auto_refresh_minutes: default_ghcp_auto_refresh(),
@@ -1115,6 +1128,7 @@ impl Default for UserConfig {
             tray_icon_style: default_tray_icon_style(),
             floating_card_show_on_startup: default_floating_card_show_on_startup(),
             startup_minimized: default_startup_minimized(),
+            remember_main_window_state: default_remember_main_window_state(),
             startup_page: default_startup_page(),
             floating_card_always_on_top: default_floating_card_always_on_top(),
             app_auto_launch_enabled: default_app_auto_launch_enabled(),
@@ -1586,11 +1600,15 @@ pub fn load_user_config() -> Result<UserConfig, String> {
             );
         }
 
-        if !obj.contains_key("startup_page") {
+        if !obj.contains_key("remember_main_window_state") {
             obj.insert(
-                "startup_page".to_string(),
-                json!(default_startup_page()),
+                "remember_main_window_state".to_string(),
+                json!(default_remember_main_window_state()),
             );
+        }
+
+        if !obj.contains_key("startup_page") {
+            obj.insert("startup_page".to_string(), json!(default_startup_page()));
         } else if let Some(value) = obj.get("startup_page").and_then(|v| v.as_str()) {
             let normalized = normalize_startup_page(value);
             obj.insert("startup_page".to_string(), json!(normalized));
@@ -2425,6 +2443,22 @@ mod tests {
         let migrated_cfg: UserConfig =
             serde_json::from_value(serde_json::json!({})).expect("旧配置反序列化应成功");
         assert!(!migrated_cfg.grok_sync_official_auth_on_switch);
+    }
+
+    #[test]
+    fn codex_api_service_quota_display_defaults_to_enabled() {
+        let default_cfg = UserConfig::default();
+        assert!(default_cfg.codex_app_ui_injection_enabled);
+
+        let upgraded_cfg: UserConfig =
+            serde_json::from_value(serde_json::json!({})).expect("旧配置反序列化应成功");
+        assert!(upgraded_cfg.codex_app_ui_injection_enabled);
+
+        let disabled_cfg: UserConfig = serde_json::from_value(serde_json::json!({
+            "codex_app_ui_injection_enabled": false
+        }))
+        .expect("显式关闭配置反序列化应成功");
+        assert!(!disabled_cfg.codex_app_ui_injection_enabled);
     }
 
     #[test]
