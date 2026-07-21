@@ -11,6 +11,7 @@ import {
 import { createPortal } from "react-dom";
 import {
   Plus,
+  Activity,
   RefreshCw,
   Download,
   Upload,
@@ -552,6 +553,13 @@ function isAbnormalLocalAccessAccountFailure(
   );
 }
 
+function formatLocalAccessActivityElapsedSeconds(
+  value: number | null | undefined,
+): number {
+  if (!value || !Number.isFinite(value) || value <= 0) return 0;
+  return Math.max(0, Math.floor((Date.now() - value) / 1000));
+}
+
 function normalizeLocalAccessAddressKind(
   value: string | null | undefined,
 ): CodexLocalAccessAddressKind {
@@ -1056,6 +1064,9 @@ export function CodexAccountsPage() {
     useState(false);
   const [showLocalAccessQuotaStatsModal, setShowLocalAccessQuotaStatsModal] =
     useState(false);
+  const localAccessMemberListRef = useRef<HTMLDivElement | null>(null);
+  const [localAccessHiddenMemberCount, setLocalAccessHiddenMemberCount] =
+    useState(0);
   const localAccessRiskNoticeResolverRef = useRef<
     ((accepted: boolean) => void) | null
   >(null);
@@ -8089,6 +8100,101 @@ export function CodexAccountsPage() {
         .filter((account): account is CodexAccount => Boolean(account)),
     [accounts, localAccessCollection?.accountIds],
   );
+  const localAccessActivityByAccountId = useMemo(
+    () =>
+      new Map(
+        (localAccessState?.accountActivity ?? []).map((activity) => [
+          activity.accountId,
+          activity,
+        ]),
+      ),
+    [localAccessState?.accountActivity],
+  );
+  const localAccessDisplayAccounts = useMemo(
+    () =>
+      localAccessAccounts
+        .map((account, index) => ({
+          account,
+          index,
+          activity: localAccessActivityByAccountId.get(account.id),
+        }))
+        .sort((left, right) => {
+          const leftRunning = left.activity?.runningCount ?? 0;
+          const rightRunning = right.activity?.runningCount ?? 0;
+          if (leftRunning !== rightRunning) return rightRunning - leftRunning;
+
+          const leftRecent = Math.max(
+            left.activity?.lastSelectedAt ?? 0,
+            left.activity?.lastFinishedAt ?? 0,
+          );
+          const rightRecent = Math.max(
+            right.activity?.lastSelectedAt ?? 0,
+            right.activity?.lastFinishedAt ?? 0,
+          );
+          if ((leftRecent > 0) !== (rightRecent > 0)) {
+            return leftRecent > 0 ? -1 : 1;
+          }
+          if (leftRecent !== rightRecent) return rightRecent - leftRecent;
+          return left.index - right.index;
+        })
+        .map(({ account }) => account),
+    [localAccessAccounts, localAccessActivityByAccountId],
+  );
+  const localAccessRunningAccountCount = useMemo(
+    () =>
+      localAccessDisplayAccounts.filter(
+        (account) =>
+          (localAccessActivityByAccountId.get(account.id)?.runningCount ?? 0) >
+          0,
+      ).length,
+    [localAccessActivityByAccountId, localAccessDisplayAccounts],
+  );
+
+  useEffect(() => {
+    const container = localAccessMemberListRef.current;
+    if (!container) {
+      setLocalAccessHiddenMemberCount(0);
+      return;
+    }
+
+    let animationFrame = 0;
+    const updateHiddenCount = () => {
+      const containerRect = container.getBoundingClientRect();
+      const rows = Array.from(
+        container.querySelectorAll<HTMLElement>(
+          "[data-local-access-member-row]",
+        ),
+      );
+      const visibleCount = rows.filter((row) => {
+        const rowRect = row.getBoundingClientRect();
+        return (
+          rowRect.top >= containerRect.top - 1 &&
+          rowRect.bottom <= containerRect.bottom + 1
+        );
+      }).length;
+      const nextHiddenCount = Math.max(0, rows.length - visibleCount);
+      setLocalAccessHiddenMemberCount((current) =>
+        current === nextHiddenCount ? current : nextHiddenCount,
+      );
+    };
+    const scheduleUpdate = () => {
+      cancelAnimationFrame(animationFrame);
+      animationFrame = requestAnimationFrame(updateHiddenCount);
+    };
+
+    const observer = new ResizeObserver(scheduleUpdate);
+    observer.observe(container);
+    scheduleUpdate();
+
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      observer.disconnect();
+    };
+  }, [
+    localAccessDetailsExpanded,
+    localAccessDisplayAccounts,
+    overviewLayoutMode,
+  ]);
   const localAccessQuotaPoolSummary = useMemo(
     () => summarizeCodexQuotaPool(localAccessAccounts),
     [localAccessAccounts],
@@ -8483,6 +8589,40 @@ export function CodexAccountsPage() {
       }
     },
     [accounts, setMessage, t],
+  );
+
+  const handleRemoveLocalAccessAccount = useCallback(
+    async (accountId: string) => {
+      if (!localAccessCollection) return;
+      const remainingAccountIds = localAccessCollection.accountIds.filter(
+        (id) => id !== accountId,
+      );
+      const remainingAccountIdSet = new Set(remainingAccountIds);
+      const backupAccountIds = (
+        localAccessCollection.customRoutingRules ?? []
+      )
+        .filter(
+          (rule) =>
+            rule.isBackup && remainingAccountIdSet.has(rule.accountId),
+        )
+        .map((rule) => rule.accountId);
+      try {
+        await handleSaveLocalAccessAccounts(remainingAccountIds, {
+          restrictFreeAccounts:
+            localAccessCollection.restrictFreeAccounts ?? true,
+          backupAccountIds,
+        });
+      } catch (error) {
+        setMessage({
+          text: t("messages.actionFailed", {
+            action: t("accounts.groups.removeFromGroup"),
+            error: String(error).replace(/^Error:\s*/, ""),
+          }),
+          tone: "error",
+        });
+      }
+    },
+    [handleSaveLocalAccessAccounts, localAccessCollection, setMessage, t],
   );
 
   const tierCounts = useMemo(() => {
@@ -10628,6 +10768,7 @@ export function CodexAccountsPage() {
       : localAccessKeyVisible
         ? localAccessCollection.apiKey
         : `${localAccessCollection.apiKey.slice(0, 10)}••••••••••••`;
+    const previewAccounts = localAccessDisplayAccounts;
     const localAccessOAuthBindingLabel = t(
       "codex.api.oauthBinding.label",
       "OAuth 绑定",
@@ -10658,6 +10799,8 @@ export function CodexAccountsPage() {
                 )
           }：${quotaReserveStatus.effectiveRemainingPercent}% / ${quotaReserveStatus.effectiveReservePercent}%`
         : null;
+    const hiddenCount = localAccessHiddenMemberCount;
+    const showLocalAccessEmptyState = previewAccounts.length === 0;
     const localAccessStatusTone = !localAccessCollection
       ? "disabled"
       : localAccessState?.running
@@ -10689,6 +10832,10 @@ export function CodexAccountsPage() {
         label: t("codex.localAccess.gatewayModeOldLabel", "API 服务-旧"),
       },
     ];
+    const localAccessEmptyMessage = t(
+      "codex.localAccess.emptyMembers",
+      "当前集合暂无账号",
+    );
     const showLocalAccessGatewayGuide = !localAccessGatewayGuideDismissed;
     const renderLocalAccessGatewayGuide = () =>
       showLocalAccessGatewayGuide ? (
@@ -10990,6 +11137,143 @@ export function CodexAccountsPage() {
                   <span>{quotaReserveWarningLine}</span>
                 </div>
               )}
+              </div>
+
+              <div className="codex-local-access-member-summary">
+                <span>
+                  {t("codex.localAccess.accountPoolHealth.title", "账号池")} {" "}
+                  {localAccessAccounts.length}
+                </span>
+                {localAccessRunningAccountCount > 0 && (
+                  <span>
+                    {t("codex.apiService.accountActivity.running", {
+                      count: localAccessRunningAccountCount,
+                      defaultValue: "调度中 {{count}}",
+                    })}
+                  </span>
+                )}
+                {hiddenCount > 0 && <span>+{hiddenCount}</span>}
+                <span className="codex-local-access-member-summary-sort">
+                  {t("codex.localAccess.memberSort.dispatchFirst", "调度优先")}
+                </span>
+              </div>
+
+              <div
+                ref={localAccessMemberListRef}
+                className="folder-inline-preview codex-local-access-preview"
+              >
+                {showLocalAccessEmptyState ? (
+                  <div className="codex-local-access-empty-state">
+                    <span className="codex-local-access-empty-text">
+                      {localAccessEmptyMessage}
+                    </span>
+                    <button
+                      type="button"
+                      className="codex-local-access-empty-action"
+                      onClick={openLocalAccessMemberPicker}
+                      title={t("common.shared.addAccount", "添加账号")}
+                      disabled={localAccessBusy}
+                    >
+                      <FolderPlus size={14} />
+                      <span>{t("common.shared.addAccount", "添加账号")}</span>
+                    </button>
+                  </div>
+                ) : (
+                  previewAccounts.map((account) => {
+                    const presentation = resolvePresentation(account);
+                    const hourlyQuota = presentation.quotaItems.find(
+                      (item) => item.key === "primary",
+                    );
+                    const weeklyQuota = presentation.quotaItems.find(
+                      (item) => item.key === "secondary",
+                    );
+                    const activity =
+                      localAccessActivityByAccountId.get(account.id);
+                    const activityRunningCount = activity?.runningCount ?? 0;
+                    const activityRecentAt =
+                      activity?.lastFinishedAt ?? activity?.lastSelectedAt ?? 0;
+                    const hasActivity =
+                      activityRunningCount > 0 || activityRecentAt > 0;
+                    const activityText =
+                      activityRunningCount > 0
+                        ? t("codex.apiService.accountActivity.running", {
+                            count: activityRunningCount,
+                            defaultValue: "调度中 {{count}}",
+                          })
+                        : t("codex.apiService.accountActivity.recent", {
+                            seconds:
+                              formatLocalAccessActivityElapsedSeconds(
+                                activityRecentAt,
+                              ),
+                            defaultValue: "刚调度 {{seconds}} 秒前",
+                          });
+                    const activityTitle = [
+                      activityText,
+                      activity?.lastModelId,
+                      activity?.lastApiKeyLabel,
+                    ]
+                      .map((item) => item?.trim())
+                      .filter(Boolean)
+                      .join(" · ");
+                    return (
+                      <div
+                        key={`local-access-${account.id}`}
+                        className="folder-preview-item codex-local-access-member"
+                        data-local-access-member-row
+                      >
+                        <span
+                          className="folder-preview-email codex-local-access-member-email"
+                          title={maskAccountText(presentation.displayName)}
+                        >
+                          {hasActivity && (
+                            <span
+                              className={`codex-local-access-member-activity ${
+                                activityRunningCount > 0
+                                  ? "is-running"
+                                  : "is-recent"
+                              }`}
+                              title={activityTitle}
+                            >
+                              <Activity size={10} />
+                            </span>
+                          )}
+                          <span className="codex-local-access-member-email-text">
+                            {maskAccountText(presentation.displayName)}
+                          </span>
+                        </span>
+                        <span
+                          className={`codex-local-access-member-text codex-local-access-member-quota ${hourlyQuota?.quotaClass || "unknown"}`}
+                          title={hourlyQuota?.hintText || hourlyQuota?.label}
+                        >
+                          {hourlyQuota?.valueText || "-"}
+                        </span>
+                        <span
+                          className={`codex-local-access-member-text codex-local-access-member-quota ${weeklyQuota?.quotaClass || "unknown"}`}
+                          title={weeklyQuota?.label}
+                        >
+                          {weeklyQuota?.valueText || "-"}
+                        </span>
+                        <span
+                          className={`codex-local-access-member-plan tier-badge ${presentation.planClass || "unknown"}`}
+                        >
+                          {presentation.planLabel}
+                        </span>
+                        <button
+                          type="button"
+                          className="folder-preview-remove-btn"
+                          onClick={() =>
+                            void handleRemoveLocalAccessAccount(account.id)
+                          }
+                          title={t("accounts.groups.removeFromGroup")}
+                          aria-label={`${t("accounts.groups.removeFromGroup")}: ${maskAccountText(presentation.displayName)}`}
+                          disabled={localAccessBusy}
+                        >
+                          <LogOut size={12} />
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
               </div>
 
             {localAccessQuotaPreviewItems.length > 0 && (

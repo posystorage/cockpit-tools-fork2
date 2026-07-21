@@ -36,13 +36,13 @@
 
 - `Casks/cockpit-tools.rb`：fork 删除、上游更新；继续保持删除。
 - `sidecars/cockpit-cliproxy/main.go`：冲突只在 context key 常量区；同时保留 fork 的 `authSelectionDiagnosticsContextKey` 和上游的 `cockpitQuotaPath`。
-- `src/pages/CodexAccountsPage.tsx`：三个冲突块均来自上游删除旧 API 服务成员预览；接受上游删除，不在普通 Codex 账号页恢复重复成员面板。
+- `src/pages/CodexAccountsPage.tsx`：三个冲突块均来自上游删除旧 API 服务成员预览；合并时先接受上游删除。`1.3.10b1` 验证后确认该预览属于 fork 刚需，随后恢复为明确的长期分叉，后续升级不能再次随上游删除。
 
 独立平台化后的长期裁决：
 
 1. `codex_api_service` 是独立、无账号平台 ID，页面路由为 `codex-api-service`；接受上游导航、布局迁移和页面入口。
-2. Codex 账号页与 API 服务页首次访问后保持挂载。API 服务主成员卡片是“调度中/刚调度”的唯一常驻页面展示位置；统计账号卡片不重复实时 badge。
-3. `CodexLocalAccessModal` 仍由两个页面复用，继续保留活动排序和标记。普通账号页保留 5 秒 state 轮询，使从该页打开的管理弹框仍能实时更新，但不再计算旧成员预览的活动排序、隐藏数或 ResizeObserver。
+2. Codex 账号页与 API 服务页首次访问后保持挂载。独立 API 服务页保留完整管理视图；普通 Codex 页同时保留紧凑成员预览。这是有意重复的 fork 产品能力，不得以“独立平台已有账号卡片”为由删除。
+3. 普通 Codex 页使用同一份 5 秒 `accountActivity` state：完整渲染全部成员，先按 `runningCount`、再按最近 selected/finished 时间排序，无活动成员保持集合顺序；卡片高度不足时由成员区域内部滚动，并通过 ResizeObserver 显示当前视口外数量。`CodexLocalAccessModal` 继续复用相同活动数据和标记。
 4. Sidecar 的 `recordingSelector` 继续位于 session affinity、图片、备用账号和额度保留选择器的最外层。上游新增 alpha search、Responses 重试和 scheduler health 都使用同一个 `coreauth.Manager`，不得把 `auth_selected` 发送移回 `cockpitSelector.Pick()`。
 5. 上游 `schedulerAvailable/schedulerReason/schedulerNextRetryAt` 属于账号可用性健康信息，与 fork 的易失调度活动并存；两者不得合并成同一状态或互相驱动。
 
@@ -359,11 +359,13 @@ Sidecar 选择事件所有权：
 
 显示位置：
 
+- `src/pages/CodexAccountsPage.tsx`：普通 Codex 页 API 服务卡片完整显示全部成员；正在调度账号优先，其次为最近调度账号，并显示运行/最近活动标记。
 - `src/pages/CodexApiServicePage.tsx`：成员卡片显示“调度中 N”或“刚调度 N 秒前”，tooltip 展示模型/API Key 标签/策略。
 - `src/components/CodexLocalAccessModal.tsx`：按账号统计行显示活动标记。
-- `src/pages/CodexApiServicePage.css`、`src/components/CodexLocalAccessModal.css`：活动状态样式。
+- `src/styles/pages/codex.css`：普通 Codex 卡片的固定高度、成员内部滚动、紧凑额度列和活动状态样式。
+- `src/pages/CodexApiServicePage.css`、`src/components/CodexLocalAccessModal.css`：独立页面和管理弹框活动状态样式。
 
-从 `v1.3.7` 开始，API 服务使用独立平台 ID `codex_api_service` 和页面 `codex-api-service`。普通 `CodexAccountsPage` 不再拥有成员逐卡预览，不能为了保留调度观测而恢复该旧面板；它只保留服务状态、额度池、健康摘要以及可打开共享管理弹框所需的 state。
+从 `v1.3.7` 开始，上游 API 服务使用独立平台 ID `codex_api_service` 和页面 `codex-api-service`，并删除普通 `CodexAccountsPage` 的成员逐卡预览。本 fork 明确覆盖该上游裁决：独立页面负责完整管理，普通页面仍必须提供无需跳转的紧凑账号池观测。成员列表不得 `slice` 截断；账号过多时必须在卡片内部纵向滚动，不能依赖整页拉长，也不能只显示汇总数字。
 
 轮询契约：
 
@@ -556,8 +558,9 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 
 1. 启动 Codex API 服务并加入至少两个账号。
 2. 发起普通、流式和 WebSocket 请求（若该模式受支持）。
-3. 确认被选账号在 5 秒内显示“调度中”。
+3. 在普通 Codex 页和独立 API 服务页确认被选账号在 5 秒内显示“调度中”，并在普通页成员列表中移到最前。
 4. 开启 session affinity，使用完全相同的会话标识连续发起至少两个请求；首次 cache miss 和后续 cache hit 都必须显示“调度中”，Sidecar 每个请求只输出一条 `auth_selected`。
+5. 加入足以超过普通 API 服务卡片高度的账号，确认所有账号均已渲染、成员区域出现纵向滚动条，滚动到底能够看到最后一个成员，卡片本身不无限增高。
 5. 请求结束后显示“刚调度”，约 30 秒后消失。
 6. 失败、取消和重试后不能永久显示“调度中”。
 7. 在成员、自定义路由、模型规则或 API Key 对话框中编辑未保存内容，等待至少两轮轮询，草稿不能被重置。
