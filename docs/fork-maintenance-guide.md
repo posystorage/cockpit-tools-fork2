@@ -53,7 +53,24 @@
 2. “隐藏中转站额度”不影响普通 Codex API 服务滚动成员列表；该列表继续显示调度观测所需额度。
 3. 滚动列表继续按实时“调度中 -> 刚调度 -> 其他”排序，不按静态最高/最低优先级重排；账号行增加紧凑的最高/最低标记。
 
-本节在合并和验证完成后补充真实合并提交、最终冲突裁决、测试结果和已知限制。
+真实合并与预演一致，只出现上述三个显式冲突。最终裁决如下：
+
+- `.github/workflows/release.yml` 同时保留上游的 concurrency、Rust/Tauri 缓存和 action 命名更新，以及 fork 的数字/草稿 tag、仅构建 Windows、禁用自动 finalize/checksum/Homebrew 和旧 `latest.json` 保护。复核时发现旧 fork 的 prepare 阶段虽然文案称“草稿”，实际会立即执行 `--draft=false`；本轮改为新建和重跑都必须保持 draft，若同 tag 已正式发布则直接拒绝覆盖。
+- `src-tauri/src/modules/codex_local_access.rs` 合并双方 import、state snapshot 与测试 import。保留 `running_requests/account_activity`，并接受上游 `service_enabled`、准备/刷新进度、token breakdown、Agent Identity、模型排除和最高/最低优先级。Rust 首次编译还发现 Responses rejected-field 错误映射漏填新增的 `activity_request_id`，已使用当前请求 ID 修复，保证异常结束路径能正确清理调度活动。
+- `Casks/cockpit-tools.rb` 继续删除。Sidecar 自动合并结果保留最外层 `recordingSelector`，`cockpitSelector.Pick()` 不直接发送事件；上游模型排除、最高/普通/最低、额度保留、图片和 session affinity 全部位于记录器内部。
+- 普通 Codex 卡片继续完整渲染并内部滚动，排序仍只依据运行中和最近调度活动；静态优先级只显示“最高/最低”紧凑标记。移出成员时会过滤并保留剩余 preferred/backup ID，同时原样传递 session affinity 和 TTL。
+- 计费查询保留 Sub2API `/usage`、`/v1/usage` 回退、路径感知 URL、数字字符串解析和 `NaN`/Infinity 拒绝；同时接受上游 New API billing/token allocation 额度回退。去广告硬开关、空公告/远端配置/商业默认 API URL、fork updater 地址与签名均通过源码和 Provider 运行时扫描复核。
+
+本轮自动化验收结果：
+
+- TypeScript `tsc --noEmit` 通过；Vite 生产构建通过，共转换 2184 个模块。
+- Provider 隐私扫描通过，共检查 154 个运行时预设；成员滚动/排序/优先级/删除保留、批量导入恢复、New API 用量和 API 服务账号准入等定向 Node 测试 18 项全部通过，草稿 release 边界测试 3 项通过。
+- 全部可直接由 Node 24 执行的测试为 `84 passed / 1 failed`。唯一失败是上游 `codexQuotaPool.test.ts` 通过原生 Node 执行时无法解析应用源码中的无扩展名 ESM import；相同源码已通过 TypeScript 和 Vite 构建，属于测试运行器限制，不修改业务 import。
+- `cargo test -p cockpit-tools --lib` 使用 `target/test-data-v1316` 隔离数据目录执行，结果为 `759 passed / 0 failed`。首次编译发现并修复上述 `activity_request_id` 漏项，修复后全库通过。
+- 当前机器没有 Go，`TestRecordingSelectorRecordsSessionAffinityCacheHit`、模型排除与优先级 selector 等 Sidecar Go 测试未运行；源码复核确认 affinity 首次选择和 cache hit 的测试仍断言每请求恰好一个事件。发布 CI 必须使用 Go 真实编译 Sidecar。
+- `git diff --check` 仅报告上游 `WorkbuddyAutoCheckinConfigModal.tsx` 和 `codebuddy.css` 的 EOF 空行，未格式化无关上游文件。
+
+真实合并提交哈希在创建 merge commit 后补入本节，父节点应为 fork 施工文档提交 `cdea997e` 与上游 `e1ef55ce`。
 
 ### 2.2 `v1.3.10` 已验证基线（2026-07-20）
 

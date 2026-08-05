@@ -64,4 +64,45 @@ describe("Codex API service member preview", () => {
       "the card should report members outside the visible scroll viewport",
     );
   });
+
+  it("shows routing priority without changing activity-based sorting", () => {
+    assert.ok(
+      pageSource.includes("localAccessMemberPriorityByAccountId.get(account.id)"),
+      "the member row should resolve its static routing priority",
+    );
+    assert.ok(
+      pageSource.includes("codex.localAccess.memberPriorityHighest") &&
+        pageSource.includes("codex.localAccess.memberPriorityLowest"),
+      "the member row should render both highest and lowest markers",
+    );
+    assert.ok(
+      styleSource.includes(".codex-local-access-member-priority"),
+      "the compact priority marker should have a stable style",
+    );
+  });
+
+  it("preserves routing and affinity settings when removing one member", () => {
+    const removeHandler = pageSource.slice(
+      pageSource.indexOf("const handleRemoveLocalAccessAccount"),
+      pageSource.indexOf(
+        "const tierCounts",
+        pageSource.indexOf("const handleRemoveLocalAccessAccount"),
+      ),
+    );
+
+    assert.ok(
+      removeHandler.includes("rule.isPreferred") &&
+        removeHandler.includes("preferredAccountIds,"),
+      "removal should preserve preferred accounts that remain in the pool",
+    );
+    assert.ok(
+      removeHandler.includes(
+        "sessionAffinity: localAccessCollection.sessionAffinity",
+      ) &&
+        removeHandler.includes(
+          "sessionAffinityTtlMs: localAccessCollection.sessionAffinityTtlMs",
+        ),
+      "removal should preserve session affinity configuration",
+    );
+  });
 });

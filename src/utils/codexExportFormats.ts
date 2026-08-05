@@ -16,11 +16,17 @@ interface Sub2apiBatchCreatePayload {
 interface Sub2apiCreateAccountItem {
   name: string;
   platform: 'openai';
-  type: 'oauth';
+  type: 'oauth' | 'apikey';
   credentials: JsonRecord;
+  extra?: JsonRecord;
   concurrency: number;
   priority: number;
+  expires_at?: number;
+  auto_pause_on_expired?: boolean;
 }
+
+const SUB2API_OPENAI_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
+const SUB2API_DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com';
 
 interface CodexPortableTokenStorage extends JsonRecord {
   id_token: string;
@@ -36,6 +42,15 @@ interface CodexPortableTokenStorage extends JsonRecord {
   account_password?: string;
   phone_number?: string;
   mail_url?: string;
+}
+
+interface CodexPortableAgentIdentityStorage extends JsonRecord {
+  auth_mode: 'agentIdentity';
+  agent_identity: JsonRecord;
+  account_id: string;
+  user_id: string;
+  email: string;
+  type: 'codex';
 }
 
 interface CodexExportBuildOptions {
@@ -151,34 +166,62 @@ function resolveAuthPayload(account: CodexAccount): JsonRecord | null {
   return toJsonRecord(idTokenPayload?.['https://api.openai.com/auth']);
 }
 
+function resolveAccessAuthPayload(account: CodexAccount): JsonRecord | null {
+  const accessTokenPayload = decodeJwtPayload(account.tokens?.access_token);
+  return toJsonRecord(accessTokenPayload?.['https://api.openai.com/auth']);
+}
+
+function resolveAuthProvider(account: CodexAccount): string | undefined {
+  const idTokenPayload = decodeJwtPayload(account.tokens?.id_token);
+  return toStringValue(idTokenPayload?.auth_provider);
+}
+
 function resolveAccountId(account: CodexAccount): string | undefined {
   const authPayload = resolveAuthPayload(account);
+  const accessAuthPayload = resolveAccessAuthPayload(account);
   return (
     toStringValue(account.account_id) ||
     toStringValue(authPayload?.chatgpt_account_id) ||
-    toStringValue(authPayload?.account_id)
+    toStringValue(accessAuthPayload?.chatgpt_account_id) ||
+    toStringValue(authPayload?.account_id) ||
+    toStringValue(accessAuthPayload?.account_id)
   );
 }
 
 function resolveUserId(account: CodexAccount): string | undefined {
   const idTokenPayload = decodeJwtPayload(account.tokens?.id_token);
   const authPayload = resolveAuthPayload(account);
+  const accessAuthPayload = resolveAccessAuthPayload(account);
   return (
     toStringValue(account.user_id) ||
     toStringValue(authPayload?.chatgpt_user_id) ||
+    toStringValue(accessAuthPayload?.chatgpt_user_id) ||
     toStringValue(authPayload?.user_id) ||
+    toStringValue(accessAuthPayload?.user_id) ||
     toStringValue(idTokenPayload?.sub)
   );
 }
 
 function resolveOrganizationId(account: CodexAccount): string | undefined {
   const authPayload = resolveAuthPayload(account);
-  return toStringValue(account.organization_id) || toStringValue(authPayload?.organization_id);
+  const accessAuthPayload = resolveAccessAuthPayload(account);
+  return (
+    toStringValue(account.organization_id) ||
+    toStringValue(authPayload?.organization_id) ||
+    toStringValue(accessAuthPayload?.organization_id) ||
+    toStringValue(authPayload?.poid) ||
+    toStringValue(accessAuthPayload?.poid)
+  );
 }
 
 function resolvePlanType(account: CodexAccount): string | undefined {
   const authPayload = resolveAuthPayload(account);
-  return toStringValue(account.plan_type) || toStringValue(authPayload?.chatgpt_plan_type);
+  const accessAuthPayload = resolveAccessAuthPayload(account);
+  return (
+    toStringValue(account.plan_type) ||
+    toStringValue(authPayload?.chatgpt_plan_type) ||
+    toStringValue(accessAuthPayload?.chatgpt_plan_type)
+  );
 }
 
 function normalizeTimestampToIso(value: unknown): string | undefined {
@@ -201,29 +244,63 @@ function formatSub2apiExportedAt(): string {
 }
 
 function resolveSubscriptionExpiresAt(account: CodexAccount): string | undefined {
-  const authPayload = resolveAuthPayload(account);
-  return (
-    normalizeTimestampToIso(account.subscription_active_until) ||
-    normalizeTimestampToIso(authPayload?.chatgpt_subscription_active_until)
-  );
+  return normalizeTimestampToIso(account.subscription_active_until);
 }
 
 function resolveAccessTokenExpiry(account: CodexAccount): string | undefined {
   const accessTokenPayload = decodeJwtPayload(account.tokens?.access_token);
-  const idTokenPayload = decodeJwtPayload(account.tokens?.id_token);
   const accessExp = toNumberValue(accessTokenPayload?.exp);
-  if (accessExp != null) {
-    return normalizeTimestampToIso(accessExp);
-  }
-  const idExp = toNumberValue(idTokenPayload?.exp);
-  return normalizeTimestampToIso(idExp);
+  return normalizeTimestampToIso(accessExp);
 }
 
 function resolveLastRefresh(account: CodexAccount): string {
   return normalizeTimestampToIso(account.token_updated_at) || new Date().toISOString();
 }
 
+function hasAgentIdentity(account: CodexAccount): boolean {
+  return Boolean(account.agent_identity?.agent_runtime_id?.trim());
+}
+
+function buildAgentIdentityCredentials(account: CodexAccount): JsonRecord {
+  const identity = account.agent_identity;
+  const agentRuntimeId = identity?.agent_runtime_id?.trim();
+  const agentPrivateKey = identity?.agent_private_key?.trim();
+  const accountId = identity?.account_id?.trim();
+  const chatgptUserId = identity?.chatgpt_user_id?.trim();
+  if (!agentRuntimeId || !agentPrivateKey || !accountId || !chatgptUserId) {
+    throw new Error('Codex Agent Identity credentials are incomplete');
+  }
+
+  const credentials: JsonRecord = {
+    auth_mode: 'agentIdentity',
+    agent_runtime_id: agentRuntimeId,
+    agent_private_key: agentPrivateKey,
+    account_id: accountId,
+    chatgpt_account_id: accountId,
+    chatgpt_user_id: chatgptUserId,
+    chatgpt_account_is_fedramp:
+      identity?.chatgpt_account_is_fedramp === true,
+  };
+  const taskId = identity?.task_id?.trim();
+  if (taskId) {
+    credentials.task_id = taskId;
+  }
+  const email = identity?.email?.trim() || account.email?.trim();
+  if (email) {
+    credentials.email = email;
+  }
+  const planType = identity?.plan_type?.trim() || account.plan_type?.trim();
+  if (planType) {
+    credentials.plan_type = planType;
+  }
+  return credentials;
+}
+
 function buildSub2apiCredentials(account: CodexAccount): JsonRecord {
+  if (hasAgentIdentity(account)) {
+    return buildAgentIdentityCredentials(account);
+  }
+
   const credentials: JsonRecord = {
     access_token: account.tokens.access_token,
   };
@@ -235,6 +312,7 @@ function buildSub2apiCredentials(account: CodexAccount): JsonRecord {
 
   if (account.tokens.refresh_token?.trim()) {
     credentials.refresh_token = account.tokens.refresh_token.trim();
+    credentials.client_id = SUB2API_OPENAI_CLIENT_ID;
   }
   if (account.tokens.id_token?.trim()) {
     credentials.id_token = account.tokens.id_token.trim();
@@ -271,15 +349,68 @@ function buildSub2apiCredentials(account: CodexAccount): JsonRecord {
   return credentials;
 }
 
-function toSub2apiAccount(account: CodexAccount): Sub2apiCreateAccountItem {
+function buildSub2apiApiKeyCredentials(account: CodexAccount): JsonRecord {
+  const apiKey = account.openai_api_key?.trim();
+  if (!apiKey) {
+    throw new Error('SUB2API_API_KEY_MISSING');
+  }
   return {
-    name: account.account_name?.trim() || account.email || account.id,
-    platform: 'openai',
-    type: 'oauth',
-    credentials: buildSub2apiCredentials(account),
-    concurrency: 0,
-    priority: 0,
+    base_url: account.api_base_url?.trim() || SUB2API_DEFAULT_OPENAI_BASE_URL,
+    api_key: apiKey,
   };
+}
+
+function buildSub2apiExtra(account: CodexAccount): JsonRecord | undefined {
+  const authProvider = resolveAuthProvider(account);
+  return authProvider ? { auth_provider: authProvider } : undefined;
+}
+
+function toSub2apiAccount(account: CodexAccount): Sub2apiCreateAccountItem {
+  const base = {
+    name: account.account_name?.trim() || account.email || account.id,
+    platform: 'openai' as const,
+    concurrency: 3,
+    priority: 50,
+  };
+
+  if (isCodexApiKeyAccount(account)) {
+    return {
+      ...base,
+      type: 'apikey',
+      credentials: buildSub2apiApiKeyCredentials(account),
+    };
+  }
+
+  if (hasAgentIdentity(account)) {
+    return {
+      ...base,
+      type: 'oauth',
+      credentials: buildSub2apiCredentials(account),
+    };
+  }
+  if (!account.tokens.access_token?.trim()) {
+    throw new Error('SUB2API_ACCESS_TOKEN_MISSING');
+  }
+
+  const credentials = buildSub2apiCredentials(account);
+  const extra = buildSub2apiExtra(account);
+  const item: Sub2apiCreateAccountItem = {
+    ...base,
+    type: 'oauth',
+    credentials,
+    ...(extra ? { extra } : {}),
+  };
+
+  if (!account.tokens.refresh_token?.trim()) {
+    const tokenExpiresAt = resolveAccessTokenExpiry(account);
+    if (!tokenExpiresAt) {
+      throw new Error('SUB2API_ACCESS_TOKEN_EXPIRY_MISSING');
+    }
+    item.expires_at = Math.floor(new Date(tokenExpiresAt).getTime() / 1000);
+    item.auto_pause_on_expired = true;
+  }
+
+  return item;
 }
 
 function toPortableTokenStorage(
@@ -301,6 +432,36 @@ function toPortableTokenStorage(
     appendSensitiveNoteFields(payload, account);
   }
 
+  return payload;
+}
+
+function toPortableAgentIdentityStorage(
+  account: CodexAccount,
+  options: CodexExportBuildOptions = {},
+): CodexPortableAgentIdentityStorage {
+  const credentials = buildAgentIdentityCredentials(account);
+  const payload: CodexPortableAgentIdentityStorage = {
+    auth_mode: 'agentIdentity',
+    agent_identity: credentials,
+    account_id: String(credentials.account_id),
+    user_id: String(credentials.chatgpt_user_id),
+    email: String(credentials.email || account.email || ''),
+    type: 'codex',
+  };
+
+  const planType = toStringValue(credentials.plan_type);
+  if (planType) {
+    payload.plan_type = planType;
+  }
+  if (account.account_name?.trim()) {
+    payload.account_name = account.account_name.trim();
+  }
+  if (account.account_structure?.trim()) {
+    payload.account_structure = account.account_structure.trim();
+  }
+  if (options.includeSensitiveNotes) {
+    appendSensitiveNoteFields(payload, account);
+  }
   return payload;
 }
 
@@ -339,6 +500,9 @@ function toCockpitToolsPortableStorage(
   account: CodexAccount,
   options: CodexExportBuildOptions = {},
 ): CodexPortableTokenStorage | JsonRecord {
+  if (hasAgentIdentity(account)) {
+    return toPortableAgentIdentityStorage(account, options);
+  }
   if (isCodexApiKeyAccount(account)) {
     return toPortableApiKeyStorage(account, options);
   }
@@ -359,6 +523,14 @@ export function parseCockpitToolsCodexExport(rawJson: string): CodexAccount[] {
 export function hasCodexExportSensitiveNotes(rawJson: string): boolean {
   try {
     return parseCockpitToolsCodexExport(rawJson).some(hasSensitiveNoteFields);
+  } catch {
+    return false;
+  }
+}
+
+export function hasCodexExportAgentIdentity(rawJson: string): boolean {
+  try {
+    return parseCockpitToolsCodexExport(rawJson).some(hasAgentIdentity);
   } catch {
     return false;
   }
@@ -388,6 +560,10 @@ export function transformCodexExportJson(
       version: 1,
     };
     return JSON.stringify(payload, null, 2);
+  }
+
+  if (accounts.some(hasAgentIdentity)) {
+    throw new Error('CPA format does not support Codex Agent Identity accounts');
   }
 
   const cpaPayload = accounts.map((account) => toPortableTokenStorage(account, options));

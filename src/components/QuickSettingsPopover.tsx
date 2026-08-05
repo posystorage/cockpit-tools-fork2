@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
-import { Settings, RefreshCw, FolderOpen, Zap, X } from 'lucide-react';
+import { Settings, RefreshCw, FolderOpen, Gauge, Terminal, Zap, X, EyeOff } from 'lucide-react';
 import { useEscClose } from '../hooks/useEscClose';
 import * as accountService from '../services/accountService';
 import * as codexService from '../services/codexService';
@@ -43,6 +43,7 @@ import {
   loadCurrentAccountRefreshMinutesMap,
   saveCurrentAccountRefreshMinutesMap,
 } from '../utils/currentAccountRefresh';
+import { setClaudeQuotaDisplayRemainingEnabled } from '../utils/claudeQuotaDisplayPreference';
 import type { Account } from '../types/account';
 import type { CodexAccount, CodexQuickConfig } from '../types/codex';
 import { getDisplayGroups, type DisplayGroup } from '../services/groupService';
@@ -97,18 +98,25 @@ interface GeneralConfig {
   kiro_app_path: string;
   cursor_app_path: string;
   codebuddy_app_path: string;
+  codebuddy_share_sessions_on_switch: boolean;
   codebuddy_cn_app_path: string;
+  codebuddy_cn_share_sessions_on_switch: boolean;
   qoder_app_path: string;
   zcode_app_path: string;
   trae_app_path: string;
   trae_solo_app_path: string;
   trae_cn_app_path: string;
   trae_solo_cn_app_path: string;
+  trae_share_sessions_on_switch: boolean;
+  trae_solo_share_sessions_on_switch: boolean;
+  trae_cn_share_sessions_on_switch: boolean;
+  trae_solo_cn_share_sessions_on_switch: boolean;
   trae_app_scan_roots: string;
   trae_solo_app_scan_roots: string;
   trae_cn_app_scan_roots: string;
   trae_solo_cn_app_scan_roots: string;
   workbuddy_app_path: string;
+  workbuddy_share_sessions_on_switch: boolean;
   zed_app_path: string;
   opencode_sync_on_switch: boolean;
   opencode_auth_overwrite_on_switch: boolean;
@@ -121,6 +129,7 @@ interface GeneralConfig {
   antigravity_launch_on_switch: boolean;
   codex_restart_specified_app_on_switch: boolean;
   codex_local_access_entry_visible: boolean;
+  codex_hide_relay_quota?: boolean;
   antigravity_dual_switch_no_restart_enabled: boolean;
   auto_switch_enabled: boolean;
   auto_switch_threshold: number;
@@ -153,6 +162,7 @@ interface GeneralConfig {
   grok_quota_alert_threshold: number;
   claude_quota_alert_enabled: boolean;
   claude_quota_alert_threshold: number;
+  claude_quota_display_remaining?: boolean;
   codebuddy_quota_alert_enabled: boolean;
   codebuddy_quota_alert_threshold: number;
   codebuddy_cn_quota_alert_enabled: boolean;
@@ -907,6 +917,9 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
       }
       configRef.current = cfg;
       setConfig(cfg);
+      setClaudeQuotaDisplayRemainingEnabled(
+        Boolean(cfg.claude_quota_display_remaining),
+      );
       setAutoSwitchDisplayGroups(groups);
       setAntigravityAccounts(nextAntigravityAccounts || []);
       setAntigravityAccountGroups(nextAntigravityGroups || []);
@@ -1140,6 +1153,38 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
       }
     })();
     return `${platformLabel} ${t('nav.settings', '设置')}`;
+  };
+
+  const getSessionSharingPlatformLabel = () => {
+    switch (type) {
+      case 'codebuddy_cn':
+        return 'CodeBuddy CN';
+      case 'trae':
+        return 'Trae';
+      case 'trae_solo':
+        return 'TRAE SOLO';
+      case 'trae_cn':
+        return 'Trae CN';
+      case 'trae_solo_cn':
+        return 'TRAE SOLO CN';
+      default:
+        return '';
+    }
+  };
+
+  const getSessionSharingEnabled = () => {
+    if (!config) return false;
+    // Trae-series session sharing is disabled this release.
+    if (type === 'codebuddy_cn') {
+      return config.codebuddy_cn_share_sessions_on_switch ?? false;
+    }
+    return false;
+  };
+
+  const saveSessionSharingEnabled = (enabled: boolean) => {
+    if (type === 'codebuddy_cn') {
+      saveConfig({ codebuddy_cn_share_sessions_on_switch: enabled });
+    }
   };
 
   const getRefreshKey = (): keyof GeneralConfig => {
@@ -1969,6 +2014,7 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
                 </div>
                 <div className="qs-row" style={{ marginTop: 8 }}>
                   <div className="qs-row-label">
+                    <Gauge size={15} />
                     <span>
                       {t(
                         'settings.general.codexAppUiInjection',
@@ -2001,6 +2047,7 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
                   <>
                     <div className="qs-row" style={{ marginTop: 8 }}>
                       <div className="qs-row-label">
+                        <Terminal size={15} />
                         <span>{t('settings.general.codexSyncWsl', '同步 Codex 到 WSL')}</span>
                       </div>
                       <div className="qs-row-control">
@@ -2041,6 +2088,37 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
                   </>
                 )}
                 <CodexSshSyncSettingsControl variant="quick" />
+                <div className="qs-row" style={{ marginTop: 8 }}>
+                  <div className="qs-row-label">
+                    <EyeOff size={15} />
+                    <span>
+                      {t(
+                        'settings.general.codexHideRelayQuota',
+                        '隐藏中转站额度',
+                      )}
+                    </span>
+                  </div>
+                  <div className="qs-row-control">
+                    <label className="qs-switch">
+                      <input
+                        type="checkbox"
+                        checked={config.codex_hide_relay_quota ?? false}
+                        onChange={(e) =>
+                          saveConfig({
+                            codex_hide_relay_quota: e.target.checked,
+                          })
+                        }
+                      />
+                      <span className="qs-switch-slider"></span>
+                    </label>
+                  </div>
+                </div>
+                <div className="qs-hint">
+                  {t(
+                    'settings.general.codexHideRelayQuotaDesc',
+                    '开启后，Codex 账号总览隐藏中转 / New API 类额度面板，减轻列表重叠与视觉干扰。',
+                  )}
+                </div>
               </div>
             )}
 
@@ -2391,6 +2469,92 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
                         </div>
                       </div>
                     )}
+              </div>
+            )}
+
+            {type === 'codebuddy' && (
+              <div className="qs-section">
+                <div className="qs-row qs-row--top">
+                  <div className="qs-row-label">
+                    <Zap size={15} />
+                    <span>{t('settings.general.codebuddyShareSessionsOnSwitch')}</span>
+                  </div>
+                  <div className="qs-row-control">
+                    <label className="qs-switch">
+                      <input
+                        type="checkbox"
+                        checked={config.codebuddy_share_sessions_on_switch ?? false}
+                        onChange={(event) =>
+                          saveConfig({
+                            codebuddy_share_sessions_on_switch: event.target.checked,
+                          })
+                        }
+                      />
+                      <span className="qs-switch-slider"></span>
+                    </label>
+                  </div>
+                </div>
+                <div className="qs-hint">
+                  {t('settings.general.codebuddyShareSessionsOnSwitchDesc')}
+                </div>
+              </div>
+            )}
+
+            {type === 'codebuddy_cn' && (
+              <div className="qs-section">
+                <div className="qs-row qs-row--top">
+                  <div className="qs-row-label">
+                    <Zap size={15} />
+                    <span>
+                      {t('common.sessionSharing.title', {
+                        platform: getSessionSharingPlatformLabel(),
+                      })}
+                    </span>
+                  </div>
+                  <div className="qs-row-control">
+                    <label className="qs-switch">
+                      <input
+                        type="checkbox"
+                        checked={getSessionSharingEnabled()}
+                        onChange={(event) => saveSessionSharingEnabled(event.target.checked)}
+                      />
+                      <span className="qs-switch-slider"></span>
+                    </label>
+                  </div>
+                </div>
+                <div className="qs-hint">
+                  {t('common.sessionSharing.fullDesc', {
+                    platform: getSessionSharingPlatformLabel(),
+                  })}
+                </div>
+              </div>
+            )}
+
+            {type === 'workbuddy' && (
+              <div className="qs-section">
+                <div className="qs-row qs-row--top">
+                  <div className="qs-row-label">
+                    <Zap size={15} />
+                    <span>{t('settings.general.workbuddyShareSessionsOnSwitch')}</span>
+                  </div>
+                  <div className="qs-row-control">
+                    <label className="qs-switch">
+                      <input
+                        type="checkbox"
+                        checked={config.workbuddy_share_sessions_on_switch ?? false}
+                        onChange={(event) =>
+                          saveConfig({
+                            workbuddy_share_sessions_on_switch: event.target.checked,
+                          })
+                        }
+                      />
+                      <span className="qs-switch-slider"></span>
+                    </label>
+                  </div>
+                </div>
+                <div className="qs-hint">
+                  {t('settings.general.workbuddyShareSessionsOnSwitchDesc')}
+                </div>
               </div>
             )}
 
@@ -3289,6 +3453,52 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
                   <span>{t('quickSettings.quotaAlert.enable', '超额预警')}</span>
                 </div>
                 {renderQuotaAlertControls()}
+              </div>
+            )}
+
+            {type === 'claude' && config && (
+              <div className="qs-section">
+                <div className="qs-section-header">
+                  <Zap size={15} />
+                  <span>
+                    {t(
+                      'settings.general.claudeQuotaDisplayRemaining',
+                      'Claude 额度显示剩余%',
+                    )}
+                  </span>
+                </div>
+                <div className="qs-row">
+                  <div className="qs-row-label">
+                    <span>
+                      {t(
+                        'settings.general.claudeQuotaDisplayRemaining',
+                        'Claude 额度显示剩余%',
+                      )}
+                    </span>
+                  </div>
+                  <div className="qs-row-control">
+                    <label className="qs-switch">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(config.claude_quota_display_remaining)}
+                        onChange={(e) => {
+                          const enabled = e.target.checked;
+                          setClaudeQuotaDisplayRemainingEnabled(enabled);
+                          void saveConfig({
+                            claude_quota_display_remaining: enabled,
+                          });
+                        }}
+                      />
+                      <span className="qs-switch-slider"></span>
+                    </label>
+                  </div>
+                </div>
+                <div className="qs-hint">
+                  {t(
+                    'settings.general.claudeQuotaDisplayRemainingDesc',
+                    '默认显示已用百分比；开启后改为显示剩余百分比。自动切号与预警仍按已用比例计算。',
+                  )}
+                </div>
               </div>
             )}
           </div>

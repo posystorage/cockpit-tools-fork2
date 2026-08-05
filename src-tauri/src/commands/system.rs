@@ -129,6 +129,12 @@ pub struct GeneralConfig {
     pub hide_dock_icon: bool,
     /// 菜单栏图标样式（macOS）: "template", "color"
     pub tray_icon_style: String,
+    /// 是否在 macOS 菜单栏显示当前账号剩余额度
+    pub menu_bar_quota_enabled: bool,
+    /// 是否显示账号标识前 4 位
+    pub menu_bar_show_account_prefix: bool,
+    /// 菜单栏额度监控平台
+    pub menu_bar_quota_platform: String,
     /// 是否在启动时显示悬浮卡片
     pub floating_card_show_on_startup: bool,
     /// 是否在启动后自动最小化主窗口
@@ -179,8 +185,12 @@ pub struct GeneralConfig {
     pub cursor_app_path: String,
     /// CodeBuddy 启动路径（为空则使用默认路径）
     pub codebuddy_app_path: String,
+    /// 切换 CodeBuddy 账号时是否在本机账号间合并本地会话
+    pub codebuddy_share_sessions_on_switch: bool,
     /// CodeBuddy CN 启动路径（为空则使用默认路径）
     pub codebuddy_cn_app_path: String,
+    /// 切换 CodeBuddy CN 账号时是否在本机账号间合并本地会话
+    pub codebuddy_cn_share_sessions_on_switch: bool,
     /// Qoder 启动路径（为空则使用默认路径）
     pub qoder_app_path: String,
     /// ZCode 启动路径（为空则使用默认路径）
@@ -191,12 +201,18 @@ pub struct GeneralConfig {
     pub trae_solo_app_path: String,
     pub trae_cn_app_path: String,
     pub trae_solo_cn_app_path: String,
+    pub trae_share_sessions_on_switch: bool,
+    pub trae_solo_share_sessions_on_switch: bool,
+    pub trae_cn_share_sessions_on_switch: bool,
+    pub trae_solo_cn_share_sessions_on_switch: bool,
     pub trae_app_scan_roots: String,
     pub trae_solo_app_scan_roots: String,
     pub trae_cn_app_scan_roots: String,
     pub trae_solo_cn_app_scan_roots: String,
     /// WorkBuddy 启动路径（为空则使用默认路径）
     pub workbuddy_app_path: String,
+    /// 切换 WorkBuddy 账号时是否在本机账号间合并本地会话
+    pub workbuddy_share_sessions_on_switch: bool,
     /// 切换 Codex 时是否自动重启 OpenCode
     pub opencode_sync_on_switch: bool,
     /// 切换 Codex 时是否覆盖 OpenCode 登录信息
@@ -218,6 +234,8 @@ pub struct GeneralConfig {
     pub codex_restart_specified_app_on_switch: bool,
     /// 是否在 Codex 总览中显示 API 服务入口
     pub codex_local_access_entry_visible: bool,
+    /// 是否隐藏 Codex 总览中的中转站 / New API 类额度面板
+    pub codex_hide_relay_quota: bool,
     /// 是否显示顶部推广位
     pub top_right_ad_visible: bool,
     /// Antigravity 切号是否启用“本地落盘 + 扩展无感”且不重启
@@ -288,6 +306,8 @@ pub struct GeneralConfig {
     pub claude_quota_alert_enabled: bool,
     /// Claude 配额预警阈值（百分比）
     pub claude_quota_alert_threshold: i32,
+    /// Claude 额度 UI 是否显示「剩余%」（默认 false，保持历史「已用%」）
+    pub claude_quota_display_remaining: bool,
     /// 是否启用 CodeBuddy 配额预警通知
     pub codebuddy_quota_alert_enabled: bool,
     /// CodeBuddy 配额预警阈值（百分比）
@@ -558,6 +578,7 @@ fn read_powershell_json_for_antigravity_exe(
     exe_path: &Path,
     script: &str,
 ) -> Option<serde_json::Value> {
+    let _spawn_guard = modules::app_lifecycle::acquire_process_spawn_guard("PowerShell").ok()?;
     let mut command = std::process::Command::new("powershell");
     {
         use std::os::windows::process::CommandExt;
@@ -1049,6 +1070,9 @@ fn is_general_config_patch_field(key: &str) -> bool {
             | "minimize_behavior"
             | "hide_dock_icon"
             | "tray_icon_style"
+            | "menu_bar_quota_enabled"
+            | "menu_bar_show_account_prefix"
+            | "menu_bar_quota_platform"
             | "floating_card_show_on_startup"
             | "startup_minimized"
             | "remember_main_window_state"
@@ -1074,18 +1098,25 @@ fn is_general_config_patch_field(key: &str) -> bool {
             | "kiro_app_path"
             | "cursor_app_path"
             | "codebuddy_app_path"
+            | "codebuddy_share_sessions_on_switch"
             | "codebuddy_cn_app_path"
+            | "codebuddy_cn_share_sessions_on_switch"
             | "qoder_app_path"
             | "zcode_app_path"
             | "trae_app_path"
             | "trae_solo_app_path"
             | "trae_cn_app_path"
             | "trae_solo_cn_app_path"
+            | "trae_share_sessions_on_switch"
+            | "trae_solo_share_sessions_on_switch"
+            | "trae_cn_share_sessions_on_switch"
+            | "trae_solo_cn_share_sessions_on_switch"
             | "trae_app_scan_roots"
             | "trae_solo_app_scan_roots"
             | "trae_cn_app_scan_roots"
             | "trae_solo_cn_app_scan_roots"
             | "workbuddy_app_path"
+            | "workbuddy_share_sessions_on_switch"
             | "opencode_sync_on_switch"
             | "opencode_auth_overwrite_on_switch"
             | "ghcp_opencode_sync_on_switch"
@@ -1097,6 +1128,7 @@ fn is_general_config_patch_field(key: &str) -> bool {
             | "antigravity_launch_on_switch"
             | "codex_restart_specified_app_on_switch"
             | "codex_local_access_entry_visible"
+            | "codex_hide_relay_quota"
             | "top_right_ad_visible"
             | "antigravity_dual_switch_no_restart_enabled"
             | "auto_switch_enabled"
@@ -1132,6 +1164,7 @@ fn is_general_config_patch_field(key: &str) -> bool {
             | "grok_quota_alert_threshold"
             | "claude_quota_alert_enabled"
             | "claude_quota_alert_threshold"
+            | "claude_quota_display_remaining"
             | "codebuddy_quota_alert_enabled"
             | "codebuddy_quota_alert_threshold"
             | "codebuddy_cn_quota_alert_enabled"
@@ -1202,6 +1235,12 @@ fn apply_general_config_updates(
     }
     if updates.contains_key("theme_color") {
         next.theme_color = config::normalize_theme_color(&next.theme_color);
+    }
+    if updates.contains_key("menu_bar_quota_platform") {
+        let platform = next.menu_bar_quota_platform.trim();
+        next.menu_bar_quota_platform = modules::tray::PlatformId::from_str(platform)
+            .map(|value| value.as_str().to_string())
+            .unwrap_or_else(|| "codex".to_string());
     }
     if updates.contains_key("webdav_allowed_domains") {
         next.webdav_allowed_domains = next
@@ -2380,7 +2419,7 @@ pub async fn get_available_terminals() -> Result<Vec<String>, String> {
     #[cfg(target_os = "windows")]
     {
         // Windows 下检查可执行文件是否在 PATH 中
-        let terminals = ["cmd", "powershell", "pwsh", "wt"];
+        let terminals = ["cmd", "PowerShell", "pwsh", "wt"];
         for name in terminals {
             if is_command_available(name) {
                 available.push(name.to_string());
@@ -2519,6 +2558,9 @@ pub fn get_general_config(app: tauri::AppHandle) -> Result<GeneralConfig, String
         minimize_behavior: minimize_behavior_str.to_string(),
         hide_dock_icon: user_config.hide_dock_icon,
         tray_icon_style: user_config.tray_icon_style.as_str().to_string(),
+        menu_bar_quota_enabled: user_config.menu_bar_quota_enabled,
+        menu_bar_show_account_prefix: user_config.menu_bar_show_account_prefix,
+        menu_bar_quota_platform: user_config.menu_bar_quota_platform,
         floating_card_show_on_startup: user_config.floating_card_show_on_startup,
         startup_minimized: user_config.startup_minimized,
         remember_main_window_state: user_config.remember_main_window_state,
@@ -2570,9 +2612,11 @@ pub fn get_general_config(app: tauri::AppHandle) -> Result<GeneralConfig, String
         codebuddy_app_path: modules::process::normalize_windows_user_facing_path(
             &user_config.codebuddy_app_path,
         ),
+        codebuddy_share_sessions_on_switch: user_config.codebuddy_share_sessions_on_switch,
         codebuddy_cn_app_path: modules::process::normalize_windows_user_facing_path(
             &user_config.codebuddy_cn_app_path,
         ),
+        codebuddy_cn_share_sessions_on_switch: user_config.codebuddy_cn_share_sessions_on_switch,
         qoder_app_path: modules::process::normalize_windows_user_facing_path(
             &user_config.qoder_app_path,
         ),
@@ -2591,6 +2635,10 @@ pub fn get_general_config(app: tauri::AppHandle) -> Result<GeneralConfig, String
         trae_solo_cn_app_path: modules::process::normalize_windows_user_facing_path(
             &user_config.trae_solo_cn_app_path,
         ),
+        trae_share_sessions_on_switch: user_config.trae_share_sessions_on_switch,
+        trae_solo_share_sessions_on_switch: user_config.trae_solo_share_sessions_on_switch,
+        trae_cn_share_sessions_on_switch: user_config.trae_cn_share_sessions_on_switch,
+        trae_solo_cn_share_sessions_on_switch: user_config.trae_solo_cn_share_sessions_on_switch,
         trae_app_scan_roots: user_config.trae_app_scan_roots,
         trae_solo_app_scan_roots: user_config.trae_solo_app_scan_roots,
         trae_cn_app_scan_roots: user_config.trae_cn_app_scan_roots,
@@ -2598,6 +2646,7 @@ pub fn get_general_config(app: tauri::AppHandle) -> Result<GeneralConfig, String
         workbuddy_app_path: modules::process::normalize_windows_user_facing_path(
             &user_config.workbuddy_app_path,
         ),
+        workbuddy_share_sessions_on_switch: user_config.workbuddy_share_sessions_on_switch,
         opencode_sync_on_switch: user_config.opencode_sync_on_switch,
         opencode_auth_overwrite_on_switch: user_config.opencode_auth_overwrite_on_switch,
         ghcp_opencode_sync_on_switch: user_config.ghcp_opencode_sync_on_switch,
@@ -2609,6 +2658,7 @@ pub fn get_general_config(app: tauri::AppHandle) -> Result<GeneralConfig, String
         antigravity_launch_on_switch: user_config.antigravity_launch_on_switch,
         codex_restart_specified_app_on_switch: user_config.codex_restart_specified_app_on_switch,
         codex_local_access_entry_visible: user_config.codex_local_access_entry_visible,
+        codex_hide_relay_quota: user_config.codex_hide_relay_quota,
         top_right_ad_visible: user_config.top_right_ad_visible,
         antigravity_dual_switch_no_restart_enabled: user_config
             .antigravity_dual_switch_no_restart_enabled,
@@ -2645,6 +2695,7 @@ pub fn get_general_config(app: tauri::AppHandle) -> Result<GeneralConfig, String
         grok_quota_alert_threshold: user_config.grok_quota_alert_threshold,
         claude_quota_alert_enabled: user_config.claude_quota_alert_enabled,
         claude_quota_alert_threshold: user_config.claude_quota_alert_threshold,
+        claude_quota_display_remaining: user_config.claude_quota_display_remaining,
         codebuddy_quota_alert_enabled: user_config.codebuddy_quota_alert_enabled,
         codebuddy_quota_alert_threshold: user_config.codebuddy_quota_alert_threshold,
         codebuddy_cn_quota_alert_enabled: user_config.codebuddy_cn_quota_alert_enabled,
@@ -2731,6 +2782,8 @@ pub fn patch_general_config(
     let mut hide_dock_icon_changed = false;
     #[cfg(target_os = "macos")]
     let mut tray_icon_style_changed = false;
+    #[cfg(target_os = "macos")]
+    let mut menu_bar_quota_changed = false;
 
     let patch_result = config::patch_user_config(|current| {
         let previous_language = current.language.clone();
@@ -2741,6 +2794,12 @@ pub fn patch_general_config(
         let previous_hide_dock_icon = current.hide_dock_icon;
         #[cfg(target_os = "macos")]
         let previous_tray_icon_style = current.tray_icon_style;
+        #[cfg(target_os = "macos")]
+        let previous_menu_bar_quota = (
+            current.menu_bar_quota_enabled,
+            current.menu_bar_show_account_prefix,
+            current.menu_bar_quota_platform.clone(),
+        );
 
         apply_general_config_updates(current, &updates)?;
 
@@ -2755,6 +2814,12 @@ pub fn patch_general_config(
         {
             hide_dock_icon_changed = previous_hide_dock_icon != current.hide_dock_icon;
             tray_icon_style_changed = previous_tray_icon_style != current.tray_icon_style;
+            menu_bar_quota_changed = previous_menu_bar_quota
+                != (
+                    current.menu_bar_quota_enabled,
+                    current.menu_bar_show_account_prefix,
+                    current.menu_bar_quota_platform.clone(),
+                );
         }
         Ok(())
     });
@@ -2807,6 +2872,13 @@ pub fn patch_general_config(
     if tray_icon_style_changed {
         if let Err(err) = modules::tray::apply_tray_icon_style(&app) {
             modules::logger::log_warn(&format!("[Tray] 保存通用设置后应用图标样式失败: {}", err));
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    if menu_bar_quota_changed {
+        if let Err(err) = modules::tray::update_tray_menu(&app) {
+            modules::logger::log_warn(&format!("[Tray] 保存菜单栏额度设置后刷新失败: {}", err));
         }
     }
 
@@ -2964,6 +3036,7 @@ pub fn save_general_config(
     antigravity_launch_on_switch: Option<bool>,
     codex_restart_specified_app_on_switch: Option<bool>,
     codex_local_access_entry_visible: Option<bool>,
+    codex_hide_relay_quota: Option<bool>,
     top_right_ad_visible: Option<bool>,
     antigravity_dual_switch_no_restart_enabled: Option<bool>,
     auto_switch_enabled: Option<bool>,
@@ -2999,6 +3072,7 @@ pub fn save_general_config(
     grok_quota_alert_threshold: Option<i32>,
     claude_quota_alert_enabled: Option<bool>,
     claude_quota_alert_threshold: Option<i32>,
+    claude_quota_display_remaining: Option<bool>,
     codebuddy_quota_alert_enabled: Option<bool>,
     codebuddy_quota_alert_threshold: Option<i32>,
     codebuddy_cn_quota_alert_enabled: Option<bool>,
@@ -3335,6 +3409,9 @@ pub fn save_general_config(
         if let Some(value) = codex_local_access_entry_visible {
             current.codex_local_access_entry_visible = value;
         }
+        if let Some(value) = codex_hide_relay_quota {
+            current.codex_hide_relay_quota = value;
+        }
         if let Some(value) = top_right_ad_visible {
             current.top_right_ad_visible = value;
         }
@@ -3445,6 +3522,9 @@ pub fn save_general_config(
         }
         if let Some(value) = claude_quota_alert_threshold {
             current.claude_quota_alert_threshold = value;
+        }
+        if let Some(value) = claude_quota_display_remaining {
+            current.claude_quota_display_remaining = value;
         }
         if let Some(value) = codebuddy_quota_alert_enabled {
             current.codebuddy_quota_alert_enabled = value;
@@ -4072,6 +4152,34 @@ mod tests {
 
         assert_eq!(config.theme, "light");
         assert_eq!(config.auto_refresh_minutes, 10);
+    }
+
+    #[test]
+    fn general_config_patch_persists_session_sharing_switches() {
+        let mut config = UserConfig::default();
+        let updates = serde_json::json!({
+            "codebuddy_share_sessions_on_switch": true,
+            "codebuddy_cn_share_sessions_on_switch": true,
+            "trae_share_sessions_on_switch": true,
+            "trae_solo_share_sessions_on_switch": true,
+            "trae_cn_share_sessions_on_switch": true,
+            "trae_solo_cn_share_sessions_on_switch": true,
+            "workbuddy_share_sessions_on_switch": true,
+        })
+        .as_object()
+        .expect("patch should be an object")
+        .clone();
+
+        apply_general_config_updates(&mut config, &updates)
+            .expect("session sharing patch should succeed");
+
+        assert!(config.codebuddy_share_sessions_on_switch);
+        assert!(config.codebuddy_cn_share_sessions_on_switch);
+        assert!(config.trae_share_sessions_on_switch);
+        assert!(config.trae_solo_share_sessions_on_switch);
+        assert!(config.trae_cn_share_sessions_on_switch);
+        assert!(config.trae_solo_cn_share_sessions_on_switch);
+        assert!(config.workbuddy_share_sessions_on_switch);
     }
 
     #[test]

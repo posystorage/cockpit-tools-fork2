@@ -43,6 +43,7 @@ export interface CodexAccount {
   auth_file_plan_type?: string;
   account_id?: string;
   organization_id?: string;
+  agent_identity?: CodexAgentIdentity;
   account_name?: string;
   account_structure?: string;
   account_note?: string;
@@ -71,6 +72,7 @@ export interface CodexAccountNoteUpdate {
   accountPassword?: string;
   phoneNumber?: string;
   mailUrl?: string;
+  chatgptAccountId?: string;
 }
 
 export interface CodexBatchDeleteError {
@@ -104,6 +106,26 @@ export interface CodexTokens {
   id_token: string;
   access_token: string;
   refresh_token?: string;
+}
+
+export interface CodexAgentIdentity {
+  agent_runtime_id: string;
+  agent_private_key: string;
+  task_id?: string;
+  account_id: string;
+  chatgpt_user_id: string;
+  email?: string;
+  plan_type?: string;
+  chatgpt_account_is_fedramp?: boolean;
+}
+
+export function isCodexAgentIdentityAccount(account?: CodexAccount | null): boolean {
+  return Boolean(account?.agent_identity?.agent_runtime_id?.trim());
+}
+
+/** ChatGPT Web Session 导入账号：仅支持查看额度，不可启动/切号/加入 API。 */
+export function isCodexWebSessionAccount(account?: CodexAccount | null): boolean {
+  return (account?.token_source_mode || "").trim() === "chatgpt_web_session";
 }
 
 /** Codex 配额数据 */
@@ -754,6 +776,7 @@ export function isCodexPendingOAuthAccount(account?: CodexAccount | null): boole
     return true;
   }
   if (isCodexApiKeyAccount(account)) return false;
+  if (isCodexAgentIdentityAccount(account)) return false;
   const hasToken =
     Boolean((account.tokens?.access_token || "").trim()) ||
     Boolean((account.tokens?.refresh_token || "").trim()) ||
@@ -1083,7 +1106,9 @@ export function getCodexSubscriptionPresentation(
   };
 }
 
-function isCodexOpaqueAccessTokenOnlyAccount(account: CodexAccount): boolean {
+export function isCodexOpaqueAccessTokenOnlyAccount(
+  account: CodexAccount,
+): boolean {
   const accessToken = account.tokens?.access_token?.trim() || "";
   const refreshToken = account.tokens?.refresh_token?.trim() || "";
   return accessToken.startsWith("at-") && !refreshToken;

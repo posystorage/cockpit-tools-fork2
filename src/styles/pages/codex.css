@@ -1051,6 +1051,29 @@
   white-space: nowrap;
 }
 
+.codex-local-access-member-priority {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 20px;
+  height: 14px;
+  padding: 0 3px;
+  border: 1px solid rgba(14, 165, 233, 0.24);
+  border-radius: 4px;
+  background: rgba(14, 165, 233, 0.08);
+  color: #0369a1;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.codex-local-access-member-priority.is-lowest {
+  border-color: rgba(245, 158, 11, 0.28);
+  background: rgba(245, 158, 11, 0.1);
+  color: #a16207;
+}
+
 .codex-local-access-member-activity {
   display: inline-flex;
   align-items: center;
@@ -1788,6 +1811,18 @@
 [data-theme="dark"] .codex-local-access-member-activity.is-recent {
   background: rgba(56, 189, 248, 0.18);
   color: #7dd3fc;
+}
+
+[data-theme="dark"] .codex-local-access-member-priority {
+  border-color: rgba(56, 189, 248, 0.28);
+  background: rgba(14, 165, 233, 0.16);
+  color: #7dd3fc;
+}
+
+[data-theme="dark"] .codex-local-access-member-priority.is-lowest {
+  border-color: rgba(251, 191, 36, 0.3);
+  background: rgba(245, 158, 11, 0.16);
+  color: #fcd34d;
 }
 
 [data-theme="dark"] .codex-local-access-stats-empty,
@@ -6158,6 +6193,13 @@
   line-height: 1.35;
 }
 
+.codex-account-note-field-hint {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
 .codex-account-note-mfa-picker {
   display: flex;
   flex-direction: column;
@@ -10512,6 +10554,30 @@
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.55;
+}
+
+.codex-provider-batch-test-model {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+
+.codex-provider-batch-test-model > label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.codex-provider-batch-test-model-hint {
+  margin: 0;
+  padding: 0 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  word-break: normal;
+  overflow-wrap: anywhere;
 }
 
 .codex-provider-batch-test-search {
