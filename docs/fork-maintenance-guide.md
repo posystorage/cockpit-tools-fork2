@@ -70,7 +70,7 @@
 - 当前机器没有 Go，`TestRecordingSelectorRecordsSessionAffinityCacheHit`、模型排除与优先级 selector 等 Sidecar Go 测试未运行；源码复核确认 affinity 首次选择和 cache hit 的测试仍断言每请求恰好一个事件。发布 CI 必须使用 Go 真实编译 Sidecar。
 - `git diff --check` 仅报告上游 `WorkbuddyAutoCheckinConfigModal.tsx` 和 `codebuddy.css` 的 EOF 空行，未格式化无关上游文件。
 
-真实合并提交哈希在创建 merge commit 后补入本节，父节点应为 fork 施工文档提交 `cdea997e` 与上游 `e1ef55ce`。
+真实合并提交为 `1dc9fedd`，父节点是 fork 施工文档提交 `cdea997e` 与上游 `e1ef55ce`。
 
 ### 2.2 `v1.3.10` 已验证基线（2026-07-20）
 
