@@ -23,7 +23,39 @@
 
 ## 2. 当前基线与历史锚点
 
-### 2.1 `v1.3.10` 已验证基线（2026-07-20）
+### 2.1 `v1.3.16` 升级施工基线（2026-08-06）
+
+本轮从已验证 fork `1.3.10b2`（`ee49a89f`）升级到上游 `v1.3.16`（release commit `e1ef55ce`），升级分支为 `codex/upgrade-upstream-v1.3.16`。合并前 release 链与锚点如下：
+
+- `v1.3.11`：`6d77e752`，Agent Identity、客户端额度浮层刷新/健康信息、CLI 启动弹框、会话亲和 TTL 和后台准备进度。
+- `v1.3.12`：`2f57be16`，修复同 workspace 多 Agent Identity 用户覆盖。
+- `v1.3.13`：`e7264707`，修复 K12 Agent Identity 官方唤醒 Assertion。
+- `v1.3.14`：`6c3e11af`，Web Session Agent Identity 与自定义 Responses API Key 准入修复；最终行为以后续版本为准。
+- `v1.3.15`：`939d5d72`，Web Session 改为仅查看额度，新增最高/最低使用优先级、逐账号模型排除、New API billing 额度回退、Multi-Agent V2、请求日志 reasoning/service tier、隐藏中转额度等。
+- `v1.3.16`：`e1ef55ce`，Workspace ID、Sub2API 导出、Responses namespace/加密内容重试、429 映射、工具结果图片转换和 Team/Workspace 订阅匹配修复。
+
+`v1.3.10..v1.3.16` 共 37 个提交、209 个文件，净变化为 30991 行新增、3832 行删除。`git merge-tree` 预演确认只有两个文本冲突文件和一个删除/修改冲突：
+
+- `.github/workflows/release.yml`：约 12 个冲突块。吸收上游缓存、并发保护和 action 更新，继续保留 fork 数字草稿标签、Windows 构建范围、签名、release notes 与禁用非目标平台的策略。
+- `src-tauri/src/modules/codex_local_access.rs`：约 5 个冲突块，集中在模型 import、state snapshot 和测试 import。合并上游 preparing/refreshing、reasoning/token breakdown、Agent Identity 和使用优先级字段，同时保留 fork 的 `runningRequests/accountActivity` 及 selected/finish 生命周期。
+- `Casks/cockpit-tools.rb`：fork 删除、上游修改；继续保持删除。
+
+合并前语义审计确认以下非文本冲突必须人工处理：
+
+1. Sidecar 上游仍从 `cockpitSelector.Pick()` 直接发送 `auth_selected`，无法覆盖 session affinity cache hit。继续以 fork 的最外层 `recordingSelector` 作为唯一发送者，并让它包住上游新增的模型排除、最高/最低优先级、额度保留、图片和 affinity 选择器；每个请求只能发送一次。
+2. 普通 Codex 页完整成员滚动预览可自动合并，但“移出账号”保存必须同步保留剩余账号的 `isPreferred`、`isBackup` 和现有 session affinity/TTL，不能因旧调用参数清空新配置。
+3. 上游没有修改 `codex_query_model_provider_usage` 主体；fork 的 Sub2API `/usage`/`/v1/usage` 回退、数字字符串解析和非有限数拒绝应自动保留。接受上游 `resolveNewApiQuotaSnapshot()`，作为 New API billing/token allocation 展示回退。
+4. 上游最终启用了 `announcements.json` 顶部推广数据，但 fork 继续依靠空公告 URL、空远端配置和 `ADS_AND_SPONSORS_DISABLED` 的运行时硬关闭；不因原始数据字符串判定去广告回归。
+
+用户已批准本轮产品裁决：
+
+1. Web Session 跟随上游最终行为：仅查看额度，不得切号、加入 API 服务或作为 OAuth 绑定账号。
+2. “隐藏中转站额度”不影响普通 Codex API 服务滚动成员列表；该列表继续显示调度观测所需额度。
+3. 滚动列表继续按实时“调度中 -> 刚调度 -> 其他”排序，不按静态最高/最低优先级重排；账号行增加紧凑的最高/最低标记。
+
+本节在合并和验证完成后补充真实合并提交、最终冲突裁决、测试结果和已知限制。
+
+### 2.2 `v1.3.10` 已验证基线（2026-07-20）
 
 本轮从已验证 fork `1.3.6b2`（`3be46a02`）升级到上游 `v1.3.10`，合并提交为 `50cf4c74`，父节点是 fork `3be46a02` 与上游 release commit `b331b093`。升级分支为 `codex/upgrade-upstream-v1.3.10`。release 链如下：
 
@@ -58,7 +90,7 @@
 - Rust `cockpit-tools` lib 共 673 项：`671 passed / 0 failed / 2 ignored`。另行复跑调度活动 2 项、OAuth 实际窗口和周窗口 Sidecar 映射各 1 项、Sub2API URL/数值各 1 项、配置接管 4 项、异步删除 1 项，全部通过。
 - 本机没有 Go，`TestRecordingSelectorRecordsSessionAffinityCacheHit` 等 Sidecar Go 测试未执行；发布 CI 必须真实编译并运行 Go 测试。纯源码复核确认根选择器不再直接发送事件，外层记录器测试仍验证首次选择和 affinity cache hit 各发送一次。
 
-### 2.2 `v1.3.6` 已验证基线（2026-07-16）
+### 2.3 `v1.3.6` 已验证基线（2026-07-16）
 
 本轮从已验证 fork HEAD `6f84cae8` 升级到上游 `v1.3.6`。上游没有发布 `v1.3.3` tag；`release: v1.3.3` 提交包含在后续 `v1.3.4` 中。release 链如下：
 
@@ -99,7 +131,7 @@
 
 Windows 本地运行 Rust 测试前必须为每个测试进程设置独立的 `COCKPIT_TOOLS_DATA_DIR`。只设置 `HOME`、`CODEX_HOME` 或 `COCKPIT_TOOLS_TEST_DATA_DIR` 不足以隔离 `cockpit-core`；上游部分测试会访问真实 `~/.antigravity_cockpit`。测试失败后也不能直接删除真实目录，应先根据测试前备份、明确的测试账号 ID/邮箱和时间戳制定最小恢复方案。
 
-### 2.3 `v1.3.2` 上一已验证基线
+### 2.4 `v1.3.2` 上一已验证基线
 
 当前已验证的同步状态（2026-07-15）：
 
