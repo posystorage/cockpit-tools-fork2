@@ -33,6 +33,14 @@ describe("fork draft release workflow", () => {
     );
   });
 
+  it("combines every upstream changelog from 1.3.16 through 1.3.21", () => {
+    assert.ok(
+      workflowSource.includes(
+        'RELEASE_VERSIONS=("1.3.21" "1.3.20" "1.3.19" "1.3.18" "1.3.17" "1.3.16")',
+      ),
+    );
+  });
+
   it("builds Windows only and leaves finalization disabled", () => {
     for (const job of [
       "build-macos-aarch64",
