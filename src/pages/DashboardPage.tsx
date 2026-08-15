@@ -71,6 +71,7 @@ import {
   isCodexChatCompletionsApiKeyAccount,
   isCodexNewApiAccount,
 } from '../types/codex';
+import { isDeepSeekAccount } from '../utils/codexDeepSeekAccess';
 import './DashboardPage.css';
 import { RobotIcon } from '../components/icons/RobotIcon';
 import { CodexIcon } from '../components/icons/CodexIcon';
@@ -191,9 +192,13 @@ function toFiniteNumber(value: number | null | undefined): number | null {
 
 function resolveDashboardCodexApiUsageMode(
   summary?: ModelProviderUsageSummary | null,
-): 'new_api' | 'sub2api' | null {
+): 'new_api' | 'sub2api' | 'deepseek' | null {
   if (!summary) return null;
-  if (summary.mode === 'new_api' || summary.mode === 'sub2api') {
+  if (
+    summary.mode === 'new_api' ||
+    summary.mode === 'sub2api' ||
+    summary.mode === 'deepseek'
+  ) {
     return summary.mode;
   }
   if (
@@ -861,7 +866,12 @@ export function DashboardPage({
     account: CodexAccount,
     options?: { force?: boolean },
   ) => {
-    if (isCodexChatCompletionsApiKeyAccount(account)) return;
+    if (
+      isCodexChatCompletionsApiKeyAccount(account) &&
+      !isDeepSeekAccount(account)
+    ) {
+      return;
+    }
     const apiKey = (account.openai_api_key || '').trim();
     const baseUrl = (account.api_base_url || '').trim();
     if (!apiKey || !baseUrl) return;
@@ -1582,7 +1592,9 @@ export function DashboardPage({
 
     const others = codexAccounts.filter((a) => {
       if (a.id === currentId) return false;
-      if (isCodexChatCompletionsApiKeyAccount(a)) return false;
+      if (isCodexChatCompletionsApiKeyAccount(a) && !isDeepSeekAccount(a)) {
+        return false;
+      }
       if (!a.quota) return false;
       return true;
     });
@@ -1600,7 +1612,13 @@ export function DashboardPage({
   const codexCardRefreshTargets = useMemo(() => {
     const deduped = new Map<string, CodexAccount>();
     [codexCurrentAccount, codexRecommended].forEach((account) => {
-      if (!account || isCodexChatCompletionsApiKeyAccount(account)) return;
+      if (
+        !account ||
+        (isCodexChatCompletionsApiKeyAccount(account) &&
+          !isDeepSeekAccount(account))
+      ) {
+        return;
+      }
       deduped.set(account.id, account);
     });
     return Array.from(deduped.values());
@@ -2282,6 +2300,20 @@ export function DashboardPage({
       const usageState = codexApiUsageMap[account.id];
       const usageSummary = usageState?.summary;
       const usageMode = resolveDashboardCodexApiUsageMode(usageSummary);
+      const formatMiniUsageMoney = (
+        value?: number | null,
+        unit?: string | null,
+      ) => {
+        if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
+        const normalized = (unit || 'CNY').trim();
+        if (normalized === 'USD') return `$${value.toFixed(2)}`;
+        if (normalized === 'CNY') return `¥${value.toFixed(2)}`;
+        return `${value.toFixed(2)} ${normalized}`;
+      };
+      const deepSeekDetailValue = (key: string) => {
+        const item = usageSummary?.details?.find((detail) => detail.key === key);
+        return item?.value || '-';
+      };
       const newApiQuota = resolveNewApiQuotaSnapshot(usageSummary);
       const newApiGranted = newApiQuota.granted;
       const newApiAvailable = newApiQuota.available;
@@ -2307,7 +2339,7 @@ export function DashboardPage({
             </div>
           </div>
 
-          {!isChatCompletionsApiKey && (
+          {(!isChatCompletionsApiKey || isDeepSeekAccount(account)) && (
             <div className="account-mini-quotas codex-api-mini-quotas">
               {usageMode === 'new_api' ? (
                 <div className="mini-quota-row-stacked">
@@ -2359,6 +2391,21 @@ export function DashboardPage({
                     <strong>{typeof usageSummary?.todayTotalTokens === 'number' ? usageSummary.todayTotalTokens.toLocaleString('en-US') : '-'}</strong>
                   </div>
                 </div>
+              ) : usageMode === 'deepseek' ? (
+                <div className="codex-api-mini-stats">
+                  <div className="codex-api-mini-stat">
+                    <span>{t('codex.modelProviders.usage.fields.totalBalance', '总余额')}</span>
+                    <strong>{formatMiniUsageMoney(usageSummary?.balance, usageSummary?.unit)}</strong>
+                  </div>
+                  <div className="codex-api-mini-stat">
+                    <span>{t('codex.modelProviders.usage.fields.grantedBalance', '赠金余额')}</span>
+                    <strong>{deepSeekDetailValue('grantedBalance')}</strong>
+                  </div>
+                  <div className="codex-api-mini-stat">
+                    <span>{t('codex.modelProviders.usage.fields.toppedUpBalance', '充值余额')}</span>
+                    <strong>{deepSeekDetailValue('toppedUpBalance')}</strong>
+                  </div>
+                </div>
               ) : (
                 <span className="no-data-text">{t('dashboard.noData', '暂无数据')}</span>
               )}
@@ -2366,7 +2413,7 @@ export function DashboardPage({
           )}
 
           <div className="account-mini-actions icon-only-row">
-            {!isChatCompletionsApiKey && (
+            {(!isChatCompletionsApiKey || isDeepSeekAccount(account)) && (
               <button
                 className="mini-icon-btn"
                 onClick={() => void refreshCodexApiUsage(account, { force: true })}
@@ -2406,7 +2453,8 @@ export function DashboardPage({
         Boolean(account) &&
         isCodexApiKeyAccount(account!) &&
         !isCodexNewApiAccount(account!) &&
-        !isCodexChatCompletionsApiKeyAccount(account!),
+        (!isCodexChatCompletionsApiKeyAccount(account!) ||
+          isDeepSeekAccount(account!)),
     );
     targetAccounts.forEach((account) => {
       const usageState = codexApiUsageMap[account.id];

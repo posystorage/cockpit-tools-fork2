@@ -2,12 +2,15 @@ import { invoke } from '@tauri-apps/api/core';
 import {
   CodexAccount,
   CodexAccountNoteUpdate,
+  CodexApiModelMapping,
   CodexApiProviderMode,
   CodexAppSpeed,
   CodexAppSpeedConfig,
+  CodexFingerprintMode,
   CodexBatchDeleteJobStatus,
   CodexProviderWireApi,
   CodexQuickConfig,
+  CodexExperimentalModelDefinition,
   CodexQuota,
   CodexResetCreditsSnapshot,
 } from '../types/codex';
@@ -46,10 +49,14 @@ export async function getCodexQuickConfig(): Promise<CodexQuickConfig> {
 export async function saveCodexQuickConfig(
   modelContextWindow?: number,
   autoCompactTokenLimit?: number,
+  experimentalModelCatalogEnabled?: boolean,
+  experimentalModelCatalogModels?: CodexExperimentalModelDefinition[],
 ): Promise<CodexQuickConfig> {
   return await invoke('save_codex_quick_config', {
     modelContextWindow: modelContextWindow ?? null,
     autoCompactTokenLimit: autoCompactTokenLimit ?? null,
+    experimentalModelCatalogEnabled: experimentalModelCatalogEnabled ?? null,
+    experimentalModelCatalogModels: experimentalModelCatalogModels ?? null,
   });
 }
 
@@ -363,6 +370,7 @@ export async function addCodexAccountWithApiKey(
   apiWireApi?: CodexProviderWireApi,
   apiSupportsWebsockets?: boolean,
   apiSyncModelCatalogToCodex?: boolean,
+  apiModelContextWindows?: Record<string, number>,
 ): Promise<CodexAccount> {
   return await invoke('add_codex_account_with_api_key', {
     apiKey,
@@ -378,6 +386,7 @@ export async function addCodexAccountWithApiKey(
     apiModelVisionSupport: apiModelVisionSupport ?? {},
     apiVisionRoutingModel: apiVisionRoutingModel ?? null,
     accountName: accountName ?? null,
+    apiModelContextWindows: apiModelContextWindows ?? null,
   });
 }
 
@@ -399,6 +408,8 @@ export async function updateCodexApiKeyCredentials(
   apiWireApi?: CodexProviderWireApi,
   apiSupportsWebsockets?: boolean,
   apiSyncModelCatalogToCodex?: boolean,
+  accountName?: string,
+  apiModelContextWindows?: Record<string, number>,
 ): Promise<CodexAccount> {
   return await invoke('update_codex_api_key_credentials', {
     accountId,
@@ -414,6 +425,8 @@ export async function updateCodexApiKeyCredentials(
     apiSupportsVision: apiSupportsVision ?? false,
     apiModelVisionSupport: apiModelVisionSupport ?? {},
     apiVisionRoutingModel: apiVisionRoutingModel ?? null,
+    accountName: accountName ?? null,
+    apiModelContextWindows: apiModelContextWindows ?? null,
   });
 }
 
@@ -424,6 +437,7 @@ export async function syncCodexApiKeyProviderAccounts(input: {
   apiProviderId: string;
   apiProviderName: string;
   apiModelCatalog?: string[];
+  apiModelContextWindows?: Record<string, number>;
   apiWireApi: CodexProviderWireApi;
   apiSupportsWebsockets: boolean;
   apiSupportsVision: boolean;
@@ -437,6 +451,7 @@ export async function syncCodexApiKeyProviderAccounts(input: {
     apiProviderId: input.apiProviderId,
     apiProviderName: input.apiProviderName,
     apiModelCatalog: input.apiModelCatalog ?? null,
+    apiModelContextWindows: input.apiModelContextWindows ?? null,
     apiWireApi: input.apiWireApi,
     apiSupportsWebsockets: input.apiSupportsWebsockets,
     apiSupportsVision: input.apiSupportsVision,
@@ -467,6 +482,37 @@ export async function closeCodexOAuthPort(): Promise<number> {
 
 export async function updateCodexAccountTags(accountId: string, tags: string[]): Promise<CodexAccount> {
   return await invoke('update_codex_account_tags', { accountId, tags });
+}
+
+export async function updateCodexAccountsFingerprintMode(
+  accountIds: string[],
+  mode: CodexFingerprintMode,
+): Promise<CodexAccount[]> {
+  return await invoke('update_codex_accounts_fingerprint_mode', { accountIds, mode });
+}
+
+export async function updateCodexAccountInstanceAccess(
+  accountId: string,
+  accessMode?: string | null,
+  startupModel?: string | null,
+): Promise<CodexAccount> {
+  return await invoke("update_codex_account_instance_access", {
+    accountId,
+    accessMode: accessMode ?? null,
+    startupModel: startupModel ?? null,
+  });
+}
+
+export async function updateCodexAccountApiModelMappings(
+  accountId: string,
+  mappings: CodexApiModelMapping[],
+  apiModelContextWindows?: Record<string, number>,
+): Promise<CodexAccount> {
+  return await invoke('update_codex_account_api_model_mappings', {
+    accountId,
+    mappings,
+    apiModelContextWindows: apiModelContextWindows ?? null,
+  });
 }
 
 export async function updateCodexAccountNote(

@@ -81,28 +81,18 @@ describe("Codex API service member preview", () => {
     );
   });
 
-  it("preserves routing and affinity settings when removing one member", () => {
-    const removeHandler = pageSource.slice(
-      pageSource.indexOf("const handleRemoveLocalAccessAccount"),
-      pageSource.indexOf(
-        "const tierCounts",
-        pageSource.indexOf("const handleRemoveLocalAccessAccount"),
+  it("removes one member through the atomic backend command", () => {
+    assert.equal(
+      pageSource.match(/const handleRemoveLocalAccessAccount = useCallback/g)
+        ?.length,
+      1,
+      "the merge must not leave duplicate removal handlers",
+    );
+    assert.ok(
+      pageSource.includes(
+        "codexLocalAccessService.removeCodexLocalAccessAccount(accountId)",
       ),
-    );
-
-    assert.ok(
-      removeHandler.includes("rule.isPreferred") &&
-        removeHandler.includes("preferredAccountIds,"),
-      "removal should preserve preferred accounts that remain in the pool",
-    );
-    assert.ok(
-      removeHandler.includes(
-        "sessionAffinity: localAccessCollection.sessionAffinity",
-      ) &&
-        removeHandler.includes(
-          "sessionAffinityTtlMs: localAccessCollection.sessionAffinityTtlMs",
-        ),
-      "removal should preserve session affinity configuration",
+      "member removal should use the backend command that updates references atomically",
     );
   });
 });

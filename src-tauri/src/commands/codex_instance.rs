@@ -1079,7 +1079,11 @@ pub async fn codex_get_instance_quick_config(
     instance_id: String,
 ) -> Result<crate::models::codex::CodexQuickConfig, String> {
     let base_dir = resolve_instance_base_dir(instance_id.as_str())?;
-    modules::codex_account::read_quick_config_from_config_toml(&base_dir)
+    tauri::async_runtime::spawn_blocking(move || {
+        modules::codex_account::read_quick_config_from_config_toml(&base_dir)
+    })
+    .await
+    .map_err(|error| format!("读取 Codex 实例快捷配置后台任务失败: {}", error))?
 }
 
 #[tauri::command]
@@ -1087,13 +1091,27 @@ pub async fn codex_save_instance_quick_config(
     instance_id: String,
     model_context_window: Option<i64>,
     auto_compact_token_limit: Option<i64>,
+    experimental_model_catalog_enabled: Option<bool>,
+    experimental_model_catalog_models: Option<
+        Vec<crate::models::codex::CodexExperimentalModelDefinition>,
+    >,
 ) -> Result<crate::models::codex::CodexQuickConfig, String> {
     let base_dir = resolve_instance_base_dir(instance_id.as_str())?;
-    modules::codex_account::save_quick_config_for_base_dir(
-        &base_dir,
-        model_context_window,
-        auto_compact_token_limit,
-    )
+    let saved = tauri::async_runtime::spawn_blocking(move || {
+        let saved = modules::codex_account::save_quick_config_for_base_dir(
+            &base_dir,
+            model_context_window,
+            auto_compact_token_limit,
+            experimental_model_catalog_enabled,
+            experimental_model_catalog_models,
+        )?;
+        modules::codex_local_access::refresh_api_service_experimental_model_ids();
+        Ok::<crate::models::codex::CodexQuickConfig, String>(saved)
+    })
+    .await
+    .map_err(|error| format!("保存 Codex 实例快捷配置后台任务失败: {}", error))??;
+    modules::codex_local_access::trigger_gateway_reload_in_background("实验模型目录已更新");
+    Ok(saved)
 }
 
 #[tauri::command]
@@ -1206,6 +1224,31 @@ pub async fn codex_get_session_token_stats_across_instances(
     session_ids: Vec<String>,
 ) -> Result<Vec<modules::codex_session_manager::CodexSessionTokenStats>, String> {
     modules::codex_session_manager::get_session_token_stats_across_instances(session_ids)
+}
+
+#[tauri::command]
+pub async fn codex_query_session_usage(
+    query: modules::codex_session_usage::CodexSessionUsageQuery,
+) -> Result<modules::codex_session_usage::CodexSessionUsageReport, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        modules::codex_session_usage::query_session_usage(query)
+    })
+    .await
+    .map_err(|error| format!("读取 Codex 会话用量失败: {error}"))?
+}
+
+#[tauri::command]
+pub async fn codex_sync_session_usage(
+    rebuild: Option<bool>,
+    query: Option<modules::codex_session_usage::CodexSessionUsageQuery>,
+) -> Result<modules::codex_session_usage::CodexSessionUsageSyncResult, String> {
+    let rebuild = rebuild.unwrap_or(false);
+    let query = query.unwrap_or_default();
+    tauri::async_runtime::spawn_blocking(move || {
+        modules::codex_session_usage::sync_session_usage(rebuild, query)
+    })
+    .await
+    .map_err(|error| format!("扫描 Codex 会话用量失败: {error}"))?
 }
 
 #[tauri::command]
@@ -1651,10 +1694,9 @@ async fn codex_start_instance_internal(
         }
 
         let extra_args = modules::process::parse_extra_args(&default_settings.extra_args);
-        let injection_enabled = modules::codex_app_injection::enabled_for_app()
-            && modules::codex_app_injection::supports_bind_account(
-                default_bind_account_id.as_deref(),
-            );
+        let injection_enabled = modules::codex_app_injection::should_enable_injection(
+            default_bind_account_id.as_deref(),
+        );
         let injection_plan =
             modules::codex_app_injection::build_launch_args(&extra_args, injection_enabled)?;
         let launch_started = Instant::now();
@@ -1816,8 +1858,8 @@ async fn codex_start_instance_internal(
 
     modules::process::ensure_codex_launch_path_configured()?;
     let extra_args = modules::process::parse_extra_args(&instance.extra_args);
-    let injection_enabled = modules::codex_app_injection::enabled_for_app()
-        && modules::codex_app_injection::supports_bind_account(instance.bind_account_id.as_deref());
+    let injection_enabled =
+        modules::codex_app_injection::should_enable_injection(instance.bind_account_id.as_deref());
     let injection_plan =
         modules::codex_app_injection::build_launch_args(&extra_args, injection_enabled)?;
     let launch_started = Instant::now();

@@ -38,7 +38,15 @@ async fn refresh_account_quota_after_login(account: models::Account) -> models::
 }
 
 #[tauri::command]
-pub async fn start_oauth_login(app_handle: AppHandle) -> Result<models::Account, String> {
+pub async fn start_oauth_login(
+    app_handle: AppHandle,
+    note: Option<String>,
+    two_factor_secret: Option<String>,
+    account_password: Option<String>,
+    phone_number: Option<String>,
+    mail_url: Option<String>,
+    aux_email: Option<String>,
+) -> Result<models::Account, String> {
     modules::logger::log_info("开始 OAuth 授权流程...");
 
     let token_res = modules::oauth_server::start_oauth_flow(app_handle.clone())
@@ -86,7 +94,7 @@ pub async fn start_oauth_login(app_handle: AppHandle) -> Result<models::Account,
     )
     .with_oauth_metadata(token_res.oauth_client_key, token_res.id_token);
 
-    let account = modules::upsert_account(
+    let mut account = modules::upsert_account(
         user_info.email.clone(),
         user_info.get_display_name(),
         token_data,
@@ -96,6 +104,17 @@ pub async fn start_oauth_login(app_handle: AppHandle) -> Result<models::Account,
         e
     })?;
 
+    modules::account::apply_account_note_after_oauth(
+        &mut account,
+        modules::account::AccountNoteUpdate {
+            note,
+            two_factor_secret,
+            account_password,
+            phone_number,
+            mail_url,
+            aux_email,
+        },
+    )?;
     let account = refresh_account_quota_after_login(account).await;
 
     modules::logger::log_info(&format!("账号添加成功: {}", account.email));
@@ -107,7 +126,15 @@ pub async fn start_oauth_login(app_handle: AppHandle) -> Result<models::Account,
 }
 
 #[tauri::command]
-pub async fn complete_oauth_login(app_handle: AppHandle) -> Result<models::Account, String> {
+pub async fn complete_oauth_login(
+    app_handle: AppHandle,
+    note: Option<String>,
+    two_factor_secret: Option<String>,
+    account_password: Option<String>,
+    phone_number: Option<String>,
+    mail_url: Option<String>,
+    aux_email: Option<String>,
+) -> Result<models::Account, String> {
     modules::logger::log_info("完成 OAuth 授权流程...");
 
     let token_res = modules::oauth_server::complete_oauth_flow(app_handle.clone())
@@ -155,7 +182,7 @@ pub async fn complete_oauth_login(app_handle: AppHandle) -> Result<models::Accou
     )
     .with_oauth_metadata(token_res.oauth_client_key, token_res.id_token);
 
-    let account = modules::upsert_account(
+    let mut account = modules::upsert_account(
         user_info.email.clone(),
         user_info.get_display_name(),
         token_data,
@@ -165,6 +192,17 @@ pub async fn complete_oauth_login(app_handle: AppHandle) -> Result<models::Accou
         e
     })?;
 
+    modules::account::apply_account_note_after_oauth(
+        &mut account,
+        modules::account::AccountNoteUpdate {
+            note,
+            two_factor_secret,
+            account_password,
+            phone_number,
+            mail_url,
+            aux_email,
+        },
+    )?;
     let account = refresh_account_quota_after_login(account).await;
 
     modules::logger::log_info(&format!("账号添加成功: {}", account.email));
