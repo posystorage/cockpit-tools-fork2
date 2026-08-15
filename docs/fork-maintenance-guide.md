@@ -23,7 +23,7 @@
 
 ## 2. 当前基线与历史锚点
 
-### 2.1 `v1.3.21` 升级施工计划（2026-08-16）
+### 2.1 `v1.3.21` 已验证基线（2026-08-16）
 
 本轮计划从已验证 fork `1.3.16b1`（`96b0a61e`）升级到上游 `v1.3.21`（annotated tag 指向 release commit `971c283e`），merge-base 为已合并的上游 `v1.3.16` release commit `e1ef55ce`，升级分支为 `codex/upgrade-upstream-v1.3.21`。合并前工作区干净；`v1.3.16..v1.3.21` 共 50 个提交、184 个文件，净变化为 31498 行新增、3430 行删除。release 链重点如下：
 
@@ -46,9 +46,19 @@
 
 预演树中的 fork 长期边界均仍存在：去广告与赞助硬开关、空公告/远端配置/商业默认 URL、禁用运行时 updater 与更新 UI、fork updater 身份、draft-only Windows release，以及普通 Codex 页完整账号池、内部滚动、运行中/最近调度排序、最高/最低标记和服务运行时五秒轮询。Sidecar 的 `recordingSelector` 仍包住模型排除、备用、额度保留、图片选择和 session affinity 整条 selector 链，`cockpitSelector.Pick()` 没有恢复直接发送 `auth_selected`。
 
-本轮接受上游新增能力，不恢复已被上游替代的旧实现。施工后必须重点验证：原子删除不会清空其余路由/亲和配置；大量成员完整渲染并可内部滚动；运行中/最近活动排序不被静态优先级改变；Sub2API 候选 URL 与非有限数拒绝；新 Provider 预设仍经过中性化；draft release 边界不回退；DeepSeek、MiniMax、智谱、New API 和 Sub2API 余额路径可用；Codex 新即时保存设置工作正常。
+本轮已接受上游新增能力，没有恢复被上游替代的旧实现。真实合并与预演一致，只出现上述六个显式冲突；隐藏的重复 `handleRemoveLocalAccessAccount` 也按计划处理为唯一的上游原子删除调用。前端测试断言不得存在重复处理器，Rust 测试进一步确认删除目标账号后，剩余 preferred 路由、session affinity 和 TTL 保持不变。数值兼容测试同时覆盖数字字符串以及 `NaN`、`Infinity`、`-Infinity` 拒绝。
 
-本节当前只记录施工前审计。真实冲突、最终合并提交、相对新上游的剩余差异及自动化/手工验收结果必须在合并完成后回填，不能提前标记为已验证。
+真实合并提交为 `9ba91304`，父节点是 fork 施工文档提交 `4a3881a7` 与上游 release commit `971c283e`。合并后相对纯上游 `v1.3.21` 保留 75 个差异文件、3560 行新增和 850 行删除，差异集中在本文记录的去广告/更新边界、发布身份、调度观测、余额兼容、回归测试及历史维护文档，没有出现与 fork 目标无关的大面积旧代码保留。
+
+本轮自动化验收结果：
+
+- TypeScript `tsc --noEmit` 通过；版本同步无额外修改；Vite 生产构建通过，共转换 2200 个模块。
+- Provider 运行时隐私扫描通过，共检查 155 个预设。普通 Codex 卡片的完整成员渲染、内部滚动、活动排序、优先级标记及原子移除，Provider 根地址 `/v1` 回退和草稿 release 边界等定向 Node 测试通过。
+- Node 24 自动发现测试结果为 `132 passed / 3 load failures`。三个失败均发生在测试模块加载阶段：`codexDeepSeekAccess.test.ts`、`codexProviderPresets.test.ts` 和既有 `codexQuotaPool.test.ts` 无法由原生 Node 解析应用源码中的无扩展名 ESM import；相同源码已通过 TypeScript、Vite 生产构建和 Provider 运行时扫描，不修改业务 import 规避测试运行器限制。
+- `cargo test -p cockpit-tools --lib` 使用 `target/test-data-v1321` 隔离数据目录执行，结果为 `839 passed / 0 failed / 2 ignored`。补强后的非有限数与原子删除保留测试又分别定向复跑通过。
+- 本机没有 Go。Rust 测试使用已忽略的目标名占位文件和 `COCKPIT_SKIP_CLIPROXY_BUILD=1` 跳过 Sidecar 构建，占位文件已在测试后删除。Sidecar 源码复核确认 `recordingSelector` 仍是完整 selector 链的最外层，现有 affinity cache-hit 测试仍在；发布 CI 必须真实编译并运行 Go 测试。
+- 去广告/商业 URL 常量、updater 禁用开关、fork 签名与下载地址、draft-only Windows workflow 均已复核。模型与能力价格设置继续采用上游可选空值行为，中文错误提示明确“Token 阈值可留空”，未恢复旧的必填限制。
+- `cargo fmt --check`、索引与工作区 `git diff --check` 通过，无冲突标记或测试占位文件残留。
 
 ### 2.2 `v1.3.16` 已验证基线（2026-08-06）
 
