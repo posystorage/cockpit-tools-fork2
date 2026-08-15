@@ -23,7 +23,34 @@
 
 ## 2. 当前基线与历史锚点
 
-### 2.1 `v1.3.16` 升级施工基线（2026-08-06）
+### 2.1 `v1.3.21` 升级施工计划（2026-08-16）
+
+本轮计划从已验证 fork `1.3.16b1`（`96b0a61e`）升级到上游 `v1.3.21`（annotated tag 指向 release commit `971c283e`），merge-base 为已合并的上游 `v1.3.16` release commit `e1ef55ce`，升级分支为 `codex/upgrade-upstream-v1.3.21`。合并前工作区干净；`v1.3.16..v1.3.21` 共 50 个提交、184 个文件，净变化为 31498 行新增、3430 行删除。release 链重点如下：
+
+- `v1.3.17`：DeepSeek 原生 Responses、OAuth 指纹模式、API Key 按客户端限制 token、API 服务直接移除成员、Sub2API 完整 OAuth 导入及多轮/流式修复。
+- `v1.3.18`：按模型设置上下文窗口、启动进度、API 服务账号窗口用量、会话用量及官方 OAuth 出站身份调整。
+- `v1.3.19`：额度标签紧凑化。
+- `v1.3.20`：MiniMax/智谱 token 套餐额度、OpenCode Go/OpenRouter 预设、Provider API Key 编辑、根 URL `/v1` 用量回退、reasoning effort 日志及账号组持久化修复。
+- `v1.3.21`：实验模型目录与扁平化、即时保存的 Codex 设置。
+
+`git merge-tree` 预演确认六个显式冲突文件，施工裁决如下：
+
+- `Casks/cockpit-tools.rb`：继续保持 fork 删除状态。
+- `src-tauri/src/commands/codex.rs`：接受上游 DeepSeek、MiniMax/智谱、上下文窗口和 token limit；保留 fork 的 Sub2API `/usage` -> `/v1/usage` 候选、数字字符串兼容与 `NaN`/Infinity 非有限值拒绝。
+- `src-tauri/src/modules/codex_account.rs`：接受上游 DeepSeek 与实验模型逻辑；继续保持 `CODEX_COCKPIT_API_BASE_URL`、`APIKEY_FUN_PROVIDER_BASE_URL` 为空，并保留中性测试 URL。
+- `src-tauri/src/modules/codex_local_access.rs`：合并 fork 的 `CodexLocalAccessAccountActivity` 与上游账号窗口查询/统计 import；接受上游 token limits、账号窗口、上下文窗口、官方身份及 reasoning 元数据，同时保留 running request/account activity 的 selected/finish 生命周期。
+- `src/services/modelProviderUsageService.ts`：接受上游通用根地址和 `/v1` 回退，以及 `deepseek`/`token_plan` 模式；不恢复品牌专属前端路径，后端 fork 的 `/usage`/`/v1/usage` 仍作为附加兼容层。
+- `src/utils/codexProviderPresets.ts`：接受 DeepSeek、OpenCode Go、OpenRouter 目录更新；保持 `COCKPIT_API_BASE_URL` 为空，继续通过 `RAW_CODEX_API_PROVIDER_PRESETS` 和 `neutralizeProviderPresets()` 输出中性运行时预设。
+
+预演还发现一个 Git 不会报告的语义冲突：`src/pages/CodexAccountsPage.tsx` 会自动合并出两个同名 `handleRemoveLocalAccessAccount`，导致 TypeScript 重复声明。施工时只保留上游新的原子后端删除命令，删除 fork 旧的“读取并重写整个集合”处理器。后端 `remove_account_refs_from_collection()` 已确认只移除目标账号的集合 ID、API Key scope/优先级、自定义路由、账号模型规则及必要的 OAuth 绑定；其余账号的 preferred/backup、session affinity 配置和 TTL 不受影响。对应测试必须改为断言原子服务调用以及不存在重复处理器。
+
+预演树中的 fork 长期边界均仍存在：去广告与赞助硬开关、空公告/远端配置/商业默认 URL、禁用运行时 updater 与更新 UI、fork updater 身份、draft-only Windows release，以及普通 Codex 页完整账号池、内部滚动、运行中/最近调度排序、最高/最低标记和服务运行时五秒轮询。Sidecar 的 `recordingSelector` 仍包住模型排除、备用、额度保留、图片选择和 session affinity 整条 selector 链，`cockpitSelector.Pick()` 没有恢复直接发送 `auth_selected`。
+
+本轮接受上游新增能力，不恢复已被上游替代的旧实现。施工后必须重点验证：原子删除不会清空其余路由/亲和配置；大量成员完整渲染并可内部滚动；运行中/最近活动排序不被静态优先级改变；Sub2API 候选 URL 与非有限数拒绝；新 Provider 预设仍经过中性化；draft release 边界不回退；DeepSeek、MiniMax、智谱、New API 和 Sub2API 余额路径可用；Codex 新即时保存设置工作正常。
+
+本节当前只记录施工前审计。真实冲突、最终合并提交、相对新上游的剩余差异及自动化/手工验收结果必须在合并完成后回填，不能提前标记为已验证。
+
+### 2.2 `v1.3.16` 已验证基线（2026-08-06）
 
 本轮从已验证 fork `1.3.10b2`（`ee49a89f`）升级到上游 `v1.3.16`（release commit `e1ef55ce`），升级分支为 `codex/upgrade-upstream-v1.3.16`。合并前 release 链与锚点如下：
 
@@ -72,7 +99,7 @@
 
 真实合并提交为 `1dc9fedd`，父节点是 fork 施工文档提交 `cdea997e` 与上游 `e1ef55ce`。
 
-### 2.2 `v1.3.10` 已验证基线（2026-07-20）
+### 2.3 `v1.3.10` 已验证基线（2026-07-20）
 
 本轮从已验证 fork `1.3.6b2`（`3be46a02`）升级到上游 `v1.3.10`，合并提交为 `50cf4c74`，父节点是 fork `3be46a02` 与上游 release commit `b331b093`。升级分支为 `codex/upgrade-upstream-v1.3.10`。release 链如下：
 
@@ -107,7 +134,7 @@
 - Rust `cockpit-tools` lib 共 673 项：`671 passed / 0 failed / 2 ignored`。另行复跑调度活动 2 项、OAuth 实际窗口和周窗口 Sidecar 映射各 1 项、Sub2API URL/数值各 1 项、配置接管 4 项、异步删除 1 项，全部通过。
 - 本机没有 Go，`TestRecordingSelectorRecordsSessionAffinityCacheHit` 等 Sidecar Go 测试未执行；发布 CI 必须真实编译并运行 Go 测试。纯源码复核确认根选择器不再直接发送事件，外层记录器测试仍验证首次选择和 affinity cache hit 各发送一次。
 
-### 2.3 `v1.3.6` 已验证基线（2026-07-16）
+### 2.4 `v1.3.6` 已验证基线（2026-07-16）
 
 本轮从已验证 fork HEAD `6f84cae8` 升级到上游 `v1.3.6`。上游没有发布 `v1.3.3` tag；`release: v1.3.3` 提交包含在后续 `v1.3.4` 中。release 链如下：
 
@@ -148,7 +175,7 @@
 
 Windows 本地运行 Rust 测试前必须为每个测试进程设置独立的 `COCKPIT_TOOLS_DATA_DIR`。只设置 `HOME`、`CODEX_HOME` 或 `COCKPIT_TOOLS_TEST_DATA_DIR` 不足以隔离 `cockpit-core`；上游部分测试会访问真实 `~/.antigravity_cockpit`。测试失败后也不能直接删除真实目录，应先根据测试前备份、明确的测试账号 ID/邮箱和时间戳制定最小恢复方案。
 
-### 2.4 `v1.3.2` 上一已验证基线
+### 2.5 `v1.3.2` 上一已验证基线
 
 当前已验证的同步状态（2026-07-15）：
 
