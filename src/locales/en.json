@@ -2469,6 +2469,12 @@
       "memberPriorityNormal": "Normal",
       "memberPriorityHighest": "Highest",
       "memberPriorityDesc": "Highest is used first; Normal follows the current routing rules; Lowest is used only when other accounts are unavailable.",
+      "currentAccounts": "Current accounts",
+      "historicalAccounts": "Historical accounts",
+      "historyNotJoined": "Not joined",
+      "historyDeleted": "Deleted",
+      "backupDispatchToggle": "Allow this lowest-priority account to participate in fallback routing",
+      "backupDispatchSaved": "Lowest-priority routing setting updated",
       "routingStrategy": {
         "auto": "Auto (Recommended)",
         "singleAccount": "Single Account",

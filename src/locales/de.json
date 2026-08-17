@@ -2090,6 +2090,12 @@
       "memberPriorityNormal": "Regulär",
       "memberPriorityHighest": "Hoch",
       "memberPriorityDesc": "Hoch wird bevorzugt, Regulär folgt den aktuellen Regeln und Niedrig wird nur verwendet, wenn andere Konten nicht verfügbar sind.",
+      "currentAccounts": "Aktuelle Konten",
+      "historicalAccounts": "Historische Konten",
+      "historyNotJoined": "Nicht hinzugefügt",
+      "historyDeleted": "Gelöscht",
+      "backupDispatchToggle": "Dieses Konto mit niedrigster Priorität für die Ausweichweiterleitung zulassen",
+      "backupDispatchSaved": "Einstellung für niedrigste Priorität aktualisiert",
       "stats": {
         "requests": "Anfragen",
         "requestsDetail": "OK {{success}} / Fehler {{failed}} / Abbr. {{canceled}} / Quelle {{upstreamFailed}} / Unvollst. {{incomplete}}",

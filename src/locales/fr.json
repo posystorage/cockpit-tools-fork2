@@ -2090,6 +2090,12 @@
       "memberPriorityNormal": "Normale",
       "memberPriorityHighest": "Haute",
       "memberPriorityDesc": "Haute est utilisée en priorité, Normale suit les règles actuelles et Basse ne sert que si les autres comptes sont indisponibles.",
+      "currentAccounts": "Comptes actuels",
+      "historicalAccounts": "Comptes historiques",
+      "historyNotJoined": "Non ajouté",
+      "historyDeleted": "Supprimé",
+      "backupDispatchToggle": "Autoriser ce compte de priorité basse pour le routage de secours",
+      "backupDispatchSaved": "Paramètre de routage de priorité basse mis à jour",
       "stats": {
         "requests": "Requêtes",
         "requestsDetail": "OK {{success}} / Échec {{failed}} / Annul. {{canceled}} / Amont {{upstreamFailed}} / Incomp. {{incomplete}}",

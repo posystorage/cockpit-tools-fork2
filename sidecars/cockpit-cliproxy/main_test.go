@@ -4245,6 +4245,9 @@ func TestFilterRegistryModelsByExcludedModels(t *testing.T) {
 	if len(filtered) != 1 || filtered[0].ID != "gpt-5.4" {
 		t.Fatalf("unexpected filtered models: %#v", filtered)
 	}
+	if blocked := filterRegistryModelsByExcluded(models, []string{"*"}); len(blocked) != 0 {
+		t.Fatalf("all-model exclusion should remove every model: %#v", blocked)
+	}
 }
 
 func TestExcludedModelsForAuthMergesManifestAndMetadata(t *testing.T) {

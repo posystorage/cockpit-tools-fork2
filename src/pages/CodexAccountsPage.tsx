@@ -123,6 +123,9 @@ import {
   resolveImportedCodexAccountIdsForLocalAccess,
 } from "../utils/codexLocalAccessAccounts";
 import {
+  isCodexLocalAccessBackupDispatchEnabled,
+} from "../utils/codexLocalAccessBackupDispatch";
+import {
   extractCodexQuotaErrorCode,
   extractCodexQuotaErrorStatusCode,
   isBlockingCodexQuotaError,
@@ -10285,6 +10288,48 @@ export function CodexAccountsPage() {
     [setMessage, t],
   );
 
+  const handleToggleLocalAccessBackupDispatch = useCallback(
+    async (accountId: string, enabled: boolean) => {
+      if (!localAccessCollection || localAccessSaving) return;
+      const isBackup = (localAccessCollection.customRoutingRules ?? []).some(
+        (rule) => rule.accountId === accountId && rule.isBackup,
+      );
+      if (!isBackup) return;
+
+      setLocalAccessSaving(true);
+      try {
+        const nextState =
+          await codexLocalAccessService.updateCodexLocalAccessBackupDispatch(
+          accountId,
+          enabled,
+          );
+        setLocalAccessState(nextState);
+        window.dispatchEvent(new Event("codex-local-access-state-updated"));
+        setMessage({
+          text: t(
+            "codex.localAccess.backupDispatchSaved",
+            "最低优先级调度设置已更新",
+          ),
+        });
+      } catch (error) {
+        console.error("Failed to update backup dispatch state:", error);
+        setMessage({
+          text: t("messages.actionFailed", {
+            action: t(
+              "codex.localAccess.backupDispatchToggle",
+              "最低优先级调度设置",
+            ),
+            error: String(error).replace(/^Error:\s*/, ""),
+          }),
+          tone: "error",
+        });
+      } finally {
+        setLocalAccessSaving(false);
+      }
+    },
+    [localAccessCollection, localAccessSaving, setMessage, t],
+  );
+
   const handleUpdateLocalAccessUpstreamProxyConfig = useCallback(
     async (upstreamProxyUrl: string | null) => {
       setLocalAccessSaving(true);
@@ -12568,6 +12613,11 @@ export function CodexAccountsPage() {
                       .join(" · ");
                     const memberPriority =
                       localAccessMemberPriorityByAccountId.get(account.id);
+                    const backupDispatchEnabled =
+                      isCodexLocalAccessBackupDispatchEnabled(
+                        localAccessCollection?.accountModelRules,
+                        account.id,
+                      );
                     return (
                       <div
                         key={`local-access-${account.id}`}
@@ -12627,6 +12677,36 @@ export function CodexAccountsPage() {
                         >
                           {presentation.planLabel}
                         </span>
+                        {memberPriority === "lowest" ? (
+                          <label
+                            className="codex-local-access-backup-dispatch-switch"
+                            title={t(
+                              "codex.localAccess.backupDispatchToggle",
+                              "允许该最低优先级账号参与兜底调度",
+                            )}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={backupDispatchEnabled}
+                              onChange={(event) =>
+                                void handleToggleLocalAccessBackupDispatch(
+                                  account.id,
+                                  event.target.checked,
+                                )
+                              }
+                              disabled={localAccessBusy}
+                              aria-label={t(
+                                "codex.localAccess.backupDispatchToggle",
+                                "允许该最低优先级账号参与兜底调度",
+                              )}
+                            />
+                          </label>
+                        ) : (
+                          <span
+                            className="codex-local-access-backup-dispatch-switch-placeholder"
+                            aria-hidden="true"
+                          />
+                        )}
                         <button
                           type="button"
                           className="folder-preview-remove-btn"

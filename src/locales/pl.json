@@ -2090,6 +2090,12 @@
       "memberPriorityNormal": "Normalny",
       "memberPriorityHighest": "Najwyższy",
       "memberPriorityDesc": "Najwyższy jest używany najpierw, normalny podlega bieżącym regułom, a najniższy tylko wtedy, gdy inne konta są niedostępne.",
+      "currentAccounts": "Bieżące konta",
+      "historicalAccounts": "Konta historyczne",
+      "historyNotJoined": "Nie dodano",
+      "historyDeleted": "Usunięto",
+      "backupDispatchToggle": "Zezwól temu kontu o najniższym priorytecie na routing zapasowy",
+      "backupDispatchSaved": "Ustawienie najniższego priorytetu zaktualizowane",
       "stats": {
         "requests": "Żądania",
         "requestsDetail": "OK {{success}} / Błąd {{failed}} / Anul. {{canceled}} / Źródło {{upstreamFailed}} / Niepeł. {{incomplete}}",

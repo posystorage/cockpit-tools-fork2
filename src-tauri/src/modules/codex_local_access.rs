@@ -158,7 +158,7 @@ const PREPARED_ACCOUNT_CACHE_TTL_MS: i64 = 30 * 1000;
 const STATE_RECENT_USAGE_EVENT_LIMIT: usize = 100;
 const ACCOUNT_ACTIVITY_RECENT_WINDOW_MS: i64 = 30 * 1000;
 const ACCOUNT_ACTIVITY_RUNNING_STALE_MS: i64 = 30 * 60 * 1000;
-const DEFAULT_MODEL_PRICING_VERSION: u64 = 2;
+const DEFAULT_MODEL_PRICING_VERSION: u64 = 3;
 const MODEL_PRICING_REPRICE_BATCH_SIZE: i64 = 1_000;
 const MODEL_PRICING_REPRICE_PARALLEL_MIN_ROWS: usize = 2_000;
 const LOCAL_ACCESS_LOGS_DB_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -5883,6 +5883,78 @@ fn normalize_account_model_rules(
     normalized
 }
 
+fn backup_account_id_set(collection: &CodexLocalAccessCollection) -> HashSet<String> {
+    collection
+        .custom_routing_rules
+        .iter()
+        .filter(|rule| rule.is_backup)
+        .map(|rule| rule.account_id.clone())
+        .collect()
+}
+
+fn clear_backup_dispatch_exclusions(
+    collection: &mut CodexLocalAccessCollection,
+    account_ids: &HashSet<String>,
+) -> bool {
+    if account_ids.is_empty() {
+        return false;
+    }
+
+    let before = collection.account_model_rules.clone();
+    for rule in &mut collection.account_model_rules {
+        if account_ids.contains(&rule.account_id) {
+            rule.excluded_models.retain(|model| model.trim() != "*");
+        }
+    }
+    collection.account_model_rules = normalize_account_model_rules(
+        collection.account_model_rules.clone(),
+        &collection.account_ids,
+    );
+    collection.account_model_rules != before
+}
+
+fn set_backup_dispatch_enabled(
+    collection: &mut CodexLocalAccessCollection,
+    account_id: &str,
+    enabled: bool,
+) -> Result<bool, String> {
+    let account_id = account_id.trim();
+    if account_id.is_empty() || !collection.account_ids.iter().any(|id| id == account_id) {
+        return Err("API 服务账号不存在".to_string());
+    }
+    if !collection
+        .custom_routing_rules
+        .iter()
+        .any(|rule| rule.account_id == account_id && rule.is_backup)
+    {
+        return Err("仅最低优先级账号可设置兜底调度".to_string());
+    }
+
+    let before = collection.account_model_rules.clone();
+    if let Some(rule) = collection
+        .account_model_rules
+        .iter_mut()
+        .find(|rule| rule.account_id == account_id)
+    {
+        rule.excluded_models.retain(|model| model.trim() != "*");
+        if !enabled {
+            rule.excluded_models.push("*".to_string());
+        }
+    } else if !enabled {
+        collection
+            .account_model_rules
+            .push(CodexLocalAccessAccountModelRule {
+                account_id: account_id.to_string(),
+                excluded_models: vec!["*".to_string()],
+            });
+    }
+    collection.account_model_rules = normalize_account_model_rules(
+        collection.account_model_rules.clone(),
+        &collection.account_ids,
+    );
+    Ok(collection.account_model_rules != before)
+}
+
 fn account_excluded_models<'a>(
     collection: &'a CodexLocalAccessCollection,
     account_id: &str,
@@ -6632,14 +6704,14 @@ const CODEX_LOCAL_ACCESS_PRICE_BOOK: &[CodexLocalAccessPriceBookEntry] = &[
     CodexLocalAccessPriceBookEntry {
         model_id: "gpt-5.6-terra",
         session_long_context: true,
-        standard: codex_price(2.5, 0.25, 15.0),
-        priority: Some(codex_price(5.0, 0.5, 30.0)),
+        standard: codex_price(2.0, 0.2, 12.0),
+        priority: Some(codex_price(4.0, 0.4, 24.0)),
     },
     CodexLocalAccessPriceBookEntry {
         model_id: "gpt-5.6-luna",
         session_long_context: true,
-        standard: codex_price(1.0, 0.1, 6.0),
-        priority: Some(codex_price(2.0, 0.2, 12.0)),
+        standard: codex_price(0.2, 0.02, 1.2),
+        priority: Some(codex_price(0.4, 0.04, 2.4)),
     },
     CodexLocalAccessPriceBookEntry {
         model_id: "gpt-5.5",
@@ -20748,6 +20820,7 @@ fn apply_account_usage_priority_ids(
     backup_account_ids: Option<&[String]>,
     preferred_account_ids: Option<&[String]>,
 ) {
+    let previous_backup_ids = backup_account_id_set(collection);
     let account_set: HashSet<&str> = collection.account_ids.iter().map(String::as_str).collect();
     let normalize_ids = |account_ids: &[String]| {
         account_ids
@@ -20808,6 +20881,12 @@ fn apply_account_usage_priority_ids(
         collection.custom_routing_rules.clone(),
         &collection.account_ids,
     );
+    let current_backup_ids = backup_account_id_set(collection);
+    let no_longer_backup_ids = previous_backup_ids
+        .difference(&current_backup_ids)
+        .cloned()
+        .collect::<HashSet<_>>();
+    clear_backup_dispatch_exclusions(collection, &no_longer_backup_ids);
 }
 
 pub async fn save_local_access_accounts(
@@ -20988,8 +21067,15 @@ pub async fn update_local_access_custom_routing(
         return Err("本地接入集合尚未创建".to_string());
     };
 
+    let previous_backup_ids = backup_account_id_set(&collection);
     collection.custom_routing_rules =
         normalize_custom_routing_rules(rules, &collection.account_ids);
+    let current_backup_ids = backup_account_id_set(&collection);
+    let no_longer_backup_ids = previous_backup_ids
+        .difference(&current_backup_ids)
+        .cloned()
+        .collect::<HashSet<_>>();
+    clear_backup_dispatch_exclusions(&mut collection, &no_longer_backup_ids);
     collection.routing_strategy = CodexLocalAccessRoutingStrategy::Custom;
     collection.updated_at = now_ms();
     save_collection_to_disk(&collection)?;
@@ -21008,6 +21094,7 @@ pub async fn update_local_access_custom_routing(
 
 pub async fn update_local_access_account_model_rules(
     rules: Vec<CodexLocalAccessAccountModelRule>,
+    expected_updated_at: Option<i64>,
 ) -> Result<CodexLocalAccessState, String> {
     ensure_runtime_loaded().await?;
 
@@ -21019,8 +21106,40 @@ pub async fn update_local_access_account_model_rules(
     let Some(mut collection) = maybe_collection else {
         return Err("本地接入集合尚未创建".to_string());
     };
+    if expected_updated_at.is_some_and(|expected| collection.updated_at != expected) {
+        return Err("API 服务配置已在其他页面更新，请关闭并重新打开禁用模型设置".to_string());
+    }
 
     collection.account_model_rules = normalize_account_model_rules(rules, &collection.account_ids);
+    collection.updated_at = now_ms();
+    save_collection_to_disk(&collection)?;
+
+    {
+        let mut runtime = gateway_runtime().lock().await;
+        sync_runtime_collection(&mut runtime, collection);
+    }
+
+    ensure_gateway_matches_runtime().await?;
+    snapshot_state().await
+}
+
+pub async fn update_local_access_backup_dispatch(
+    account_id: String,
+    enabled: bool,
+) -> Result<CodexLocalAccessState, String> {
+    ensure_runtime_loaded().await?;
+
+    let maybe_collection = {
+        let runtime = gateway_runtime().lock().await;
+        runtime.collection.clone()
+    };
+    let Some(mut collection) = maybe_collection else {
+        return Err("本地接入集合尚未创建".to_string());
+    };
+
+    if !set_backup_dispatch_enabled(&mut collection, &account_id, enabled)? {
+        return snapshot_state().await;
+    }
     collection.updated_at = now_ms();
     save_collection_to_disk(&collection)?;
 
@@ -29940,6 +30059,21 @@ wire_api = "responses"
             "account-b",
             "gpt-5.4-mini"
         ));
+
+        collection.account_model_rules = vec![CodexLocalAccessAccountModelRule {
+            account_id: "account-a".to_string(),
+            excluded_models: vec!["*".to_string()],
+        }];
+        assert!(account_model_rule_blocks_model(
+            &collection,
+            "account-a",
+            "gpt-5.6-luna"
+        ));
+        assert!(account_model_rule_blocks_model(
+            &collection,
+            "account-a",
+            "gpt-5.4"
+        ));
     }
 
     #[test]
@@ -31424,7 +31558,7 @@ wire_api = "responses"
         assert_eq!(mini_long.input_usd_per_million, 0.75);
         assert_eq!(mini_long.output_usd_per_million, 4.5);
 
-        // Available 5.6 models keep default book prices.
+        // Available 5.6 models keep current official short-context prices.
         let sol =
             resolve_effective_model_pricing(None, Some("gpt-5.6-sol"), Some(&short_usage), None)
                 .expect("gpt-5.6-sol pricing");
@@ -31433,11 +31567,49 @@ wire_api = "responses"
         let terra =
             resolve_effective_model_pricing(None, Some("gpt-5.6-terra"), Some(&short_usage), None)
                 .expect("gpt-5.6-terra pricing");
-        assert_eq!(terra.input_usd_per_million, 2.5);
+        assert_eq!(terra.input_usd_per_million, 2.0);
+        assert_eq!(terra.cached_input_usd_per_million, Some(0.2));
+        assert_eq!(terra.output_usd_per_million, 12.0);
         let luna =
             resolve_effective_model_pricing(None, Some("gpt-5.6-luna"), Some(&short_usage), None)
                 .expect("gpt-5.6-luna pricing");
-        assert_eq!(luna.input_usd_per_million, 1.0);
+        assert_eq!(luna.input_usd_per_million, 0.2);
+        assert_eq!(luna.cached_input_usd_per_million, Some(0.02));
+        assert_eq!(luna.output_usd_per_million, 1.2);
+
+        let terra_long =
+            resolve_effective_model_pricing(None, Some("gpt-5.6-terra"), Some(&long_usage), None)
+                .expect("gpt-5.6-terra long pricing");
+        assert_eq!(terra_long.input_usd_per_million, 4.0);
+        assert_eq!(terra_long.cached_input_usd_per_million, Some(0.4));
+        assert_eq!(terra_long.output_usd_per_million, 18.0);
+        let terra_fast_long = resolve_effective_model_pricing(
+            None,
+            Some("gpt-5.6-terra"),
+            Some(&long_usage),
+            Some("fast"),
+        )
+        .expect("gpt-5.6-terra fast long pricing");
+        assert_eq!(terra_fast_long.input_usd_per_million, 8.0);
+        assert_eq!(terra_fast_long.cached_input_usd_per_million, Some(0.8));
+        assert_eq!(terra_fast_long.output_usd_per_million, 36.0);
+
+        let luna_long =
+            resolve_effective_model_pricing(None, Some("gpt-5.6-luna"), Some(&long_usage), None)
+                .expect("gpt-5.6-luna long pricing");
+        assert_eq!(luna_long.input_usd_per_million, 0.4);
+        assert_eq!(luna_long.cached_input_usd_per_million, Some(0.04));
+        assert!((luna_long.output_usd_per_million - 1.8).abs() < 1e-9);
+        let luna_fast_long = resolve_effective_model_pricing(
+            None,
+            Some("gpt-5.6-luna"),
+            Some(&long_usage),
+            Some("fast"),
+        )
+        .expect("gpt-5.6-luna fast long pricing");
+        assert_eq!(luna_fast_long.input_usd_per_million, 0.8);
+        assert_eq!(luna_fast_long.cached_input_usd_per_million, Some(0.08));
+        assert!((luna_fast_long.output_usd_per_million - 3.6).abs() < 1e-9);
     }
 
     #[test]
@@ -32698,6 +32870,66 @@ data: {"type":"response.completed","response":{"id":"resp_123","usage":{"input_t
             .expect("highest rule");
         assert!(!highest.is_backup);
         assert!(highest.is_preferred);
+    }
+
+    #[test]
+    fn backup_dispatch_leaving_lowest_reenables_without_losing_model_exclusions() {
+        let mut collection = test_local_access_collection(vec!["backup".to_string()]);
+        apply_account_usage_priority_ids(&mut collection, Some(&["backup".to_string()]), Some(&[]));
+        collection.account_model_rules = vec![CodexLocalAccessAccountModelRule {
+            account_id: "backup".to_string(),
+            excluded_models: vec!["gpt-5.4-mini".to_string(), "*".to_string()],
+        }];
+
+        apply_account_usage_priority_ids(&mut collection, Some(&[]), Some(&["backup".to_string()]));
+
+        assert_eq!(
+            collection.account_model_rules,
+            vec![CodexLocalAccessAccountModelRule {
+                account_id: "backup".to_string(),
+                excluded_models: vec!["gpt-5.4-mini".to_string()],
+            }]
+        );
+    }
+
+    #[test]
+    fn backup_dispatch_non_backup_change_preserves_manual_all_models_exclusion() {
+        let mut collection = test_local_access_collection(vec!["normal".to_string()]);
+        collection.account_model_rules = vec![CodexLocalAccessAccountModelRule {
+            account_id: "normal".to_string(),
+            excluded_models: vec!["*".to_string()],
+        }];
+
+        apply_account_usage_priority_ids(&mut collection, Some(&[]), Some(&["normal".to_string()]));
+
+        assert_eq!(collection.account_model_rules[0].excluded_models, vec!["*"]);
+    }
+
+    #[test]
+    fn backup_dispatch_toggle_preserves_other_model_exclusions() {
+        let mut collection = test_local_access_collection(vec!["backup".to_string()]);
+        apply_account_usage_priority_ids(&mut collection, Some(&["backup".to_string()]), Some(&[]));
+        collection.account_model_rules = vec![CodexLocalAccessAccountModelRule {
+            account_id: "backup".to_string(),
+            excluded_models: vec!["gpt-5.4-mini".to_string()],
+        }];
+
+        assert!(
+            super::set_backup_dispatch_enabled(&mut collection, "backup", false)
+                .expect("pause backup dispatch")
+        );
+        assert_eq!(
+            collection.account_model_rules[0].excluded_models,
+            vec!["gpt-5.4-mini", "*"]
+        );
+        assert!(
+            super::set_backup_dispatch_enabled(&mut collection, "backup", true)
+                .expect("resume backup dispatch")
+        );
+        assert_eq!(
+            collection.account_model_rules[0].excluded_models,
+            vec!["gpt-5.4-mini"]
+        );
     }
 
     #[test]
@@ -35896,6 +36128,30 @@ data: {"error":{"code":"server_error","type":"upstream","message":"stream aborte
 
         assert!(!collection.session_affinity);
         assert!(collection.session_affinity_default_enabled_migrated);
+    }
+
+    #[test]
+    fn sanitize_collection_migrates_v2_pricing_to_current_book() {
+        let mut collection = test_local_access_collection(Vec::new());
+        collection.model_pricing_version = 2;
+        collection.model_pricings = vec![model_pricing(
+            "gpt-5.6-terra",
+            None,
+            codex_price(2.5, 0.25, 15.0),
+            None,
+            None,
+            None,
+        )];
+
+        let (changed, _) = sanitize_collection_with_accounts(&mut collection, &[])
+            .expect("collection should sanitize");
+
+        assert!(changed);
+        assert_eq!(
+            collection.model_pricing_version,
+            DEFAULT_MODEL_PRICING_VERSION
+        );
+        assert!(collection.model_pricings.is_empty());
     }
 
     #[test]

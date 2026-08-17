@@ -2140,6 +2140,12 @@
       "memberPriorityNormal": "Biasa",
       "memberPriorityHighest": "Tertinggi",
       "memberPriorityDesc": "Tertinggi digunakan lebih dulu, Biasa mengikuti aturan saat ini, dan Terendah hanya digunakan jika akun lain tidak tersedia.",
+      "currentAccounts": "Akun saat ini",
+      "historicalAccounts": "Akun historis",
+      "historyNotJoined": "Belum ditambahkan",
+      "historyDeleted": "Dihapus",
+      "backupDispatchToggle": "Izinkan akun prioritas terendah ini mengikuti perutean cadangan",
+      "backupDispatchSaved": "Pengaturan prioritas terendah diperbarui",
       "stats": {
         "requests": "Permintaan",
         "requestsDetail": "OK {{success}} / Gagal {{failed}} / Batal {{canceled}} / Hulu {{upstreamFailed}} / Belum lengkap {{incomplete}}",

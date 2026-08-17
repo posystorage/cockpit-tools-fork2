@@ -2137,6 +2137,12 @@
       "memberPriorityNormal": "عادية",
       "memberPriorityHighest": "الأعلى",
       "memberPriorityDesc": "تُستخدم الأعلى أولًا، والعادية وفق قواعد التوجيه الحالية، والأدنى فقط عند تعذّر استخدام الحسابات الأخرى.",
+      "currentAccounts": "الحسابات الحالية",
+      "historicalAccounts": "الحسابات التاريخية",
+      "historyNotJoined": "غير مضاف",
+      "historyDeleted": "محذوف",
+      "backupDispatchToggle": "السماح لهذا الحساب ذي الأولوية الدنيا بالمشاركة في التوجيه الاحتياطي",
+      "backupDispatchSaved": "تم تحديث إعداد الأولوية الدنيا",
       "stats": {
         "requests": "الطلبات",
         "requestsDetail": "نجاح {{success}} / فشل {{failed}} / إلغاء {{canceled}} / فشل المصدر {{upstreamFailed}} / غير مكتمل {{incomplete}}",

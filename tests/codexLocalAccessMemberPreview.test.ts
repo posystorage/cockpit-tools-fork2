@@ -95,4 +95,25 @@ describe("Codex API service member preview", () => {
       "member removal should use the backend command that updates references atomically",
     );
   });
+
+  it("shows the shared dispatch switch only for lowest-priority members", () => {
+    assert.ok(
+      pageSource.includes('memberPriority === "lowest"'),
+      "the ordinary summary must limit the switch to lowest-priority rows",
+    );
+    assert.ok(
+      pageSource.includes("handleToggleLocalAccessBackupDispatch"),
+      "the ordinary summary must persist the shared backup dispatch state",
+    );
+    assert.ok(
+      pageSource.includes(
+        "codexLocalAccessService.updateCodexLocalAccessBackupDispatch(",
+      ),
+      "the switch must mutate one account atomically instead of writing a stale rules array",
+    );
+    assert.ok(
+      styleSource.includes(".codex-local-access-backup-dispatch-switch"),
+      "the compact member-row switch must have a stable style",
+    );
+  });
 });

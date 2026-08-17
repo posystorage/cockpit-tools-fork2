@@ -2090,6 +2090,12 @@
       "memberPriorityNormal": "Olağan",
       "memberPriorityHighest": "En yüksek",
       "memberPriorityDesc": "En yüksek önce kullanılır, Olağan mevcut kuralları izler, En düşük ise yalnızca diğer hesaplar kullanılamadığında kullanılır.",
+      "currentAccounts": "Mevcut hesaplar",
+      "historicalAccounts": "Geçmiş hesaplar",
+      "historyNotJoined": "Eklenmedi",
+      "historyDeleted": "Silindi",
+      "backupDispatchToggle": "Bu en düşük öncelikli hesabın yedek yönlendirmeye katılmasına izin ver",
+      "backupDispatchSaved": "En düşük öncelik ayarı güncellendi",
       "stats": {
         "requests": "İstekler",
         "requestsDetail": "OK {{success}} / Hata {{failed}} / İptal {{canceled}} / Kaynak {{upstreamFailed}} / Eksik {{incomplete}}",

@@ -4,11 +4,12 @@
 
 ## 1. 文档目标与事实来源
 
-本 fork 只长期维护三组产品行为：
+本 fork 只长期维护四组产品行为：
 
 1. 禁用广告、赞助推广、远端公告、远端开关和运行时自动更新。
 2. 为 Codex API 服务提供只读的当前/最近账号调度观测。
 3. 保留并增强自定义 API Provider 的上游计费、用量和余额查询，重点兼容 Sub2API。
+4. 维护 Codex API 服务的官方价格基线、历史账号统计，以及用户显式控制的最低优先级兜底暂停能力。
 
 除此以外，原则上跟随上游。发布工作流、fork 下载地址、签名密钥和免责声明属于交付差异，不应扩张成新的产品分叉。
 
@@ -180,7 +181,7 @@
 - TypeScript 检查、Vite 生产构建、18 个 locale（各 5020 keys）、154 个 Provider 运行时导出和两个 Codex 辅助脚本通过。
 - Node 测试 61 项通过，其中额度池测试因应用源码使用 bundler 风格无扩展名导入，使用 esbuild 打包同一测试后执行。
 - `cockpit-tools` Rust lib 测试 629 项通过；接管判定 5 项、调度活动 2 项、Sub2API URL 和数值解析测试均单独复跑通过。
-- `cockpit-core` 上游基线为 84 passed / 2 failed / 1 ignored；两个失败均位于上游未改动的 Codex 重授权测试，并会共享账号数据目录，不属于本轮三组 fork 行为。
+- `cockpit-core` 上游基线为 84 passed / 2 failed / 1 ignored；两个失败均位于上游未改动的 Codex 重授权测试，并会共享账号数据目录，不属于本文保护的 fork 行为。
 - 当前机器没有 Go，Sidecar Go 测试未运行；Rust 测试通过被 Git 忽略的空 sidecar 占位文件跳过 Go build。全仓 `cargo fmt --check` 仍命中上游自身的大量格式差异，本轮未格式化无关文件。
 
 Windows 本地运行 Rust 测试前必须为每个测试进程设置独立的 `COCKPIT_TOOLS_DATA_DIR`。只设置 `HOME`、`CODEX_HOME` 或 `COCKPIT_TOOLS_TEST_DATA_DIR` 不足以隔离 `cockpit-core`；上游部分测试会访问真实 `~/.antigravity_cockpit`。测试失败后也不能直接删除真实目录，应先根据测试前备份、明确的测试账号 ID/邮箱和时间戳制定最小恢复方案。
@@ -270,7 +271,7 @@ Windows 本地运行 Rust 测试前必须为每个测试进程设置独立的 `C
 - 不因为某服务曾是赞助商就删除其可工作的 `baseUrls`。
 - 不把调度观测数据持久化为新的业务状态，也不让它参与路由决策。
 - 不把普通 502、代理、sidecar 或额度刷新故障归因于去广告代码。
-- 不为降低冲突而删除上游新增功能；若不触及三组 fork 行为，应接受上游实现。
+- 不为降低冲突而删除上游新增功能；若不触及四组 fork 行为，应接受上游实现。
 
 ## 4. 修改集 A：去广告与远端行为隔离
 
@@ -546,9 +547,109 @@ New API URL 构造：
 
 升级后若 URL 规则或 payload 扩展，优先补纯函数测试，不用真实服务密钥做 CI 测试。
 
-## 7. 发布与仓库身份差异
+## 7. 修改集 D：Codex API 服务价格、历史账号与兜底暂停
 
-这些差异通常保留，但与三组核心产品行为分开审查：
+### 7.1 官方价格基线与版本保护
+
+核心文件：`src-tauri/src/modules/codex_local_access.rs`。
+
+本 fork 的 Codex API 服务价格是本地编译期估算价格，不在运行时从 OpenAI、GitHub 上游或远端配置拉取。2026-08-17 起，默认价格版本为 `DEFAULT_MODEL_PRICING_VERSION = 3`；升级到该版本时必须复用现有后台历史重算机制，不能只改前端展示值。
+
+GPT-5.6 Terra（美元 / 百万 token）：
+
+- Standard 短上下文：输入 `2.00`、缓存输入 `0.20`、输出 `12.00`。
+- Standard 长上下文（输入超过 272K）：输入 `4.00`、缓存输入 `0.40`、输出 `18.00`。
+- Fast 短上下文：输入 `4.00`、缓存输入 `0.40`、输出 `24.00`。
+- Fast 长上下文：输入 `8.00`、缓存输入 `0.80`、输出 `36.00`。
+
+GPT-5.6 Luna（美元 / 百万 token）：
+
+- Standard 短上下文：输入 `0.20`、缓存输入 `0.02`、输出 `1.20`。
+- Standard 长上下文（输入超过 272K）：输入 `0.40`、缓存输入 `0.04`、输出 `1.80`。
+- Fast 短上下文：输入 `0.40`、缓存输入 `0.04`、输出 `2.40`。
+- Fast 长上下文：输入 `0.80`、缓存输入 `0.08`、输出 `3.60`。
+
+边界：
+
+- `priority` 与 `fast` 继续归一化为同一 Fast 计价分支，兼容旧客户端字段。
+- 长上下文继续按输入/缓存输入 `x2`、输出 `x1.5` 计算。
+- 本轮明确不增加缓存写入单价字段；Codex API 服务按现有输入、缓存输入、输出三类价格估算。
+- 上游若修改价格表，必须逐项对照 OpenAI 官方价格后更新版本号和测试；不得因合并上游旧常量把 v3 价格回退。
+- 用户自定义价格、价格表版本迁移和历史请求后台重算必须保持现有非阻塞行为。
+
+### 7.2 历史账号统计展示
+
+核心文件：
+
+- `src/pages/CodexApiServicePage.tsx`
+- `src/pages/CodexApiServicePage.css`
+
+后端时间范围查询已经从 SQLite `request_logs` 聚合所有发生过请求的账号，移出账号池或删除账号不会清理这些日志。历史账号能力应保持为前端视图组合，不得为此复制费用数据、建立账号墓碑表或改动计价模块。
+
+账号池页和“统计与日志 -> 按账号统计”必须分为：
+
+1. “当前账号”：保持现有账号池成员卡片、健康信息、调度活动和操作按钮。
+2. “历史账号”：显示选定时间范围内有统计、但不属于当前有效账号池成员的账号。
+
+历史状态判定：
+
+- 账号仍存在于账号总览、但不在 API 服务账号池：显示 `未加入`。
+- 账号已不在账号总览：显示 `已删除`。
+- `未加入` 与 `已删除` 必须使用可明显区分的颜色，且不能仅依赖颜色表达状态。
+- 新状态 Tag 必须位于 Team、API、K12、Plus、Pro 等原账号类型 Tag 之后，不能替换或改写账号类型。
+- 已删除账号若已无账号详情，使用请求日志中的历史邮箱，缺失时回退 `accountId`；不得伪造原套餐类型。
+- 当前账号即使在选定时间内没有请求也继续显示；历史账号只来自选定时间范围的实际统计结果。
+- 用户执行“清除统计”后，对应历史账号可以随请求日志一起消失。
+
+### 7.3 最低优先级兜底暂停
+
+核心文件：
+
+- `src/utils/codexLocalAccessBackupDispatch.ts`
+- `src/pages/CodexApiServicePage.tsx`
+- `src/pages/CodexApiServicePage.css`
+- `src/pages/CodexAccountsPage.tsx`
+- `src/styles/pages/codex.css`
+- `src/services/codexLocalAccessService.ts`
+- `src-tauri/src/commands/codex.rs`
+- `src-tauri/src/modules/codex_local_access.rs`
+
+这是用户显式配置的调度能力，与修改集 B 的只读调度观测严格分离。调度观测数据仍不得参与路由；只有用户操作该开关时才改变账号的可调度范围。
+
+最小实现契约：
+
+- 仅最低优先级（`isBackup=true`）账号显示开关。
+- 独立 API 服务页：开关位于账号卡片右上角、移出账号按钮左侧。
+- 普通 Codex 页 API 服务摘要卡片：开关位于对应成员行右侧、移出按钮左侧。
+- 卡片上不显示“兜底开启”“兜底关闭”或额外状态 Tag；通过开关状态、tooltip 和 `aria-label` 表达。
+- 关闭时在该账号 `accountModelRules.excludedModels` 中加入通配符 `*`；打开时只移除 `*`，必须保留该账号其他模型排除规则。
+- 账号从最低优先级改为正常或最高优先级时，后端必须同步移除该账号的 `*`，避免开关消失后账号仍被全部禁用；该账号其他模型排除规则必须保留。
+- 非最低优先级账号若从未发生上述优先级迁移，其手工配置的 `*` 仍属于模型规则，不得被无条件清理。
+- 账号继续保留在 API 服务集合、成员数量、优先级和页面列表中。
+- sidecar 与 legacy HTTP/WebSocket 路径都必须把 `*` 视为禁用全部模型，因此即使其他账号均不可用也不得选择该账号。
+- 两个页面共享同一持久化状态；开关必须调用单账号原子后端命令，不能从页面快照写回整份 `accountModelRules`，否则会覆盖另一页面或模型规则弹窗的并发修改。
+- “禁用模型”弹窗仍是整表编辑，打开时必须记录集合 `updatedAt`，保存时由后端做乐观并发校验；配置已被开关或其他页面更新时拒绝旧草稿，不能反向覆盖新状态。
+- 保存后发送现有 `codex-local-access-state-updated` 事件，并继续依赖已有五秒运行态轮询收敛其他页面。
+- 保存期间禁用开关；失败时不得留下仅前端生效的假状态。
+- “禁用模型”数量只统计真实模型排除；仅含暂停通配符 `*` 的账号规则不计入该数字。
+
+### 7.4 上游升级保护与测试
+
+`codex_local_access.rs` 仍以上游路由结构为主，但必须重新核对 v3 价格常量和历史重算版本。账号页面接受上游布局与功能后，必须恢复历史账号分区和两处兜底开关，不能因上游不存在这些 UI 而删除。
+
+最低验收：
+
+- Rust 测试覆盖 Terra/Luna 的 Standard 短上下文、Standard 长上下文和 Fast 长上下文价格。
+- v2 配置升级到 v3 后，旧价格快照进入现有后台历史重算。
+- 前端测试覆盖 `*` 的添加、移除、其他模型规则保留和空规则清理。
+- Rust 测试覆盖单账号原子开关，以及暂停账号从最低优先级改为正常/最高后的 `*` 清理；不得误删普通账号手工配置的 `*`。
+- 账号池页同时覆盖当前账号、未加入历史账号和已删除历史账号；套餐 Tag 与状态 Tag 的顺序稳定。
+- legacy 与 sidecar 测试覆盖“其他账号均不可用时，暂停的最低账号仍不被选中”；重新打开后恢复兜底。
+- 普通 Codex 摘要卡片继续完整渲染所有成员并保持内部滚动，新增开关不得挤掉额度、套餐或移出按钮。
+
+## 8. 发布与仓库身份差异
+
+这些差异通常保留，但与四组核心产品行为分开审查：
 
 - `.github/workflows/release.yml`：fork 的 draft/tag、Windows 构建和 release notes 策略；非目标平台 job 当前被禁用。
 - `src-tauri/tauri.conf.json`：fork updater 公钥和 fork release endpoint。即使 runtime updater 已禁用，也不能指回上游签名/制品。
@@ -559,7 +660,7 @@ New API URL 构造：
 
 升级上游 workflow 时，先接受安全修复和 action 版本更新，再恢复 fork 的发布范围、draft 行为、签名与 release notes 规则。不要用旧 workflow 整文件覆盖上游。
 
-## 8. 文件所有权与冲突优先级
+## 9. 文件所有权与冲突优先级
 
 | 区域 | 默认裁决 | 必查内容 |
 | --- | --- | --- |
@@ -570,13 +671,14 @@ New API URL 构造：
 | `codex_local_access.rs` | 以上游路由实现为主，重接观测 hook | 每条 selected/terminal path、sidecar event schema |
 | Local access models/types | 合并双方字段 | Rust/TS camelCase 一致性 |
 | API 服务页面/Modal | 接受上游功能，重放活动标记和轮询草稿隔离 | interval 清理、编辑状态是否被 state 覆盖 |
+| API 服务价格/历史账号/兜底暂停 | 保留 fork v3 价格与两处 UI，吸收上游结构修复 | Terra/Luna 费率、历史分区/Tag、`*` 规则、双网关跳过 |
 | `commands/codex.rs` usage 区域 | 以上游 Provider 支持为主，保留 Sub2API 回退/安全解析 | URL 拼接、错误类型、summary 字段 |
 | release workflow/config | 逐段合并 | fork signing、draft、平台范围、release notes |
 | 其他账号平台与通用组件 | 默认完全接受上游 | 仅处理编译所需适配 |
 
-## 9. 标准升级流程
+## 10. 标准升级流程
 
-### 9.1 升级前
+### 10.1 升级前
 
 1. 确认工作区干净或准确记录已有用户改动：`git status --short --branch`。
 2. 记录当前 fork HEAD、上游 tag commit 和 merge-base。
@@ -584,7 +686,7 @@ New API URL 构造：
 4. 先更新本文中的基线、已知缺口和新增热点，再进行代码合并。
 5. 建立独立升级分支，不直接改稳定分支。
 
-### 9.2 审计上游变化
+### 10.2 审计上游变化
 
 至少检查：
 
@@ -597,26 +699,26 @@ git diff <old-upstream-tag>..<new-upstream-tag> -- <本文列出的热点文件>
 
 将变更分为：不相交、结构相交但行为不冲突、直接触碰 fork 不变量、上游已等价实现四类。上游已等价实现时删除本地重复代码。
 
-### 9.3 合并与冲突处理
+### 10.3 合并与冲突处理
 
 1. 合并上游 release tag，保留真实双亲历史。
 2. 不对热点文件使用整文件 `ours/theirs`。
-3. 先恢复上游数据结构与新调用路径，再逐项重放三组行为。
+3. 先恢复上游数据结构与新调用路径，再逐项重放四组行为。
 4. 每解决一组冲突就运行相关格式/类型检查，避免最后集中排错。
 5. 搜索冲突标记以及重复 import、重复字段、失效 dead branch。
 
-### 9.4 合并后差异复核
+### 10.4 合并后差异复核
 
 最终应该同时检查两种差异：
 
 - `<new-upstream-tag>..HEAD`：现在 fork 相对新上游还保留了什么。
 - `<old-fork-head>..HEAD`：本次升级实际改变了什么。
 
-如果第一种差异出现大批与三组行为无关的文件，通常表示冲突处理过度保留了旧代码。
+如果第一种差异出现大批与四组行为无关的文件，通常表示冲突处理过度保留了旧代码。
 
-## 10. 验收矩阵
+## 11. 验收矩阵
 
-### 10.1 静态与构建检查
+### 11.1 静态与构建检查
 
 ```powershell
 npm run typecheck
@@ -631,7 +733,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 Windows 上不得在未设置 `COCKPIT_TOOLS_DATA_DIR` 时运行 Rust 账号测试。该变量必须指向 workspace 内新建的测试专用目录；`HOME`、`CODEX_HOME` 和 `COCKPIT_TOOLS_TEST_DATA_DIR` 不能替代它。若本机没有 Go，可用已忽略的目标名 sidecar 占位文件配合 `COCKPIT_SKIP_CLIPROXY_BUILD=1` 只验证 Rust，但发布构建仍必须由 CI 真实编译并测试 Go sidecar。
 
-### 10.2 去广告/外链扫描
+### 11.2 去广告/外链扫描
 
 ```powershell
 rg -n -i "apikey\.fun|chongcodex|sponsor|donate|aff=|ref=|invite|source=ccs|ytag" src src-tauri remote-config.json announcements.json
@@ -640,7 +742,7 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 
 逐条分类扫描结果：类型名、兼容迁移字段和死代码不等于运行时推广；可点击链接、默认服务、徽标或网络请求必须处理。
 
-### 10.3 调度观测手工检查
+### 11.3 调度观测手工检查
 
 1. 启动 Codex API 服务并加入至少两个账号。
 2. 发起普通、流式和 WebSocket 请求（若该模式受支持）。
@@ -652,7 +754,7 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 7. 在成员、自定义路由、模型规则或 API Key 对话框中编辑未保存内容，等待至少两轮轮询，草稿不能被重置。
 8. 停止服务后确认轮询停止，无持续 command 或控制台报错。
 
-### 10.4 计费查询手工检查
+### 11.4 计费查询手工检查
 
 1. 用明确标记为 Sub2API 的 Provider 分别测试根 Base URL 与 `/v1` Base URL。
 2. 确认 Bearer Key 只发往用户填写的 host。
@@ -661,12 +763,24 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 5. 未指定 integration type 时确认 New API -> Sub2API 探测顺序。
 6. 404 可触发候选回退；401/403 等鉴权错误应清晰返回，不应伪装成零余额。
 
-## 11. 完成定义
+### 11.5 API 服务价格、历史账号与兜底暂停检查
+
+1. 打开价格设置，确认 Terra/Luna 的 Standard、长上下文和 Fast 值与 7.1 一致。
+2. 使用 v2 价格配置启动，确认升级到 v3 后历史请求在后台重算，页面不被同步阻塞。
+3. 让一个仍在账号总览的账号产生请求后移出 API 服务，在相同时间范围确认其进入“历史账号”并显示 `未加入`，原套餐 Tag 位于状态 Tag 之前。
+4. 删除该账号并刷新，在相同时间范围确认显示 `已删除`，费用和请求数仍保留。
+5. 将一个账号设为最低优先级，在独立页面和普通摘要卡片确认都出现无文字开关；任一位置切换后另一位置同步。
+6. 关闭开关并使其他账号全部不可用，分别验证 legacy 与 sidecar 不会调度该账号；重新打开后恢复兜底。
+7. 为账号预先配置其他模型排除规则，来回切换开关后确认这些规则未被覆盖。
+8. 暂停最低优先级账号后把它改为正常或最高优先级，确认 `*` 自动清理、其他模型排除仍保留，账号恢复可调度且不留下不可见暂停状态。
+9. 打开“禁用模型”弹窗后从另一页面切换兜底开关，再尝试保存旧草稿；后端必须拒绝旧版本，重新打开弹窗后才能保存。
+
+## 12. 完成定义
 
 一次上游升级只有同时满足以下条件才算完成：
 
 - 新版本号、依赖、release notes 和上游修复已同步。
-- 三组 fork 行为逐项通过本文验收。
+- 四组 fork 行为逐项通过本文验收。
 - 相对新上游的差异已收敛到本文热点和必要发布文件。
 - 没有冲突标记、重复实现、非预期 referral URL 或默认商业服务。
 - 前后端检查和目标 Rust 测试通过；不能运行或纯上游已知失败的检查已记录原因。

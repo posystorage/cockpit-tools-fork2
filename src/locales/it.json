@@ -2090,6 +2090,12 @@
       "memberPriorityNormal": "Normale",
       "memberPriorityHighest": "Massima",
       "memberPriorityDesc": "Massima viene usata per prima, Normale segue le regole attuali e Minima solo se gli altri account non sono disponibili.",
+      "currentAccounts": "Account attuali",
+      "historicalAccounts": "Account storici",
+      "historyNotJoined": "Non aggiunto",
+      "historyDeleted": "Eliminato",
+      "backupDispatchToggle": "Consenti a questo account con priorità minima di partecipare al routing di riserva",
+      "backupDispatchSaved": "Impostazione della priorità minima aggiornata",
       "stats": {
         "requests": "Richieste",
         "requestsDetail": "OK {{success}} / Errori {{failed}} / Annull. {{canceled}} / Monte {{upstreamFailed}} / Incompl. {{incomplete}}",

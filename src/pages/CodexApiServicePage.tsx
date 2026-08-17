@@ -99,6 +99,9 @@ import {
 } from "../utils/codexQuotaPool";
 import { filterCodexLocalAccessAccountIds } from "../utils/codexLocalAccessAccounts";
 import {
+  isCodexLocalAccessBackupDispatchEnabled,
+} from "../utils/codexLocalAccessBackupDispatch";
+import {
   isCodexLocalAccessRiskNoticeDismissed,
 } from "../utils/codexLocalAccessRiskNotice";
 import { requestCodexOpenAddAccount } from "../utils/codexAddAccountRequest";
@@ -845,6 +848,8 @@ export function CodexApiServicePage() {
   const [modelAliasesText, setModelAliasesText] = useState("");
   const [excludedModelsText, setExcludedModelsText] = useState("");
   const [accountModelRulesOpen, setAccountModelRulesOpen] = useState(false);
+  const [accountModelRulesBaseUpdatedAt, setAccountModelRulesBaseUpdatedAt] =
+    useState<number | null>(null);
   const [accountModelRuleDrafts, setAccountModelRuleDrafts] = useState<
     Record<string, string>
   >({});
@@ -987,6 +992,40 @@ export function CodexApiServicePage() {
     () => memberAccounts.map((account) => account.id),
     [memberAccounts],
   );
+  const localAccessAccountById = useMemo(
+    () => new Map(localAccessAccounts.map((account) => [account.id, account])),
+    [localAccessAccounts],
+  );
+  const memberAccountIdSet = useMemo(
+    () => new Set(memberAccountIds),
+    [memberAccountIds],
+  );
+  const historicalAccountRows = useMemo(
+    () =>
+      (selectedStatsWindow?.accounts ?? [])
+        .filter((stat) => !memberAccountIdSet.has(stat.accountId))
+        .map((stat) => ({
+          stat,
+          account: localAccessAccountById.get(stat.accountId) ?? null,
+          status: localAccessAccountById.has(stat.accountId)
+            ? ("not-joined" as const)
+            : ("deleted" as const),
+        })),
+    [
+      localAccessAccountById,
+      memberAccountIdSet,
+      selectedStatsWindow?.accounts,
+    ],
+  );
+  const backupAccountIdSet = useMemo(
+    () =>
+      new Set(
+        (collection?.customRoutingRules ?? [])
+          .filter((rule) => rule.isBackup)
+          .map((rule) => rule.accountId),
+      ),
+    [collection?.customRoutingRules],
+  );
   const mappingMemberAccounts = useMemo(
     () => memberAccounts.filter((account) => isCodexApiKeyAccount(account)),
     [memberAccounts],
@@ -1002,7 +1041,10 @@ export function CodexApiServicePage() {
     });
     return next;
   }, [localAccessAccounts, t]);
-  const accountModelRuleCount = collection?.accountModelRules.length ?? 0;
+  const accountModelRuleCount =
+    collection?.accountModelRules.filter((rule) =>
+      rule.excludedModels.some((model) => model.trim() !== "*"),
+    ).length ?? 0;
   const accountModelRuleAllSelected =
     memberAccounts.length > 0 &&
     memberAccounts.every((account) => accountModelRuleSelected.has(account.id));
@@ -2436,11 +2478,13 @@ export function CodexApiServicePage() {
 
   const handleOpenAccountModelRules = () => {
     resetAccountModelRuleDraftsFromCollection();
+    setAccountModelRulesBaseUpdatedAt(collection?.updatedAt ?? null);
     setAccountModelRulesOpen(true);
   };
 
   const handleCloseAccountModelRules = () => {
     resetAccountModelRuleDraftsFromCollection();
+    setAccountModelRulesBaseUpdatedAt(null);
     setAccountModelRulesOpen(false);
   };
 
@@ -2622,14 +2666,35 @@ export function CodexApiServicePage() {
         const next =
           await codexLocalAccessService.updateCodexLocalAccessAccountModelRules(
             rules,
+            accountModelRulesBaseUpdatedAt ?? undefined,
           );
         setState(next);
+        setAccountModelRulesBaseUpdatedAt(null);
         setAccountModelRulesOpen(false);
       },
       t(
         "codex.apiService.accountModelRules.saveSuccess",
         "账号模型禁用规则已保存",
       ),
+    );
+  };
+
+  const handleToggleBackupDispatch = async (
+    accountId: string,
+    enabled: boolean,
+  ) => {
+    if (!collection || !backupAccountIdSet.has(accountId)) return;
+    await runAction(
+      async () => {
+        const next =
+          await codexLocalAccessService.updateCodexLocalAccessBackupDispatch(
+          accountId,
+          enabled,
+          );
+        setState(next);
+        window.dispatchEvent(new Event("codex-local-access-state-updated"));
+      },
+      t("codex.localAccess.backupDispatchSaved", "最低优先级调度设置已更新"),
     );
   };
 
@@ -4943,6 +5008,9 @@ export function CodexApiServicePage() {
                   </button>
                 </div>
               </div>
+              <h3 className="codex-api-service-account-section-title">
+                {t("codex.localAccess.currentAccounts", "当前账号")}
+              </h3>
               <div className="codex-api-service-account-grid">
                 {memberAccounts.length === 0 ? (
                   <div className="codex-api-service-empty codex-api-service-empty-with-action">
@@ -5009,9 +5077,16 @@ export function CodexApiServicePage() {
                       (item) => item.accountId === account.id,
                     );
                     const disabledModelCount =
-                      parseModelRuleText(
-                        accountModelRuleDrafts[account.id] ?? "",
-                      ).length;
+                      collection?.accountModelRules
+                        .find((rule) => rule.accountId === account.id)
+                        ?.excludedModels.filter((model) => model !== "*")
+                        .length ?? 0;
+                    const isBackupAccount = backupAccountIdSet.has(account.id);
+                    const backupDispatchEnabled =
+                      isCodexLocalAccessBackupDispatchEnabled(
+                        collection?.accountModelRules,
+                        account.id,
+                      );
                     return (
                       <div
                         key={account.id}
@@ -5103,19 +5178,111 @@ export function CodexApiServicePage() {
                             </span>
                           )}
                         </div>
-                        <button
-                          type="button"
-                          className="folder-icon-btn"
-                          onClick={() => void handleRemoveMember(account.id)}
-                          disabled={busy}
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        <div className="codex-api-service-account-card-actions">
+                          {isBackupAccount && (
+                            <label
+                              className="codex-api-service-backup-dispatch-switch"
+                              title={t(
+                                "codex.localAccess.backupDispatchToggle",
+                                "允许该最低优先级账号参与兜底调度",
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={backupDispatchEnabled}
+                                onChange={(event) =>
+                                  void handleToggleBackupDispatch(
+                                    account.id,
+                                    event.target.checked,
+                                  )
+                                }
+                                disabled={busy}
+                                aria-label={t(
+                                  "codex.localAccess.backupDispatchToggle",
+                                  "允许该最低优先级账号参与兜底调度",
+                                )}
+                              />
+                            </label>
+                          )}
+                          <button
+                            type="button"
+                            className="folder-icon-btn"
+                            onClick={() => void handleRemoveMember(account.id)}
+                            disabled={busy}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </div>
                     );
                   })
                 )}
               </div>
+              {historicalAccountRows.length > 0 && (
+                <>
+                  <h3 className="codex-api-service-account-section-title is-history">
+                    {t("codex.localAccess.historicalAccounts", "历史账号")}
+                  </h3>
+                  <div className="codex-api-service-account-grid codex-api-service-history-account-grid">
+                    {historicalAccountRows.map(({ stat, account, status }) => {
+                      const presentation = account
+                        ? buildCodexAccountPresentation(account, t)
+                        : null;
+                      const displayName =
+                        presentation?.displayName ||
+                        stat.email ||
+                        stat.accountId;
+                      return (
+                        <div
+                          key={`history-${stat.accountId}`}
+                          className="codex-api-service-account-card codex-api-service-history-account-card"
+                        >
+                          <div>
+                            <strong title={displayName}>
+                              {maskAccountText(displayName)}
+                            </strong>
+                            {presentation && (
+                              <span
+                                className={`tier-badge ${presentation.planClass}`}
+                              >
+                                {presentation.planLabel}
+                              </span>
+                            )}
+                            <span
+                              className={`codex-api-service-history-account-tag is-${status}`}
+                            >
+                              {status === "not-joined"
+                                ? t(
+                                    "codex.localAccess.historyNotJoined",
+                                    "未加入",
+                                  )
+                                : t(
+                                    "codex.localAccess.historyDeleted",
+                                    "已删除",
+                                  )}
+                            </span>
+                          </div>
+                          <div className="codex-api-service-account-meta">
+                            <span>
+                              {t("codex.localAccess.stats.accountRequests", {
+                                count: stat.usage.requestCount,
+                                defaultValue: "{{count}} 次",
+                              })}
+                            </span>
+                            <span className="codex-api-service-account-meta-token">
+                              {formatAccountTokenUsage(stat.usage)}
+                            </span>
+                            <span>{formatRequestResultDetail(stat.usage)}</span>
+                            <span>
+                              {formatUsdCost(stat.usage.estimatedCostUsd)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </section>
 
             <section className="codex-api-service-panel">
@@ -5443,84 +5610,157 @@ export function CodexApiServicePage() {
             </div>
 
             {statsLogTab === "accounts" && (
-              <div className="codex-api-service-account-grid codex-api-service-stats-account-grid">
-                {memberAccounts.length === 0 ? (
-                  <div className="codex-api-service-empty">
-                    {t("codex.localAccess.emptyMembers", "当前集合暂无账号")}
-                  </div>
-                ) : (
-                  memberAccounts.map((account) => {
-                    const presentation = buildCodexAccountPresentation(
-                      account,
-                      t,
-                    );
-                    const health = healthByAccountId.get(account.id);
-                    const stat = selectedStatsWindow?.accounts.find(
-                      (item) => item.accountId === account.id,
-                    );
-                    return (
-                      <div
-                        key={account.id}
-                        className="codex-api-service-account-card"
-                      >
-                        <div>
-                          <strong title={presentation.displayName}>
-                            {maskAccountText(presentation.displayName)}
-                          </strong>
-                          <span
-                            className={`tier-badge ${presentation.planClass}`}
+              <div className="codex-api-service-account-stats-sections">
+                <h3 className="codex-api-service-account-section-title">
+                  {t("codex.localAccess.currentAccounts", "当前账号")}
+                </h3>
+                <div className="codex-api-service-account-grid codex-api-service-stats-account-grid">
+                  {memberAccounts.length === 0 ? (
+                    <div className="codex-api-service-empty">
+                      {t("codex.localAccess.emptyMembers", "当前集合暂无账号")}
+                    </div>
+                  ) : (
+                    memberAccounts.map((account) => {
+                      const presentation = buildCodexAccountPresentation(
+                        account,
+                        t,
+                      );
+                      const health = healthByAccountId.get(account.id);
+                      const stat = selectedStatsWindow?.accounts.find(
+                        (item) => item.accountId === account.id,
+                      );
+                      return (
+                        <div
+                          key={account.id}
+                          className="codex-api-service-account-card"
+                        >
+                          <div>
+                            <strong title={presentation.displayName}>
+                              {maskAccountText(presentation.displayName)}
+                            </strong>
+                            <span
+                              className={`tier-badge ${presentation.planClass}`}
+                            >
+                              {presentation.planLabel}
+                            </span>
+                          </div>
+                          <div className="codex-api-service-account-meta">
+                            <span>
+                              {t("codex.localAccess.stats.accountRequests", {
+                                count: stat?.usage.requestCount ?? 0,
+                                defaultValue: "{{count}} 次",
+                              })}
+                            </span>
+                            <span className="codex-api-service-account-meta-token">
+                              {formatAccountTokenUsage(stat?.usage)}
+                            </span>
+                            <span>{formatRequestResultDetail(stat?.usage)}</span>
+                            <span>
+                              {formatUsdCost(stat?.usage.estimatedCostUsd ?? 0)}
+                            </span>
+                            <span>
+                              {t("codex.apiService.accountHealth.failures", {
+                                count: health?.consecutiveFailures ?? 0,
+                                defaultValue: "连续失败 {{count}}",
+                              })}
+                            </span>
+                            <span>
+                              {health?.cooldowns.length
+                                ? t("codex.localAccess.healthCooldown", {
+                                    count: health.cooldowns.length,
+                                    defaultValue: "冷却 {{count}}",
+                                  })
+                                : health && !health.available
+                                  ? t(
+                                      health.schedulerReason === "unauthorized"
+                                        ? "codex.apiService.accountHealth.authError"
+                                        : "codex.apiService.accountHealth.unavailable",
+                                      health.schedulerReason === "unauthorized"
+                                        ? "鉴权异常"
+                                        : "暂不可用",
+                                    )
+                                  : t(
+                                      "codex.localAccess.healthAvailable",
+                                      "可用",
+                                    )}
+                            </span>
+                            <span>
+                              {t("codex.apiService.accountHealth.image", {
+                                status:
+                                  health?.imageGenerationStatus ?? "unknown",
+                                defaultValue: "图片 {{status}}",
+                              })}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+                {historicalAccountRows.length > 0 && (
+                  <>
+                    <h3 className="codex-api-service-account-section-title is-history">
+                      {t("codex.localAccess.historicalAccounts", "历史账号")}
+                    </h3>
+                    <div className="codex-api-service-account-grid codex-api-service-history-account-grid">
+                      {historicalAccountRows.map(({ stat, account, status }) => {
+                        const presentation = account
+                          ? buildCodexAccountPresentation(account, t)
+                          : null;
+                        const displayName =
+                          presentation?.displayName ||
+                          stat.email ||
+                          stat.accountId;
+                        return (
+                          <div
+                            key={`stats-history-${stat.accountId}`}
+                            className="codex-api-service-account-card codex-api-service-history-account-card"
                           >
-                            {presentation.planLabel}
-                          </span>
-                        </div>
-                        <div className="codex-api-service-account-meta">
-                          <span>
-                            {t("codex.localAccess.stats.accountRequests", {
-                              count: stat?.usage.requestCount ?? 0,
-                              defaultValue: "{{count}} 次",
-                            })}
-                          </span>
-                          <span className="codex-api-service-account-meta-token">
-                            {formatAccountTokenUsage(stat?.usage)}
-                          </span>
-                          <span>{formatRequestResultDetail(stat?.usage)}</span>
-                          <span>
-                            {formatUsdCost(stat?.usage.estimatedCostUsd ?? 0)}
-                          </span>
-                          <span>
-                            {t("codex.apiService.accountHealth.failures", {
-                              count: health?.consecutiveFailures ?? 0,
-                              defaultValue: "连续失败 {{count}}",
-                            })}
-                          </span>
-                          <span>
-                            {health?.cooldowns.length
-                              ? t("codex.localAccess.healthCooldown", {
-                                  count: health.cooldowns.length,
-                                  defaultValue: "冷却 {{count}}",
-                                })
-                              : health && !health.available
-                                ? t(
-                                    health.schedulerReason === "unauthorized"
-                                      ? "codex.apiService.accountHealth.authError"
-                                      : "codex.apiService.accountHealth.unavailable",
-                                    health.schedulerReason === "unauthorized"
-                                      ? "鉴权异常"
-                                      : "暂不可用",
-                                  )
-                                : t("codex.localAccess.healthAvailable", "可用")}
-                          </span>
-                          <span>
-                            {t("codex.apiService.accountHealth.image", {
-                              status:
-                                health?.imageGenerationStatus ?? "unknown",
-                              defaultValue: "图片 {{status}}",
-                            })}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })
+                            <div>
+                              <strong title={displayName}>
+                                {maskAccountText(displayName)}
+                              </strong>
+                              {presentation && (
+                                <span
+                                  className={`tier-badge ${presentation.planClass}`}
+                                >
+                                  {presentation.planLabel}
+                                </span>
+                              )}
+                              <span
+                                className={`codex-api-service-history-account-tag is-${status}`}
+                              >
+                                {status === "not-joined"
+                                  ? t(
+                                      "codex.localAccess.historyNotJoined",
+                                      "未加入",
+                                    )
+                                  : t(
+                                      "codex.localAccess.historyDeleted",
+                                      "已删除",
+                                    )}
+                              </span>
+                            </div>
+                            <div className="codex-api-service-account-meta">
+                              <span>
+                                {t("codex.localAccess.stats.accountRequests", {
+                                  count: stat.usage.requestCount,
+                                  defaultValue: "{{count}} 次",
+                                })}
+                              </span>
+                              <span className="codex-api-service-account-meta-token">
+                                {formatAccountTokenUsage(stat.usage)}
+                              </span>
+                              <span>{formatRequestResultDetail(stat.usage)}</span>
+                              <span>
+                                {formatUsdCost(stat.usage.estimatedCostUsd)}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
                 )}
               </div>
             )}

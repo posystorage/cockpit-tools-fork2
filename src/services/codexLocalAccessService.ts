@@ -147,9 +147,21 @@ export async function updateCodexLocalAccessCustomRouting(
 
 export async function updateCodexLocalAccessAccountModelRules(
   rules: CodexLocalAccessAccountModelRule[],
+  expectedUpdatedAt?: number,
 ): Promise<CodexLocalAccessState> {
   return await invoke("codex_local_access_update_account_model_rules", {
     rules,
+    expectedUpdatedAt: expectedUpdatedAt ?? null,
+  });
+}
+
+export async function updateCodexLocalAccessBackupDispatch(
+  accountId: string,
+  enabled: boolean,
+): Promise<CodexLocalAccessState> {
+  return await invoke("codex_local_access_update_backup_dispatch", {
+    accountId,
+    enabled,
   });
 }
 

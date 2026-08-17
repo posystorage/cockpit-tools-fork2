@@ -2469,6 +2469,12 @@
       "memberPriorityNormal": "正常",
       "memberPriorityHighest": "最高",
       "memberPriorityDesc": "最高优先使用，正常按当前规则调度，最低仅在其他账号不可用时使用。",
+      "currentAccounts": "当前账号",
+      "historicalAccounts": "历史账号",
+      "historyNotJoined": "未加入",
+      "historyDeleted": "已删除",
+      "backupDispatchToggle": "允许该最低优先级账号参与兜底调度",
+      "backupDispatchSaved": "最低优先级调度设置已更新",
       "routingStrategy": {
         "auto": "自动（推荐）",
         "singleAccount": "固定首个账号",

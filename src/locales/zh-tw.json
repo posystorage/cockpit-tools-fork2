@@ -2090,6 +2090,12 @@
       "memberPriorityNormal": "一般",
       "memberPriorityHighest": "最高",
       "memberPriorityDesc": "最高會優先使用，一般依目前規則排程，最低僅在其他帳號無法使用時採用。",
+      "currentAccounts": "目前帳號",
+      "historicalAccounts": "歷史帳號",
+      "historyNotJoined": "未加入",
+      "historyDeleted": "已刪除",
+      "backupDispatchToggle": "允許此最低優先級帳號參與備援排程",
+      "backupDispatchSaved": "最低優先級排程設定已更新",
       "stats": {
         "requests": "總請求數",
         "requestsDetail": "成功 {{success}} / 失敗 {{failed}} / 取消 {{canceled}} / 上游失敗 {{upstreamFailed}} / 未完成 {{incomplete}}",

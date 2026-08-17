@@ -2090,6 +2090,12 @@
       "memberPriorityNormal": "Běžná",
       "memberPriorityHighest": "Nejvyšší",
       "memberPriorityDesc": "Nejvyšší se použije přednostně, běžná se řídí aktuálními pravidly a nejnižší jen tehdy, když ostatní účty nejsou dostupné.",
+      "currentAccounts": "Aktuální účty",
+      "historicalAccounts": "Historické účty",
+      "historyNotJoined": "Nepřidáno",
+      "historyDeleted": "Smazáno",
+      "backupDispatchToggle": "Povolit tomuto účtu s nejnižší prioritou záložní směrování",
+      "backupDispatchSaved": "Nastavení nejnižší priority bylo aktualizováno",
       "stats": {
         "requests": "Požadavky",
         "requestsDetail": "OK {{success}} / Chyba {{failed}} / Zruš. {{canceled}} / Zdroj {{upstreamFailed}} / Nedok. {{incomplete}}",

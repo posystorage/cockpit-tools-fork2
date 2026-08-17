@@ -2090,6 +2090,12 @@
       "memberPriorityNormal": "Обычный",
       "memberPriorityHighest": "Высокий",
       "memberPriorityDesc": "Высокий используется первым, обычный — по текущим правилам, низкий — только когда другие аккаунты недоступны.",
+      "currentAccounts": "Текущие аккаунты",
+      "historicalAccounts": "Исторические аккаунты",
+      "historyNotJoined": "Не добавлен",
+      "historyDeleted": "Удалён",
+      "backupDispatchToggle": "Разрешить этому аккаунту с низшим приоритетом резервную маршрутизацию",
+      "backupDispatchSaved": "Настройка низшего приоритета обновлена",
       "stats": {
         "requests": "Запросы",
         "requestsDetail": "ОК {{success}} / Ошибка {{failed}} / Отмена {{canceled}} / Источник {{upstreamFailed}} / Неполн. {{incomplete}}",

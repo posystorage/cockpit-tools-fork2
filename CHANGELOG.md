@@ -13,10 +13,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - **Codex now supports an optional experimental model catalog**: add and edit experimental model IDs and display names for the default profile and extra instances, with `gpt-5.6-sol-wm` / `GPT-5.6 Sol WM` provided initially. Custom experimental models are available in the Codex client and Cockpit API Service; the setting stays enabled across account-type switches and respects user-managed model catalogs.
 - **Delimited Antigravity account imports support auxiliary email addresses and Google refresh tokens**: a valid refresh token can restore the signed-in account directly, while missing or invalid tokens still preserve the password, auxiliary email, and 2FA details as a pending profile. Account exports preserve the auxiliary email as well.
+- **Codex API Service now reports historical accounts**: the account pool and per-account statistics distinguish current accounts, existing accounts that are not joined, and deleted accounts. Historical requests, tokens, and estimated costs remain visible while plan and history-status badges stay distinct.
+- **Lowest-priority accounts can be paused for fallback scheduling**: the standalone API Service page and the ordinary Codex summary card share one switch. A paused account remains in the pool but is skipped by both legacy and sidecar gateways, and resuming it preserves its existing model exclusions.
 
 ### Changed
 
 - **Codex settings are flatter and save immediately**: the config file, context presets, custom values, experimental models, account-switch integrations, quota display, and auto-switch controls now share the outer settings level; presets, fields, and switches persist without separate Save or Refresh buttons, and consecutive edits are saved in order.
+- **Updated the local GPT-5.6 Terra/Luna pricing baseline**: pricing schema v3 changes Terra input/cached-input/output defaults to USD `2.00 / 0.20 / 12.00` per million tokens and Luna to `0.20 / 0.02 / 1.20`. Existing long-context and Fast multipliers remain in place, and historical requests using the old price book are repriced in the background.
+- **Hardened fallback-pause state consistency**: switches now use a single-account backend mutation; moving a paused account to normal or highest priority clears only the pause wildcard; and full-table model-rule edits use optimistic version checks so stale drafts cannot overwrite a newer scheduling state.
 
 ## [1.3.20] - 2026-08-14
 

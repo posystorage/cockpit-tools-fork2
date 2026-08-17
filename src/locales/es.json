@@ -2090,6 +2090,12 @@
       "memberPriorityNormal": "Estándar",
       "memberPriorityHighest": "Máxima",
       "memberPriorityDesc": "Máxima se usa primero; Estándar sigue las reglas actuales; Mínima solo se usa si las demás cuentas no están disponibles.",
+      "currentAccounts": "Cuentas actuales",
+      "historicalAccounts": "Cuentas históricas",
+      "historyNotJoined": "No añadida",
+      "historyDeleted": "Eliminada",
+      "backupDispatchToggle": "Permitir esta cuenta de prioridad mínima en el enrutamiento de respaldo",
+      "backupDispatchSaved": "Configuración de prioridad mínima actualizada",
       "stats": {
         "requests": "Solicitudes",
         "requestsDetail": "OK {{success}} / Fallo {{failed}} / Canc. {{canceled}} / Origen {{upstreamFailed}} / Incomp. {{incomplete}}",

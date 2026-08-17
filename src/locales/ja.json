@@ -2090,6 +2090,12 @@
       "memberPriorityNormal": "通常",
       "memberPriorityHighest": "最高",
       "memberPriorityDesc": "最高は優先使用、通常は現在のルールで振り分け、最低は他のアカウントが利用できない場合のみ使用します。",
+      "currentAccounts": "現在のアカウント",
+      "historicalAccounts": "履歴アカウント",
+      "historyNotJoined": "未参加",
+      "historyDeleted": "削除済み",
+      "backupDispatchToggle": "この最低優先度アカウントをフォールバック振り分けに使用する",
+      "backupDispatchSaved": "最低優先度の振り分け設定を更新しました",
       "stats": {
         "requests": "リクエスト",
         "requestsDetail": "成功 {{success}} / 失敗 {{failed}} / 取消 {{canceled}} / 上流失敗 {{upstreamFailed}} / 未完了 {{incomplete}}",

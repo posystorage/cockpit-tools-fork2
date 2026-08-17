@@ -2090,6 +2090,12 @@
       "memberPriorityNormal": "Bình thường",
       "memberPriorityHighest": "Cao nhất",
       "memberPriorityDesc": "Cao nhất được dùng trước, Bình thường theo quy tắc hiện tại, còn Thấp nhất chỉ dùng khi các tài khoản khác không khả dụng.",
+      "currentAccounts": "Tài khoản hiện tại",
+      "historicalAccounts": "Tài khoản lịch sử",
+      "historyNotJoined": "Chưa thêm",
+      "historyDeleted": "Đã xóa",
+      "backupDispatchToggle": "Cho phép tài khoản ưu tiên thấp nhất này tham gia định tuyến dự phòng",
+      "backupDispatchSaved": "Đã cập nhật cài đặt ưu tiên thấp nhất",
       "stats": {
         "requests": "Yêu cầu",
         "requestsDetail": "OK {{success}} / Lỗi {{failed}} / Hủy {{canceled}} / Nguồn {{upstreamFailed}} / Chưa xong {{incomplete}}",
