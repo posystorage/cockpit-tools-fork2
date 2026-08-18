@@ -2095,6 +2095,7 @@
       "historyNotJoined": "Non aggiunto",
       "historyDeleted": "Eliminato",
       "backupDispatchToggle": "Consenti a questo account con priorità minima di partecipare al routing di riserva",
+      "backupDispatchDraining": "In pausa; completamento di {{count}} richieste precedenti",
       "backupDispatchSaved": "Impostazione della priorità minima aggiornata",
       "stats": {
         "requests": "Richieste",

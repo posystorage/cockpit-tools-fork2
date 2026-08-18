@@ -2095,6 +2095,7 @@
       "historyNotJoined": "未加入",
       "historyDeleted": "已刪除",
       "backupDispatchToggle": "允許此最低優先級帳號參與備援排程",
+      "backupDispatchDraining": "已暫停；關閉前請求處理中 {{count}}",
       "backupDispatchSaved": "最低優先級排程設定已更新",
       "stats": {
         "requests": "總請求數",

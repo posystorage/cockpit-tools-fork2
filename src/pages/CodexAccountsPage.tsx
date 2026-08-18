@@ -12583,19 +12583,39 @@ export function CodexAccountsPage() {
                     const weeklyQuota = presentation.quotaItems.find(
                       (item) => item.key === "secondary",
                     );
+                    const memberPriority =
+                      localAccessMemberPriorityByAccountId.get(account.id);
+                    const backupDispatchEnabled =
+                      isCodexLocalAccessBackupDispatchEnabled(
+                        localAccessCollection?.accountModelRules,
+                        account.id,
+                      );
                     const activity =
                       localAccessActivityByAccountId.get(account.id);
                     const activityRunningCount = activity?.runningCount ?? 0;
                     const activityRecentAt =
                       activity?.lastFinishedAt ?? activity?.lastSelectedAt ?? 0;
+                    const activityPredatesPause =
+                      memberPriority === "lowest" &&
+                      !backupDispatchEnabled &&
+                      (activity?.lastSelectedAt ?? 0) > 0 &&
+                      (localAccessCollection?.updatedAt ?? 0) > 0 &&
+                      (activity?.lastSelectedAt ?? 0) <=
+                        (localAccessCollection?.updatedAt ?? 0);
                     const hasActivity =
-                      activityRunningCount > 0 || activityRecentAt > 0;
+                      activityRunningCount > 0 ||
+                      (activityRecentAt > 0 && !activityPredatesPause);
                     const activityText =
                       activityRunningCount > 0
-                        ? t("codex.apiService.accountActivity.running", {
-                            count: activityRunningCount,
-                            defaultValue: "调度中 {{count}}",
-                          })
+                        ? activityPredatesPause
+                          ? t("codex.localAccess.backupDispatchDraining", {
+                              count: activityRunningCount,
+                              defaultValue: "已暂停；关闭前请求处理中 {{count}}",
+                            })
+                          : t("codex.apiService.accountActivity.running", {
+                              count: activityRunningCount,
+                              defaultValue: "调度中 {{count}}",
+                            })
                         : t("codex.apiService.accountActivity.recent", {
                             seconds:
                               formatLocalAccessActivityElapsedSeconds(
@@ -12611,13 +12631,6 @@ export function CodexAccountsPage() {
                       .map((item) => item?.trim())
                       .filter(Boolean)
                       .join(" · ");
-                    const memberPriority =
-                      localAccessMemberPriorityByAccountId.get(account.id);
-                    const backupDispatchEnabled =
-                      isCodexLocalAccessBackupDispatchEnabled(
-                        localAccessCollection?.accountModelRules,
-                        account.id,
-                      );
                     return (
                       <div
                         key={`local-access-${account.id}`}
@@ -12677,48 +12690,45 @@ export function CodexAccountsPage() {
                         >
                           {presentation.planLabel}
                         </span>
-                        {memberPriority === "lowest" ? (
-                          <label
-                            className="codex-local-access-backup-dispatch-switch"
-                            title={t(
-                              "codex.localAccess.backupDispatchToggle",
-                              "允许该最低优先级账号参与兜底调度",
-                            )}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={backupDispatchEnabled}
-                              onChange={(event) =>
-                                void handleToggleLocalAccessBackupDispatch(
-                                  account.id,
-                                  event.target.checked,
-                                )
-                              }
-                              disabled={localAccessBusy}
-                              aria-label={t(
+                        <span className="codex-local-access-member-actions">
+                          {memberPriority === "lowest" && (
+                            <label
+                              className="codex-local-access-backup-dispatch-switch"
+                              title={t(
                                 "codex.localAccess.backupDispatchToggle",
                                 "允许该最低优先级账号参与兜底调度",
                               )}
-                            />
-                          </label>
-                        ) : (
-                          <span
-                            className="codex-local-access-backup-dispatch-switch-placeholder"
-                            aria-hidden="true"
-                          />
-                        )}
-                        <button
-                          type="button"
-                          className="folder-preview-remove-btn"
-                          onClick={() =>
-                            void handleRemoveLocalAccessAccount(account.id)
-                          }
-                          title={t("accounts.groups.removeFromGroup")}
-                          aria-label={`${t("accounts.groups.removeFromGroup")}: ${maskAccountText(presentation.displayName)}`}
-                          disabled={localAccessBusy}
-                        >
-                          <LogOut size={12} />
-                        </button>
+                            >
+                              <input
+                                type="checkbox"
+                                checked={backupDispatchEnabled}
+                                onChange={(event) =>
+                                  void handleToggleLocalAccessBackupDispatch(
+                                    account.id,
+                                    event.target.checked,
+                                  )
+                                }
+                                disabled={localAccessBusy}
+                                aria-label={t(
+                                  "codex.localAccess.backupDispatchToggle",
+                                  "允许该最低优先级账号参与兜底调度",
+                                )}
+                              />
+                            </label>
+                          )}
+                          <button
+                            type="button"
+                            className="folder-preview-remove-btn"
+                            onClick={() =>
+                              void handleRemoveLocalAccessAccount(account.id)
+                            }
+                            title={t("accounts.groups.removeFromGroup")}
+                            aria-label={`${t("accounts.groups.removeFromGroup")}: ${maskAccountText(presentation.displayName)}`}
+                            disabled={localAccessBusy}
+                          >
+                            <LogOut size={12} />
+                          </button>
+                        </span>
                       </div>
                     );
                   })

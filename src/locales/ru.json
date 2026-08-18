@@ -2095,6 +2095,7 @@
       "historyNotJoined": "Не добавлен",
       "historyDeleted": "Удалён",
       "backupDispatchToggle": "Разрешить этому аккаунту с низшим приоритетом резервную маршрутизацию",
+      "backupDispatchDraining": "Приостановлено; завершается предыдущих запросов: {{count}}",
       "backupDispatchSaved": "Настройка низшего приоритета обновлена",
       "stats": {
         "requests": "Запросы",

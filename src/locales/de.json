@@ -2095,6 +2095,7 @@
       "historyNotJoined": "Nicht hinzugefügt",
       "historyDeleted": "Gelöscht",
       "backupDispatchToggle": "Dieses Konto mit niedrigster Priorität für die Ausweichweiterleitung zulassen",
+      "backupDispatchDraining": "Pausiert; {{count}} frühere Anfrage(n) werden abgeschlossen",
       "backupDispatchSaved": "Einstellung für niedrigste Priorität aktualisiert",
       "stats": {
         "requests": "Anfragen",

@@ -2142,6 +2142,7 @@
       "historyNotJoined": "غير مضاف",
       "historyDeleted": "محذوف",
       "backupDispatchToggle": "السماح لهذا الحساب ذي الأولوية الدنيا بالمشاركة في التوجيه الاحتياطي",
+      "backupDispatchDraining": "متوقف مؤقتًا؛ جارٍ إنهاء {{count}} من الطلبات السابقة",
       "backupDispatchSaved": "تم تحديث إعداد الأولوية الدنيا",
       "stats": {
         "requests": "الطلبات",

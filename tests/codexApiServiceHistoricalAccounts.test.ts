@@ -74,4 +74,11 @@ describe("Codex API service historical accounts", () => {
       pageSource.includes("accountModelRulesBaseUpdatedAt ?? undefined"),
     );
   });
+
+  it("labels in-flight requests selected before fallback was paused", () => {
+    assert.ok(pageSource.includes("const activityPredatesPause ="));
+    assert.ok(
+      pageSource.includes('"codex.localAccess.backupDispatchDraining"'),
+    );
+  });
 });

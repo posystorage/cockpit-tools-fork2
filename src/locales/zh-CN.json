@@ -2474,6 +2474,7 @@
       "historyNotJoined": "未加入",
       "historyDeleted": "已删除",
       "backupDispatchToggle": "允许该最低优先级账号参与兜底调度",
+      "backupDispatchDraining": "已暂停；关闭前请求处理中 {{count}}",
       "backupDispatchSaved": "最低优先级调度设置已更新",
       "routingStrategy": {
         "auto": "自动（推荐）",

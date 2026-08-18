@@ -2095,6 +2095,7 @@
       "historyNotJoined": "Nepřidáno",
       "historyDeleted": "Smazáno",
       "backupDispatchToggle": "Povolit tomuto účtu s nejnižší prioritou záložní směrování",
+      "backupDispatchDraining": "Pozastaveno; dokončuje se {{count}} dřívějších požadavků",
       "backupDispatchSaved": "Nastavení nejnižší priority bylo aktualizováno",
       "stats": {
         "requests": "Požadavky",

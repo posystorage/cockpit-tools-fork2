@@ -2474,6 +2474,7 @@
       "historyNotJoined": "Not joined",
       "historyDeleted": "Deleted",
       "backupDispatchToggle": "Allow this lowest-priority account to participate in fallback routing",
+      "backupDispatchDraining": "Paused; finishing {{count}} earlier request(s)",
       "backupDispatchSaved": "Lowest-priority routing setting updated",
       "routingStrategy": {
         "auto": "Auto (Recommended)",

@@ -2095,6 +2095,7 @@
       "historyNotJoined": "미가입",
       "historyDeleted": "삭제됨",
       "backupDispatchToggle": "이 최저 우선순위 계정을 대체 라우팅에 사용",
+      "backupDispatchDraining": "일시 중지됨 · 이전 요청 {{count}}개 마무리 중",
       "backupDispatchSaved": "최저 우선순위 라우팅 설정이 업데이트됨",
       "stats": {
         "requests": "요청",

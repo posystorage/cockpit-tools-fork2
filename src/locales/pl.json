@@ -2095,6 +2095,7 @@
       "historyNotJoined": "Nie dodano",
       "historyDeleted": "Usunięto",
       "backupDispatchToggle": "Zezwól temu kontu o najniższym priorytecie na routing zapasowy",
+      "backupDispatchDraining": "Wstrzymano; kończenie {{count}} wcześniejszych żądań",
       "backupDispatchSaved": "Ustawienie najniższego priorytetu zaktualizowane",
       "stats": {
         "requests": "Żądania",

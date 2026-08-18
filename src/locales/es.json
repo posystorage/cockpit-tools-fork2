@@ -2095,6 +2095,7 @@
       "historyNotJoined": "No añadida",
       "historyDeleted": "Eliminada",
       "backupDispatchToggle": "Permitir esta cuenta de prioridad mínima en el enrutamiento de respaldo",
+      "backupDispatchDraining": "En pausa; finalizando {{count}} solicitudes anteriores",
       "backupDispatchSaved": "Configuración de prioridad mínima actualizada",
       "stats": {
         "requests": "Solicitudes",

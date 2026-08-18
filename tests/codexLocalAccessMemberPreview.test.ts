@@ -115,5 +115,31 @@ describe("Codex API service member preview", () => {
       styleSource.includes(".codex-local-access-backup-dispatch-switch"),
       "the compact member-row switch must have a stable style",
     );
+    assert.equal(
+      pageSource.includes("backup-dispatch-switch-placeholder"),
+      false,
+      "normal and highest-priority rows must not reserve an empty switch slot",
+    );
+    assert.ok(
+      pageSource.includes('className="codex-local-access-member-actions"'),
+      "the optional switch and remove button should share one adaptive action column",
+    );
+    assert.match(
+      styleSource,
+      /grid-template-columns:\s*minmax\(0, 1fr\) 34px 34px 42px max-content/,
+    );
+  });
+
+  it("distinguishes requests selected before a backup account was paused", () => {
+    assert.ok(pageSource.includes("const activityPredatesPause ="));
+    assert.ok(
+      pageSource.includes('"codex.localAccess.backupDispatchDraining"'),
+    );
+    assert.ok(
+      pageSource.includes(
+        "activityRecentAt > 0 && !activityPredatesPause",
+      ),
+      "pre-pause recent activity should not look like new scheduling",
+    );
   });
 });

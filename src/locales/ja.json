@@ -2095,6 +2095,7 @@
       "historyNotJoined": "未参加",
       "historyDeleted": "削除済み",
       "backupDispatchToggle": "この最低優先度アカウントをフォールバック振り分けに使用する",
+      "backupDispatchDraining": "一時停止中・以前のリクエスト {{count}} 件を処理中",
       "backupDispatchSaved": "最低優先度の振り分け設定を更新しました",
       "stats": {
         "requests": "リクエスト",

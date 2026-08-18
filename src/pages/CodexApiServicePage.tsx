@@ -5045,22 +5045,41 @@ export function CodexApiServicePage() {
                       t,
                     );
                     const health = healthByAccountId.get(account.id);
+                    const isBackupAccount = backupAccountIdSet.has(account.id);
+                    const backupDispatchEnabled =
+                      isCodexLocalAccessBackupDispatchEnabled(
+                        collection?.accountModelRules,
+                        account.id,
+                      );
                     const activity = activityByAccountId.get(account.id);
                     const activityRunningCount = activity?.runningCount ?? 0;
                     const activityRecentAt =
                       activity?.lastFinishedAt ?? activity?.lastSelectedAt ?? 0;
+                    const activityPredatesPause =
+                      isBackupAccount &&
+                      !backupDispatchEnabled &&
+                      (activity?.lastSelectedAt ?? 0) > 0 &&
+                      (collection?.updatedAt ?? 0) > 0 &&
+                      (activity?.lastSelectedAt ?? 0) <=
+                        (collection?.updatedAt ?? 0);
                     const activityRecentSeconds =
                       formatActivityElapsedSeconds(activityRecentAt);
                     const hasActivity =
-                      activityRunningCount > 0 || activityRecentAt > 0;
+                      activityRunningCount > 0 ||
+                      (activityRecentAt > 0 && !activityPredatesPause);
                     const activityClass =
                       activityRunningCount > 0 ? "is-running" : "is-recent";
                     const activityText =
                       activityRunningCount > 0
-                        ? t("codex.apiService.accountActivity.running", {
-                            count: activityRunningCount,
-                            defaultValue: "调度中 {{count}}",
-                          })
+                        ? activityPredatesPause
+                          ? t("codex.localAccess.backupDispatchDraining", {
+                              count: activityRunningCount,
+                              defaultValue: "已暂停；关闭前请求处理中 {{count}}",
+                            })
+                          : t("codex.apiService.accountActivity.running", {
+                              count: activityRunningCount,
+                              defaultValue: "调度中 {{count}}",
+                            })
                         : t("codex.apiService.accountActivity.recent", {
                             seconds: activityRecentSeconds,
                             defaultValue: "刚调度 {{seconds}} 秒前",
@@ -5081,12 +5100,6 @@ export function CodexApiServicePage() {
                         .find((rule) => rule.accountId === account.id)
                         ?.excludedModels.filter((model) => model !== "*")
                         .length ?? 0;
-                    const isBackupAccount = backupAccountIdSet.has(account.id);
-                    const backupDispatchEnabled =
-                      isCodexLocalAccessBackupDispatchEnabled(
-                        collection?.accountModelRules,
-                        account.id,
-                      );
                     return (
                       <div
                         key={account.id}

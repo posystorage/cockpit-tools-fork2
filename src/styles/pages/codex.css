@@ -1018,7 +1018,7 @@
 
 .codex-local-access-member {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 34px 34px 42px 30px 14px;
+  grid-template-columns: minmax(0, 1fr) 34px 34px 42px max-content;
   align-items: center;
   justify-content: flex-start;
   gap: 1px;
@@ -1121,8 +1121,15 @@
   letter-spacing: 0.02em;
 }
 
-.codex-local-access-backup-dispatch-switch,
-.codex-local-access-backup-dispatch-switch-placeholder {
+.codex-local-access-member-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1px;
+  min-width: 14px;
+}
+
+.codex-local-access-backup-dispatch-switch {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1182,7 +1189,7 @@
 .codex-local-access-member .folder-preview-remove-btn {
   width: 14px;
   height: 14px;
-  margin-left: 1px;
+  margin-left: 0;
 }
 
 .codex-local-access-member-quota.high {

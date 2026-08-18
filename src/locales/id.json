@@ -2145,6 +2145,7 @@
       "historyNotJoined": "Belum ditambahkan",
       "historyDeleted": "Dihapus",
       "backupDispatchToggle": "Izinkan akun prioritas terendah ini mengikuti perutean cadangan",
+      "backupDispatchDraining": "Dijeda; menyelesaikan {{count}} permintaan sebelumnya",
       "backupDispatchSaved": "Pengaturan prioritas terendah diperbarui",
       "stats": {
         "requests": "Permintaan",

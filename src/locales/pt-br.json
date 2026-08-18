@@ -2095,6 +2095,7 @@
       "historyNotJoined": "Não adicionada",
       "historyDeleted": "Excluída",
       "backupDispatchToggle": "Permitir esta conta de prioridade mínima no roteamento de contingência",
+      "backupDispatchDraining": "Pausado; concluindo {{count}} solicitação(ões) anterior(es)",
       "backupDispatchSaved": "Configuração de prioridade mínima atualizada",
       "stats": {
         "requests": "Requisições",

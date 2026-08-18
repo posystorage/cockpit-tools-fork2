@@ -2095,6 +2095,7 @@
       "historyNotJoined": "Non ajouté",
       "historyDeleted": "Supprimé",
       "backupDispatchToggle": "Autoriser ce compte de priorité basse pour le routage de secours",
+      "backupDispatchDraining": "En pause ; finalisation de {{count}} requête(s) antérieure(s)",
       "backupDispatchSaved": "Paramètre de routage de priorité basse mis à jour",
       "stats": {
         "requests": "Requêtes",

@@ -2095,6 +2095,7 @@
       "historyNotJoined": "Chưa thêm",
       "historyDeleted": "Đã xóa",
       "backupDispatchToggle": "Cho phép tài khoản ưu tiên thấp nhất này tham gia định tuyến dự phòng",
+      "backupDispatchDraining": "Đã tạm dừng; đang hoàn tất {{count}} yêu cầu trước đó",
       "backupDispatchSaved": "Đã cập nhật cài đặt ưu tiên thấp nhất",
       "stats": {
         "requests": "Yêu cầu",

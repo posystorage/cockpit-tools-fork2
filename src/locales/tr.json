@@ -2095,6 +2095,7 @@
       "historyNotJoined": "Eklenmedi",
       "historyDeleted": "Silindi",
       "backupDispatchToggle": "Bu en düşük öncelikli hesabın yedek yönlendirmeye katılmasına izin ver",
+      "backupDispatchDraining": "Duraklatıldı; önceki {{count}} istek tamamlanıyor",
       "backupDispatchSaved": "En düşük öncelik ayarı güncellendi",
       "stats": {
         "requests": "İstekler",
