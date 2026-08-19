@@ -1,4 +1,11 @@
-export type CodexStatsRangeKey = "daily" | "weekly" | "monthly" | "custom";
+export type CodexStatsRangeKey =
+  | "daily"
+  | "weekly"
+  | "monthly"
+  | "last24h"
+  | "last48h"
+  | "last7d"
+  | "custom";
 
 export interface CodexStatsTimeRange {
   startAt: number;
@@ -21,6 +28,12 @@ function buildRange(start: Date, end: Date): CodexStatsTimeRange {
   };
 }
 
+function buildRollingRange(hours: number, now: Date): CodexStatsTimeRange {
+  const end = new Date(now);
+  const start = new Date(end.getTime() - hours * 60 * 60 * 1000);
+  return buildRange(start, end);
+}
+
 export function buildCodexStatsTimeRange(
   key: CodexStatsRangeKey,
   now = new Date(),
@@ -36,6 +49,9 @@ export function buildCodexStatsTimeRange(
     weekStart.setDate(weekStart.getDate() - mondayOffset);
     return buildRange(weekStart, todayEnd);
   }
+  if (key === "last24h") return buildRollingRange(24, now);
+  if (key === "last48h") return buildRollingRange(48, now);
+  if (key === "last7d") return buildRollingRange(7 * 24, now);
   const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
   return buildRange(monthStart, todayEnd);
 }

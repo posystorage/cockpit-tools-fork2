@@ -110,6 +110,13 @@ fn default_model_pricing_version() -> u64 {
     1
 }
 
+// Configurations written before the separate price-book marker existed are
+// treated as having completed the v3 migration. The loader then applies only
+// the narrowly-scoped v4 cleanup for known incorrect snapshots.
+fn default_model_pricing_book_version() -> u64 {
+    3
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexLocalAccessCustomRoutingRule {
@@ -473,6 +480,8 @@ pub struct CodexLocalAccessCollection {
     pub model_aliases: Vec<CodexLocalAccessModelAlias>,
     #[serde(default = "default_model_pricing_version")]
     pub model_pricing_version: u64,
+    #[serde(default = "default_model_pricing_book_version")]
+    pub model_pricing_book_version: u64,
     #[serde(default)]
     pub model_pricings: Vec<CodexLocalAccessModelPricing>,
     #[serde(default)]

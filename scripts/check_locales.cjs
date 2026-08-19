@@ -226,6 +226,9 @@ function isAllowedEnglishReuse(key, value) {
     '{{days}}d {{hours}}h',
     '{{hours}}h {{minutes}}m',
     '5h',
+    '24H',
+    '48H',
+    '7D',
     'Weekly',
   ]);
 

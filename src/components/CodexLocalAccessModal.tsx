@@ -466,7 +466,15 @@ export function CodexLocalAccessModal({
   const selectedStatsWindow =
     useMemo<CodexLocalAccessStatsWindow | null>(() => {
       if (filteredStatsWindow) return filteredStatsWindow;
-      if (!stats || statsRange === "custom") return null;
+      if (
+        !stats ||
+        statsRange === "custom" ||
+        statsRange === "last24h" ||
+        statsRange === "last48h" ||
+        statsRange === "last7d"
+      ) {
+        return null;
+      }
       return stats[statsRange];
     }, [filteredStatsWindow, stats, statsRange]);
   const selectedTotals = selectedStatsWindow?.totals;

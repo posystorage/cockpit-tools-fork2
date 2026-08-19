@@ -234,7 +234,15 @@ function persistAddressKind(value: CodexLocalAccessAddressKind): void {
 }
 
 function normalizeStatsRange(value: string | null | undefined): CodexStatsRangeKey {
-  if (value === "weekly" || value === "monthly") return value;
+  if (
+    value === "weekly" ||
+    value === "monthly" ||
+    value === "last24h" ||
+    value === "last48h" ||
+    value === "last7d"
+  ) {
+    return value;
+  }
   return "daily";
 }
 
@@ -970,7 +978,15 @@ export function CodexApiServicePage() {
   const selectedStatsWindow =
     useMemo<CodexLocalAccessStatsWindow | null>(() => {
       if (filteredStatsWindow) return filteredStatsWindow;
-      if (!stats || statsRange === "custom") return null;
+      if (
+        !stats ||
+        statsRange === "custom" ||
+        statsRange === "last24h" ||
+        statsRange === "last48h" ||
+        statsRange === "last7d"
+      ) {
+        return null;
+      }
       return stats[statsRange];
     }, [filteredStatsWindow, stats, statsRange]);
   const apiKeyStatsById = new Map(
@@ -1571,7 +1587,12 @@ export function CodexApiServicePage() {
       .queryCodexLocalAccessRequestLogs({
         page: requestLogPage,
         pageSize: requestLogPageSize,
-        statsRange: statsRange === "custom" ? null : statsRange,
+        statsRange:
+          statsRange === "daily" ||
+          statsRange === "weekly" ||
+          statsRange === "monthly"
+            ? statsRange
+            : null,
         startAt: statsTimeRange.startAt,
         endAt: statsTimeRange.endAt,
         modelQuery: requestLogModelQuery,
@@ -3477,7 +3498,13 @@ export function CodexApiServicePage() {
         ? t("codex.apiService.statsRange.thisWeek", "This week")
         : statsRange === "monthly"
           ? t("codex.apiService.statsRange.thisMonth", "This month")
-          : `${statsTimeRange.startInput} - ${statsTimeRange.endInput}`;
+          : statsRange === "last24h"
+            ? t("codex.apiService.statsRange.last24h", "Last 24 hours")
+            : statsRange === "last48h"
+              ? t("codex.apiService.statsRange.last48h", "Last 48 hours")
+              : statsRange === "last7d"
+                ? t("codex.apiService.statsRange.last7d", "Last 7 days")
+                : `${statsTimeRange.startInput} - ${statsTimeRange.endInput}`;
   const requestLogKindOptions: Array<{
     value: RequestLogKindFilter;
     label: string;
@@ -3943,6 +3970,7 @@ export function CodexApiServicePage() {
             disabled={busy}
             error={statsRangeError}
             compact
+            showRollingPresets
           />
         </section>
 

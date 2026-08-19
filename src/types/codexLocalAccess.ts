@@ -127,6 +127,7 @@ export interface CodexLocalAccessCollection {
   accountModelRules: CodexLocalAccessAccountModelRule[];
   modelAliases: CodexLocalAccessModelAlias[];
   modelPricingVersion: number;
+  modelPricingBookVersion: number;
   modelPricings: CodexLocalAccessModelPricing[];
   debugLogs: boolean;
   immediateSseResponse: boolean;

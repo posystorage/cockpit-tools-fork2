@@ -19,6 +19,8 @@ interface CodexStatsRangePickerProps {
   disabled?: boolean;
   error?: string;
   compact?: boolean;
+  /** Rolling presets are intentionally opt-in for the standalone API page. */
+  showRollingPresets?: boolean;
 }
 
 export function CodexStatsRangePicker({
@@ -29,6 +31,7 @@ export function CodexStatsRangePicker({
   disabled = false,
   error,
   compact = false,
+  showRollingPresets = false,
 }: CodexStatsRangePickerProps) {
   const { t } = useTranslation();
   const [startInput, setStartInput] = useState(range.startInput);
@@ -43,6 +46,14 @@ export function CodexStatsRangePicker({
 
   useEffect(() => {
     if (value === "custom") return;
+    const isRollingPreset =
+      value === "last24h" || value === "last48h" || value === "last7d";
+    if (isRollingPreset) {
+      const timer = window.setInterval(() => {
+        onPresetChange(value, buildCodexStatsTimeRange(value));
+      }, 5_000);
+      return () => window.clearInterval(timer);
+    }
     const nextMidnight = new Date();
     nextMidnight.setHours(24, 0, 0, 50);
     const timer = window.setTimeout(() => {
@@ -57,6 +68,22 @@ export function CodexStatsRangePicker({
     { key: "daily" as const, label: t("codex.localAccess.statsRange.daily", "日") },
     { key: "weekly" as const, label: t("codex.localAccess.statsRange.weekly", "周") },
     { key: "monthly" as const, label: t("codex.localAccess.statsRange.monthly", "月") },
+    ...(showRollingPresets
+      ? [
+          {
+            key: "last24h" as const,
+            label: t("codex.localAccess.statsRange.last24h", "24H"),
+          },
+          {
+            key: "last48h" as const,
+            label: t("codex.localAccess.statsRange.last48h", "48H"),
+          },
+          {
+            key: "last7d" as const,
+            label: t("codex.localAccess.statsRange.last7d", "7Day"),
+          },
+        ]
+      : []),
   ];
 
   const applyCustomRange = (nextStartInput: string, nextEndInput: string) => {

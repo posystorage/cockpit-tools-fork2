@@ -158,7 +158,12 @@ const PREPARED_ACCOUNT_CACHE_TTL_MS: i64 = 30 * 1000;
 const STATE_RECENT_USAGE_EVENT_LIMIT: usize = 100;
 const ACCOUNT_ACTIVITY_RECENT_WINDOW_MS: i64 = 30 * 1000;
 const ACCOUNT_ACTIVITY_RUNNING_STALE_MS: i64 = 30 * 60 * 1000;
-const DEFAULT_MODEL_PRICING_VERSION: u64 = 3;
+/// Version stored on request-log pricing snapshots. Bump when the effective
+/// price book changes so existing rows are re-evaluated in the background.
+const DEFAULT_MODEL_PRICING_VERSION: u64 = 4;
+/// Independent version for migrations of saved default/custom price entries.
+const DEFAULT_MODEL_PRICING_BOOK_VERSION: u64 = 4;
+const LEGACY_MODEL_PRICING_VERSION_BEFORE_V3: u64 = 3;
 const MODEL_PRICING_REPRICE_BATCH_SIZE: i64 = 1_000;
 const MODEL_PRICING_REPRICE_PARALLEL_MIN_ROWS: usize = 2_000;
 const LOCAL_ACCESS_LOGS_DB_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -6722,8 +6727,9 @@ const CODEX_LOCAL_ACCESS_PRICE_BOOK: &[CodexLocalAccessPriceBookEntry] = &[
     CodexLocalAccessPriceBookEntry {
         model_id: "codex-auto-review",
         session_long_context: true,
-        standard: codex_price(5.0, 0.5, 30.0),
-        priority: Some(codex_price(10.0, 1.0, 60.0)),
+        // Codex auto-review is billed on the GPT-5.6 Luna matrix.
+        standard: codex_price(0.2, 0.02, 1.2),
+        priority: Some(codex_price(0.4, 0.04, 2.4)),
     },
     CodexLocalAccessPriceBookEntry {
         model_id: "gpt-5.4",
@@ -7199,6 +7205,139 @@ fn normalize_model_pricings(
         });
     }
     normalized
+}
+
+fn pricing_value_matches(actual: Option<f64>, expected: f64) -> bool {
+    actual.is_some_and(|value| value.is_finite() && (value - expected).abs() <= 1e-9)
+}
+
+fn pricing_value_matches_or_unset(actual: Option<f64>, expected: f64) -> bool {
+    actual.is_none() || pricing_value_matches(actual, expected)
+}
+
+fn model_pricing_matches_snapshot(
+    pricing: &CodexLocalAccessModelPricing,
+    standard: CodexLocalAccessPrice,
+    priority: CodexLocalAccessPrice,
+) -> bool {
+    let standard_long = derived_standard_long_price(standard);
+    pricing.long_context_threshold_tokens == Some(CODEX_LOCAL_ACCESS_LONG_CONTEXT_THRESHOLD_TOKENS)
+        && pricing_value_matches(
+            Some(pricing.input_usd_per_million),
+            standard.input_usd_per_million,
+        )
+        && pricing_value_matches(
+            pricing.cached_input_usd_per_million,
+            standard.cached_input_usd_per_million,
+        )
+        && pricing_value_matches(
+            Some(pricing.output_usd_per_million),
+            standard.output_usd_per_million,
+        )
+        && pricing_value_matches(
+            pricing.standard_long_input_usd_per_million,
+            standard_long.input_usd_per_million,
+        )
+        && pricing_value_matches(
+            pricing.standard_long_cached_input_usd_per_million,
+            standard_long.cached_input_usd_per_million,
+        )
+        && pricing_value_matches(
+            pricing.standard_long_output_usd_per_million,
+            standard_long.output_usd_per_million,
+        )
+        && pricing_value_matches(
+            pricing.priority_input_usd_per_million,
+            priority.input_usd_per_million,
+        )
+        && pricing_value_matches_or_unset(
+            pricing.priority_cached_input_usd_per_million,
+            priority.cached_input_usd_per_million,
+        )
+        && pricing_value_matches(
+            pricing.priority_output_usd_per_million,
+            priority.output_usd_per_million,
+        )
+}
+
+/// Return true only for price snapshots known to have been written by the
+/// pre-v4 fork defaults. A user-edited value that differs by even one field is
+/// retained, so an upgrade cannot silently erase a deliberate override.
+fn is_known_incorrect_model_pricing(pricing: &CodexLocalAccessModelPricing) -> bool {
+    let model_id = normalize_model_key(&pricing.model_id);
+    let terra_old = model_pricing_matches_snapshot(
+        pricing,
+        codex_price(2.5, 0.25, 15.0),
+        codex_price(5.0, 0.5, 30.0),
+    );
+    let luna_old = model_pricing_matches_snapshot(
+        pricing,
+        codex_price(1.0, 0.1, 6.0),
+        codex_price(2.0, 0.2, 12.0),
+    );
+    let luna_current_mixed = model_pricing_matches_snapshot(
+        pricing,
+        codex_price(0.2, 0.02, 1.2),
+        codex_price(2.0, 0.2, 12.0),
+    );
+    let sol_default = model_pricing_matches_snapshot(
+        pricing,
+        codex_price(5.0, 0.5, 30.0),
+        codex_price(10.0, 1.0, 60.0),
+    );
+
+    match model_id.as_str() {
+        "gpt-5.6-terra" => terra_old,
+        "gpt-5.6-luna" => luna_old || luna_current_mixed,
+        // codex-auto-review was briefly assigned Sol rates and later kept a
+        // Luna standard row with a Terra-standard priority row.
+        CODEX_AUTO_REVIEW_MODEL_ID => sol_default || luna_current_mixed,
+        _ => false,
+    }
+}
+
+/// Migrate saved overrides independently from request-log snapshot versions.
+/// Version < 3 keeps the historical "clear all legacy overrides" behavior;
+/// v3 configurations receive only the known-bad snapshot cleanup.
+fn migrate_model_pricing_book(collection: &mut CodexLocalAccessCollection) -> bool {
+    let mut changed = false;
+
+    if collection.model_pricing_version < LEGACY_MODEL_PRICING_VERSION_BEFORE_V3 {
+        if !collection.model_pricings.is_empty() {
+            collection.model_pricings.clear();
+            changed = true;
+        }
+        if collection.model_pricing_version != DEFAULT_MODEL_PRICING_VERSION {
+            collection.model_pricing_version = DEFAULT_MODEL_PRICING_VERSION;
+            changed = true;
+        }
+    }
+
+    if collection.model_pricing_book_version < DEFAULT_MODEL_PRICING_BOOK_VERSION {
+        collection
+            .model_pricings
+            .retain(|pricing| !is_known_incorrect_model_pricing(pricing));
+        collection.model_pricing_book_version = DEFAULT_MODEL_PRICING_BOOK_VERSION;
+        changed = true;
+
+        // Always move beyond the previous snapshot version. This is required
+        // when a saved override is removed while its rows already have the
+        // current event version; otherwise the background query would skip
+        // those rows as apparently fresh.
+        let next_version = collection
+            .model_pricing_version
+            .max(DEFAULT_MODEL_PRICING_VERSION)
+            .saturating_add(1);
+        if collection.model_pricing_version != next_version {
+            collection.model_pricing_version = next_version;
+            changed = true;
+        }
+    } else if collection.model_pricing_version < DEFAULT_MODEL_PRICING_VERSION {
+        collection.model_pricing_version = DEFAULT_MODEL_PRICING_VERSION;
+        changed = true;
+    }
+
+    changed
 }
 
 fn price_from_base_triple(
@@ -16007,11 +16146,7 @@ fn sanitize_collection_structure(
         changed = true;
     }
     collection.model_pricings = normalized_model_pricings;
-    if collection.model_pricing_version < DEFAULT_MODEL_PRICING_VERSION {
-        collection.model_pricings = Vec::new();
-        collection.model_pricing_version = DEFAULT_MODEL_PRICING_VERSION;
-        changed = true;
-    }
+    changed |= migrate_model_pricing_book(collection);
 
     let original_excluded_models = std::mem::take(&mut collection.excluded_models);
     let normalized_excluded_models = normalize_model_rule_list(original_excluded_models.clone());
@@ -16195,6 +16330,7 @@ async fn ensure_runtime_loaded_without_start_with_profile_restore(
                 account_model_rules: Vec::new(),
                 model_aliases: Vec::new(),
                 model_pricing_version: DEFAULT_MODEL_PRICING_VERSION,
+                model_pricing_book_version: DEFAULT_MODEL_PRICING_BOOK_VERSION,
                 model_pricings: Vec::new(),
                 excluded_models: Vec::new(),
                 session_affinity: true,
@@ -16223,10 +16359,12 @@ async fn ensure_runtime_loaded_without_start_with_profile_restore(
         let mut pricing_book_resealed = false;
         if let Some(collection) = next_collection.as_mut() {
             let previous_pricing_version = collection.model_pricing_version;
+            let previous_pricing_book_version = collection.model_pricing_book_version;
             // Cold start must not list/decrypt every Codex account before publishing
             // runtime. Membership pruning runs in ensure_collection_account_sanitize_started.
             let changed = sanitize_collection_structure(collection)?;
-            pricing_book_resealed = previous_pricing_version < DEFAULT_MODEL_PRICING_VERSION;
+            pricing_book_resealed = previous_pricing_version < DEFAULT_MODEL_PRICING_VERSION
+                || previous_pricing_book_version < DEFAULT_MODEL_PRICING_BOOK_VERSION;
             persist_after_load = persist_after_load || changed;
         }
 
@@ -17635,6 +17773,7 @@ fn new_empty_local_access_collection() -> Result<CodexLocalAccessCollection, Str
         account_model_rules: Vec::new(),
         model_aliases: Vec::new(),
         model_pricing_version: DEFAULT_MODEL_PRICING_VERSION,
+        model_pricing_book_version: DEFAULT_MODEL_PRICING_BOOK_VERSION,
         model_pricings: Vec::new(),
         excluded_models: Vec::new(),
         session_affinity: true,
@@ -20734,6 +20873,7 @@ fn new_local_access_collection() -> Result<CodexLocalAccessCollection, String> {
         account_model_rules: Vec::new(),
         model_aliases: Vec::new(),
         model_pricing_version: DEFAULT_MODEL_PRICING_VERSION,
+        model_pricing_book_version: DEFAULT_MODEL_PRICING_BOOK_VERSION,
         model_pricings: Vec::new(),
         excluded_models: Vec::new(),
         session_affinity: true,
@@ -27911,16 +28051,16 @@ mod tests {
         insert_local_access_usage_event, inspect_local_access_profile_attachment,
         inspect_local_access_profile_config, is_codex_local_access_auth_text,
         is_codex_local_access_config_for_api_key, is_codex_oauth_auth_text,
-        is_image_generation_capability_error, is_local_access_eligible_account,
-        is_local_access_gateway_base_url, is_provider_gateway_eligible_account,
-        is_responses_completion_event, is_stream_incomplete_error_message,
-        is_upstream_response_failed_error_message, legacy_stream_error_category,
-        local_access_chat_completions_url, local_access_ineligible_reason,
-        lookup_codex_model_provider_base_url_in_dir, macos_proxy_url_from_scutil_map,
-        max_credential_attempts_for_strategy, merge_collection_and_account_excluded_models,
-        model_pricing, model_provider_direct_test_client_model,
-        model_provider_test_uses_provider_gateway, normalize_account_id_list,
-        normalize_account_model_rules, normalize_collection_api_keys,
+        is_image_generation_capability_error, is_known_incorrect_model_pricing,
+        is_local_access_eligible_account, is_local_access_gateway_base_url,
+        is_provider_gateway_eligible_account, is_responses_completion_event,
+        is_stream_incomplete_error_message, is_upstream_response_failed_error_message,
+        legacy_stream_error_category, local_access_chat_completions_url,
+        local_access_ineligible_reason, lookup_codex_model_provider_base_url_in_dir,
+        macos_proxy_url_from_scutil_map, max_credential_attempts_for_strategy,
+        merge_collection_and_account_excluded_models, migrate_model_pricing_book, model_pricing,
+        model_provider_direct_test_client_model, model_provider_test_uses_provider_gateway,
+        normalize_account_id_list, normalize_account_model_rules, normalize_collection_api_keys,
         normalize_custom_routing_rules, normalized_sidecar_error_category,
         open_local_access_logs_db_once, parse_codex_retry_after,
         parse_responses_payload_from_upstream, parse_websocket_upstream_error,
@@ -27969,9 +28109,10 @@ mod tests {
         CODEX_AUTO_REVIEW_MODEL_ID, CODEX_EXPERIMENTAL_MODEL_ID, CODEX_IMAGEGEN_ACTOR_HEADER,
         CODEX_IMAGE_MODEL_ID, CODEX_LOCAL_ACCESS_DISABLE_HOSTED_IMAGE_GENERATION_HEADER,
         CODEX_LOCAL_ACCESS_DISABLE_HOSTED_IMAGE_GENERATION_HEADER_VALUE,
-        CODEX_LOCAL_ACCESS_MODEL_CATALOG_FILE, CODEX_PROFILE_AUTH_FILE, CODEX_PROFILE_CONFIG_FILE,
-        CODEX_PROVIDER_MODEL_BACKUP_FILE, CODEX_PROVIDER_MODEL_CATALOG_FILE,
-        DEFAULT_MAX_RETRY_INTERVAL_MS, DEFAULT_MODEL_PRICING_VERSION,
+        CODEX_LOCAL_ACCESS_LONG_CONTEXT_THRESHOLD_TOKENS, CODEX_LOCAL_ACCESS_MODEL_CATALOG_FILE,
+        CODEX_PROFILE_AUTH_FILE, CODEX_PROFILE_CONFIG_FILE, CODEX_PROVIDER_MODEL_BACKUP_FILE,
+        CODEX_PROVIDER_MODEL_CATALOG_FILE, DEFAULT_MAX_RETRY_INTERVAL_MS,
+        DEFAULT_MODEL_PRICING_BOOK_VERSION, DEFAULT_MODEL_PRICING_VERSION,
         DEFAULT_SESSION_AFFINITY_TTL_MS, MAX_HTTP_REQUEST_BYTES,
     };
     use super::{
@@ -28326,6 +28467,7 @@ mod tests {
             account_model_rules: Vec::new(),
             model_aliases: Vec::new(),
             model_pricing_version: DEFAULT_MODEL_PRICING_VERSION,
+            model_pricing_book_version: DEFAULT_MODEL_PRICING_BOOK_VERSION,
             model_pricings: Vec::new(),
             excluded_models: Vec::new(),
             session_affinity: true,
@@ -31610,6 +31752,79 @@ wire_api = "responses"
         assert_eq!(luna_fast_long.input_usd_per_million, 0.8);
         assert_eq!(luna_fast_long.cached_input_usd_per_million, Some(0.08));
         assert!((luna_fast_long.output_usd_per_million - 3.6).abs() < 1e-9);
+    }
+
+    #[test]
+    fn auto_review_uses_the_luna_matrix_for_standard_priority_and_long_context() {
+        let short_usage = UsageCapture {
+            input_tokens: 272_000,
+            output_tokens: 1,
+            total_tokens: 272_001,
+            cached_tokens: 0,
+            reasoning_tokens: 0,
+            token_breakdown: None,
+        };
+        let long_usage = UsageCapture {
+            input_tokens: 272_001,
+            ..short_usage.clone()
+        };
+
+        let standard = resolve_effective_model_pricing(
+            None,
+            Some(CODEX_AUTO_REVIEW_MODEL_ID),
+            Some(&short_usage),
+            None,
+        )
+        .expect("auto-review standard pricing");
+        assert_eq!(standard.input_usd_per_million, 0.2);
+        assert_eq!(standard.cached_input_usd_per_million, Some(0.02));
+        assert_eq!(standard.output_usd_per_million, 1.2);
+
+        let priority_long = resolve_effective_model_pricing(
+            None,
+            Some(CODEX_AUTO_REVIEW_MODEL_ID),
+            Some(&long_usage),
+            Some("priority"),
+        )
+        .expect("auto-review priority long pricing");
+        assert_eq!(priority_long.input_usd_per_million, 0.8);
+        assert_eq!(priority_long.cached_input_usd_per_million, Some(0.08));
+        assert!((priority_long.output_usd_per_million - 3.6).abs() < 1e-9);
+    }
+
+    #[test]
+    fn v4_price_book_migration_removes_only_known_bad_snapshots() {
+        let wrong = model_pricing(
+            CODEX_AUTO_REVIEW_MODEL_ID,
+            Some(CODEX_LOCAL_ACCESS_LONG_CONTEXT_THRESHOLD_TOKENS),
+            codex_price(0.2, 0.02, 1.2),
+            Some(codex_price(0.4, 0.04, 1.8)),
+            Some(codex_price(2.0, 0.2, 12.0)),
+            None,
+        );
+        let custom = model_pricing(
+            "codex-auto-review",
+            Some(CODEX_LOCAL_ACCESS_LONG_CONTEXT_THRESHOLD_TOKENS),
+            codex_price(0.21, 0.021, 1.21),
+            Some(codex_price(0.42, 0.042, 2.42)),
+            Some(codex_price(0.43, 0.043, 2.43)),
+            None,
+        );
+        assert!(is_known_incorrect_model_pricing(&wrong));
+        assert!(!is_known_incorrect_model_pricing(&custom));
+
+        let mut collection = test_local_access_collection(Vec::new());
+        collection.model_pricing_version = DEFAULT_MODEL_PRICING_VERSION;
+        collection.model_pricing_book_version = DEFAULT_MODEL_PRICING_BOOK_VERSION - 1;
+        collection.model_pricings = vec![wrong, custom.clone()];
+
+        assert!(migrate_model_pricing_book(&mut collection));
+        assert_eq!(
+            collection.model_pricing_book_version,
+            DEFAULT_MODEL_PRICING_BOOK_VERSION
+        );
+        assert!(collection.model_pricing_version > DEFAULT_MODEL_PRICING_VERSION);
+        assert_eq!(collection.model_pricings, vec![custom]);
     }
 
     #[test]

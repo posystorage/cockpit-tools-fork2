@@ -10623,11 +10623,14 @@ export function CodexAccountsPage() {
       setSessionWindowStats({ ready: false, byAccountId: {} });
       return;
     }
-    const memberAccounts = (localAccessCollection?.accountIds ?? [])
-      .map((accountId) => accounts.find((account) => account.id === accountId))
-      .filter((account): account is CodexAccount => Boolean(account));
+    // Window usage is an account-level view, not an API-pool membership view.
+    // Keep every existing Codex account visible after it is removed from the
+    // API pool; deleted accounts remain covered by the API history view.
+    const statAccounts = accounts.filter(
+      (account) => getCodexQuotaWindows(account.quota).length > 0,
+    );
     const now = Math.floor(Date.now() / 1000);
-    const queries = memberAccounts.flatMap((account) =>
+    const queries = statAccounts.flatMap((account) =>
       buildCodexAccountWindowStatQueries(
         account.id,
         getCodexQuotaWindows(account.quota),
@@ -10677,7 +10680,7 @@ export function CodexAccountsPage() {
     return () => {
       cancelled = true;
     };
-  }, [accounts, activeTab, localAccessCollection?.accountIds]);
+  }, [accounts, activeTab]);
 
   const applyWindowStatsToQuotaItems = useCallback(
     (

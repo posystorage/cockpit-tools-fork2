@@ -41,6 +41,15 @@ describe("fork draft release workflow", () => {
     );
   });
 
+  it("uses only the b3-to-b4 changelog section for the 1.3.21b4 draft", () => {
+    assert.ok(
+      workflowSource.includes(
+        'if [[ "${GITHUB_REF_NAME}" == "1.3.21b4" || "${GITHUB_REF_NAME}" == "v1.3.21b4" ]]',
+      ),
+    );
+    assert.ok(workflowSource.includes('RELEASE_VERSIONS=("1.3.21b4")'));
+  });
+
   it("builds Windows only and leaves finalization disabled", () => {
     for (const job of [
       "build-macos-aarch64",

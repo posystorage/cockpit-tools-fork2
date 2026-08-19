@@ -7,6 +7,18 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [1.3.21b4] - 2026-08-20
+
+### Added
+
+- **Restored window usage for every existing Codex account on the ordinary Codex page**: the query no longer depends on API Service pool membership. Accounts removed from the API Service still show real request, token, and `A $` usage; deleted accounts remain visible only in the API Service history section.
+- **Added rolling ranges to the standalone Codex API Service statistics**: last 24 hours, last 48 hours, and last 7 days follow the current instant and refresh continuously, while the shared management modal keeps its day/week/month ranges.
+
+### Changed
+
+- **Moved Codex auto-review billing to the full GPT-5.6 Luna matrix**: Standard, Fast/Priority, and above-272K long-context rates all use Luna pricing. The price-book migration removes only identified Sol or Terra/Luna mixed overrides, preserves other user customizations, and reprices all related historical logs in the background.
+- **Documented the fork maintenance boundary**: ordinary-page account usage, deleted-account history, standalone rolling statistics, and the separation between price-book migrations and user overrides are now explicit for future upstream merges.
+
 ## [1.3.21] - 2026-08-15
 
 ### Added
