@@ -584,8 +584,9 @@ jobs:
 
   build-macos-universal:
     name: "🏗️ Build: macOS Universal"
-    # This is an independent source build; run it in parallel with the two
-    # architecture-specific jobs instead of waiting for their release assets.
+    if: ${{ false }}
+    # Fork draft releases currently publish Windows assets only; keep all
+    # macOS jobs disabled until macOS artifacts are explicitly needed again.
     needs:
       - prepare-release
     runs-on: macos-latest

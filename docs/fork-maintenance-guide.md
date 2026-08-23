@@ -49,6 +49,8 @@
 
 预演树中的 fork 长期边界均仍存在：去广告与赞助硬开关、空公告/远端配置/商业默认 URL、禁用运行时 updater 与更新 UI、fork updater 身份、draft-only Windows release，以及普通 Codex 页完整账号池、内部滚动、运行中/最近调度排序、最高/最低标记和服务运行时五秒轮询。Sidecar 的 `recordingSelector` 仍包住模型排除、备用、额度保留、图片选择和 session affinity 整条 selector 链，`cockpitSelector.Pick()` 没有恢复直接发送 `auth_selected`。
 
+当前 fork 的 Release workflow 只发布 Windows 草稿构建；macOS Apple Silicon、macOS Intel、macOS Universal 和 Linux job 均保持禁用。上游若重新启用这些平台，合并时必须先确认草稿 tag、Release 上传目标和签名资产策略，不得因上游并行构建改动而自动恢复 macOS 构建。
+
 本轮已接受上游新增能力，没有恢复被上游替代的旧实现。真实合并与预演一致，只出现上述六个显式冲突；隐藏的重复 `handleRemoveLocalAccessAccount` 也按计划处理为唯一的上游原子删除调用。前端测试断言不得存在重复处理器，Rust 测试进一步确认删除目标账号后，剩余 preferred 路由、session affinity 和 TTL 保持不变。数值兼容测试同时覆盖数字字符串以及 `NaN`、`Infinity`、`-Infinity` 拒绝。
 
 真实合并提交为 `9ba91304`，父节点是 fork 施工文档提交 `4a3881a7` 与上游 release commit `971c283e`。合并后相对纯上游 `v1.3.21` 保留 75 个差异文件、3560 行新增和 850 行删除，差异集中在本文记录的去广告/更新边界、发布身份、调度观测、余额兼容、回归测试及历史维护文档，没有出现与 fork 目标无关的大面积旧代码保留。

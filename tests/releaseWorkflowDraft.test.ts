@@ -58,10 +58,11 @@ describe("fork draft release workflow", () => {
     assert.ok(workflowSource.includes('RELEASE_VERSIONS=("1.3.21b4")'));
   });
 
-  it("builds Windows and macOS Universal while leaving unsupported targets disabled", () => {
+  it("builds Windows only while leaving macOS, Linux, and finalization disabled", () => {
     for (const job of [
       "build-macos-aarch64",
       "build-macos-x86_64",
+      "build-macos-universal",
       "build-linux",
       "finalize-legacy-latest",
       "upload-checksums",
@@ -79,12 +80,5 @@ describe("fork draft release workflow", () => {
     const windowsStart = workflowSource.indexOf("  build-windows:");
     const windowsHeader = workflowSource.slice(windowsStart, windowsStart + 180);
     assert.equal(windowsHeader.includes("if: ${{ false }}"), false);
-
-    const universalStart = workflowSource.indexOf("  build-macos-universal:");
-    const universalHeader = workflowSource.slice(
-      universalStart,
-      universalStart + 180,
-    );
-    assert.equal(universalHeader.includes("if: ${{ false }}"), false);
   });
 });
