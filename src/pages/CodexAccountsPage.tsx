@@ -63,6 +63,7 @@ import { useCodexInstanceStore } from "../stores/useCodexInstanceStore";
 import * as codexService from "../services/codexService";
 import * as codexInstanceService from "../services/codexInstanceService";
 import * as codexLocalAccessService from "../services/codexLocalAccessService";
+import { presentWindowsOperationError } from "../utils/windowsOperationDialog";
 import { TagEditModal } from "../components/TagEditModal";
 import {
   ExportJsonModal,
@@ -107,10 +108,8 @@ import {
   isCodexNewApiAccount,
   isCodexOpaqueAccessTokenOnlyAccount,
   isCodexPendingOAuthAccount,
-  isStandardCodexOAuthAccount,
   isCodexTeamLikePlan,
   type CodexApiProviderMode,
-  type CodexFingerprintMode,
   type CodexBatchDeleteJobStatus,
   type CodexQuotaErrorInfo,
   type CodexResetCredit,
@@ -128,19 +127,15 @@ import {
 import {
   extractCodexQuotaErrorCode,
   extractCodexQuotaErrorStatusCode,
-  isBlockingCodexQuotaError,
+  isBlockingCodexAccountQuotaError,
   isVerboseCodexQuotaErrorMessage,
   summarizeCodexQuotaErrorMessage,
 } from "../utils/codexQuotaError";
 import { buildCodexAccountPresentation } from "../presentation/platformAccountPresentation";
 import { CodexQuotaMiniRows } from "../components/codex/CodexQuotaMiniRows";
 import {
-  hydrateUserMemory,
-  isUserMemoryDismissed,
-  markUserMemoryDismissed,
   mergeIdListsPreferExisting,
   subscribeUserMemory,
-  USER_MEMORY_FLAGS,
 } from "../utils/userMemory";
 import {
   buildCodexAccountWindowStatQueries,
@@ -154,8 +149,16 @@ import {
 import { recoverCodexBatchImportStartFromPreview } from "../utils/codexBatchImportQueue";
 import {
   CODEX_OPEN_ADD_ACCOUNT_EVENT,
+  takePendingCodexOpenAddAccountRequest,
   type CodexOpenAddAccountDetail,
 } from "../utils/codexAddAccountRequest";
+import {
+  CodexSwitchAccountError,
+  isCodexApiOnlyAccessTokenUsable,
+  isCodexClientReauthNoticeOnly,
+  isCodexIdTokenReauthReason,
+  isCodexRefreshTokenNoticeOnly,
+} from "../utils/codexSwitchAuthFailure";
 import {
   CODEX_PLAN_BADGE_STYLE_CHANGED_EVENT,
   getCodexPlanBadgeStyle,
@@ -218,7 +221,6 @@ import type {
   CodexLocalAccessAddressKind,
   CodexLocalAccessAccountHealth,
   CodexLocalAccessCustomRoutingRule,
-  CodexLocalAccessGatewayMode,
   CodexLocalAccessOAuthQuotaReserve,
   CodexLocalAccessRoutingStrategy,
   CodexLocalAccessScope,
@@ -265,6 +267,7 @@ import {
   COCKPIT_API_BASE_URL,
   COCKPIT_API_PROVIDER_ID,
   COCKPIT_API_PROVIDER_NAME,
+  codexApiProviderPresetVisionSupport,
   findCodexApiProviderPresetById,
   isCockpitApiProviderBaseUrl,
   resolveCodexApiProviderPresetId,
@@ -637,14 +640,6 @@ function persistLocalAccessAddressKind(
   } catch {
     // ignore storage write failures
   }
-}
-
-function readLocalAccessGatewayGuideDismissed(): boolean {
-  return isUserMemoryDismissed(USER_MEMORY_FLAGS.gatewayGuide);
-}
-
-function persistLocalAccessGatewayGuideDismissed(): void {
-  void markUserMemoryDismissed(USER_MEMORY_FLAGS.gatewayGuide);
 }
 
 const CODEX_BATCH_IMPORT_SESSION_STORAGE_KEY =
@@ -1162,6 +1157,8 @@ export function CodexAccountsPage() {
   >(null);
   const [localAccessRefreshing, setLocalAccessRefreshing] = useState(false);
   const [localAccessPortKilling, setLocalAccessPortKilling] = useState(false);
+  const [localAccessSidecarRestarting, setLocalAccessSidecarRestarting] =
+    useState(false);
   const [showLocalAccessHideConfirm, setShowLocalAccessHideConfirm] =
     useState(false);
   const [localAccessHideSubmitting, setLocalAccessHideSubmitting] =
@@ -1314,11 +1311,6 @@ export function CodexAccountsPage() {
     [],
   );
 
-  const dismissLocalAccessGatewayGuide = useCallback(() => {
-    persistLocalAccessGatewayGuideDismissed();
-    setLocalAccessGatewayGuideDismissed(true);
-  }, []);
-
   const toggleGroupFilterValue = useCallback((groupId: string) => {
     setGroupFilter((prev) => {
       if (prev.includes(groupId)) return prev.filter((id) => id !== groupId);
@@ -1358,19 +1350,6 @@ export function CodexAccountsPage() {
       return "grid";
     });
   const [hideRelayQuota, setHideRelayQuota] = useState(false);
-  const [
-    localAccessGatewayGuideDismissed,
-    setLocalAccessGatewayGuideDismissed,
-  ] = useState(readLocalAccessGatewayGuideDismissed);
-
-  useEffect(() => {
-    void hydrateUserMemory().then(() => {
-      if (isUserMemoryDismissed(USER_MEMORY_FLAGS.gatewayGuide)) {
-        setLocalAccessGatewayGuideDismissed(true);
-      }
-    });
-  }, []);
-
   const store = useCodexAccountStore();
   const codexInstanceStore = useCodexInstanceStore();
   const [cliLaunchingAccountId, setCliLaunchingAccountId] = useState<
@@ -1395,6 +1374,8 @@ export function CodexAccountsPage() {
   >(null);
   const [quotaErrorDetail, setQuotaErrorDetail] = useState<{
     accountName: string;
+    summary?: string;
+    reauthorizeAccountId?: string;
     message: string;
   } | null>(null);
   const [editingAccountNoteId, setEditingAccountNoteId] = useState<
@@ -1436,26 +1417,16 @@ export function CodexAccountsPage() {
     getMfaTimeRemaining,
   );
   const [savingAccountNote, setSavingAccountNote] = useState(false);
-  const [oauthFingerprintMode, setOauthFingerprintMode] =
-    useState<CodexFingerprintMode>("session");
-  const [fingerprintSettingsAccount, setFingerprintSettingsAccount] =
-    useState<CodexAccount | null>(null);
-  const [fingerprintSettingsAccountIds, setFingerprintSettingsAccountIds] =
-    useState<string[]>([]);
-  const [fingerprintSettingsMode, setFingerprintSettingsMode] =
-    useState<CodexFingerprintMode>("session");
-  const [fingerprintSettingsSaving, setFingerprintSettingsSaving] =
-    useState(false);
-  const {
-    message: fingerprintSettingsError,
-    scrollKey: fingerprintSettingsErrorScrollKey,
-    set: setFingerprintSettingsError,
-  } = useModalErrorState();
   const [savingAppSpeedId, setSavingAppSpeedId] = useState<string | null>(null);
   const [apiServiceAppSpeed, setApiServiceAppSpeed] =
     useState<CodexAppSpeed>("standard");
   const [reauthTargetAccount, setReauthTargetAccount] =
     useState<CodexAccount | null>(null);
+  const [reauthRetrySwitchAccountId, setReauthRetrySwitchAccountId] =
+    useState<string | null>(null);
+  const [reauthRetryInstanceId, setReauthRetryInstanceId] = useState<
+    string | null
+  >(null);
   const [reauthEmailCopied, setReauthEmailCopied] = useState(false);
   const {
     message: accountNoteError,
@@ -1940,8 +1911,26 @@ export function CodexAccountsPage() {
     : 0;
 
   const openCodexAddModal = useCallback(
-    (tab: string, targetAccount?: CodexAccount | null) => {
+    (
+      tab: string,
+      targetAccount?: CodexAccount | null,
+      options?: {
+        retrySwitchAfterOAuth?: boolean;
+        retryInstanceLaunchAfterOAuth?: boolean;
+        retryInstanceId?: string;
+      },
+    ) => {
       setReauthTargetAccount(targetAccount ?? null);
+      setReauthRetrySwitchAccountId(
+        targetAccount && options?.retrySwitchAfterOAuth
+          ? targetAccount.id
+          : null,
+      );
+      setReauthRetryInstanceId(
+        targetAccount && options?.retryInstanceLaunchAfterOAuth
+          ? options.retryInstanceId?.trim() || null
+          : null,
+      );
       setCodexAddTargetGroupId(
         targetAccount ? null : resolveValidCodexGroupId(activeGroupId),
       );
@@ -1949,9 +1938,6 @@ export function CodexAccountsPage() {
       if (!targetAccount) {
         setPendingOAuthEmailInput("");
         setPendingOAuthNoteForm(EMPTY_CODEX_ACCOUNT_NOTE_FORM);
-        setOauthFingerprintMode("session");
-      } else {
-        setOauthFingerprintMode(targetAccount.codex_fingerprint_mode ?? "session");
       }
       setPendingOAuthFieldErrors({});
       setPendingOAuthNoteModalOpen(false);
@@ -1964,11 +1950,12 @@ export function CodexAccountsPage() {
   const closeCodexAddModal = useCallback(() => {
     if (importing) return;
     setReauthTargetAccount(null);
+    setReauthRetrySwitchAccountId(null);
+    setReauthRetryInstanceId(null);
     setCodexAddTargetGroupId(null);
     setReauthEmailCopied(false);
     setPendingOAuthEmailInput("");
     setPendingOAuthNoteForm(EMPTY_CODEX_ACCOUNT_NOTE_FORM);
-    setOauthFingerprintMode("session");
     setPendingOAuthFieldErrors({});
     setPendingOAuthNoteModalOpen(false);
     setPendingWebSessionImport(null);
@@ -1977,22 +1964,48 @@ export function CodexAccountsPage() {
 
   // Keep the shared modal independent from the currently visible Codex page.
   useEffect(() => {
-    const handleOpenAddAccount = (event: Event) => {
-      const detail = (event as CustomEvent<CodexOpenAddAccountDetail>).detail;
+    const openFromRequest = async (detail?: CodexOpenAddAccountDetail) => {
       if (detail?.autoJoinApiService) {
         setSyncImportedToApiService(true);
         writeCodexImportSyncApiService(true);
       }
-      openCodexAddModal(detail?.tab ?? "oauth");
+      let targetAccount = detail?.targetAccountId
+        ? codexAccountsRef.current.find(
+            (account) => account.id === detail.targetAccountId,
+          ) ?? null
+        : null;
+      if (detail?.targetAccountId && !targetAccount) {
+        await fetchCodexAccounts();
+        targetAccount =
+          useCodexAccountStore
+            .getState()
+            .accounts.find((account) => account.id === detail.targetAccountId) ??
+          null;
+      }
+      openCodexAddModal(detail?.tab ?? "oauth", targetAccount, {
+        retrySwitchAfterOAuth: detail?.retrySwitchAfterOAuth,
+        retryInstanceLaunchAfterOAuth: detail?.retryInstanceLaunchAfterOAuth,
+        retryInstanceId: detail?.retryInstanceId,
+      });
+    };
+    const handleOpenAddAccount = (event: Event) => {
+      const eventDetail = (event as CustomEvent<CodexOpenAddAccountDetail>)
+        .detail;
+      const detail = takePendingCodexOpenAddAccountRequest() ?? eventDetail;
+      void openFromRequest(detail);
     };
     window.addEventListener(CODEX_OPEN_ADD_ACCOUNT_EVENT, handleOpenAddAccount);
+    const pendingRequest = takePendingCodexOpenAddAccountRequest();
+    if (pendingRequest) {
+      void openFromRequest(pendingRequest);
+    }
     return () => {
       window.removeEventListener(
         CODEX_OPEN_ADD_ACCOUNT_EVENT,
         handleOpenAddAccount,
       );
     };
-  }, [openCodexAddModal]);
+  }, [fetchCodexAccounts, openCodexAddModal]);
 
   const handleCopyReauthEmail = useCallback(async () => {
     if (!reauthTargetEmail) return;
@@ -2006,6 +2019,8 @@ export function CodexAccountsPage() {
   useEffect(() => {
     if (showAddModal) return;
     setReauthTargetAccount(null);
+    setReauthRetrySwitchAccountId(null);
+    setReauthRetryInstanceId(null);
     setCodexAddTargetGroupId(null);
     setReauthEmailCopied(false);
     setPendingOAuthEmailInput("");
@@ -2165,6 +2180,10 @@ export function CodexAccountsPage() {
         label: t("codex.exportFormat.cockpitTools", "Cockpit Tools"),
       },
       {
+        value: "auth_json",
+        label: t("codex.exportFormat.authJson", "auth.json"),
+      },
+      {
         value: "sub2api",
         label: t("codex.exportFormat.sub2api", "sub2api"),
       },
@@ -2301,7 +2320,8 @@ export function CodexAccountsPage() {
   }, [exportJsonContent]);
 
   const formattedExportResult = useMemo(() => {
-    const exportFormatSupportsSensitiveNotes = exportFormat !== "sub2api";
+    const exportFormatSupportsSensitiveNotes =
+      exportFormat !== "sub2api" && exportFormat !== "auth_json";
     const exportOptions = {
       includeSensitiveNotes:
         includeExportSensitiveNotes && exportFormatSupportsSensitiveNotes,
@@ -2373,7 +2393,9 @@ export function CodexAccountsPage() {
     return hasCodexExportSensitiveNotes(exportJsonContent);
   }, [exportJsonContent]);
   const exportCanIncludeSensitiveNotes =
-    exportHasSensitiveNotes && exportFormat !== "sub2api";
+    exportHasSensitiveNotes &&
+    exportFormat !== "sub2api" &&
+    exportFormat !== "auth_json";
 
   const formattedExportJsonContent = useMemo(() => {
     return formattedExportContent.type === "single"
@@ -3324,65 +3346,6 @@ export function CodexAccountsPage() {
     ],
   );
 
-  const openFingerprintSettingsModal = useCallback((account: CodexAccount) => {
-    setFingerprintSettingsAccount(account);
-    setFingerprintSettingsAccountIds([account.id]);
-    setFingerprintSettingsMode(account.codex_fingerprint_mode ?? "session");
-    setFingerprintSettingsError(null);
-  }, [setFingerprintSettingsError]);
-
-  const openBatchFingerprintSettingsModal = useCallback(() => {
-    const accountIds = Array.from(selected).filter((accountId) =>
-      isStandardCodexOAuthAccount(store.accounts.find((item) => item.id === accountId)),
-    );
-    if (accountIds.length === 0) return;
-    setFingerprintSettingsAccount(null);
-    setFingerprintSettingsAccountIds(accountIds);
-    setFingerprintSettingsMode("session");
-    setFingerprintSettingsError(null);
-  }, [selected, setFingerprintSettingsError, store.accounts]);
-
-  const closeFingerprintSettingsModal = useCallback(() => {
-    if (fingerprintSettingsSaving) return;
-    setFingerprintSettingsAccount(null);
-    setFingerprintSettingsAccountIds([]);
-    setFingerprintSettingsError(null);
-  }, [fingerprintSettingsSaving, setFingerprintSettingsError]);
-
-  const saveFingerprintSettings = useCallback(async () => {
-    if (fingerprintSettingsAccountIds.length === 0 || fingerprintSettingsSaving) return;
-    setFingerprintSettingsSaving(true);
-    setFingerprintSettingsError(null);
-    try {
-      await codexService.updateCodexAccountsFingerprintMode(
-        fingerprintSettingsAccountIds,
-        fingerprintSettingsMode,
-      );
-      await store.fetchAccounts({ allowEmpty: true });
-      setFingerprintSettingsAccount(null);
-      setFingerprintSettingsAccountIds([]);
-      setMessage({
-        text: fingerprintSettingsAccountIds.length === 1
-          ? t("common.codexFingerprint.saved", "设备指纹模式已保存")
-          : t("common.codexFingerprint.batchSaved", {
-              count: fingerprintSettingsAccountIds.length,
-              defaultValue: "已更新 {{count}} 个 OAuth 账号的设备指纹模式",
-            }),
-        tone: "success",
-      });
-    } catch (error) {
-      setFingerprintSettingsError(
-        t("common.codexFingerprint.saveFailed", {
-          error: String(error).replace(/^Error:\s*/, ""),
-          defaultValue: "保存设备指纹模式失败：{{error}}",
-        }),
-      );
-    } finally {
-      setFingerprintSettingsSaving(false);
-    }
-  }, [fingerprintSettingsAccountIds, fingerprintSettingsMode, fingerprintSettingsSaving, setFingerprintSettingsError, setMessage, store, t]);
-  useEscClose(fingerprintSettingsAccountIds.length > 0 && !fingerprintSettingsSaving, closeFingerprintSettingsModal);
-
   const openPendingOAuthNoteModal = useCallback(() => {
     setPendingOAuthNoteModalOpen(true);
     setEditingAccountNoteId(null);
@@ -4185,6 +4148,7 @@ export function CodexAccountsPage() {
             baseUrl: normalizedBaseUrl,
             wireApi: null,
           }).wireApi,
+          apiModelVisionSupport: codexApiProviderPresetVisionSupport(preset),
           accountName: preset.name,
         };
       }
@@ -4712,12 +4676,6 @@ export function CodexAccountsPage() {
   const completeOauthSuccess = useCallback(
     async (account?: CodexAccount | null) => {
       oauthLog("授权完成并保存成功", { loginId: oauthLoginIdRef.current });
-      if (account?.id) {
-        await codexService.updateCodexAccountsFingerprintMode(
-          [account.id],
-          oauthFingerprintMode,
-        );
-      }
       await fetchAccounts();
       await fetchCurrentAccount();
       if (!reauthTargetAccountId) {
@@ -4745,7 +4703,76 @@ export function CodexAccountsPage() {
         }
       }
       setAddStatus("success");
-      setAddMessage(t("common.shared.oauth.success", "授权成功"));
+      if (reauthRetrySwitchAccountId && account?.id) {
+        setAddStatus("loading");
+        setAddMessage(
+          t(
+            "codex.switchAuth.switchingAfterReauth",
+            "授权成功，正在继续切换账号...",
+          ),
+        );
+        try {
+          const refreshedAccount =
+            useCodexAccountStore
+              .getState()
+              .accounts.find((item) => item.id === account.id) || account;
+          const tokenGeneration = refreshedAccount.token_generation;
+          if (
+            typeof tokenGeneration !== "number" ||
+            !Number.isFinite(tokenGeneration)
+          ) {
+            throw new Error(t("codex.switchAuth.reauthGenerationMissing"));
+          }
+          await useCodexAccountStore.getState().switchAccount(account.id, {
+            reauthTokenGeneration: tokenGeneration,
+            reconcileAfterSwitch: true,
+          });
+        } catch (error) {
+          setAddStatus("error");
+          setAddMessage(
+            t("codex.switchAuth.switchAfterReauthFailed", {
+              defaultValue: "授权已更新，但继续切换失败：{{error}}",
+              error: String(error).replace(/^Error:\s*/, ""),
+            }),
+          );
+          return;
+        }
+      }
+      if (reauthRetryInstanceId && account?.id) {
+        setAddStatus("loading");
+        setAddMessage(
+          t(
+            "codex.switchAuth.startingInstanceAfterReauth",
+            "授权成功，正在重新启动实例...",
+          ),
+        );
+        try {
+          await codexInstanceService.startInstance(reauthRetryInstanceId);
+        } catch (error) {
+          setAddStatus("error");
+          setAddMessage(
+            t("codex.switchAuth.startInstanceAfterReauthFailed", {
+              defaultValue: "授权已更新，但实例启动失败：{{error}}",
+              error: String(error).replace(/^Error:\s*/, ""),
+            }),
+          );
+          return;
+        }
+      }
+      setAddStatus("success");
+      setAddMessage(
+        reauthRetrySwitchAccountId
+          ? t(
+              "codex.switchAuth.reauthorizedAndSwitched",
+              "重新授权并切换成功",
+            )
+          : reauthRetryInstanceId
+            ? t(
+                "codex.switchAuth.reauthorizedAndStartedInstance",
+                "重新授权并启动实例成功",
+              )
+          : t("common.shared.oauth.success", "授权成功"),
+      );
       oauthActiveRef.current = false;
       oauthCompletingRef.current = false;
       oauthLoginIdRef.current = null;
@@ -4768,10 +4795,11 @@ export function CodexAccountsPage() {
       fetchAccounts,
       fetchCurrentAccount,
       reauthTargetAccountId,
+      reauthRetrySwitchAccountId,
+      reauthRetryInstanceId,
       syncImportedAccountsToApiService,
       t,
       oauthLog,
-      oauthFingerprintMode,
       setAddStatus,
       setAddMessage,
       setShowAddModal,
@@ -5469,6 +5497,30 @@ export function CodexAccountsPage() {
       }
       await executeCodexAccountSwitch(accountId);
     } catch (e) {
+      if (e instanceof CodexSwitchAccountError && e.authFailure) {
+        return;
+      }
+      const retrySwitch = async () => {
+        try {
+          await executeCodexAccountSwitch(accountId);
+        } catch (retryError) {
+          if (retryError instanceof CodexSwitchAccountError && retryError.authFailure) {
+            return;
+          }
+          throw retryError;
+        }
+      };
+      if (
+        presentWindowsOperationError({
+          error: e,
+          operation: "unknown",
+          summary: t("codex.switch", "切换账号"),
+          retry: retrySwitch,
+          manualContinue: retrySwitch,
+        })
+      ) {
+        return;
+      }
       setMessage({
         text: t("codex.switchFailed", {
           error: formatCodexAuthFailureMessage(e),
@@ -8933,11 +8985,22 @@ export function CodexAccountsPage() {
   );
 
   const openQuotaErrorDetail = useCallback(
-    (accountName: string, message: string) => {
+    (
+      accountName: string,
+      message: string,
+      summary?: string,
+      reauthorizeAccountId?: string,
+    ) => {
       const text = message.trim();
       if (!text) return;
+      const normalizedSummary = summary?.trim();
       setQuotaErrorDetail({
         accountName: accountName.trim() || t("common.unknown", "未知"),
+        summary:
+          normalizedSummary && normalizedSummary !== text
+            ? normalizedSummary
+            : undefined,
+        reauthorizeAccountId: reauthorizeAccountId?.trim() || undefined,
         message: text,
       });
     },
@@ -8950,6 +9013,8 @@ export function CodexAccountsPage() {
       displayText: string;
       rawMessage: string;
       isVerbose: boolean;
+      detailSummary?: string;
+      detailReauthorizeAccountId?: string;
       isRefreshNotice?: boolean;
       showReauthorize?: boolean;
       onReauthorize?: () => void;
@@ -8960,12 +9025,15 @@ export function CodexAccountsPage() {
         displayText,
         rawMessage,
         isVerbose,
+        detailSummary,
+        detailReauthorizeAccountId,
         isRefreshNotice = false,
         showReauthorize = false,
         onReauthorize,
         table = false,
       } = options;
       const showDetailAction =
+        Boolean(detailSummary?.trim()) ||
         isVerbose ||
         rawMessage.trim().length > displayText.trim().length + 12 ||
         rawMessage.trim() !== displayText.trim();
@@ -8987,7 +9055,14 @@ export function CodexAccountsPage() {
             <button
               type="button"
               className="btn btn-sm btn-outline quota-error-action"
-              onClick={() => openQuotaErrorDetail(accountName, rawMessage)}
+              onClick={() =>
+                openQuotaErrorDetail(
+                  accountName,
+                  rawMessage,
+                  detailSummary,
+                  detailReauthorizeAccountId,
+                )
+              }
               title={t("codex.quotaError.viewDetails", "查看详情")}
             >
               {t("codex.quotaError.viewDetails", "查看详情")}
@@ -9011,6 +9086,9 @@ export function CodexAccountsPage() {
 
   const renderQuotaErrorDetailModal = () => {
     if (!quotaErrorDetail) return null;
+    const clipboardText = quotaErrorDetail.summary
+      ? `${quotaErrorDetail.summary}\n\n${quotaErrorDetail.message}`
+      : quotaErrorDetail.message;
     return createPortal(
       <div className="modal-overlay">
         <div
@@ -9032,17 +9110,40 @@ export function CodexAccountsPage() {
             <div className="codex-quota-error-detail-account">
               {quotaErrorDetail.accountName}
             </div>
+            {quotaErrorDetail.summary && (
+              <div className="codex-quota-error-detail-summary">
+                <Info size={16} />
+                <span>{quotaErrorDetail.summary}</span>
+              </div>
+            )}
             <pre className="codex-quota-error-detail-text">
               {quotaErrorDetail.message}
             </pre>
           </div>
           <div className="modal-footer">
+            {quotaErrorDetail.reauthorizeAccountId && (
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  const account = codexAccountsRef.current.find(
+                    (item) => item.id === quotaErrorDetail.reauthorizeAccountId,
+                  );
+                  setQuotaErrorDetail(null);
+                  if (account) {
+                    openCodexAddModal("oauth", account);
+                  }
+                }}
+              >
+                {t("common.reauthorize", "重新授权")}
+              </button>
+            )}
             <button
               type="button"
               className="btn btn-secondary"
               onClick={() => {
                 void navigator.clipboard
-                  ?.writeText(quotaErrorDetail.message)
+                  ?.writeText(clipboardText)
                   .catch(() => undefined);
               }}
             >
@@ -9050,7 +9151,11 @@ export function CodexAccountsPage() {
             </button>
             <button
               type="button"
-              className="btn btn-primary"
+              className={`btn ${
+                quotaErrorDetail.reauthorizeAccountId
+                  ? "btn-secondary"
+                  : "btn-primary"
+              }`}
               onClick={() => setQuotaErrorDetail(null)}
             >
               {t("common.close", "关闭")}
@@ -9099,7 +9204,8 @@ export function CodexAccountsPage() {
         rawMessage.includes("token 已过期且无 refresh_token") ||
         rawMessage.includes("缺少 refresh_token") ||
         rawMessage.includes("token 已过期且刷新失败") ||
-        rawMessage.includes("刷新 token 失败")
+        rawMessage.includes("刷新 token 失败") ||
+        isCodexIdTokenReauthReason(quotaErrorMeta.rawMessage)
       );
     },
     [],
@@ -9408,7 +9514,7 @@ export function CodexAccountsPage() {
           summary.cooldown += 1;
           return;
         }
-        if (isBlockingCodexQuotaError(account.quota_error)) {
+        if (isBlockingCodexAccountQuotaError(account)) {
           summary.quotaLimited += 1;
           return;
         }
@@ -9460,7 +9566,8 @@ export function CodexAccountsPage() {
     localAccessSaving ||
     localAccessStarting ||
     localAccessRefreshing ||
-    localAccessPortKilling;
+    localAccessPortKilling ||
+    localAccessSidecarRestarting;
   const selectedLocalAccessAddressKind: CodexLocalAccessAddressKind =
     localAccessAddressKind === "lan" && localAccessState?.lanBaseUrl
       ? "lan"
@@ -10215,6 +10322,24 @@ export function CodexAccountsPage() {
     }
   }, [localAccessCollection, setMessage, t]);
 
+  const handleRestartLocalAccessSidecar = useCallback(async () => {
+    setLocalAccessSidecarRestarting(true);
+    try {
+      const nextState =
+        await codexLocalAccessService.restartCodexLocalAccessSidecar();
+      setLocalAccessState(nextState);
+      setMessage({
+        text: t("codex.localAccess.restartSuccess", "API 服务 Sidecar 已重启"),
+      });
+      return nextState;
+    } catch (error) {
+      console.error("Failed to restart local access sidecar:", error);
+      throw new Error(String(error).replace(/^Error:\s*/, ""));
+    } finally {
+      setLocalAccessSidecarRestarting(false);
+    }
+  }, [setMessage, t]);
+
   const handleUpdateLocalAccessPort = useCallback(
     async (port: number) => {
       setLocalAccessSaving(true);
@@ -10385,39 +10510,6 @@ export function CodexAccountsPage() {
     [setMessage, t],
   );
 
-  const handleUpdateLocalAccessGatewayMode = useCallback(
-    async (gatewayMode: CodexLocalAccessGatewayMode) => {
-      if (
-        !localAccessCollection ||
-        localAccessCollection.gatewayMode === gatewayMode
-      ) {
-        return;
-      }
-      setLocalAccessSaving(true);
-      try {
-        const nextState =
-          await codexLocalAccessService.updateCodexLocalAccessGatewayMode(
-            gatewayMode,
-          );
-        setLocalAccessState(nextState);
-        setMessage({
-          text: t(
-            "codex.localAccess.gatewayModeSaveSuccess",
-            "API 服务网关模式已更新",
-          ),
-        });
-        dismissLocalAccessGatewayGuide();
-        return nextState;
-      } catch (error) {
-        console.error("Failed to update local access gateway mode:", error);
-        throw new Error(String(error).replace(/^Error:\s*/, ""));
-      } finally {
-        setLocalAccessSaving(false);
-      }
-    },
-    [dismissLocalAccessGatewayGuide, localAccessCollection, setMessage, t],
-  );
-
   const handleToggleLocalAccessEnabled = useCallback(async () => {
     if (!localAccessCollection) return;
     if (!localAccessCollection.enabled) {
@@ -10513,6 +10605,18 @@ export function CodexAccountsPage() {
     try {
       await handleToggleLocalAccessEnabled();
     } catch (error) {
+      if (
+        presentWindowsOperationError({
+          error,
+          operation: "start_sidecar",
+          summary: t("codex.localAccess.toggleService", "切换 API 服务"),
+          retry: async () => {
+            await handleToggleLocalAccessEnabled();
+          },
+        })
+      ) {
+        return;
+      }
       setMessage({
         text: t("messages.actionFailed", {
           action: t("codex.localAccess.toggleService", "切换 API 服务"),
@@ -10530,6 +10634,18 @@ export function CodexAccountsPage() {
         return;
       }
     } catch (error) {
+      if (
+        presentWindowsOperationError({
+          error,
+          operation: "start_sidecar",
+          summary: t("codex.localAccess.activateAction", "启动 API 服务"),
+          retry: async () => {
+            await handleActivateLocalAccess();
+          },
+        })
+      ) {
+        return;
+      }
       setMessage({
         text: t("messages.actionFailed", {
           action: t("codex.localAccess.activateAction", "启动 API 服务"),
@@ -10633,6 +10749,8 @@ export function CodexAccountsPage() {
     const queries = statAccounts.flatMap((account) =>
       buildCodexAccountWindowStatQueries(
         account.id,
+        account.account_id?.trim() || "",
+        account.email,
         getCodexQuotaWindows(account.quota),
         now,
       ),
@@ -10687,21 +10805,23 @@ export function CodexAccountsPage() {
       account: CodexAccount,
       items: ReturnType<typeof buildCodexAccountPresentation>["quotaItems"],
     ) => {
-      if (!sessionWindowStats.ready) {
-        return items;
-      }
-      const accountStats = sessionWindowStats.byAccountId[account.id];
-      if (!accountStats) {
-        return items;
-      }
+      const accountStats = sessionWindowStats.byAccountId[account.id] ?? {};
+      const emptyStats = {
+        requestCount: 0,
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        estimatedCostUsd: 0,
+      };
       return items.map((item) => {
+        if (item.key !== "primary" && item.key !== "secondary") {
+          return item;
+        }
         const stats =
-          item.key === "primary"
+          (item.key === "primary"
             ? accountStats.primary
-            : item.key === "secondary"
-              ? accountStats.secondary
-              : null;
-        if (!stats) return item;
+            : accountStats.secondary) ?? emptyStats;
         const windowStatsText = formatCodexWindowStatsText(stats);
         const hint = t(
           "codex.quota.windowStatsHint",
@@ -11641,19 +11761,39 @@ export function CodexAccountsPage() {
         ? reauthErrorMeta
         : quotaErrorMeta;
       const hasQuotaError = Boolean(accountIssueMeta.rawMessage);
+      const isRefreshTokenNotice = isCodexRefreshTokenNoticeOnly(account);
+      const isClientReauthNotice = isCodexClientReauthNoticeOnly(account);
       const isQuotaRefreshNotice =
-        !reauthErrorMeta.rawMessage &&
-        quotaErrorMeta.isRefreshRequestFailure &&
-        !quotaErrorMeta.statusCode &&
-        !quotaErrorMeta.errorCode;
-      const accountIssueBadge = reauthErrorMeta.rawMessage
-        ? t("codex.authError.badge", "授权异常")
+        isClientReauthNotice ||
+        (!reauthErrorMeta.rawMessage &&
+          quotaErrorMeta.isRefreshRequestFailure &&
+          !quotaErrorMeta.statusCode &&
+          !quotaErrorMeta.errorCode);
+      const accountIssueDisplayText = isRefreshTokenNotice
+        ? t(
+            "codex.quotaError.authRefreshDeferred",
+            "refresh_token 已失效；当前 access_token 仍可用于 API 服务，但不能切换到官方客户端，请重新授权后再切号。",
+          )
+        : accountIssueMeta.displayText;
+      const accountIssueBadge = isRefreshTokenNotice
+        ? t(
+            "codex.switchAuth.apiOnlyBadge",
+            "客户端需授权",
+          )
         : isQuotaRefreshNotice
-          ? t("codex.quotaError.refreshFailedBadge", "刷新失败")
-          : accountIssueMeta.statusCode ||
-            t("codex.quotaError.badge", "配额异常");
+        ? t("codex.quotaError.refreshFailedBadge", "刷新失败")
+        : reauthErrorMeta.rawMessage
+        ? isCodexApiOnlyAccessTokenUsable(account)
+          ? t(
+              "codex.switchAuth.apiOnlyBadge",
+              "客户端需授权",
+            )
+          : t("codex.authError.badge", "授权异常")
+        : accountIssueMeta.statusCode ||
+          t("codex.quotaError.badge", "配额异常");
       const showReauthorizeAction =
         !isApiKeyAccount &&
+        !isRefreshTokenNotice &&
         (isPendingOAuthAccount ||
           (hasQuotaError && shouldOfferReauthorizeAction(accountIssueMeta)));
       const accountIdText =
@@ -11779,7 +11919,7 @@ export function CodexAccountsPage() {
             {hasQuotaError && (
               <span
                 className={`codex-status-pill ${isQuotaRefreshNotice ? "quota-refresh" : "quota-error"}`}
-                title={accountIssueMeta.displayText}
+                title={accountIssueDisplayText}
               >
                 {isQuotaRefreshNotice ? (
                   <Info size={12} />
@@ -11846,17 +11986,6 @@ export function CodexAccountsPage() {
                 >
                   <Link2 size={11} />
                   {t("codex.localAccess.entryAction", "添加至 API 服务")}
-                </button>
-              )}
-              {isStandardCodexOAuthAccount(account) && (
-                <button
-                  type="button"
-                  className="codex-account-note-chip"
-                  onClick={() => openFingerprintSettingsModal(account)}
-                  title={t("common.codexFingerprint.modeLabel", "设备指纹模式")}
-                >
-                  <ShieldCheck size={12} />
-                  <span>{t("common.codexFingerprint.short", "指纹")}</span>
                 </button>
               )}
               {!isApiKeyAccount && renderAccountNoteButton(account)}
@@ -11937,9 +12066,16 @@ export function CodexAccountsPage() {
                   hasQuotaError &&
                   renderQuotaErrorInline({
                     accountName: presentation.displayName,
-                    displayText: accountIssueMeta.displayText,
+                    displayText: accountIssueDisplayText,
                     rawMessage: accountIssueMeta.rawMessage,
                     isVerbose: accountIssueMeta.isVerbose,
+                    detailSummary: isRefreshTokenNotice
+                      ? accountIssueDisplayText
+                      : undefined,
+                    detailReauthorizeAccountId:
+                      isRefreshTokenNotice || showReauthorizeAction
+                        ? account.id
+                        : undefined,
                     isRefreshNotice: isQuotaRefreshNotice,
                     showReauthorize: showReauthorizeAction,
                     onReauthorize: () => openCodexAddModal("oauth", account),
@@ -12219,61 +12355,10 @@ export function CodexAccountsPage() {
       count: localAccessState?.memberCount ?? 0,
       defaultValue: "{{count}} 个账号",
     });
-    const localAccessGatewayMode =
-      localAccessCollection?.gatewayMode ?? "sidecar";
-    const localAccessGatewayModeOptions = [
-      {
-        value: "sidecar",
-        label: t("codex.localAccess.gatewayModeNewLabel", "API 服务-新"),
-      },
-      {
-        value: "legacy",
-        label: t("codex.localAccess.gatewayModeOldLabel", "API 服务-旧"),
-      },
-    ];
     const localAccessEmptyMessage = t(
       "codex.localAccess.emptyMembers",
       "当前集合暂无账号",
     );
-    const showLocalAccessGatewayGuide = !localAccessGatewayGuideDismissed;
-    const renderLocalAccessGatewayGuide = () =>
-      showLocalAccessGatewayGuide ? (
-        <div
-          className="codex-local-access-gateway-guide"
-          role="dialog"
-          aria-label={t(
-            "codex.localAccess.gatewayGuideTitle",
-            "这里可以切换网关",
-          )}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <button
-            type="button"
-            className="codex-local-access-gateway-guide-close"
-            onClick={dismissLocalAccessGatewayGuide}
-            aria-label={t("common.close", "关闭")}
-          >
-            <X size={12} />
-          </button>
-          <div className="codex-local-access-gateway-guide-title">
-            {t("codex.localAccess.gatewayGuideTitle", "这里可以切换网关")}
-          </div>
-          <p>
-            {t(
-              "codex.localAccess.gatewayGuideDesc",
-              "默认使用新网关。如果遇到兼容性问题或客户端请求异常，可以在这里切换到旧网关。",
-            )}
-          </p>
-          <button
-            type="button"
-            className="codex-local-access-gateway-guide-action"
-            onClick={dismissLocalAccessGatewayGuide}
-          >
-            {t("codex.localAccess.gatewayGuideAction", "我知道了")}
-          </button>
-        </div>
-      ) : null;
-
     return (
       <div
         key="codex-local-access-card"
@@ -12286,29 +12371,9 @@ export function CodexAccountsPage() {
             <>
               <div className="folder-inline-info">
                 <div className="codex-local-access-title-row">
-                  <div
-                    className="codex-local-access-title-mode-select"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <SingleSelectDropdown
-                      value={localAccessGatewayMode}
-                      options={localAccessGatewayModeOptions}
-                      onChange={(value) =>
-                        void handleUpdateLocalAccessGatewayMode(
-                          value as CodexLocalAccessGatewayMode,
-                        )
-                      }
-                      disabled={!localAccessCollection || localAccessBusy}
-                      menuClassName="codex-local-access-title-mode-menu"
-                      menuWidth={116}
-                      menuMaxHeight={120}
-                      ariaLabel={t(
-                        "codex.localAccess.gatewayModeLabel",
-                        "网关模式",
-                      )}
-                    />
-                    {renderLocalAccessGatewayGuide()}
-                  </div>
+                  <span className="codex-local-access-current-mode">
+                    {t("codex.localAccess.title", "API 服务")}
+                  </span>
                 </div>
               </div>
             </>
@@ -12333,29 +12398,9 @@ export function CodexAccountsPage() {
             >
               <div className="folder-inline-info">
                 <div className="codex-local-access-title-row">
-                  <div
-                    className="codex-local-access-title-mode-select"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <SingleSelectDropdown
-                      value={localAccessGatewayMode}
-                      options={localAccessGatewayModeOptions}
-                      onChange={(value) =>
-                        void handleUpdateLocalAccessGatewayMode(
-                          value as CodexLocalAccessGatewayMode,
-                        )
-                      }
-                      disabled={!localAccessCollection || localAccessBusy}
-                      menuClassName="codex-local-access-title-mode-menu"
-                      menuWidth={116}
-                      menuMaxHeight={120}
-                      ariaLabel={t(
-                        "codex.localAccess.gatewayModeLabel",
-                        "网关模式",
-                      )}
-                    />
-                    {renderLocalAccessGatewayGuide()}
-                  </div>
+                  <span className="codex-local-access-current-mode">
+                    {t("codex.localAccess.title", "API 服务")}
+                  </span>
                   <span className="codex-local-access-summary-text">
                     {localAccessMemberCountLabel}
                   </span>
@@ -13270,19 +13315,39 @@ export function CodexAccountsPage() {
         ? reauthErrorMeta
         : quotaErrorMeta;
       const hasQuotaError = Boolean(accountIssueMeta.rawMessage);
+      const isRefreshTokenNotice = isCodexRefreshTokenNoticeOnly(account);
+      const isClientReauthNotice = isCodexClientReauthNoticeOnly(account);
       const isQuotaRefreshNotice =
-        !reauthErrorMeta.rawMessage &&
-        quotaErrorMeta.isRefreshRequestFailure &&
-        !quotaErrorMeta.statusCode &&
-        !quotaErrorMeta.errorCode;
-      const accountIssueBadge = reauthErrorMeta.rawMessage
-        ? t("codex.authError.badge", "授权异常")
+        isClientReauthNotice ||
+        (!reauthErrorMeta.rawMessage &&
+          quotaErrorMeta.isRefreshRequestFailure &&
+          !quotaErrorMeta.statusCode &&
+          !quotaErrorMeta.errorCode);
+      const accountIssueDisplayText = isRefreshTokenNotice
+        ? t(
+            "codex.quotaError.authRefreshDeferred",
+            "refresh_token 已失效；当前 access_token 仍可用于 API 服务，但不能切换到官方客户端，请重新授权后再切号。",
+          )
+        : accountIssueMeta.displayText;
+      const accountIssueBadge = isRefreshTokenNotice
+        ? t(
+            "codex.switchAuth.apiOnlyBadge",
+            "客户端需授权",
+          )
         : isQuotaRefreshNotice
-          ? t("codex.quotaError.refreshFailedBadge", "刷新失败")
-          : accountIssueMeta.statusCode ||
-            t("codex.quotaError.badge", "配额异常");
+        ? t("codex.quotaError.refreshFailedBadge", "刷新失败")
+        : reauthErrorMeta.rawMessage
+        ? isCodexApiOnlyAccessTokenUsable(account)
+          ? t(
+              "codex.switchAuth.apiOnlyBadge",
+              "客户端需授权",
+            )
+          : t("codex.authError.badge", "授权异常")
+        : accountIssueMeta.statusCode ||
+          t("codex.quotaError.badge", "配额异常");
       const showReauthorizeAction =
         !isApiKeyAccount &&
+        !isRefreshTokenNotice &&
         (isPendingOAuthAccount ||
           (hasQuotaError && shouldOfferReauthorizeAction(accountIssueMeta)));
       const accountIdText =
@@ -13436,17 +13501,6 @@ export function CodexAccountsPage() {
                       {t("codex.localAccess.removeAction", "移除 API 服务")}
                     </button>
                   )}
-                  {isStandardCodexOAuthAccount(account) && (
-                    <button
-                      type="button"
-                      className="codex-account-note-chip"
-                      onClick={() => openFingerprintSettingsModal(account)}
-                      title={t("common.codexFingerprint.modeLabel", "设备指纹模式")}
-                    >
-                      <ShieldCheck size={12} />
-                      <span>{t("common.codexFingerprint.short", "指纹")}</span>
-                    </button>
-                  )}
                   {!isApiKeyAccount && renderAccountNoteButton(account)}
                   {resetCreditControls}
                 </div>
@@ -13507,7 +13561,7 @@ export function CodexAccountsPage() {
                 <div className="account-sub-line">
                   <span
                     className={`codex-status-pill ${isQuotaRefreshNotice ? "quota-refresh" : "quota-error"}`}
-                    title={accountIssueMeta.displayText}
+                    title={accountIssueDisplayText}
                   >
                     {isQuotaRefreshNotice ? (
                       <Info size={12} />
@@ -13604,9 +13658,16 @@ export function CodexAccountsPage() {
                   hasQuotaError &&
                   renderQuotaErrorInline({
                     accountName: presentation.displayName,
-                    displayText: accountIssueMeta.displayText,
+                    displayText: accountIssueDisplayText,
                     rawMessage: accountIssueMeta.rawMessage,
                     isVerbose: accountIssueMeta.isVerbose,
+                    detailSummary: isRefreshTokenNotice
+                      ? accountIssueDisplayText
+                      : undefined,
+                    detailReauthorizeAccountId:
+                      isRefreshTokenNotice || showReauthorizeAction
+                        ? account.id
+                        : undefined,
                     isRefreshNotice: isQuotaRefreshNotice,
                     showReauthorize: showReauthorizeAction,
                     onReauthorize: () => openCodexAddModal("oauth", account),
@@ -15738,18 +15799,6 @@ export function CodexAccountsPage() {
                       {selected.size > 0 && (
                         <>
                           <button
-                            type="button"
-                            className="btn btn-secondary"
-                            onClick={openBatchFingerprintSettingsModal}
-                            disabled={!Array.from(selected).some((accountId) =>
-                              isStandardCodexOAuthAccount(store.accounts.find((item) => item.id === accountId)),
-                            )}
-                            title={t("common.codexFingerprint.batchAction", "批量设置设备指纹模式")}
-                          >
-                            <ShieldCheck size={14} />
-                            {t("common.codexFingerprint.batchAction", "设置指纹")}
-                          </button>
-                          <button
                             className="btn btn-secondary icon-only"
                             onClick={() => setShowAddToCodexGroupModal(true)}
                             title={
@@ -16213,27 +16262,6 @@ export function CodexAccountsPage() {
                   {addTab !== "oauth" && <MfaQuickCodeSelect />}
                   {addTab === "oauth" && (
                     <div className="add-section">
-                      <details className="codex-oauth-advanced-settings">
-                        <summary>{t("common.advancedSettings", "高级设置")}</summary>
-                        <label className="codex-account-note-field">
-                          <span>{t("common.codexFingerprint.modeLabel", "设备指纹模式")}</span>
-                          <SingleSelectDropdown
-                            value={oauthFingerprintMode}
-                            onChange={(value) => setOauthFingerprintMode(value as CodexFingerprintMode)}
-                            options={[
-                              { value: "session", label: t("common.codexFingerprint.session", "会话（推荐）") },
-                              { value: "device", label: t("common.codexFingerprint.device", "设备") },
-                              { value: "full", label: t("common.codexFingerprint.full", "完整") },
-                              { value: "off", label: t("common.codexFingerprint.off", "关闭") },
-                            ]}
-                            disabled={importing}
-                            ariaLabel={t("common.codexFingerprint.modeLabel", "设备指纹模式")}
-                          />
-                          <small className="codex-account-note-field-hint">
-                            {t("common.codexFingerprint.modeHint", "仅 OAuth 账号生效；未设置时默认使用会话模式。")}
-                          </small>
-                        </label>
-                      </details>
                       {reauthTargetEmail && (
                         <div className="oauth-link codex-reauth-email-block">
                           <label>
@@ -19978,68 +20006,6 @@ export function CodexAccountsPage() {
             document.body,
           )}
 
-          {fingerprintSettingsAccountIds.length > 0 && createPortal(
-            <div className="modal-overlay">
-              <div className="modal codex-account-note-modal">
-                <div className="modal-header">
-                  <h2>{t("common.codexFingerprint.settingsTitle", "Codex 指纹设置")}</h2>
-                  <button
-                    className="modal-close"
-                    onClick={closeFingerprintSettingsModal}
-                    aria-label={t("common.close", "关闭")}
-                    disabled={fingerprintSettingsSaving}
-                  >
-                    <X />
-                  </button>
-                </div>
-                <div className="modal-body">
-                  <ModalErrorMessage
-                    message={fingerprintSettingsError}
-                    scrollKey={fingerprintSettingsErrorScrollKey}
-                  />
-                  <p className="codex-account-note-desc">
-                    {fingerprintSettingsAccount
-                      ? t("common.codexFingerprint.accountHint", {
-                          account: maskAccountText(buildCodexAccountPresentation(fingerprintSettingsAccount, t).displayName),
-                          defaultValue: "为 {{account}} 设置 OAuth 设备与会话标识的收敛方式。",
-                        })
-                      : t("common.codexFingerprint.batchHint", {
-                          count: fingerprintSettingsAccountIds.length,
-                          defaultValue: "为选中的 {{count}} 个 OAuth 账号设置设备与会话标识的收敛方式。",
-                        })}
-                  </p>
-                  <label className="codex-account-note-field">
-                    <span>{t("common.codexFingerprint.modeLabel", "设备指纹模式")}</span>
-                    <SingleSelectDropdown
-                      value={fingerprintSettingsMode}
-                      onChange={(value) => setFingerprintSettingsMode(value as CodexFingerprintMode)}
-                      options={[
-                        { value: "session", label: t("common.codexFingerprint.session", "会话（推荐）") },
-                        { value: "device", label: t("common.codexFingerprint.device", "设备") },
-                        { value: "full", label: t("common.codexFingerprint.full", "完整") },
-                        { value: "off", label: t("common.codexFingerprint.off", "关闭") },
-                      ]}
-                      disabled={fingerprintSettingsSaving}
-                      ariaLabel={t("common.codexFingerprint.modeLabel", "设备指纹模式")}
-                    />
-                    <small className="codex-account-note-field-hint">
-                      {t("common.codexFingerprint.modeHint", "仅 OAuth 账号生效；未设置时默认使用会话模式。")}
-                    </small>
-                  </label>
-                </div>
-                <div className="modal-footer">
-                  <button className="btn btn-secondary" onClick={closeFingerprintSettingsModal} disabled={fingerprintSettingsSaving}>
-                    {t("common.cancel", "取消")}
-                  </button>
-                  <button className="btn btn-primary" onClick={() => void saveFingerprintSettings()} disabled={fingerprintSettingsSaving}>
-                    {fingerprintSettingsSaving ? t("common.saving", "保存中...") : t("common.save", "保存")}
-                  </button>
-                </div>
-              </div>
-            </div>,
-            document.body,
-          )}
-
           <CodexGroupAccountPickerModal
             isOpen={!!groupQuickAddGroupId}
             targetGroup={groupQuickAddGroup}
@@ -20135,6 +20101,7 @@ export function CodexAccountsPage() {
               handleUpdateLocalAccessUpstreamProxyConfig
             }
             onRotateApiKey={handleRotateLocalAccessApiKey}
+            onRestartSidecar={handleRestartLocalAccessSidecar}
             onKillPort={handleKillLocalAccessPort}
             onToggleEnabled={handleToggleLocalAccessEnabled}
             onRecoverAccounts={handleRecoverLocalAccessAccounts}
@@ -20150,6 +20117,7 @@ export function CodexAccountsPage() {
             testing={false}
             starting={localAccessStarting}
             portCleanupBusy={localAccessPortKilling}
+            sidecarRestarting={localAccessSidecarRestarting}
           />
 
           {/* Codex 分组管理弹窗 */}

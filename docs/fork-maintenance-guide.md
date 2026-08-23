@@ -471,7 +471,7 @@ Sidecar 选择事件所有权：
 - 易失：数据只在当前进程内存在，重启后清空，不写数据库/配置文件。
 - 隐私：不记录 API Key secret；UI 继续使用现有账号脱敏函数。
 - 性能：不新增独立高频 command；复用已有 state snapshot 和条件轮询。
-- 兼容：sidecar 与 legacy gateway 两条路径都要覆盖。
+- 兼容：运行时以 sidecar 为唯一路径；legacy 只保留迁移、历史日志筛选和旧数据读取兼容，不能重新作为启动分支。
 
 ### 5.5 OAuth 保留额度窗口语义
 
@@ -483,6 +483,16 @@ OpenAI 的 `primary_window`/`secondary_window` 表示窗口顺序，不保证永
 - OpenAI 恢复 `primary=300 分钟`、`secondary=10080 分钟` 后，两组阈值应自动同时恢复生效；不得通过永久交换 primary/secondary 字段修复周窗口。
 - Sidecar 继续接收已有 `hourly*`/`weekly*` JSON 契约，但这些字段必须由 Rust 按真实时长完成语义归一化后再写出。
 - 回归检查至少覆盖 weekly-only primary、恢复后的 5 小时+周双窗口，以及缺少窗口时长的旧数据兼容。
+
+### 5.6 v1.3.28 sidecar 统一与官方账号标识
+
+上游 `v1.3.22` 起把 Codex API Service 的运行时统一到 sidecar；`v1.3.28` 继续沿用这一边界。后续合并时：
+
+- 不恢复普通设置页的 legacy/sidecar 运行时切换控件，也不把 legacy gateway 重新作为启动分支；`gateway_mode`、旧目录和旧日志仍只用于迁移、历史筛选和兼容读取。
+- 保留 sidecar 的 `auth_selected`、`usage`、`auth_result` 事件处理。`auth_selected` 负责开始账号活动，`usage` 及所有失败/取消/重试终点负责结束活动；上游若调整事件字段，先扩展解析器再改 UI。
+- 账号统计优先使用上游写入的 `official_account_id`，并以账号 ID、邮箱和旧 account_id 做兼容回退；重新授权或重新导入同一官方账号不能造成统计归零。
+- `sidecars/cockpit-cliproxy/third_party/CLIProxyAPI` 是唯一供应商源码目录。上游路径迁移时必须同时检查 Rust build script、发布工作流和本地开发命令，不能留下可被误选的旧副本。
+- Linux 官方 ChatGPT/Codex 桌面实例管理、CLI/App 模式边界、Windows 恢复弹框和 Trae 修复直接跟随上游；除非触及本节的 sidecar 调度观测或去广告边界，不要回退上游生命周期逻辑。
 
 ## 6. 修改集 C：上游计费、用量与余额查询
 
@@ -762,10 +772,10 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 3. 在普通 Codex 页和独立 API 服务页确认被选账号在 5 秒内显示“调度中”，并在普通页成员列表中移到最前。
 4. 开启 session affinity，使用完全相同的会话标识连续发起至少两个请求；首次 cache miss 和后续 cache hit 都必须显示“调度中”，Sidecar 每个请求只输出一条 `auth_selected`。
 5. 加入足以超过普通 API 服务卡片高度的账号，确认所有账号均已渲染、成员区域出现纵向滚动条，滚动到底能够看到最后一个成员，卡片本身不无限增高。
-5. 请求结束后显示“刚调度”，约 30 秒后消失。
-6. 失败、取消和重试后不能永久显示“调度中”。
-7. 在成员、自定义路由、模型规则或 API Key 对话框中编辑未保存内容，等待至少两轮轮询，草稿不能被重置。
-8. 停止服务后确认轮询停止，无持续 command 或控制台报错。
+6. 请求结束后显示“刚调度”，约 30 秒后消失。
+7. 失败、取消和重试后不能永久显示“调度中”。
+8. 在成员、自定义路由、模型规则或 API Key 对话框中编辑未保存内容，等待至少两轮轮询，草稿不能被重置。
+9. 停止服务后确认轮询停止，无持续 command 或控制台报错。
 
 ### 11.4 计费查询手工检查
 
@@ -783,7 +793,7 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 3. 让一个仍在账号总览的账号产生请求后移出 API 服务，在相同时间范围确认其进入“历史账号”并显示 `未加入`，原套餐 Tag 位于状态 Tag 之前。
 4. 删除该账号并刷新，在相同时间范围确认显示 `已删除`，费用和请求数仍保留。
 5. 将一个账号设为最低优先级，在独立页面和普通摘要卡片确认都出现无文字开关；任一位置切换后另一位置同步。
-6. 关闭开关并使其他账号全部不可用，分别验证 legacy 与 sidecar 不会调度该账号；重新打开后恢复兜底。
+6. 关闭开关并使其他账号全部不可用，验证统一 sidecar 不会调度该账号；同时用旧 collection 数据启动一次，确认 legacy 模式只迁移为 sidecar 而不绕过暂停状态；重新打开后恢复兜底。
 7. 为账号预先配置其他模型排除规则，来回切换开关后确认这些规则未被覆盖。
 8. 暂停最低优先级账号后把它改为正常或最高优先级，确认 `*` 自动清理、其他模型排除仍保留，账号恢复可调度且不留下不可见暂停状态。
 9. 打开“禁用模型”弹窗后从另一页面切换兜底开关，再尝试保存旧草稿；后端必须拒绝旧版本，重新打开弹窗后才能保存。

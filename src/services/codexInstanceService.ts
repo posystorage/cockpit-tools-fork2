@@ -32,13 +32,20 @@ const service = createPlatformInstanceService("codex");
 export const getInstanceDefaults = service.getInstanceDefaults;
 export const listInstances = service.listInstances;
 export const deleteInstance = service.deleteInstance;
-export async function startInstance(instanceId: string): Promise<InstanceProfile> {
+export async function startInstance(
+  instanceId: string,
+  options?: { transferConflictingAccount?: boolean },
+): Promise<InstanceProfile> {
   const startedAt = performance.now();
   console.info("[Codex Start][Service] invoke codex_start_instance started", {
     instanceId,
   });
   try {
-    return await service.startInstance(instanceId);
+    return await invoke<InstanceProfile>("codex_start_instance", {
+      instanceId,
+      transferConflictingAccount:
+        options?.transferConflictingAccount === true ? true : null,
+    });
   } finally {
     console.info("[Codex Start][Service] invoke codex_start_instance finished", {
       instanceId,
@@ -129,6 +136,7 @@ export async function saveCodexInstanceQuickConfig(
   autoCompactTokenLimit?: number,
   experimentalModelCatalogEnabled?: boolean,
   experimentalModelCatalogModels?: CodexExperimentalModelDefinition[],
+  experimentalModelCatalogDefaultModelId?: string | null,
 ): Promise<CodexQuickConfig> {
   return await invoke("codex_save_instance_quick_config", {
     instanceId,
@@ -136,6 +144,7 @@ export async function saveCodexInstanceQuickConfig(
     autoCompactTokenLimit: autoCompactTokenLimit ?? null,
     experimentalModelCatalogEnabled: experimentalModelCatalogEnabled ?? null,
     experimentalModelCatalogModels: experimentalModelCatalogModels ?? null,
+    experimentalModelCatalogDefaultModelId: experimentalModelCatalogDefaultModelId ?? null,
   });
 }
 

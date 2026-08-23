@@ -7,6 +7,23 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [1.3.28] - 2026-08-23
+
+### Fixed
+
+- **Fixed account switching for the official ChatGPT/Codex desktop app on Linux/Ubuntu and completed its instance lifecycle support**: Cockpit detects the official `chatgpt` installation and applies the same transactional credential checks and refresh, occupancy protection, desktop-runtime shutdown, profile-service shutdown, credential writes, and relaunch used on macOS and Windows. Managed instances use isolated `CODEX_HOME` and Electron user-data directories, can be detected and stopped independently, and can be focused when Linux window-control tools are available.
+- **Codex CLI mode no longer closes the official desktop client by mistake**: when CLI mode is explicitly selected, switching accounts and starting, stopping, or closing all instances manages only the associated profile services and configuration; App mode on macOS, Windows, and Linux continues to manage the official desktop runtime.
+- **Fixed Trae Work CN / Trae Solo CN accounts being overwritten by stale local sessions or classified as Trae CN**: runtime sessions now synchronize tokens only when the platform matches while preserving the OAuth platform, host, scope, device-key, and ExchangeToken context. Non-running `storage.json` snapshots participate only when they are newer than the saved credentials, preventing platform drift and loss of the current refresh flow.
+- **Fixed Trae Work CN accounts being reclassified as Trae CN after refresh**: runtime snapshots after OAuth now synchronize tokens only when account identity, platform, and credential freshness match. Stale `storage.json` data can no longer replace `platformId`, callback metadata, device keys, or Exchange context, and snapshots from another Trae platform are rejected explicitly to prevent reclassification or invalidating the current authentication flow.
+
+### Added
+
+- **Windows system operations now use a unified recovery dialog**: when account switching, instance lifecycle actions, API Service sidecars, port cleanup, backups, or exports encounter access denial, `os error 5`, file-in-use errors, or missing programs, a top-level dialog shows the original cause and redacted details with retry, manual-resolution, open-location, and copy-error actions. Supported client processes can continue through one-time Windows authorization within a restricted safety boundary, while non-critical background probes remain silent.
+
+### Changed
+
+- **Official release builds now use more parallel execution**: macOS Universal builds alongside the platform packages, checksum and Homebrew finalization run in parallel, and Cask PRs that are already mergeable no longer fail during auto-merge, reducing wait times for later releases.
+
 ## [1.3.21b4] - 2026-08-20
 
 ### Added
@@ -18,6 +35,92 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - **Moved Codex auto-review billing to the full GPT-5.6 Luna matrix**: Standard, Fast/Priority, and above-272K long-context rates all use Luna pricing. The price-book migration removes only identified Sol or Terra/Luna mixed overrides, preserves other user customizations, and reprices all related historical logs in the background.
 - **Documented the fork maintenance boundary**: ordinary-page account usage, deleted-account history, standalone rolling statistics, and the separation between price-book migrations and user overrides are now explicit for future upstream merges.
+
+## [1.3.27] - 2026-08-23
+
+### Fixed
+
+- **Fixed Windows Codex account switching being blocked by system permissions**: restored the stable official-client close and launch path without directly invoking the internal WindowsApps `codex.exe app-server daemon stop`, preventing “Access denied (os error 5)” or an unavailable PowerShell executable from aborting the switch.
+
+## [1.3.26] - 2026-08-23
+
+### Fixed
+
+- **Fixed Windows account switching failing in the new Codex version**: fixed the official `Codex app-server daemon stop` step failing with “Access denied (os error 5)” for `codex.exe` under WindowsApps, which prevented the account switch from continuing.
+
+## [1.3.25] - 2026-08-23
+
+### Changed
+
+- **Codex account switching and reauthorization are more reliable**: resolved cases where switching required another login or newly authorized account state and credentials did not take effect; after authorization, the original account switch or instance launch can continue.
+- **Codex client authorization is now evaluated separately from API Service availability**: when the client needs reauthorization but the API token still works, the account remains available to API Service and is not counted as invalid.
+- **Codex multi-instance launches now protect account occupancy**: the same OAuth account cannot be used by multiple official instances at once; you can locate the active instance, choose another account, or transfer account use.
+- **Codex API Service now recovers automatically from local port conflicts**: when the original port is unavailable, the service selects another local port while keeping accounts, API keys, and pool settings intact.
+- **Behavior backups now use bounded retention**: Claude, Codex, WorkBuddy, CodeBuddy, and related session and configuration repair backups keep the newest copy per source and instance instead of consuming disk space indefinitely.
+
+### Fixed
+
+- **Fixed Codex API Service streaming conversations hanging and identities leaking across conversations**: streaming responses now finish cleanly and each conversation keeps an independent session identity.
+- **Fixed Codex API Service stats resetting after an account is added again**: usage is attributed by the official Codex account ID, so request counts, token usage, and account cost remain after reauthorizing or re-importing the same official account.
+- **Fixed Codex default-instance detection and lifecycle failures**: the default instance and its background processes can now be detected, started, and closed correctly.
+- **Fixed Codex instances with WebSocket disabled repeatedly attempting WebSocket connections**: API Service now preserves each instance's current WebSocket setting.
+
+### Added
+
+- **Grok account switches can sync OpenCode sign-in**: optionally sync OpenCode when switching Grok accounts and restart OpenCode so the new account takes effect immediately; accounts using custom third-party endpoints do not overwrite the existing sign-in. Thanks @FB208 ([#2002](https://github.com/jlcodes99/cockpit-tools/pull/2002)).
+- **Backup storage can now be moved to another drive**: macOS and Windows users can choose a new local backup folder in Settings; existing backups remain available after migration, with storage usage visible and cleanable by source.
+- **Codex accounts can be exported as official `auth.json` files**: OAuth, API Key, and Agent Identity accounts are exported in their corresponding formats, with separate files for multiple accounts.
+- **Codex model catalogs now support per-model context windows and compact limits**: each model can use defaults or custom values, synchronized for both the Codex client and API Service.
+
+## [1.3.24] - 2026-08-20
+
+### Fixed
+
+- **Fixed account switching with the latest Codex release and aligned it with the current official authentication flow**: before replacing the active credentials, Cockpit saves the current account's latest official auth state; the default file store reads `$CODEX_HOME/auth.json`, while explicitly configured `keyring` / `auto` stores use the matching `Codex Auth` entry. Account switches are serialized, and rewritten OAuth auth files preserve unrelated official or custom fields while removing stale account credentials, reducing cases where switching back requires another login.
+
+### Changed
+
+- **Codex OAuth login and token refresh now use the official credential-facing client identity**: token exchange and refresh requests send the matching `originator` and `User-Agent` pair used by the official client.
+- **The Codex launch-after-switch setting now sits with the Codex App launch path**: its description also makes clear that enabling it starts or restarts Codex App after an account switch.
+
+## [1.3.23] - 2026-08-19
+
+### Changed
+
+- **Codex OAuth device fingerprint defaults to Session again and isolates API Service identity per account**: accounts that were not explicitly set to Device or Full use Session; accounts that 1.3.22 switched to Off on upgrade also return to Session. Session mode issues a stable installation / session / thread / turn identity per account and rewrites parent/fork lineage plus workspace paths, Git remotes, and commits so local accounts do not share one environment identity. After startup, the local API service is synced away from the previous default-off write; Off / Device / Full can still be chosen manually.
+- **Codex Business monthly credits now show as a single remaining line**: when credits remain, the card shows `Credits: amount` without a progress bar; the row is hidden when remaining is 0.
+- **Disabled the top-right promotional ad**.
+
+### Fixed
+
+- **Linux can resolve and launch Antigravity correctly**: configured paths, `PATH`, install-root and `bin/` layouts, and the user-local `~/.local/share/antigravity-ide` install are supported, with execute-permission checks; Debian packages now include `libsecret-tools` because official credential switching calls `secret-tool`. Thanks @KirschBluteX ([#1944](https://github.com/jlcodes99/cockpit-tools/pull/1944)).
+
+## [1.3.22] - 2026-08-18
+
+### Added
+
+- **Codex now supports visible-model catalog management**: the new version migrates older catalogs once to the shipped official visible-model list; afterward, models can be added, edited, or removed in a dedicated manager, with each model following official reasoning levels or using a custom reasoning-effort set, and any visible model can be marked as the default. The setting remains consistent across the default profile, extra instances, and account switches while respecting user-managed catalogs.
+- **Added Codex OAuth client policies**: use the Codex top-right Settings popover to enable app-server access, then configure official-client-only access, app-server access, and device-fingerprint mode in bulk or per OAuth account; changes are synchronized to the local API service.
+- **macOS launch terminals now include Ghostty**: Claude CLI and Codex CLI can open directly in Ghostty. Thanks @Jonesxq ([#1948](https://github.com/jlcodes99/cockpit-tools/pull/1948)).
+- **Codex terminals can launch on Linux**: the system terminal is used first, then gnome-terminal and konsole. Thanks @Jonesxq ([#1950](https://github.com/jlcodes99/cockpit-tools/pull/1950)).
+
+### Changed
+
+- **Visible models in Codex settings now use a read-only summary**: the main settings dialog only shows the current list; click “Manage” to edit model IDs, display names, and reasoning efforts in a dedicated dialog, keeping the main settings surface compact.
+- **Codex OAuth device fingerprint now defaults to Off for everyone**: existing accounts are switched to Off on upgrade; Session / Device / Full can still be turned back on manually.
+- **Codex OAuth fingerprint and client policies are managed from the Codex Settings popover**: fingerprint convergence now supports Off / Device / Session / Full and is synchronized with the local API service without blocking the settings page.
+- **Codex API Service now runs through the sidecar gateway**: the legacy gateway option and its legacy-only timeout fields are retired, and existing legacy collections migrate to the sidecar mode automatically.
+- **Codex API Service default estimates now match the public price book**: `gpt-5.6-luna` is $0.2 / $0.02 / $1.2 and `gpt-5.6-terra` is $2 / $0.2 / $12 (input / cached-read / output per million tokens). Accounts that still used the previous defaults pick up the new rates; later requests are estimated with the new prices, and existing stats are left unchanged.
+- **API Service usage on Codex account cards is shown only after the account joins the pool**: request count, tokens, and account cost stay hidden until then.
+- **Interface scaling now supports smaller sizes down to 30%**, making dense settings and management pages usable in smaller windows.
+- **The bundled CLIProxyAPI source path is now `sidecars/cockpit-cliproxy/third_party/CLIProxyAPI`**: the previous `cdk/CLIProxyAPI` directory has been replaced; local sidecar builds should use the new path.
+
+### Fixed
+
+- **Selecting a MiniMax preset now keeps image-input support**: only `MiniMax-M3` accepts images; `MiniMax-M2.7` stays text-only. Thanks @octo-patch ([#1968](https://github.com/jlcodes99/cockpit-tools/pull/1968)).
+- **Codex Business accounts can show monthly credits**: remaining amount, total, and reset time are parsed and displayed. Thanks @Jonesxq ([#1953](https://github.com/jlcodes99/cockpit-tools/pull/1953)).
+- **macOS API Service sidecars no longer inherit the Cockpit app identity**: LAN gateway access no longer fails for that reason. Thanks @Jonesxq ([#1947](https://github.com/jlcodes99/cockpit-tools/pull/1947)).
+- **Menu-bar quota keeps refreshing after close-to-tray**: when menu-bar quota is enabled, the main window is hidden instead of tearing down the WebView. Thanks @Jonesxq ([#1952](https://github.com/jlcodes99/cockpit-tools/pull/1952)).
 
 ## [1.3.21] - 2026-08-15
 

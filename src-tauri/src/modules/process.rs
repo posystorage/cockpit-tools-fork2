@@ -1,7 +1,7 @@
 use crate::modules::config;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -1550,6 +1550,27 @@ fn sanitize_macos_gui_launch_env(cmd: &mut Command) {
     cmd.env_remove("ELECTRON_NO_ASAR");
     cmd.env_remove("ELECTRON_FORCE_WINDOW_MENU_BAR");
     cmd.env_remove("ELECTRON_NO_ATTACH_CONSOLE");
+    // Default Codex instances must resolve their own ~/.codex and Electron data directory.
+    // Managed instances pass both values explicitly through `open --env` after this cleanup.
+    cmd.env_remove("CODEX_HOME");
+    cmd.env_remove("CODEX_ELECTRON_USER_DATA_PATH");
+}
+
+#[cfg(target_os = "linux")]
+fn sanitize_linux_gui_launch_env(cmd: &mut Command) {
+    for key in [
+        "NODE_OPTIONS",
+        "NODE_PATH",
+        "NODE_ENV",
+        "npm_config_prefix",
+        "npm_config_devdir",
+        "ELECTRON_RUN_AS_NODE",
+        "ELECTRON_NO_ASAR",
+        "CODEX_HOME",
+        "CODEX_ELECTRON_USER_DATA_PATH",
+    ] {
+        cmd.env_remove(key);
+    }
 }
 
 fn managed_proxy_env_pairs() -> Vec<(&'static str, String)> {
@@ -1825,6 +1846,411 @@ mod app_path_config_guard_tests {
             r"D:\Codex\ChatGPT.exe"
         );
         assert_eq!(normalize_windows_user_facing_path("   "), "");
+    }
+}
+
+#[cfg(test)]
+mod linux_antigravity_path_tests {
+    use super::{
+        antigravity_executable_paths_match, antigravity_install_root_from_path,
+        first_linux_antigravity_executable, is_linux_antigravity_process_candidate,
+        linux_antigravity_discovery_paths, normalize_path_for_compare,
+        persisted_linux_antigravity_identity_matches, resolve_linux_antigravity_exec_path,
+    };
+    use std::collections::HashSet;
+    use std::path::{Path, PathBuf};
+
+    struct PathTestDir(PathBuf);
+
+    impl PathTestDir {
+        fn new(name: &str) -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "cockpit-tools-linux-antigravity-{}-{}",
+                std::process::id(),
+                name
+            ));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("create path test directory");
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for PathTestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn write_executable(path: &Path) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create executable parent");
+        }
+        std::fs::write(path, b"launcher").expect("write executable");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
+                .expect("mark test file executable");
+        }
+    }
+
+    #[test]
+    fn install_root_resolves_root_antigravity_executable() {
+        let install = PathTestDir::new("root-layout");
+        let executable = install.path().join("antigravity-ide");
+        write_executable(&executable);
+
+        assert_eq!(
+            resolve_linux_antigravity_exec_path(install.path()).expect("resolve root layout"),
+            executable
+        );
+    }
+
+    #[test]
+    fn install_root_resolves_bin_antigravity_launcher() {
+        let install = PathTestDir::new("bin-layout");
+        let executable = install.path().join("bin").join("antigravity-ide");
+        write_executable(&executable);
+
+        assert_eq!(
+            resolve_linux_antigravity_exec_path(install.path()).expect("resolve bin layout"),
+            executable
+        );
+    }
+
+    #[test]
+    fn install_root_prefers_root_launcher_when_both_layouts_exist() {
+        let install = PathTestDir::new("both-layouts-space-含");
+        let root_executable = install.path().join("antigravity-ide");
+        let bin_executable = install.path().join("bin").join("antigravity-ide");
+        write_executable(&root_executable);
+        write_executable(&bin_executable);
+
+        assert_eq!(
+            resolve_linux_antigravity_exec_path(install.path()).expect("resolve root launcher"),
+            root_executable
+        );
+    }
+
+    #[test]
+    fn bin_directory_resolves_to_install_root() {
+        let install = PathTestDir::new("bin-directory");
+        let bin = install.path().join("bin");
+        write_executable(&bin.join("antigravity-ide"));
+
+        assert_eq!(
+            antigravity_install_root_from_path(&bin).expect("resolve bin directory root"),
+            install.path().to_path_buf()
+        );
+    }
+
+    #[test]
+    fn configured_executable_file_is_preserved() {
+        let install = PathTestDir::new("custom-file");
+        let executable = install.path().join("custom-antigravity-launcher");
+        write_executable(&executable);
+
+        assert_eq!(
+            resolve_linux_antigravity_exec_path(&executable).expect("keep configured executable"),
+            executable
+        );
+    }
+
+    #[test]
+    fn directory_without_supported_executable_is_rejected() {
+        let install = PathTestDir::new("empty-layout");
+
+        let error = resolve_linux_antigravity_exec_path(install.path())
+            .expect_err("reject directory without a launcher");
+
+        assert!(error.contains("antigravity-ide"));
+        assert!(error.contains("bin"));
+    }
+
+    #[test]
+    fn missing_path_is_rejected_without_falling_back_to_current_directory() {
+        let install = PathTestDir::new("missing-path");
+        let missing = install.path().join("does-not-exist");
+
+        let error = resolve_linux_antigravity_exec_path(&missing)
+            .expect_err("reject missing launcher path");
+
+        assert!(error.contains("does not exist"));
+    }
+
+    #[test]
+    fn discovery_skips_invalid_candidate_before_valid_executable() {
+        let install = PathTestDir::new("candidate-fallback");
+        let invalid = install.path().join("invalid-directory");
+        let executable = install.path().join("valid launcher");
+        std::fs::create_dir_all(&invalid).expect("create invalid candidate directory");
+        write_executable(&executable);
+
+        assert_eq!(
+            first_linux_antigravity_executable([invalid, executable.clone()]),
+            Some(executable)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_executable_linux_launcher_is_rejected() {
+        let install = PathTestDir::new("non-executable");
+        let executable = install.path().join("antigravity-ide");
+        std::fs::write(&executable, b"launcher").expect("write non-executable launcher");
+
+        let error = resolve_linux_antigravity_exec_path(&executable)
+            .expect_err("reject launcher without an executable bit");
+
+        assert!(error.contains("not executable"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_executable_root_launcher_falls_back_to_executable_bin_launcher() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let install = PathTestDir::new("non-executable-root-fallback");
+        let root_executable = install.path().join("antigravity-ide");
+        let bin_executable = install.path().join("bin").join("antigravity-ide");
+        std::fs::write(&root_executable, b"launcher").expect("write root launcher");
+        std::fs::set_permissions(&root_executable, std::fs::Permissions::from_mode(0o644))
+            .expect("remove root launcher execute bits");
+        write_executable(&bin_executable);
+
+        assert_eq!(
+            resolve_linux_antigravity_exec_path(install.path())
+                .expect("fall back to executable bin launcher"),
+            bin_executable
+        );
+    }
+
+    #[test]
+    fn discovery_includes_user_local_share_install_root() {
+        let home = Path::new("/home/cockpit-test");
+
+        let candidates = linux_antigravity_discovery_paths(Some(home), None);
+
+        assert!(candidates.contains(&home.join(".local/share/antigravity-ide")));
+    }
+
+    #[test]
+    fn discovery_appends_path_entries_once_and_skips_empty_entries() {
+        let first = PathTestDir::new("path-first");
+        let second = PathTestDir::new("path-second");
+        let path_env = std::env::join_paths([
+            first.path().as_os_str(),
+            second.path().as_os_str(),
+            first.path().as_os_str(),
+            Path::new("").as_os_str(),
+        ])
+        .expect("build test PATH");
+
+        let candidates = linux_antigravity_discovery_paths(
+            Some(Path::new("/home/cockpit-test")),
+            Some(path_env.as_os_str()),
+        );
+        let first_candidate = first.path().join("antigravity-ide");
+        let second_candidate = second.path().join("antigravity-ide");
+        assert_eq!(
+            candidates
+                .iter()
+                .filter(|candidate| **candidate == first_candidate)
+                .count(),
+            1
+        );
+        assert_eq!(
+            candidates
+                .iter()
+                .filter(|candidate| **candidate == second_candidate)
+                .count(),
+            1
+        );
+        assert!(candidates
+            .iter()
+            .all(|candidate| candidate != Path::new("antigravity-ide")));
+        assert!(
+            candidates
+                .iter()
+                .position(|candidate| *candidate == first_candidate)
+                .expect("first PATH candidate")
+                < candidates
+                    .iter()
+                    .position(|candidate| *candidate == second_candidate)
+                    .expect("second PATH candidate")
+        );
+    }
+
+    #[test]
+    fn legacy_linux_layout_uses_the_shared_antigravity_resolver() {
+        let install = PathTestDir::new("legacy-layout");
+        let executable = install.path().join("bin").join("antigravity-ide");
+        write_executable(&executable);
+
+        assert_eq!(
+            resolve_linux_antigravity_exec_path(install.path())
+                .expect("resolve legacy Linux layout"),
+            executable
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn relative_symlink_to_executable_is_preserved() {
+        let install = PathTestDir::new("relative-link-space-含");
+        let target = install.path().join("real launcher");
+        let link = install.path().join("launcher-link");
+        write_executable(&target);
+        std::os::unix::fs::symlink(target.file_name().expect("target name"), &link)
+            .expect("create relative executable symlink");
+
+        assert_eq!(
+            resolve_linux_antigravity_exec_path(&link).expect("resolve symlink launcher"),
+            link
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn broken_symlink_is_rejected() {
+        let install = PathTestDir::new("broken-link");
+        let link = install.path().join("broken-launcher");
+        std::os::unix::fs::symlink("missing-launcher", &link)
+            .expect("create broken launcher symlink");
+
+        let error =
+            resolve_linux_antigravity_exec_path(&link).expect_err("reject broken launcher symlink");
+
+        assert!(error.contains("does not exist"));
+    }
+
+    #[test]
+    fn root_and_bin_launchers_match_only_within_the_same_install_root() {
+        assert!(antigravity_executable_paths_match(
+            "/opt/Antigravity Install/bin/antigravity-ide",
+            "/opt/Antigravity Install/antigravity-ide",
+        ));
+        assert!(antigravity_executable_paths_match(
+            "/opt/Antigravity Install/antigravity-ide",
+            "/opt/Antigravity Install/bin/antigravity-ide",
+        ));
+        assert!(!antigravity_executable_paths_match(
+            "/opt/Antigravity Install/bin/antigravity-ide",
+            "/opt/Other Install/antigravity-ide",
+        ));
+        assert!(!antigravity_executable_paths_match(
+            "/opt/Antigravity Install/bin/antigravity-ide",
+            "/opt/Antigravity Install/electron",
+        ));
+    }
+
+    #[test]
+    fn persisted_external_runtime_requires_a_managed_user_data_dir() {
+        let allowed = HashSet::from([normalize_path_for_compare("/work/profiles/managed")]);
+
+        assert!(persisted_linux_antigravity_identity_matches(
+            "/work/install/bin/antigravity-ide",
+            "/work/runtime/real-electron",
+            Some("/work/profiles/managed"),
+            &allowed,
+            false,
+        ));
+        assert!(!persisted_linux_antigravity_identity_matches(
+            "/work/install/bin/antigravity-ide",
+            "/work/runtime/real-electron",
+            None,
+            &allowed,
+            false,
+        ));
+        assert!(!persisted_linux_antigravity_identity_matches(
+            "/work/install/bin/antigravity-ide",
+            "/work/runtime/real-electron",
+            Some("/work/profiles/unrelated"),
+            &allowed,
+            false,
+        ));
+        assert!(persisted_linux_antigravity_identity_matches(
+            "/work/install/bin/antigravity-ide",
+            "/work/install/antigravity-ide",
+            None,
+            &allowed,
+            false,
+        ));
+        assert!(persisted_linux_antigravity_identity_matches(
+            "/work/install/bin/antigravity-ide",
+            "/work/runtime/real-electron",
+            None,
+            &allowed,
+            true,
+        ));
+    }
+
+    #[test]
+    fn exact_configured_executable_wins_over_ordinary_path_words() {
+        for word in [
+            "tools",
+            "audio",
+            "plugin-build",
+            "renderer-cache",
+            "gpu-work",
+            "utility-apps",
+            "sandbox-data",
+        ] {
+            let path = format!("/opt/{word}/Antigravity.AppImage");
+            assert!(is_linux_antigravity_process_candidate(
+                &format!("{path} --reuse-window"),
+                &path.to_ascii_lowercase(),
+                true,
+            ));
+        }
+    }
+
+    #[test]
+    fn structured_chromium_helper_arguments_are_still_rejected() {
+        for args in [
+            "--type=renderer",
+            "--type utility",
+            "--utility-sub-type=network.mojom.NetworkService",
+            "--node-ipc",
+            "--clientProcessId=42",
+        ] {
+            assert!(
+                !is_linux_antigravity_process_candidate(
+                    &format!("/opt/Custom/Antigravity.AppImage {args}"),
+                    "/opt/custom/antigravity.appimage",
+                    true,
+                ),
+                "helper argument was admitted: {args}"
+            );
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod canonical_path_comparison_tests {
+    use super::normalize_path_for_compare;
+
+    #[test]
+    fn canonicalized_symlink_and_target_paths_compare_equal() {
+        let root =
+            std::env::temp_dir().join(format!("cockpit-tools-path-compare-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create comparison test directory");
+        let target = root.join("antigravity-ide");
+        let link = root.join("antigravity-link");
+        std::fs::write(&target, b"launcher").expect("write comparison target");
+        std::os::unix::fs::symlink(&target, &link).expect("create comparison symlink");
+
+        assert_eq!(
+            normalize_path_for_compare(&target.to_string_lossy()),
+            normalize_path_for_compare(&link.to_string_lossy())
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
 
@@ -2132,6 +2558,86 @@ fn is_codex_macos_main_process_command_line(lower_cmdline: &str) -> bool {
         || lower_cmdline.contains("codex.app/contents/macos/codex")
 }
 
+#[cfg(any(test, target_os = "macos"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CodexProcessTreeEntry {
+    pid: u32,
+    parent_pid: u32,
+    command_line: String,
+}
+
+#[cfg(any(test, target_os = "macos"))]
+fn is_codex_direct_app_server_command_line(
+    command_line: &str,
+    expected_resource_executable: &str,
+) -> bool {
+    let command_line = command_line.trim();
+    let expected = expected_resource_executable.trim();
+    if command_line.is_empty() || expected.is_empty() {
+        return false;
+    }
+
+    let remainder = if let Some(remainder) = command_line.strip_prefix(expected) {
+        remainder
+    } else {
+        let quoted = format!("\"{}\"", expected);
+        let Some(remainder) = command_line.strip_prefix(&quoted) else {
+            return false;
+        };
+        remainder
+    };
+    let args = remainder.trim_start();
+    let Some(after_app_server) = args.strip_prefix("app-server") else {
+        return false;
+    };
+    if !after_app_server.is_empty() && !after_app_server.starts_with(char::is_whitespace) {
+        return false;
+    }
+    !after_app_server.trim_start().starts_with("daemon")
+}
+
+#[cfg(any(test, target_os = "macos"))]
+fn select_codex_direct_app_server_descendants(
+    entries: &[CodexProcessTreeEntry],
+    root_pids: &[u32],
+    expected_resource_executable: &str,
+) -> Vec<u32> {
+    let roots: HashSet<u32> = root_pids.iter().copied().filter(|pid| *pid != 0).collect();
+    if roots.is_empty() {
+        return Vec::new();
+    }
+    let parents: HashMap<u32, u32> = entries
+        .iter()
+        .map(|entry| (entry.pid, entry.parent_pid))
+        .collect();
+    let mut selected = Vec::new();
+
+    for entry in entries {
+        if !is_codex_direct_app_server_command_line(
+            &entry.command_line,
+            expected_resource_executable,
+        ) {
+            continue;
+        }
+        let mut current = entry.parent_pid;
+        let mut visited = HashSet::new();
+        while current != 0 && visited.insert(current) {
+            if roots.contains(&current) {
+                selected.push(entry.pid);
+                break;
+            }
+            let Some(parent) = parents.get(&current) else {
+                break;
+            };
+            current = *parent;
+        }
+    }
+
+    selected.sort();
+    selected.dedup();
+    selected
+}
+
 #[cfg(target_os = "macos")]
 fn resolve_codex_macos_exec_path(path_str: &str) -> Option<std::path::PathBuf> {
     resolve_macos_exec_path(path_str, "ChatGPT")
@@ -2178,6 +2684,218 @@ fn resolve_windows_antigravity_ide_custom_path(path_str: &str) -> Option<std::pa
         }
     }
 
+    None
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn linux_antigravity_discovery_paths(
+    home: Option<&Path>,
+    path_env: Option<&std::ffi::OsStr>,
+) -> Vec<std::path::PathBuf> {
+    let mut candidates = Vec::new();
+    let mut seen = HashSet::new();
+    let mut push_candidate = |candidate: PathBuf| {
+        if seen.insert(candidate.clone()) {
+            candidates.push(candidate);
+        }
+    };
+
+    for candidate in [
+        "/usr/bin/antigravity-ide",
+        "/usr/local/bin/antigravity-ide",
+        "/opt/antigravity-ide",
+        "/usr/share/antigravity-ide",
+    ] {
+        push_candidate(PathBuf::from(candidate));
+    }
+    if let Some(home) = home {
+        push_candidate(home.join(".local/bin/antigravity-ide"));
+        push_candidate(home.join(".local/share/antigravity-ide"));
+    }
+    if let Some(path_env) = path_env {
+        for directory in std::env::split_paths(path_env) {
+            if directory.as_os_str().is_empty() {
+                continue;
+            }
+            push_candidate(directory.join("antigravity-ide"));
+        }
+    }
+    candidates
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn is_linux_executable_file(path: &Path) -> bool {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
+
+        let Ok(path_c) = CString::new(path.as_os_str().as_bytes()) else {
+            return false;
+        };
+        return unsafe {
+            libc::faccessat(
+                libc::AT_FDCWD,
+                path_c.as_ptr(),
+                libc::X_OK,
+                libc::AT_EACCESS,
+            ) == 0
+        };
+    }
+
+    #[cfg(all(unix, not(target_os = "linux")))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        return metadata.permissions().mode() & 0o111 != 0;
+    }
+
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn resolve_linux_antigravity_exec_path(path: &Path) -> Result<std::path::PathBuf, String> {
+    if path.is_file() {
+        if is_linux_executable_file(path) {
+            return Ok(path.to_path_buf());
+        }
+        return Err(format!(
+            "Linux Antigravity executable is not executable: {}",
+            path.display()
+        ));
+    }
+
+    if path.is_dir() {
+        for relative in ["antigravity-ide", "bin/antigravity-ide"] {
+            let candidate = path.join(relative);
+            if is_linux_executable_file(&candidate) {
+                return Ok(candidate);
+            }
+        }
+        return Err(format!(
+            "Linux Antigravity install directory does not contain an executable antigravity-ide or bin/antigravity-ide: {}",
+            path.display()
+        ));
+    }
+
+    Err(format!(
+        "Linux Antigravity path does not exist: {}",
+        path.display()
+    ))
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn first_linux_antigravity_executable(
+    candidates: impl IntoIterator<Item = PathBuf>,
+) -> Option<PathBuf> {
+    candidates
+        .into_iter()
+        .find_map(|candidate| resolve_linux_antigravity_exec_path(&candidate).ok())
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn linux_antigravity_install_root_for_match(path: &Path) -> Option<PathBuf> {
+    let file_name = path.file_name()?.to_string_lossy();
+    if !file_name.eq_ignore_ascii_case("antigravity-ide") {
+        return None;
+    }
+    let parent = path.parent()?;
+    if parent
+        .file_name()
+        .map(|name| name.to_string_lossy().eq_ignore_ascii_case("bin"))
+        .unwrap_or(false)
+    {
+        return parent.parent().map(Path::to_path_buf);
+    }
+    Some(parent.to_path_buf())
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn antigravity_executable_paths_match(expected: &str, actual: &str) -> bool {
+    let expected = normalize_path_for_compare(expected);
+    let actual = normalize_path_for_compare(actual);
+    if expected.is_empty() || actual.is_empty() {
+        return false;
+    }
+    if expected == actual {
+        return true;
+    }
+
+    let Some(expected_root) = linux_antigravity_install_root_for_match(Path::new(&expected)) else {
+        return false;
+    };
+    let Some(actual_root) = linux_antigravity_install_root_for_match(Path::new(&actual)) else {
+        return false;
+    };
+    normalize_path_for_compare(&expected_root.to_string_lossy())
+        == normalize_path_for_compare(&actual_root.to_string_lossy())
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn persisted_linux_antigravity_identity_matches(
+    expected_launch: &str,
+    actual_executable: &str,
+    user_data_dir: Option<&str>,
+    allowed_user_data_dirs: &HashSet<String>,
+    allow_missing_user_data_dir: bool,
+) -> bool {
+    if antigravity_executable_paths_match(expected_launch, actual_executable) {
+        return true;
+    }
+    match user_data_dir {
+        Some(value) => {
+            let normalized = normalize_path_for_compare(value);
+            !normalized.is_empty() && allowed_user_data_dirs.contains(&normalized)
+        }
+        None => allow_missing_user_data_dir,
+    }
+}
+
+fn antigravity_install_root_from_executable(path: &Path) -> Option<PathBuf> {
+    let parent = path.parent()?;
+    let is_linux_launcher = path
+        .file_name()
+        .map(|name| {
+            name.to_string_lossy()
+                .eq_ignore_ascii_case("antigravity-ide")
+        })
+        .unwrap_or(false);
+    let is_bin_directory = parent
+        .file_name()
+        .map(|name| name.to_string_lossy().eq_ignore_ascii_case("bin"))
+        .unwrap_or(false);
+    if is_linux_launcher && is_bin_directory {
+        return parent.parent().map(Path::to_path_buf);
+    }
+    Some(parent.to_path_buf())
+}
+
+pub(crate) fn antigravity_install_root_from_path(path: &Path) -> Option<PathBuf> {
+    if path.is_file() {
+        return antigravity_install_root_from_executable(path);
+    }
+    if path.is_dir() {
+        #[cfg(any(target_os = "linux", test))]
+        {
+            let is_bin_directory = path
+                .file_name()
+                .map(|name| name.to_string_lossy().eq_ignore_ascii_case("bin"))
+                .unwrap_or(false);
+            if is_bin_directory && path.join("antigravity-ide").is_file() {
+                return path.parent().map(Path::to_path_buf);
+            }
+        }
+        return Some(path.to_path_buf());
+    }
     None
 }
 
@@ -2232,22 +2950,11 @@ pub fn detect_antigravity_exec_path() -> Option<std::path::PathBuf> {
 
     #[cfg(target_os = "linux")]
     {
-        let candidates = [
-            "/usr/bin/antigravity-ide",
-            "/opt/antigravity-ide/antigravity-ide",
-            "/usr/share/antigravity-ide/antigravity-ide",
-        ];
-        for candidate in candidates {
-            let path = std::path::PathBuf::from(candidate);
-            if path.exists() {
-                return Some(path);
-            }
-        }
-        if let Some(home) = dirs::home_dir() {
-            let user_local = home.join(".local/bin/antigravity-ide");
-            if user_local.exists() {
-                return Some(user_local);
-            }
+        let home = dirs::home_dir();
+        if let Some(executable) = first_linux_antigravity_executable(
+            linux_antigravity_discovery_paths(home.as_deref(), std::env::var_os("PATH").as_deref()),
+        ) {
+            return Some(executable);
         }
     }
 
@@ -2306,15 +3013,14 @@ pub fn detect_antigravity_legacy_exec_path() -> Option<std::path::PathBuf> {
 
     #[cfg(target_os = "linux")]
     {
-        for candidate in [
+        let candidates = [
             "/usr/bin/antigravity",
             "/opt/antigravity/antigravity",
             "/usr/share/antigravity/antigravity",
-        ] {
-            let path = std::path::PathBuf::from(candidate);
-            if path.exists() {
-                return Some(path);
-            }
+        ]
+        .map(PathBuf::from);
+        if let Some(executable) = first_linux_antigravity_executable(candidates) {
+            return Some(executable);
         }
     }
 
@@ -3654,7 +4360,53 @@ pub(crate) fn detect_codex_exec_path() -> Option<std::path::PathBuf> {
         }
     }
 
+    #[cfg(target_os = "linux")]
+    {
+        for candidate in linux_codex_discovery_paths(
+            dirs::home_dir().as_deref(),
+            std::env::var_os("PATH").as_deref(),
+        ) {
+            if is_linux_executable_file(&candidate) {
+                return Some(candidate);
+            }
+        }
+    }
+
     None
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn linux_codex_discovery_paths(
+    home: Option<&Path>,
+    path_env: Option<&std::ffi::OsStr>,
+) -> Vec<std::path::PathBuf> {
+    let mut candidates = Vec::new();
+    let mut seen = HashSet::new();
+    let mut push_candidate = |candidate: PathBuf| {
+        if seen.insert(candidate.clone()) {
+            candidates.push(candidate);
+        }
+    };
+
+    for candidate in [
+        "/usr/bin/chatgpt",
+        "/usr/local/bin/chatgpt",
+        "/usr/lib/chatgpt/ChatGPT",
+        "/opt/chatgpt/ChatGPT",
+    ] {
+        push_candidate(PathBuf::from(candidate));
+    }
+    if let Some(home) = home {
+        push_candidate(home.join(".local/bin/chatgpt"));
+    }
+    if let Some(path_env) = path_env {
+        for directory in std::env::split_paths(path_env) {
+            if !directory.as_os_str().is_empty() {
+                push_candidate(directory.join("chatgpt"));
+            }
+        }
+    }
+    candidates
 }
 
 fn detect_and_save_codex_launch_path() -> Option<std::path::PathBuf> {
@@ -3817,7 +4569,22 @@ fn resolve_antigravity_launch_path() -> Result<std::path::PathBuf, String> {
             }
         }
 
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(exec) = resolve_macos_exec_path(&custom, "Electron") {
+                return Ok(exec);
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            let custom_path = Path::new(&custom);
+            if custom_path.exists() {
+                return resolve_linux_antigravity_exec_path(custom_path);
+            }
+        }
+
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             if let Some(exec) = resolve_macos_exec_path(&custom, "Electron") {
                 return Ok(exec);
@@ -3856,7 +4623,15 @@ fn resolve_antigravity_legacy_launch_path() -> Result<std::path::PathBuf, String
             }
         }
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "linux")]
+        {
+            let custom_path = Path::new(&custom);
+            if custom_path.exists() {
+                return resolve_linux_antigravity_exec_path(custom_path);
+            }
+        }
+
+        #[cfg(all(not(target_os = "macos"), not(target_os = "linux")))]
         {
             let custom_path = std::path::PathBuf::from(&custom);
             let lower = custom.to_ascii_lowercase();
@@ -4219,7 +4994,7 @@ fn resolve_codex_launch_path() -> Result<std::path::PathBuf, String> {
         return Err(app_path_missing_error("codex"));
     }
 
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
         if let Some(detected) = detect_and_save_codex_launch_path() {
             return Ok(detected);
@@ -4649,6 +5424,305 @@ fn is_helper_command_line(cmdline_lower: &str) -> bool {
         || cmdline_lower.contains("/resources/app/extensions/")
 }
 
+#[cfg(any(target_os = "linux", test))]
+fn is_linux_chromium_helper_tokens(tokens: &[String]) -> bool {
+    for token in tokens {
+        let token = token.to_ascii_lowercase();
+        if token.starts_with("--type=")
+            || token.starts_with("--utility-sub-type=")
+            || token.starts_with("--clientprocessid=")
+            || token.starts_with("--crashpad-handler")
+        {
+            return true;
+        }
+        if matches!(
+            token.as_str(),
+            "--type" | "--utility-sub-type" | "--clientprocessid" | "--node-ipc"
+        ) {
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn linux_proc_cmdline_args(raw: &[u8]) -> Vec<String> {
+    raw.split(|byte| *byte == 0)
+        .filter(|arg| !arg.is_empty())
+        .map(|arg| String::from_utf8_lossy(arg).into_owned())
+        .collect()
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn linux_antigravity_launcher_signature_from_tokens(
+    tokens: &[String],
+    exe_path_lower: &str,
+) -> bool {
+    fn token_has_launcher_component(token: &str) -> bool {
+        token
+            .split(['/', '\\'])
+            .filter(|component| !component.is_empty())
+            .any(|component| {
+                component
+                    .to_ascii_lowercase()
+                    .replace(' ', "-")
+                    .replace('_', "-")
+                    == "antigravity-ide"
+            })
+    }
+
+    let path_has_signature = Path::new(exe_path_lower)
+        .file_name()
+        .map(|name| {
+            name.to_string_lossy()
+                .eq_ignore_ascii_case("antigravity-ide")
+        })
+        .unwrap_or(false);
+    if path_has_signature {
+        return true;
+    }
+
+    let mut index = 0;
+    while index < tokens.len() {
+        let token = &tokens[index];
+        if is_env_token(token) {
+            index += 1;
+            continue;
+        }
+        if token == "--app" || token == "--application" {
+            if let Some(value) = tokens.get(index + 1) {
+                if token_has_launcher_component(value) {
+                    return true;
+                }
+            }
+            index += 2;
+            continue;
+        }
+        let candidate = if let Some(value) = token
+            .strip_prefix("--app=")
+            .or_else(|| token.strip_prefix("--application="))
+        {
+            Some(value)
+        } else if token.starts_with("--user-data-dir")
+            || token.starts_with("--profile")
+            || token.starts_with("--extensions-dir")
+        {
+            None
+        } else if token.starts_with("--") {
+            None
+        } else {
+            Some(token.as_str())
+        };
+        if candidate.is_some_and(token_has_launcher_component) {
+            return true;
+        }
+        index += 1;
+    }
+    false
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn linux_antigravity_external_runtime_matches_expected_launch(
+    tokens: &[String],
+    expected_launch: &str,
+) -> bool {
+    let expected_launch = normalize_path_for_compare(expected_launch);
+    if expected_launch.is_empty() {
+        return false;
+    }
+    let expected_root = linux_antigravity_install_root_for_match(Path::new(&expected_launch))
+        .or_else(|| Path::new(&expected_launch).parent().map(Path::to_path_buf));
+    let Some(expected_root) = expected_root else {
+        return false;
+    };
+    let expected_root = normalize_path_for_compare(&expected_root.to_string_lossy());
+    if expected_root.is_empty() {
+        return false;
+    }
+
+    let mut index = 0;
+    while index < tokens.len() {
+        let token = &tokens[index];
+        let token_lower = token.to_ascii_lowercase();
+        let app_path = if token_lower == "--app" || token_lower == "--application" {
+            index += 1;
+            tokens.get(index).map(String::as_str)
+        } else {
+            token
+                .strip_prefix("--app=")
+                .or_else(|| token.strip_prefix("--application="))
+        };
+        if let Some(app_path) = app_path {
+            let app_path = Path::new(app_path);
+            for ancestor in app_path.ancestors() {
+                let is_resources_dir = ancestor
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("resources"));
+                if !is_resources_dir {
+                    continue;
+                }
+                if let Some(app_root) = ancestor.parent() {
+                    let app_root = normalize_path_for_compare(&app_root.to_string_lossy());
+                    if app_root == expected_root {
+                        return true;
+                    }
+                }
+                break;
+            }
+        }
+        index += 1;
+    }
+    false
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn is_linux_antigravity_process_candidate_from_tokens(
+    tokens: &[String],
+    exe_path_lower: &str,
+    expected_executable_match: bool,
+) -> bool {
+    if !expected_executable_match
+        && !linux_antigravity_launcher_signature_from_tokens(tokens, exe_path_lower)
+    {
+        return false;
+    }
+    !is_linux_chromium_helper_tokens(tokens)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn extract_user_data_dir_from_tokens(tokens: &[String]) -> Option<String> {
+    let mut index = 0;
+    while index < tokens.len() {
+        let token = tokens[index].as_str();
+        if let Some(rest) = token.strip_prefix("--user-data-dir=") {
+            if !rest.trim().is_empty() {
+                return Some(rest.to_string());
+            }
+        }
+        if token == "--user-data-dir" {
+            if let Some(value) = tokens.get(index + 1) {
+                if !value.trim().is_empty() {
+                    return Some(value.to_string());
+                }
+            }
+            return None;
+        }
+        index += 1;
+    }
+    None
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn is_linux_antigravity_process_candidate(
+    cmdline_lower: &str,
+    exe_path_lower: &str,
+    expected_executable_match: bool,
+) -> bool {
+    let tokens = split_command_tokens(cmdline_lower);
+    is_linux_antigravity_process_candidate_from_tokens(
+        &tokens,
+        exe_path_lower,
+        expected_executable_match,
+    )
+}
+
+#[cfg(test)]
+mod linux_antigravity_process_candidate_tests {
+    use super::{
+        extract_user_data_dir_from_tokens, is_linux_antigravity_process_candidate,
+        is_linux_antigravity_process_candidate_from_tokens,
+        linux_antigravity_external_runtime_matches_expected_launch, linux_proc_cmdline_args,
+    };
+
+    #[test]
+    fn exact_custom_executable_match_is_a_main_process_candidate() {
+        assert!(is_linux_antigravity_process_candidate(
+            "/opt/Custom AG/Antigravity.AppImage --reuse-window",
+            "/opt/custom ag/antigravity.appimage",
+            true,
+        ));
+    }
+
+    #[test]
+    fn exact_match_rejects_structured_helpers_but_not_path_words() {
+        assert!(!is_linux_antigravity_process_candidate(
+            "/opt/Custom AG/Antigravity.AppImage --type=renderer",
+            "/opt/custom ag/antigravity.appimage",
+            true,
+        ));
+        assert!(is_linux_antigravity_process_candidate(
+            "/opt/Antigravity Tools/antigravity-ide",
+            "/opt/antigravity tools/antigravity-ide",
+            true,
+        ));
+    }
+
+    #[test]
+    fn standard_signature_still_matches_without_expected_path_match() {
+        assert!(is_linux_antigravity_process_candidate(
+            "/opt/antigravity-ide/bin/antigravity-ide --reuse-window",
+            "/opt/antigravity-ide/bin/antigravity-ide",
+            false,
+        ));
+        assert!(!is_linux_antigravity_process_candidate(
+            "/opt/unrelated/app --reuse-window",
+            "/opt/unrelated/app",
+            false,
+        ));
+    }
+
+    #[test]
+    fn external_electron_runtime_matches_an_antigravity_app_argument() {
+        assert!(is_linux_antigravity_process_candidate(
+            "/usr/bin/electron --app=\"/opt/Antigravity IDE/resources/app.asar\" --reuse-window",
+            "/usr/bin/electron",
+            false,
+        ));
+    }
+
+    #[test]
+    fn external_electron_runtime_requires_the_configured_install_root() {
+        let args = linux_proc_cmdline_args(
+            b"/usr/bin/electron\0--app=/opt/Antigravity IDE/resources/app.asar\0--reuse-window\0",
+        );
+
+        assert!(linux_antigravity_external_runtime_matches_expected_launch(
+            &args,
+            "/opt/Antigravity IDE/bin/antigravity-ide",
+        ));
+        assert!(!linux_antigravity_external_runtime_matches_expected_launch(
+            &args,
+            "/opt/Other IDE/bin/antigravity-ide",
+        ));
+    }
+
+    #[test]
+    fn proc_argv_preserves_spaces_in_runtime_and_profile_paths() {
+        let args = linux_proc_cmdline_args(
+            b"/usr/bin/electron\0--app=/opt/Antigravity IDE/resources/app.asar\0--user-data-dir=/work/profiles/managed profile\0",
+        );
+
+        assert!(is_linux_antigravity_process_candidate_from_tokens(
+            &args,
+            "/usr/bin/electron",
+            false,
+        ));
+        assert_eq!(
+            extract_user_data_dir_from_tokens(&args).as_deref(),
+            Some("/work/profiles/managed profile")
+        );
+    }
+
+    #[test]
+    fn persisted_pid_candidate_rejects_unrelated_runtime_without_launcher_signature() {
+        assert!(!is_linux_antigravity_process_candidate(
+            "/usr/bin/sleep --user-data-dir=/work/profiles/managed 60",
+            "/usr/bin/sleep",
+            false,
+        ));
+    }
+}
+
 #[cfg(not(target_os = "macos"))]
 fn is_antigravity_main_process(
     name: &str,
@@ -4854,12 +5928,31 @@ fn filter_entries_by_expected_launch_path(
     entries: Vec<(u32, Option<String>)>,
     expected: Option<String>,
 ) -> Vec<(u32, Option<String>)> {
+    filter_entries_by_expected_launch_path_with_options(app_label, entries, expected, false)
+}
+
+fn filter_antigravity_entries_by_expected_launch_path(
+    app_label: &str,
+    entries: Vec<(u32, Option<String>)>,
+    expected: Option<String>,
+) -> Vec<(u32, Option<String>)> {
+    filter_entries_by_expected_launch_path_with_options(app_label, entries, expected, true)
+}
+
+fn filter_entries_by_expected_launch_path_with_options(
+    app_label: &str,
+    entries: Vec<(u32, Option<String>)>,
+    expected: Option<String>,
+    allow_linux_antigravity_layout: bool,
+) -> Vec<(u32, Option<String>)> {
     if entries.is_empty() {
         return entries;
     }
     let Some(expected) = expected else {
         return Vec::new();
     };
+    #[cfg(not(target_os = "linux"))]
+    let _ = allow_linux_antigravity_layout;
     let exe_by_pid = collect_running_process_exe_by_pid();
     #[cfg(target_os = "macos")]
     let expected_app_root = normalize_macos_app_root(std::path::Path::new(&expected))
@@ -4874,6 +5967,22 @@ fn filter_entries_by_expected_launch_path(
         match exe_by_pid.get(&pid) {
             Some(actual) if actual == &expected => result.push((pid, dir)),
             Some(actual) => {
+                #[cfg(target_os = "linux")]
+                if allow_linux_antigravity_layout
+                    && antigravity_executable_paths_match(&expected, actual)
+                {
+                    result.push((pid, dir));
+                    continue;
+                }
+                #[cfg(target_os = "linux")]
+                if allow_linux_antigravity_layout
+                    && linux_antigravity_external_runtime_pid_matches_expected_launch(
+                        pid, &expected,
+                    )
+                {
+                    result.push((pid, dir));
+                    continue;
+                }
                 #[cfg(not(target_os = "macos"))]
                 let _ = actual;
                 #[cfg(target_os = "macos")]
@@ -5055,7 +6164,7 @@ fn resolve_expected_workbuddy_launch_path_for_match() -> Option<String> {
     Some(normalized)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn resolve_expected_codex_launch_path_for_match() -> Option<String> {
     let launch_path = match resolve_codex_launch_path() {
         Ok(path) => path,
@@ -5277,8 +6386,10 @@ fn collect_antigravity_process_entries_from_sysinfo_fallback(
     result
 }
 
-#[cfg(target_os = "linux")]
-fn collect_antigravity_process_entries_from_proc() -> Vec<(u32, Option<String>)> {
+#[cfg(any(target_os = "linux", test))]
+fn collect_antigravity_process_entries_from_proc(
+    expected_launch: &str,
+) -> Vec<(u32, Option<String>)> {
     let mut result = Vec::new();
     let entries = match std::fs::read_dir("/proc") {
         Ok(value) => value,
@@ -5299,28 +6410,114 @@ fn collect_antigravity_process_entries_from_proc() -> Vec<(u32, Option<String>)>
             Ok(value) => value,
             Err(_) => continue,
         };
-        if cmdline.is_empty() {
+        let args = linux_proc_cmdline_args(&cmdline);
+        if args.is_empty() {
             continue;
         }
-        let cmdline_str = String::from_utf8_lossy(&cmdline).replace('\0', " ");
-        let cmd_lower = cmdline_str.to_lowercase();
         let exe_path = std::fs::read_link(format!("/proc/{}/exe", pid))
             .ok()
-            .and_then(|p| p.to_str().map(|s| s.to_lowercase()))
+            .and_then(|path| path.to_str().map(str::to_string))
             .unwrap_or_default();
-        if !cmd_lower.contains("antigravity-ide") && !exe_path.contains("antigravity-ide") {
+        let exe_path_lower = exe_path.to_lowercase();
+        let expected_executable_match =
+            !exe_path.is_empty() && antigravity_executable_paths_match(expected_launch, &exe_path);
+        if !is_linux_antigravity_process_candidate_from_tokens(
+            &args,
+            &exe_path_lower,
+            expected_executable_match,
+        ) {
             continue;
         }
-        if cmd_lower.contains("tools") || exe_path.contains("tools") {
+        if !expected_executable_match
+            && !linux_antigravity_external_runtime_matches_expected_launch(&args, expected_launch)
+        {
             continue;
         }
-        if is_helper_command_line(&cmd_lower) {
-            continue;
-        }
-        let dir = extract_user_data_dir_from_command_line(&cmdline_str);
+        let dir = extract_user_data_dir_from_tokens(&args);
         result.push((pid, dir));
     }
     result
+}
+
+#[cfg(target_os = "linux")]
+fn read_linux_process_entry(
+    pid: u32,
+    expected_launch: &str,
+    allowed_user_data_dirs: &HashSet<String>,
+    allow_missing_user_data_dir: bool,
+) -> Option<(u32, Option<String>)> {
+    let cmdline = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
+    let args = linux_proc_cmdline_args(&cmdline);
+    if args.is_empty() {
+        return None;
+    }
+    let exe_path = std::fs::read_link(format!("/proc/{pid}/exe"))
+        .ok()?
+        .to_str()?
+        .to_string();
+    if exe_path.is_empty() {
+        return None;
+    }
+    let expected_executable_match = antigravity_executable_paths_match(expected_launch, &exe_path);
+    if !is_linux_antigravity_process_candidate_from_tokens(
+        &args,
+        &exe_path.to_ascii_lowercase(),
+        expected_executable_match,
+    ) {
+        return None;
+    }
+    if !expected_executable_match
+        && !linux_antigravity_external_runtime_matches_expected_launch(&args, expected_launch)
+    {
+        return None;
+    }
+    let user_data_dir = extract_user_data_dir_from_tokens(&args);
+    if !persisted_linux_antigravity_identity_matches(
+        expected_launch,
+        &exe_path,
+        user_data_dir.as_deref(),
+        allowed_user_data_dirs,
+        allow_missing_user_data_dir,
+    ) {
+        return None;
+    }
+    Some((pid, user_data_dir))
+}
+
+#[cfg(target_os = "linux")]
+fn linux_antigravity_external_runtime_pid_matches_expected_launch(
+    pid: u32,
+    expected_launch: &str,
+) -> bool {
+    let Ok(cmdline) = std::fs::read(format!("/proc/{pid}/cmdline")) else {
+        return false;
+    };
+    let args = linux_proc_cmdline_args(&cmdline);
+    linux_antigravity_external_runtime_matches_expected_launch(&args, expected_launch)
+}
+
+#[cfg(target_os = "linux")]
+fn append_persisted_linux_antigravity_pid(
+    entries: &mut Vec<(u32, Option<String>)>,
+    last_pid: Option<u32>,
+    expected_launch: Option<&str>,
+    allowed_user_data_dirs: &HashSet<String>,
+    allow_missing_user_data_dir: bool,
+) {
+    let (Some(pid), Some(expected_launch)) = (last_pid, expected_launch) else {
+        return;
+    };
+    if entries.iter().any(|(entry_pid, _)| *entry_pid == pid) {
+        return;
+    }
+    if let Some(entry) = read_linux_process_entry(
+        pid,
+        expected_launch,
+        allowed_user_data_dirs,
+        allow_missing_user_data_dir,
+    ) {
+        entries.push(entry);
+    }
 }
 
 pub fn collect_antigravity_process_entries() -> Vec<(u32, Option<String>)> {
@@ -5333,11 +6530,19 @@ pub fn collect_antigravity_process_entries() -> Vec<(u32, Option<String>)> {
     {
         let entries = collect_antigravity_process_entries_macos();
         if !entries.is_empty() {
-            return filter_entries_by_expected_launch_path("AG", entries, expected_launch.clone());
+            return filter_antigravity_entries_by_expected_launch_path(
+                "AG",
+                entries,
+                expected_launch.clone(),
+            );
         }
         let entries = collect_antigravity_process_entries_from_ps();
         if !entries.is_empty() {
-            return filter_entries_by_expected_launch_path("AG", entries, expected_launch.clone());
+            return filter_antigravity_entries_by_expected_launch_path(
+                "AG",
+                entries,
+                expected_launch.clone(),
+            );
         }
         // macOS 下避免回退到 sysinfo，防止触发 TCC「其他 App 数据」授权弹窗
         return Vec::new();
@@ -5366,9 +6571,16 @@ pub fn collect_antigravity_process_entries() -> Vec<(u32, Option<String>)> {
 
     #[cfg(target_os = "linux")]
     {
-        let entries = collect_antigravity_process_entries_from_proc();
+        let expected = expected_launch
+            .as_deref()
+            .expect("expected launch path must exist");
+        let entries = collect_antigravity_process_entries_from_proc(expected);
         if !entries.is_empty() {
-            return filter_entries_by_expected_launch_path("AG", entries, expected_launch.clone());
+            return filter_antigravity_entries_by_expected_launch_path(
+                "AG",
+                entries,
+                expected_launch.clone(),
+            );
         }
         return Vec::new();
     }
@@ -5493,7 +6705,11 @@ pub fn collect_antigravity_legacy_process_entries() -> Vec<(u32, Option<String>)
     {
         let entries = collect_antigravity_legacy_process_entries_from_ps();
         if !entries.is_empty() {
-            return filter_entries_by_expected_launch_path("AG Legacy", entries, expected_launch);
+            return filter_antigravity_entries_by_expected_launch_path(
+                "AG Legacy",
+                entries,
+                expected_launch,
+            );
         }
         return Vec::new();
     }
@@ -5508,14 +6724,21 @@ pub fn collect_antigravity_legacy_process_entries() -> Vec<(u32, Option<String>)
 
     #[cfg(target_os = "linux")]
     {
-        let entries = collect_antigravity_process_entries_from_proc()
+        let expected = expected_launch
+            .as_deref()
+            .expect("expected launch path must exist");
+        let entries = collect_antigravity_process_entries_from_proc(expected)
             .into_iter()
             .filter(|(_, dir)| {
                 dir.as_deref()
                     .is_some_and(|value| value.contains("Antigravity"))
             })
             .collect::<Vec<_>>();
-        return filter_entries_by_expected_launch_path("AG Legacy", entries, expected_launch);
+        return filter_antigravity_entries_by_expected_launch_path(
+            "AG Legacy",
+            entries,
+            expected_launch,
+        );
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
@@ -6024,7 +7247,25 @@ pub fn resolve_antigravity_pid_from_entries(
 }
 
 pub fn resolve_antigravity_pid(last_pid: Option<u32>, user_data_dir: Option<&str>) -> Option<u32> {
+    #[cfg(target_os = "linux")]
+    let mut entries = collect_antigravity_process_entries();
+    #[cfg(not(target_os = "linux"))]
     let entries = collect_antigravity_process_entries();
+    #[cfg(target_os = "linux")]
+    {
+        let (allowed_user_data_dirs, allow_missing_user_data_dir) =
+            resolve_antigravity_target_and_fallback(user_data_dir)
+                .map(|(target, allow_missing)| (HashSet::from([target]), allow_missing))
+                .unwrap_or_default();
+        let expected_launch = resolve_expected_antigravity_launch_path_for_match();
+        append_persisted_linux_antigravity_pid(
+            &mut entries,
+            last_pid,
+            expected_launch.as_deref(),
+            &allowed_user_data_dirs,
+            allow_missing_user_data_dir,
+        );
+    }
     resolve_antigravity_pid_from_entries(last_pid, user_data_dir, &entries)
 }
 
@@ -6234,7 +7475,7 @@ pub fn focus_antigravity_legacy_instance(
     Ok(pid)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 pub fn resolve_codex_pid_from_entries(
     last_pid: Option<u32>,
     codex_home: Option<&str>,
@@ -6316,7 +7557,7 @@ pub fn resolve_codex_pid_from_entries(
     pick_preferred_pid(matches)
 }
 
-#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub fn resolve_codex_pid_from_entries(
     last_pid: Option<u32>,
     _codex_home: Option<&str>,
@@ -6325,7 +7566,7 @@ pub fn resolve_codex_pid_from_entries(
     last_pid.filter(|pid| is_pid_running(*pid))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 pub fn resolve_codex_pid(last_pid: Option<u32>, codex_home: Option<&str>) -> Option<u32> {
     let entries = collect_codex_process_entries();
     resolve_codex_pid_from_entries(last_pid, codex_home, &entries)
@@ -6337,7 +7578,7 @@ pub fn resolve_codex_pid(last_pid: Option<u32>, codex_home: Option<&str>) -> Opt
     resolve_codex_pid_from_entries(last_pid, codex_home, &entries)
 }
 
-#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub fn resolve_codex_pid(last_pid: Option<u32>, _codex_home: Option<&str>) -> Option<u32> {
     last_pid.filter(|pid| is_pid_running(*pid))
 }
@@ -7910,6 +9151,65 @@ fn filter_entries_by_target_dirs(
         .collect()
 }
 
+fn collect_antigravity_process_entries_for_managed_dirs(
+    user_data_dirs: &[String],
+    default_dir: Option<&str>,
+) -> Vec<(u32, Option<String>)> {
+    #[cfg(target_os = "linux")]
+    let mut entries = collect_antigravity_process_entries();
+    #[cfg(not(target_os = "linux"))]
+    let entries = collect_antigravity_process_entries();
+
+    #[cfg(target_os = "linux")]
+    {
+        let targets: HashSet<String> = user_data_dirs
+            .iter()
+            .map(|value| normalize_path_for_compare(value))
+            .filter(|value| !value.is_empty())
+            .collect();
+        let default_target = default_dir
+            .map(normalize_path_for_compare)
+            .filter(|value| !value.is_empty());
+        let allow_missing_user_data_dir = default_target
+            .as_ref()
+            .is_some_and(|target| targets.contains(target));
+        let expected_launch = resolve_expected_antigravity_launch_path_for_match();
+        if let Ok(store) = crate::modules::instance::load_instance_store() {
+            if default_target
+                .as_ref()
+                .is_some_and(|target| targets.contains(target))
+            {
+                append_persisted_linux_antigravity_pid(
+                    &mut entries,
+                    store.default_settings.last_pid,
+                    expected_launch.as_deref(),
+                    &targets,
+                    allow_missing_user_data_dir,
+                );
+            }
+            for instance in store.instances {
+                let instance_target = normalize_path_for_compare(&instance.user_data_dir);
+                if !instance_target.is_empty() && targets.contains(&instance_target) {
+                    append_persisted_linux_antigravity_pid(
+                        &mut entries,
+                        instance.last_pid,
+                        expected_launch.as_deref(),
+                        &targets,
+                        default_target.as_ref() == Some(&instance_target),
+                    );
+                }
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (user_data_dirs, default_dir);
+    }
+
+    entries
+}
+
 fn close_managed_instances_common<CollectEntries, SelectMainPids, CollectRemainingEntries>(
     log_prefix: &str,
     start_message: &str,
@@ -8063,6 +9363,10 @@ pub fn close_antigravity_instances(
             .map(|value| summarize_text_for_process_log(value, 96))
             .unwrap_or_else(|| "-".to_string())
     ));
+    let collect_dirs = user_data_dirs.to_vec();
+    let collect_default_dir = default_dir.clone();
+    let remaining_dirs = user_data_dirs.to_vec();
+    let remaining_default_dir = default_dir.clone();
     close_managed_instances_common(
         "AG Close",
         "正在关闭受管 Antigravity IDE 实例...",
@@ -8072,13 +9376,21 @@ pub fn close_antigravity_instances(
         "无法关闭受管 Antigravity IDE 实例进程，请手动关闭后重试",
         user_data_dirs,
         timeout_secs,
-        collect_antigravity_process_entries,
+        move || {
+            collect_antigravity_process_entries_for_managed_dirs(
+                &collect_dirs,
+                collect_default_dir.as_deref(),
+            )
+        },
         |entries, target_dirs| {
             select_main_pids_by_target_dirs(entries, target_dirs, default_dir.as_deref())
         },
         |target_dirs| {
             filter_entries_by_target_dirs(
-                collect_antigravity_process_entries(),
+                collect_antigravity_process_entries_for_managed_dirs(
+                    &remaining_dirs,
+                    remaining_default_dir.as_deref(),
+                ),
                 target_dirs,
                 default_dir.as_deref(),
             )
@@ -8635,17 +9947,28 @@ pub fn close_pid(pid: u32, timeout_secs: u64) -> Result<(), String> {
         return Ok(());
     }
 
-    send_close_signal(pid);
+    let close_error = send_close_signal(pid);
     if wait_pids_exit(&[pid], timeout_secs) {
         Ok(())
     } else {
-        Err("无法关闭实例进程，请手动关闭后重试".to_string())
+        Err(crate::modules::windows_operation::format_error(
+            "stop_process",
+            "无法关闭实例进程",
+            close_error
+                .as_deref()
+                .unwrap_or("目标进程在等待超时后仍在运行"),
+            None,
+            &[pid],
+            true,
+            true,
+            true,
+        ))
     }
 }
 
-fn send_close_signal(pid: u32) {
+fn send_close_signal(pid: u32) -> Option<String> {
     if pid == 0 || !is_pid_running(pid) {
-        return;
+        return None;
     }
 
     #[cfg(target_os = "windows")]
@@ -8657,8 +9980,6 @@ fn send_close_signal(pid: u32) {
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .creation_flags(CREATE_NO_WINDOW)
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
             .output();
         match output {
             Ok(value) => {
@@ -8667,13 +9988,23 @@ fn send_close_signal(pid: u32) {
                         "[AG Close] taskkill success pid={} status={}",
                         pid, value.status
                     ));
+                    return None;
                 } else {
                     let stderr = String::from_utf8_lossy(&value.stderr);
+                    let stdout = String::from_utf8_lossy(&value.stdout);
                     crate::modules::logger::log_warn(&format!(
-                        "[AG Close] taskkill failed pid={} status={} stderr={}",
+                        "[AG Close] taskkill failed pid={} status={} stderr={} stdout={}",
                         pid,
                         value.status,
-                        stderr.trim()
+                        stderr.trim(),
+                        stdout.trim()
+                    ));
+                    return Some(format_kill_command_failure(
+                        pid,
+                        "taskkill",
+                        value.status,
+                        &value.stderr,
+                        &value.stdout,
                     ));
                 }
             }
@@ -8682,15 +10013,27 @@ fn send_close_signal(pid: u32) {
                     "[AG Close] taskkill error pid={} err={}",
                     pid, err
                 ));
+                return Some(format!("pid {}: taskkill failed: {}", pid, err));
             }
         }
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
-        let _ = Command::new("kill")
+        let result = Command::new("kill")
             .args(["-15", &pid.to_string()])
             .output();
+        return match result {
+            Ok(output) if output.status.success() => None,
+            Ok(output) => Some(format_kill_command_failure(
+                pid,
+                "kill",
+                output.status,
+                &output.stderr,
+                &output.stdout,
+            )),
+            Err(error) => Some(format!("pid {}: kill failed: {}", pid, error)),
+        };
     }
 }
 
@@ -8834,9 +10177,10 @@ fn close_pids(pids: &[u32], timeout_secs: u64) -> Result<(), String> {
         timeout_secs
     ));
 
-    for pid in &targets {
-        send_close_signal(*pid);
-    }
+    let close_errors = targets
+        .iter()
+        .filter_map(|pid| send_close_signal(*pid))
+        .collect::<Vec<_>>();
 
     if wait_pids_exit(&targets, timeout_secs) {
         crate::modules::logger::log_info(&format!(
@@ -8854,7 +10198,24 @@ fn close_pids(pids: &[u32], timeout_secs: u64) -> Result<(), String> {
             "[ClosePids] timeout, remaining={}",
             summarize_pid_list_for_log(&remaining)
         ));
-        Err("无法关闭实例进程，请手动关闭后重试".to_string())
+        let original_reason = if close_errors.is_empty() {
+            format!(
+                "目标进程在等待超时后仍在运行: pids={}",
+                summarize_pid_list_for_log(&remaining)
+            )
+        } else {
+            close_errors.join(" | ")
+        };
+        Err(crate::modules::windows_operation::format_error(
+            "stop_process",
+            "无法关闭实例进程",
+            &original_reason,
+            None,
+            &remaining,
+            true,
+            true,
+            true,
+        ))
     }
 }
 
@@ -9542,6 +10903,123 @@ pub fn collect_codex_process_entries() -> Vec<(u32, Option<String>)> {
         .collect()
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn collect_codex_process_tree_entries() -> Vec<CodexProcessTreeEntry> {
+    let output = match Command::new("ps")
+        .args(["-axww", "-o", "pid=,ppid=,command="])
+        .output()
+    {
+        Ok(output) if output.status.success() => output,
+        _ => return Vec::new(),
+    };
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let mut pid_parts = line.trim().splitn(2, |ch: char| ch.is_whitespace());
+            let pid = pid_parts.next()?.trim().parse::<u32>().ok()?;
+            let remainder = pid_parts.next()?.trim_start();
+            let mut parent_parts = remainder.splitn(2, |ch: char| ch.is_whitespace());
+            let parent_pid = parent_parts.next()?.trim().parse::<u32>().ok()?;
+            let command_line = parent_parts.next()?.trim().to_string();
+            if command_line.is_empty() {
+                return None;
+            }
+            Some(CodexProcessTreeEntry {
+                pid,
+                parent_pid,
+                command_line,
+            })
+        })
+        .collect()
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn collect_codex_direct_app_server_pids_for_roots(root_pids: &[u32]) -> Vec<u32> {
+    #[cfg(target_os = "macos")]
+    let Some(app_root) = resolve_codex_launch_path()
+        .ok()
+        .and_then(|path| resolve_macos_app_root_from_launch_path(&path))
+        .or_else(|| resolve_macos_app_root_from_config("codex"))
+    else {
+        return Vec::new();
+    };
+    #[cfg(target_os = "macos")]
+    let expected_resource_executable = Path::new(&app_root)
+        .join("Contents")
+        .join("Resources")
+        .join("codex")
+        .to_string_lossy()
+        .to_string();
+    #[cfg(target_os = "linux")]
+    let Some(expected_resource_executable) = resolve_codex_launch_path().ok().and_then(|path| {
+        let resolved = std::fs::canonicalize(&path).unwrap_or(path);
+        resolved
+            .parent()
+            .map(|parent| parent.join("resources").join("codex"))
+            .filter(|candidate| candidate.is_file())
+            .map(|candidate| candidate.to_string_lossy().to_string())
+    }) else {
+        return Vec::new();
+    };
+    select_codex_direct_app_server_descendants(
+        &collect_codex_process_tree_entries(),
+        root_pids,
+        &expected_resource_executable,
+    )
+}
+
+/// 查找指定 Codex profile 对应的官方 direct `app-server` 子进程。
+///
+/// 官方桌面端负责启动 app-server，Cockpit 无法接管它的 stdio；这里提供只读的
+/// 进程归属查询，供认证诊断记录 PID、网络连接和实例关系。
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+pub fn collect_codex_app_server_pids_for_profile(profile_dir: &Path) -> Vec<u32> {
+    let profile_key = normalize_path_for_compare(&profile_dir.to_string_lossy());
+    let default_profile_key = dirs::home_dir()
+        .map(|home| home.join(".codex"))
+        .map(|path| normalize_path_for_compare(&path.to_string_lossy()));
+    let root_pids = collect_codex_process_entries()
+        .into_iter()
+        .filter_map(|(pid, codex_home)| {
+            let matches_profile = codex_home
+                .as_deref()
+                .map(normalize_path_for_compare)
+                .is_some_and(|home| home == profile_key)
+                || (codex_home.is_none()
+                    && default_profile_key.as_deref() == Some(profile_key.as_str()));
+            matches_profile.then_some(pid)
+        })
+        .collect::<Vec<_>>();
+    collect_codex_direct_app_server_pids_for_roots(&root_pids)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+pub fn collect_codex_app_server_pids_for_profile(_profile_dir: &Path) -> Vec<u32> {
+    Vec::new()
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn close_captured_codex_direct_app_servers(
+    captured_pids: &[u32],
+    timeout_secs: u64,
+) -> Result<(), String> {
+    let remaining = collect_running_pids(captured_pids);
+    if remaining.is_empty() {
+        return Ok(());
+    }
+    crate::modules::logger::log_warn(&format!(
+        "[Codex Close] direct app-server remained after main process exit; closing captured pids={}",
+        summarize_pid_list_for_log(&remaining)
+    ));
+    close_pids(&remaining, timeout_secs.min(5).max(1)).map_err(|error| {
+        format!(
+            "failed to close Codex direct app-server before auth switch: {}",
+            error
+        )
+    })
+}
+
 #[cfg(target_os = "windows")]
 fn collect_codex_process_entries_from_powershell(
     expected_exe_path: &str,
@@ -9872,7 +11350,70 @@ pub fn collect_codex_process_entries() -> Vec<(u32, Option<String>)> {
     collect_codex_process_entries_from_sysinfo_fallback(&expected)
 }
 
-#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+#[cfg(target_os = "linux")]
+fn linux_process_env_value(pid: u32, key: &str) -> Option<String> {
+    let bytes = std::fs::read(format!("/proc/{}/environ", pid)).ok()?;
+    let prefix = format!("{}=", key);
+    bytes.split(|byte| *byte == 0).find_map(|entry| {
+        let entry = String::from_utf8_lossy(entry);
+        entry
+            .strip_prefix(&prefix)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    })
+}
+
+#[cfg(target_os = "linux")]
+pub fn collect_codex_process_entries() -> Vec<(u32, Option<String>)> {
+    let expected_launch = resolve_expected_codex_launch_path_for_match();
+    if expected_launch.is_none() {
+        return Vec::new();
+    }
+
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        sysinfo::ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing()
+            .with_exe(UpdateKind::Always)
+            .with_cmd(UpdateKind::Always),
+    );
+    let current_pid = std::process::id();
+    let mut entries = Vec::new();
+    for (pid, process) in system.processes() {
+        let pid = pid.as_u32();
+        if pid == current_pid {
+            continue;
+        }
+        let name = process.name().to_string_lossy().to_ascii_lowercase();
+        let executable = process
+            .exe()
+            .map(|path| normalize_path_for_compare(&path.to_string_lossy()))
+            .unwrap_or_default();
+        if name != "chatgpt" && !executable.ends_with("/chatgpt") {
+            continue;
+        }
+        let command_line = process
+            .cmd()
+            .iter()
+            .map(|value| value.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let lower = command_line.to_ascii_lowercase();
+        if is_helper_command_line(&lower) || lower.contains("crashpad_handler") {
+            continue;
+        }
+        entries.push((pid, linux_process_env_value(pid, "CODEX_HOME")));
+    }
+
+    filter_entries_by_expected_launch_path("Codex", entries, expected_launch)
+        .into_iter()
+        .filter(|(pid, _)| is_pid_running(*pid))
+        .collect()
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub fn collect_codex_process_entries() -> Vec<(u32, Option<String>)> {
     Vec::new()
 }
@@ -9891,7 +11432,7 @@ pub fn is_codex_running() -> bool {
     }
 }
 
-/// 启动 Codex（支持 CODEX_HOME 与附加参数，仅 macOS）
+/// 启动 Codex 桌面实例（支持独立 CODEX_HOME、Electron user-data 与附加参数）。
 pub fn start_codex_with_args(codex_home: &str, extra_args: &[String]) -> Result<u32, String> {
     #[cfg(target_os = "macos")]
     {
@@ -10097,14 +11638,76 @@ pub fn start_codex_with_args(codex_home: &str, extra_args: &[String]) -> Result<
         }
     }
 
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    #[cfg(target_os = "linux")]
+    {
+        let codex_home_trimmed = codex_home.trim();
+        if codex_home_trimmed.is_empty() {
+            return Err("实例目录为空，无法启动".to_string());
+        }
+        let launch_path = resolve_codex_launch_path()?;
+        let app_user_data_dir = crate::modules::codex_instance::get_linux_app_user_data_dir(
+            Path::new(codex_home_trimmed),
+        )?;
+        std::fs::create_dir_all(&app_user_data_dir).map_err(|error| {
+            format!(
+                "创建 Codex Linux 实例运行目录失败 ({}): {}",
+                app_user_data_dir.display(),
+                error
+            )
+        })?;
+
+        let mut command = Command::new(&launch_path);
+        apply_managed_proxy_env_to_command(&mut command);
+        sanitize_linux_gui_launch_env(&mut command);
+        command
+            .env("CODEX_HOME", codex_home_trimmed)
+            .env("CODEX_ELECTRON_USER_DATA_PATH", &app_user_data_dir)
+            .arg(format!("--user-data-dir={}", app_user_data_dir.display()));
+        for arg in build_codex_app_launch_args(extra_args) {
+            command.arg(arg);
+        }
+        if should_detach_child() {
+            command
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+        }
+        let child = spawn_detached_unix(&mut command)
+            .map_err(|error| format!("启动 Codex 失败: {}", error))?;
+        let spawned_pid = child.id();
+        crate::modules::logger::log_info(&format!(
+            "[Codex Start] Linux managed desktop instance launched: launch_path={} codex_home={} electron_user_data={} pid={}",
+            launch_path.display(),
+            summarize_text_for_process_log(codex_home_trimmed, 96),
+            app_user_data_dir.display(),
+            spawned_pid
+        ));
+
+        let probe_started = Instant::now();
+        while probe_started.elapsed() < Duration::from_secs(10) {
+            if let Some(pid) = resolve_codex_pid(None, Some(codex_home_trimmed)) {
+                return Ok(pid);
+            }
+            thread::sleep(Duration::from_millis(200));
+        }
+        if is_pid_running(spawned_pid) {
+            crate::modules::logger::log_warn(&format!(
+                "[Codex Start] Linux 实例启动后未读取到 CODEX_HOME，回退 spawn pid={}",
+                spawned_pid
+            ));
+            return Ok(spawned_pid);
+        }
+        return Err("Codex Linux 实例启动超时，未找到真实主进程".to_string());
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         let _ = (codex_home, extra_args);
-        Err("Codex 应用多开仅支持 macOS 和 Windows".to_string())
+        Err("当前系统不支持 Codex 应用多开".to_string())
     }
 }
 
-/// 启动 Codex 默认实例（不注入 CODEX_HOME，支持附加参数，支持 macOS / Windows）
+/// 启动 Codex 默认桌面实例（不注入 CODEX_HOME，支持附加参数）。
 pub fn start_codex_default(extra_args: &[String]) -> Result<u32, String> {
     start_codex_default_internal(extra_args, false)
 }
@@ -10318,10 +11921,41 @@ fn start_codex_default_internal(
         return Ok(child.id());
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(target_os = "linux")]
+    {
+        let launch_path = resolve_codex_launch_path()?;
+        let mut command = Command::new(&launch_path);
+        apply_managed_proxy_env_to_command(&mut command);
+        sanitize_linux_gui_launch_env(&mut command);
+        for arg in build_codex_default_launch_args(extra_args) {
+            command.arg(arg);
+        }
+        if should_detach_child() {
+            command
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+        }
+        let child = spawn_detached_unix(&mut command)
+            .map_err(|error| format!("启动 Codex 失败: {}", error))?;
+        let spawned_pid = child.id();
+        let probe_started = Instant::now();
+        while probe_started.elapsed() < Duration::from_secs(10) {
+            if let Some(pid) = resolve_codex_pid(None, None) {
+                return Ok(pid);
+            }
+            thread::sleep(Duration::from_millis(200));
+        }
+        if is_pid_running(spawned_pid) {
+            return Ok(spawned_pid);
+        }
+        return Err("Codex Linux 默认实例启动超时，未找到真实主进程".to_string());
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         let _ = extra_args;
-        Err("Codex 启动仅支持 macOS 和 Windows".to_string())
+        Err("当前系统不支持 Codex 桌面应用启动".to_string())
     }
 }
 
@@ -10397,7 +12031,7 @@ pub fn close_codex_default_fast_by_pid(
 }
 
 pub fn close_codex_default(timeout_secs: u64) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         let default_home = crate::modules::codex_account::get_codex_home()
             .to_string_lossy()
@@ -10413,10 +12047,10 @@ pub fn close_codex_default(timeout_secs: u64) -> Result<(), String> {
         return close_codex_instances(&[default_home], timeout_secs);
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         let _ = timeout_secs;
-        Err("Codex 启动仅支持 macOS 和 Windows".to_string())
+        Err("当前系统不支持 Codex 桌面应用关闭".to_string())
     }
 }
 
@@ -10516,6 +12150,35 @@ fn request_codex_graceful_close(pid: u32) -> bool {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn request_codex_graceful_close(pid: u32) -> bool {
+    if pid == 0 || !is_pid_running(pid) {
+        return true;
+    }
+    match Command::new("kill")
+        .args(["-TERM", &pid.to_string()])
+        .output()
+    {
+        Ok(output) if output.status.success() => true,
+        Ok(output) => {
+            crate::modules::logger::log_warn(&format!(
+                "[Codex Close] Linux SIGTERM failed pid={} status={} stderr={}",
+                pid,
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+            false
+        }
+        Err(error) => {
+            crate::modules::logger::log_warn(&format!(
+                "[Codex Close] Linux SIGTERM error pid={} error={}",
+                pid, error
+            ));
+            false
+        }
+    }
+}
+
 /// 重启 Codex 默认实例，让官方 App 重新读取磁盘上的全局状态。
 pub fn restart_codex_default(extra_args: &[String], timeout_secs: u64) -> Result<u32, String> {
     ensure_codex_launch_path_configured()?;
@@ -10525,7 +12188,7 @@ pub fn restart_codex_default(extra_args: &[String], timeout_secs: u64) -> Result
 
 /// 关闭受管 Codex 实例（按 CODEX_HOME 匹配，包含默认实例目录）
 pub fn close_codex_instances(codex_homes: &[String], timeout_secs: u64) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         crate::modules::logger::log_info("正在关闭受管 Codex 实例...");
 
@@ -10566,6 +12229,16 @@ pub fn close_codex_instances(codex_homes: &[String], timeout_secs: u64) -> Resul
             crate::modules::logger::log_info("受管 Codex 实例未在运行，无需关闭");
             return Ok(());
         }
+        // Capture direct stdio app-server descendants before Electron exits. Once the main
+        // process is gone they can be re-parented, and an in-flight OAuth refresh could otherwise
+        // write the old token tuple after the account switch commits the new credentials.
+        let direct_app_server_pids = collect_codex_direct_app_server_pids_for_roots(&pids);
+        if !direct_app_server_pids.is_empty() {
+            crate::modules::logger::log_info(&format!(
+                "[Codex Close] captured direct app-server pids={}",
+                summarize_pid_list_for_log(&direct_app_server_pids)
+            ));
+        }
 
         crate::modules::logger::log_info(&format!(
             "准备关闭 {} 个受管 Codex 主进程...",
@@ -10581,6 +12254,7 @@ pub fn close_codex_instances(codex_homes: &[String], timeout_secs: u64) -> Resul
             if wait_pids_exit(&graceful_pids, graceful_wait_secs) {
                 let remaining = collect_running_pids(&pids);
                 if remaining.is_empty() {
+                    close_captured_codex_direct_app_servers(&direct_app_server_pids, timeout_secs)?;
                     crate::modules::logger::log_info(&format!(
                         "[Codex Close] graceful close finished, targets={}",
                         summarize_pid_list_for_log(&pids)
@@ -10590,7 +12264,7 @@ pub fn close_codex_instances(codex_homes: &[String], timeout_secs: u64) -> Resul
             }
         } else {
             crate::modules::logger::log_warn(
-                "[Codex Close] graceful close request failed for all macOS targets, skip grace wait",
+                "[Codex Close] graceful close request failed for all targets, skip grace wait",
             );
         }
         let remaining = collect_running_pids(&pids);
@@ -10613,6 +12287,7 @@ pub fn close_codex_instances(codex_homes: &[String], timeout_secs: u64) -> Resul
                 );
             }
         }
+        close_captured_codex_direct_app_servers(&direct_app_server_pids, timeout_secs)?;
 
         let still_running = !collect_running_pids(&pids).is_empty();
         if still_running {
@@ -10725,7 +12400,8 @@ pub fn close_codex_instances(codex_homes: &[String], timeout_secs: u64) -> Resul
                 "[Codex Close] graceful close incomplete, retry force close for remaining pids={}",
                 summarize_pid_list_for_log(&remaining)
             ));
-            if let Err(err) = close_pids(&remaining, timeout_secs) {
+            let force_close_error = close_pids(&remaining, timeout_secs).err();
+            if let Some(err) = force_close_error.as_deref() {
                 crate::modules::logger::log_warn(&format!(
                     "[Codex Close] force close_pids failed: {}",
                     err
@@ -10733,10 +12409,18 @@ pub fn close_codex_instances(codex_homes: &[String], timeout_secs: u64) -> Resul
             }
             let after_force_remaining = collect_running_pids(&remaining);
             if !after_force_remaining.is_empty() {
-                return Err(
-                    "failed to close managed Codex instance process; please close it manually and retry"
-                        .to_string(),
-                );
+                return Err(force_close_error.unwrap_or_else(|| {
+                    crate::modules::windows_operation::format_error(
+                        "stop_process",
+                        "无法关闭受管 Codex 实例进程",
+                        "目标进程在等待超时后仍在运行",
+                        None,
+                        &after_force_remaining,
+                        true,
+                        true,
+                        true,
+                    )
+                }));
             }
         }
         if includes_default
@@ -10757,15 +12441,25 @@ pub fn close_codex_instances(codex_homes: &[String], timeout_secs: u64) -> Resul
 
         let still_running = !collect_running_pids(&pids).is_empty();
         if still_running {
-            return Err("无法关闭受管 Codex 实例进程，请手动关闭后重试".to_string());
+            let remaining = collect_running_pids(&pids);
+            return Err(crate::modules::windows_operation::format_error(
+                "stop_process",
+                "无法关闭受管 Codex 实例进程",
+                "目标进程在等待超时后仍在运行",
+                None,
+                &remaining,
+                true,
+                true,
+                true,
+            ));
         }
         Ok(())
     }
 
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         let _ = (codex_homes, timeout_secs);
-        Err("Codex 应用多开仅支持 macOS 和 Windows".to_string())
+        Err("当前系统不支持 Codex 应用多开".to_string())
     }
 }
 
@@ -11375,7 +13069,23 @@ pub fn kill_port_processes(port: u16) -> Result<usize, String> {
     }
 
     if !failed.is_empty() {
-        return Err(format!("关闭进程失败: {}", failed.join("; ")));
+        let original_reason = failed.join("; ");
+        #[cfg(target_os = "windows")]
+        {
+            let remaining = collect_running_pids(&pids);
+            return Err(crate::modules::windows_operation::format_error(
+                "stop_process",
+                "无法清理端口占用进程",
+                &original_reason,
+                None,
+                &remaining,
+                true,
+                false,
+                true,
+            ));
+        }
+        #[cfg(not(target_os = "windows"))]
+        return Err(format!("关闭进程失败: {}", original_reason));
     }
 
     Ok(cleaned)
@@ -13255,7 +14965,10 @@ mod legacy_platform_adapter_cleanup_tests {
 
 #[cfg(all(test, target_os = "macos"))]
 mod codex_macos_launch_tests {
-    use super::is_codex_macos_main_process_command_line;
+    use super::{
+        is_codex_direct_app_server_command_line, is_codex_macos_main_process_command_line,
+        select_codex_direct_app_server_descendants, CodexProcessTreeEntry,
+    };
 
     #[test]
     fn matches_chatgpt_and_legacy_codex_main_processes() {
@@ -13268,6 +14981,68 @@ mod codex_macos_launch_tests {
         assert!(!is_codex_macos_main_process_command_line(
             "/applications/chatgpt.app/contents/resources/codex app-server"
         ));
+    }
+
+    #[test]
+    fn matches_only_bundled_direct_app_server_commands() {
+        let executable = "/Applications/ChatGPT.app/Contents/Resources/codex";
+        assert!(is_codex_direct_app_server_command_line(
+            "/Applications/ChatGPT.app/Contents/Resources/codex app-server --analytics-default-enabled",
+            executable,
+        ));
+        assert!(is_codex_direct_app_server_command_line(
+            "\"/Applications/ChatGPT.app/Contents/Resources/codex\" app-server --listen stdio://",
+            executable,
+        ));
+        assert!(!is_codex_direct_app_server_command_line(
+            "/Applications/ChatGPT.app/Contents/Resources/codex app-server daemon",
+            executable,
+        ));
+        assert!(!is_codex_direct_app_server_command_line(
+            "/opt/homebrew/bin/codex app-server --analytics-default-enabled",
+            executable,
+        ));
+        assert!(!is_codex_direct_app_server_command_line(
+            "/Applications/ChatGPT.app/Contents/Resources/codex exec hello",
+            executable,
+        ));
+    }
+
+    #[test]
+    fn selects_direct_app_server_only_from_target_main_process_tree() {
+        let executable = "/Applications/ChatGPT.app/Contents/Resources/codex";
+        let entries = vec![
+            CodexProcessTreeEntry {
+                pid: 100,
+                parent_pid: 1,
+                command_line: "/Applications/ChatGPT.app/Contents/MacOS/ChatGPT".to_string(),
+            },
+            CodexProcessTreeEntry {
+                pid: 110,
+                parent_pid: 100,
+                command_line: "helper".to_string(),
+            },
+            CodexProcessTreeEntry {
+                pid: 120,
+                parent_pid: 110,
+                command_line: format!("{} app-server --analytics-default-enabled", executable),
+            },
+            CodexProcessTreeEntry {
+                pid: 200,
+                parent_pid: 1,
+                command_line: "/Applications/ChatGPT.app/Contents/MacOS/ChatGPT".to_string(),
+            },
+            CodexProcessTreeEntry {
+                pid: 220,
+                parent_pid: 200,
+                command_line: format!("{} app-server --analytics-default-enabled", executable),
+            },
+        ];
+
+        assert_eq!(
+            select_codex_direct_app_server_descendants(&entries, &[100], executable),
+            vec![120]
+        );
     }
 }
 
@@ -13300,6 +15075,53 @@ mod codex_launch_args_tests {
         assert!(error.starts_with(CODEX_MANAGED_STORE_LAUNCH_UNSAFE_PREFIX));
         assert!(error.contains("direct_error=denied"));
         assert!(error.contains("powershell_error=fallback failed"));
+    }
+}
+
+#[cfg(test)]
+mod codex_linux_layout_tests {
+    use super::{
+        linux_codex_discovery_paths, select_codex_direct_app_server_descendants,
+        CodexProcessTreeEntry,
+    };
+    use std::ffi::OsString;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn discovery_includes_official_linux_package_and_path_launchers() {
+        let home = Path::new("/home/demo");
+        let path = OsString::from("/custom/bin:/usr/bin");
+        let candidates = linux_codex_discovery_paths(Some(home), Some(path.as_os_str()));
+        assert!(candidates.contains(&PathBuf::from("/usr/bin/chatgpt")));
+        assert!(candidates.contains(&PathBuf::from("/usr/lib/chatgpt/ChatGPT")));
+        assert!(candidates.contains(&PathBuf::from("/home/demo/.local/bin/chatgpt")));
+        assert!(candidates.contains(&PathBuf::from("/custom/bin/chatgpt")));
+    }
+
+    #[test]
+    fn selects_linux_bundled_app_server_from_target_desktop_tree() {
+        let executable = "/usr/lib/chatgpt/resources/codex";
+        let entries = vec![
+            CodexProcessTreeEntry {
+                pid: 100,
+                parent_pid: 1,
+                command_line: "/usr/lib/chatgpt/ChatGPT".to_string(),
+            },
+            CodexProcessTreeEntry {
+                pid: 120,
+                parent_pid: 100,
+                command_line: format!("{} app-server --analytics-default-enabled", executable),
+            },
+            CodexProcessTreeEntry {
+                pid: 220,
+                parent_pid: 200,
+                command_line: format!("{} app-server --analytics-default-enabled", executable),
+            },
+        ];
+        assert_eq!(
+            select_codex_direct_app_server_descendants(&entries, &[100], executable),
+            vec![120]
+        );
     }
 }
 

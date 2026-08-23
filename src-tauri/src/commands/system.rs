@@ -6,7 +6,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri_plugin_autostart::ManagerExt as _;
 use url::Url;
 
@@ -20,7 +20,6 @@ use crate::modules::websocket;
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-const AUTO_BACKUP_DIR_NAME: &str = "backups";
 
 static GENERAL_CONFIG_SAVE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -88,6 +87,10 @@ pub struct GeneralConfig {
     pub codex_sync_wsl: bool,
     /// 是否启用 Codex 客户端中的 API 服务额度显示注入
     pub codex_app_ui_injection_enabled: bool,
+    /// 是否启用 Codex CDP 登录页守卫
+    pub codex_login_page_guard_enabled: bool,
+    /// 是否全局允许 Codex app-server 第三方客户端（账户级开关仍可单独放行）
+    pub codex_cli_only_allow_app_server_clients: bool,
     /// Codex WSL 配置目录 (Windows Only)
     pub codex_wsl_config_dir: String,
     /// Zed 自动刷新间隔（分钟），-1 表示禁用
@@ -104,6 +107,10 @@ pub struct GeneralConfig {
     pub grok_auto_refresh_minutes: i32,
     /// 默认实例切号时是否同步写入官方 ~/.grok/auth.json
     pub grok_sync_official_auth_on_switch: bool,
+    /// 切换 Grok 时是否自动重启 OpenCode
+    pub grok_opencode_sync_on_switch: bool,
+    /// 切换 Grok 时是否覆盖 OpenCode 登录信息
+    pub grok_opencode_auth_overwrite_on_switch: bool,
     /// Claude 自动刷新间隔（分钟），-1 表示禁用
     pub claude_auto_refresh_minutes: i32,
     /// CodeBuddy 自动刷新间隔（分钟），-1 表示禁用
@@ -425,7 +432,7 @@ pub struct WebdavSyncSettings {
 }
 
 const DEFAULT_UI_SCALE: f64 = 1.0;
-const MIN_UI_SCALE: f64 = 0.8;
+const MIN_UI_SCALE: f64 = 0.3;
 const MAX_UI_SCALE: f64 = 2.0;
 const MAX_STARTUP_WAKEUP_DELAY_SECONDS: i32 = 24 * 60 * 60;
 const ANTIGRAVITY_VERSION_BADGE_TIMEOUT_MS: u64 = 1200;
@@ -518,6 +525,10 @@ fn read_antigravity_product_json_metadata(root: &Path) -> Option<AntigravityInst
         let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) else {
             continue;
         };
+        #[cfg(any(target_os = "linux", test))]
+        if antigravity_product_json_is_explicitly_unrelated(&value) {
+            continue;
+        }
         let Some(version) = json_string_field(&value, &["ideVersion", "version"]) else {
             continue;
         };
@@ -532,6 +543,55 @@ fn read_antigravity_product_json_metadata(root: &Path) -> Option<AntigravityInst
             app_path: root.to_string_lossy().to_string(),
             source: "product.json".to_string(),
         });
+    }
+    None
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn antigravity_product_json_is_explicitly_unrelated(value: &serde_json::Value) -> bool {
+    if json_string_field(value, &["ideVersion"]).is_some() {
+        return false;
+    }
+    json_string_field(
+        value,
+        &["nameShort", "nameLong", "productName", "applicationName"],
+    )
+    .is_some_and(|name| !name.to_ascii_lowercase().contains("antigravity"))
+}
+
+fn antigravity_product_json_target(root: &Path) -> Option<&'static str> {
+    for path in antigravity_product_json_candidates(root) {
+        let Ok(content) = fs::read_to_string(path) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) else {
+            continue;
+        };
+        let has_ide_version = json_string_field(&value, &["ideVersion"]).is_some();
+        if !has_ide_version && json_string_field(&value, &["version"]).is_none() {
+            continue;
+        }
+        let product_name = json_string_field(
+            &value,
+            &["nameShort", "nameLong", "productName", "applicationName"],
+        )
+        .map(|name| name.to_ascii_lowercase());
+        if has_ide_version
+            || product_name
+                .as_deref()
+                .is_some_and(|name| name.contains("antigravity") && name.contains("ide"))
+        {
+            return Some("antigravity_ide");
+        }
+        if product_name
+            .as_deref()
+            .is_some_and(|name| name.contains("antigravity") && !name.contains("ide"))
+        {
+            return Some("antigravity");
+        }
+        // A valid but unrelated primary product.json should not prevent the
+        // fallback layout from identifying the configured Antigravity root.
+        continue;
     }
     None
 }
@@ -708,13 +768,11 @@ fn normalize_antigravity_metadata_root(path: &Path) -> Option<PathBuf> {
         }
     }
 
-    if path.is_file() {
-        return path.parent().map(Path::to_path_buf);
-    }
-    if path.is_dir() {
-        return Some(path.to_path_buf());
-    }
-    None
+    #[cfg(unix)]
+    let normalized = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    #[cfg(not(unix))]
+    let normalized = path.to_path_buf();
+    crate::modules::process::antigravity_install_root_from_path(&normalized)
 }
 
 fn push_unique_antigravity_candidate(candidates: &mut Vec<PathBuf>, path: PathBuf) {
@@ -771,9 +829,26 @@ pub fn get_cached_antigravity_installed_version_info_for_target(
 }
 
 fn antigravity_metadata_root_matches_target(root: &Path, target: Option<&str>) -> bool {
+    antigravity_metadata_root_matches_target_with_product_metadata(
+        root,
+        target,
+        cfg!(target_os = "linux"),
+    )
+}
+
+fn antigravity_metadata_root_matches_target_with_product_metadata(
+    root: &Path,
+    target: Option<&str>,
+    prefer_product_metadata: bool,
+) -> bool {
     let Some(target) = normalize_antigravity_metadata_target(target) else {
         return true;
     };
+    if prefer_product_metadata {
+        if let Some(metadata_target) = antigravity_product_json_target(root) {
+            return metadata_target == target;
+        }
+    }
     let value = root.to_string_lossy().to_ascii_lowercase();
     match target {
         "antigravity" => {
@@ -849,6 +924,15 @@ fn antigravity_metadata_candidates(
             let path = PathBuf::from(path);
             if path.exists() {
                 push_unique_antigravity_candidate(&mut candidates, path);
+            }
+        }
+
+        if normalize_antigravity_metadata_target(target) != Some("antigravity") {
+            if let Some(home) = dirs::home_dir() {
+                let user_local_share = home.join(".local/share/antigravity-ide");
+                if user_local_share.exists() {
+                    push_unique_antigravity_candidate(&mut candidates, user_local_share);
+                }
             }
         }
     }
@@ -1048,6 +1132,8 @@ fn is_general_config_patch_field(key: &str) -> bool {
             | "codex_auto_refresh_minutes"
             | "codex_sync_wsl"
             | "codex_app_ui_injection_enabled"
+            | "codex_login_page_guard_enabled"
+            | "codex_cli_only_allow_app_server_clients"
             | "codex_wsl_config_dir"
             | "zed_auto_refresh_minutes"
             | "ghcp_auto_refresh_minutes"
@@ -1056,6 +1142,8 @@ fn is_general_config_patch_field(key: &str) -> bool {
             | "cursor_auto_refresh_minutes"
             | "grok_auto_refresh_minutes"
             | "grok_sync_official_auth_on_switch"
+            | "grok_opencode_sync_on_switch"
+            | "grok_opencode_auth_overwrite_on_switch"
             | "claude_auto_refresh_minutes"
             | "codebuddy_auto_refresh_minutes"
             | "codebuddy_cn_auto_refresh_minutes"
@@ -1329,6 +1417,12 @@ fn apply_general_config_updates(
         next.ghcp_opencode_sync_on_switch =
             next.ghcp_opencode_auth_overwrite_on_switch && next.ghcp_opencode_sync_on_switch;
     }
+    if updates.contains_key("grok_opencode_sync_on_switch")
+        || updates.contains_key("grok_opencode_auth_overwrite_on_switch")
+    {
+        next.grok_opencode_sync_on_switch =
+            next.grok_opencode_auth_overwrite_on_switch && next.grok_opencode_sync_on_switch;
+    }
 
     let codex_threshold = json_i32(updates, "codex_quota_alert_threshold")?;
     let codex_primary = json_i32(updates, "codex_quota_alert_primary_threshold")?;
@@ -1384,7 +1478,7 @@ fn resolve_downloads_dir() -> Result<PathBuf, String> {
 }
 
 fn get_auto_backup_dir_path() -> Result<PathBuf, String> {
-    Ok(modules::account::get_data_dir()?.join(AUTO_BACKUP_DIR_NAME))
+    modules::backup_storage::get_backup_root_dir()
 }
 
 fn ensure_auto_backup_dir_path() -> Result<PathBuf, String> {
@@ -1852,10 +1946,19 @@ pub fn open_local_path(path: String) -> Result<(), String> {
     open_path_in_system(p.as_path())
 }
 
+#[tauri::command]
+pub async fn windows_elevated_close_processes(pids: Vec<u32>) -> Result<u32, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        modules::windows_operation::elevated_close_supported_processes(&pids)
+    })
+    .await
+    .map_err(|error| format!("WINDOWS_ELEVATION_TASK_FAILED: {}", error))?
+}
+
 /// 保存文本文件
 #[tauri::command]
 pub async fn save_text_file(path: String, content: String) -> Result<(), String> {
-    std::fs::write(&path, content).map_err(|e| format!("写入文件失败: {}", e))
+    modules::atomic_write::write_string_atomic(std::path::Path::new(&path), &content)
 }
 
 /// 获取下载目录
@@ -1911,6 +2014,7 @@ pub fn update_auto_backup_last_run(
 
 #[tauri::command]
 pub fn write_auto_backup_file(file_name: String, content: String) -> Result<String, String> {
+    modules::backup_storage::ensure_backup_write_available()?;
     let safe_name = sanitize_auto_backup_file_name(&file_name)?;
     if !safe_name.ends_with(".json") {
         return Err("自动备份主文件必须为 JSON".to_string());
@@ -2116,6 +2220,58 @@ pub fn cleanup_auto_backup_files(retention_days: i32) -> Result<Vec<String>, Str
 pub fn open_auto_backup_dir() -> Result<(), String> {
     let path = ensure_auto_backup_dir_path()?;
     open_path_in_system(path.as_path())
+}
+
+/// 获取定时备份与行为备份的空间占用明细。
+#[tauri::command]
+pub fn get_backup_usage() -> Result<modules::backup_storage::BackupUsageSummary, String> {
+    modules::backup_storage::get_backup_usage()
+}
+
+/// 修改本地备份根目录；迁移选项由前端在确认后传入。
+#[tauri::command]
+pub async fn preview_backup_directory_change(
+    directory: String,
+) -> Result<modules::backup_storage::BackupDirectoryMigrationPreview, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        modules::backup_storage::preview_backup_root_dir_change(&directory)
+    })
+    .await
+    .map_err(|error| format!("扫描待迁移备份失败: {}", error))?
+}
+
+/// 修改本地备份根目录，并通过事件上报迁移进度。
+#[tauri::command]
+pub async fn change_backup_directory(
+    app: tauri::AppHandle,
+    directory: String,
+    migrate_existing: bool,
+    migration_id: String,
+) -> Result<modules::backup_storage::BackupDirectoryChangeResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        modules::backup_storage::change_backup_root_dir_with_progress(
+            &directory,
+            migrate_existing,
+            &migration_id,
+            |progress| {
+                let _ = app.emit("backup-directory-migration-progress", progress);
+            },
+        )
+    })
+    .await
+    .map_err(|error| format!("备份目录迁移任务失败: {}", error))?
+}
+
+/// 请求取消仍处于扫描或复制阶段的备份目录迁移。
+#[tauri::command]
+pub fn cancel_backup_directory_change(migration_id: String) -> Result<bool, String> {
+    modules::backup_storage::cancel_backup_root_dir_change(&migration_id)
+}
+
+/// 清理行为快照，只保留每个来源/实例/类型的最新一份。
+#[tauri::command]
+pub fn cleanup_behavior_backups() -> Result<modules::backup_storage::BackupCleanupResult, String> {
+    modules::backup_storage::cleanup_behavior_backups()
 }
 
 #[tauri::command]
@@ -2536,6 +2692,9 @@ pub fn get_general_config(app: tauri::AppHandle) -> Result<GeneralConfig, String
         codex_auto_refresh_minutes: user_config.codex_auto_refresh_minutes,
         codex_sync_wsl: user_config.codex_sync_wsl,
         codex_app_ui_injection_enabled: user_config.codex_app_ui_injection_enabled,
+        codex_login_page_guard_enabled: user_config.codex_login_page_guard_enabled,
+        codex_cli_only_allow_app_server_clients: user_config
+            .codex_cli_only_allow_app_server_clients,
         codex_wsl_config_dir: user_config.codex_wsl_config_dir,
         zed_auto_refresh_minutes: user_config.zed_auto_refresh_minutes,
         ghcp_auto_refresh_minutes: user_config.ghcp_auto_refresh_minutes,
@@ -2544,6 +2703,8 @@ pub fn get_general_config(app: tauri::AppHandle) -> Result<GeneralConfig, String
         cursor_auto_refresh_minutes: user_config.cursor_auto_refresh_minutes,
         grok_auto_refresh_minutes: user_config.grok_auto_refresh_minutes,
         grok_sync_official_auth_on_switch: user_config.grok_sync_official_auth_on_switch,
+        grok_opencode_sync_on_switch: user_config.grok_opencode_sync_on_switch,
+        grok_opencode_auth_overwrite_on_switch: user_config.grok_opencode_auth_overwrite_on_switch,
         claude_auto_refresh_minutes: user_config.claude_auto_refresh_minutes,
         codebuddy_auto_refresh_minutes: user_config.codebuddy_auto_refresh_minutes,
         codebuddy_cn_auto_refresh_minutes: user_config.codebuddy_cn_auto_refresh_minutes,
@@ -2775,6 +2936,8 @@ pub fn patch_general_config(
     }
 
     let mut language_changed = false;
+    let codex_client_policy_changed =
+        updates.contains_key("codex_cli_only_allow_app_server_clients");
     let mut token_keeper_enabled_changed = false;
     let mut auto_import_from_local_enabled_changed = false;
     let mut floating_always_on_top_changed = false;
@@ -2852,6 +3015,10 @@ pub fn patch_general_config(
         modules::auto_local_import::notify_config_changed(
             new_config.auto_import_from_local_enabled,
         );
+    }
+
+    if codex_client_policy_changed {
+        modules::codex_local_access::schedule_codex_client_policy_sync();
     }
 
     if floating_always_on_top_changed {
@@ -2975,6 +3142,8 @@ pub fn save_general_config(
     cursor_auto_refresh_minutes: Option<i32>,
     grok_auto_refresh_minutes: Option<i32>,
     grok_sync_official_auth_on_switch: Option<bool>,
+    grok_opencode_sync_on_switch: Option<bool>,
+    grok_opencode_auth_overwrite_on_switch: Option<bool>,
     claude_auto_refresh_minutes: Option<i32>,
     codebuddy_auto_refresh_minutes: Option<i32>,
     codebuddy_cn_auto_refresh_minutes: Option<i32>,
@@ -3218,6 +3387,15 @@ pub fn save_general_config(
         if let Some(value) = grok_sync_official_auth_on_switch {
             current.grok_sync_official_auth_on_switch = value;
         }
+        let next_grok_opencode_auth_overwrite_on_switch = grok_opencode_auth_overwrite_on_switch
+            .unwrap_or(current.grok_opencode_auth_overwrite_on_switch);
+        current.grok_opencode_auth_overwrite_on_switch =
+            next_grok_opencode_auth_overwrite_on_switch;
+        current.grok_opencode_sync_on_switch = if next_grok_opencode_auth_overwrite_on_switch {
+            grok_opencode_sync_on_switch.unwrap_or(current.grok_opencode_sync_on_switch)
+        } else {
+            false
+        };
         if let Some(value) = claude_auto_refresh_minutes {
             current.claude_auto_refresh_minutes = value;
         }
@@ -4126,12 +4304,239 @@ pub fn save_user_memory_list(
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_codex_quota_alert_thresholds, apply_general_config_updates,
-        lock_general_config_transaction, UserConfig,
+        antigravity_metadata_root_matches_target_with_product_metadata,
+        antigravity_product_json_target, apply_codex_quota_alert_thresholds,
+        apply_general_config_updates, lock_general_config_transaction,
+        normalize_antigravity_metadata_root, read_antigravity_product_json_metadata, UserConfig,
     };
+    use std::path::{Path, PathBuf};
     use std::sync::mpsc;
     use std::thread;
     use std::time::Duration;
+
+    struct MetadataTestDir(PathBuf);
+
+    impl MetadataTestDir {
+        fn new(name: &str) -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "cockpit-tools-antigravity-metadata-{}-{}",
+                std::process::id(),
+                name
+            ));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("create metadata test directory");
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for MetadataTestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn assert_same_fs_path(left: &Path, right: &Path) {
+        let left = std::fs::canonicalize(left).unwrap_or_else(|_| left.to_path_buf());
+        let right = std::fs::canonicalize(right).unwrap_or_else(|_| right.to_path_buf());
+        assert_eq!(left, right);
+    }
+
+    fn write_antigravity_product_json(root: &Path) {
+        let product_dir = root.join("resources").join("app");
+        std::fs::create_dir_all(&product_dir).expect("create product metadata directory");
+        std::fs::write(
+            product_dir.join("product.json"),
+            r#"{"nameShort":"Antigravity IDE","ideVersion":"1.2.3"}"#,
+        )
+        .expect("write product metadata");
+    }
+
+    #[test]
+    fn antigravity_metadata_uses_install_root_for_root_executable() {
+        let install = MetadataTestDir::new("root-executable");
+        write_antigravity_product_json(install.path());
+        let executable = install.path().join("antigravity-ide");
+        std::fs::write(&executable, b"launcher").expect("write root executable");
+
+        let root = normalize_antigravity_metadata_root(&executable)
+            .expect("resolve metadata root from executable");
+        let metadata = read_antigravity_product_json_metadata(&root)
+            .expect("read product.json from install root");
+
+        assert_same_fs_path(&root, install.path());
+        assert_eq!(metadata.version, "1.2.3");
+    }
+
+    #[test]
+    fn antigravity_metadata_uses_install_root_for_bin_launcher() {
+        let install = MetadataTestDir::new("bin-launcher");
+        write_antigravity_product_json(install.path());
+        let executable = install.path().join("bin").join("antigravity-ide");
+        std::fs::create_dir_all(executable.parent().expect("launcher parent"))
+            .expect("create launcher directory");
+        std::fs::write(&executable, b"launcher").expect("write bin launcher");
+
+        let root = normalize_antigravity_metadata_root(&executable)
+            .expect("resolve metadata root from bin launcher");
+        let metadata = read_antigravity_product_json_metadata(&root)
+            .expect("read product.json from install root");
+
+        assert_same_fs_path(&root, install.path());
+        assert_eq!(metadata.version, "1.2.3");
+    }
+
+    #[test]
+    fn antigravity_metadata_skips_invalid_primary_product_json() {
+        let install = MetadataTestDir::new("invalid-primary-product-json");
+        let primary = install.path().join("resources").join("app");
+        let fallback = install.path().join("app");
+        std::fs::create_dir_all(&primary).expect("create primary metadata directory");
+        std::fs::create_dir_all(&fallback).expect("create fallback metadata directory");
+        std::fs::write(primary.join("product.json"), b"not-json")
+            .expect("write invalid primary product metadata");
+        std::fs::write(
+            fallback.join("product.json"),
+            r#"{"nameShort":"Antigravity IDE","ideVersion":"9.8.7"}"#,
+        )
+        .expect("write fallback product metadata");
+
+        let metadata = read_antigravity_product_json_metadata(install.path())
+            .expect("read fallback product metadata");
+
+        assert_eq!(metadata.version, "9.8.7");
+    }
+
+    #[test]
+    fn metadata_target_skips_unrelated_primary_product_json() {
+        let install = MetadataTestDir::new("unrelated-primary-product-json");
+        let primary = install.path().join("resources").join("app");
+        let fallback = install.path().join("app");
+        std::fs::create_dir_all(&primary).expect("create primary metadata directory");
+        std::fs::create_dir_all(&fallback).expect("create fallback metadata directory");
+        std::fs::write(
+            primary.join("product.json"),
+            r#"{"nameShort":"Other IDE","version":"1.0.0"}"#,
+        )
+        .expect("write unrelated primary product metadata");
+        std::fs::write(
+            fallback.join("product.json"),
+            r#"{"nameShort":"Antigravity IDE","ideVersion":"9.8.7"}"#,
+        )
+        .expect("write fallback product metadata");
+
+        assert_eq!(
+            antigravity_product_json_target(install.path()),
+            Some("antigravity_ide")
+        );
+        let metadata = read_antigravity_product_json_metadata(install.path())
+            .expect("read fallback Antigravity metadata");
+        assert_eq!(metadata.product_name, "Antigravity IDE");
+        assert_eq!(metadata.version, "9.8.7");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn antigravity_metadata_follows_bin_launcher_symlink_to_install_root() {
+        let install = MetadataTestDir::new("symlink-space-含");
+        write_antigravity_product_json(install.path());
+        let launcher = install.path().join("bin").join("antigravity-ide");
+        let link = install.path().join("launcher-link");
+        std::fs::create_dir_all(launcher.parent().expect("launcher parent"))
+            .expect("create launcher directory");
+        std::fs::write(&launcher, b"launcher").expect("write bin launcher");
+        std::os::unix::fs::symlink("bin/antigravity-ide", &link).expect("create launcher symlink");
+
+        let root = normalize_antigravity_metadata_root(&link)
+            .expect("resolve metadata root from symlink launcher");
+        let metadata = read_antigravity_product_json_metadata(&root)
+            .expect("read product metadata through symlink root");
+
+        assert_same_fs_path(&root, install.path());
+        assert_eq!(metadata.version, "1.2.3");
+    }
+
+    #[test]
+    fn configured_neutral_executable_uses_product_metadata_for_ide_target() {
+        let install = MetadataTestDir::new("neutral-configured-executable");
+        write_antigravity_product_json(install.path());
+        let executable = install.path().join("MyIDE.AppImage");
+        std::fs::write(&executable, b"launcher").expect("write neutral executable");
+
+        let root = normalize_antigravity_metadata_root(&executable)
+            .expect("resolve metadata root from neutral executable");
+        assert!(
+            antigravity_metadata_root_matches_target_with_product_metadata(
+                &root,
+                Some("antigravity_ide"),
+                true,
+            )
+        );
+        assert_eq!(
+            read_antigravity_product_json_metadata(&root)
+                .expect("read configured product metadata")
+                .version,
+            "1.2.3"
+        );
+    }
+
+    #[test]
+    fn ide_version_field_classifies_metadata_without_a_product_name() {
+        let install = MetadataTestDir::new("unnamed-product");
+        let product_dir = install.path().join("resources").join("app");
+        std::fs::create_dir_all(&product_dir).expect("create unnamed product metadata directory");
+        std::fs::write(
+            product_dir.join("product.json"),
+            r#"{"ideVersion":"2.4.6"}"#,
+        )
+        .expect("write unnamed product metadata");
+
+        assert!(
+            antigravity_metadata_root_matches_target_with_product_metadata(
+                install.path(),
+                Some("antigravity_ide"),
+                true,
+            )
+        );
+        assert!(
+            !antigravity_metadata_root_matches_target_with_product_metadata(
+                install.path(),
+                Some("antigravity"),
+                true,
+            )
+        );
+    }
+
+    #[test]
+    fn product_metadata_takes_precedence_over_install_directory_spelling() {
+        let parent = MetadataTestDir::new("metadata-target-precedence");
+        let install = parent.path().join("antigravity-ide");
+        let product_dir = install.join("resources").join("app");
+        std::fs::create_dir_all(&product_dir).expect("create legacy product metadata directory");
+        std::fs::write(
+            product_dir.join("product.json"),
+            r#"{"nameShort":"Antigravity","version":"3.2.1"}"#,
+        )
+        .expect("write legacy product metadata");
+
+        assert!(
+            antigravity_metadata_root_matches_target_with_product_metadata(
+                &install,
+                Some("antigravity"),
+                true,
+            )
+        );
+        assert!(
+            !antigravity_metadata_root_matches_target_with_product_metadata(
+                &install,
+                Some("antigravity_ide"),
+                true,
+            )
+        );
+    }
 
     #[test]
     fn general_config_transaction_lock_serializes_side_effecting_writes() {

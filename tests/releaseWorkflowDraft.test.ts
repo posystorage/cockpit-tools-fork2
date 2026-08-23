@@ -41,6 +41,14 @@ describe("fork draft release workflow", () => {
     );
   });
 
+  it("combines the 1.3.21-to-1.3.28 release range for the 1.3.28 draft", () => {
+    assert.ok(
+      workflowSource.includes(
+        'RELEASE_VERSIONS=("1.3.28" "1.3.27" "1.3.26" "1.3.25" "1.3.24" "1.3.23" "1.3.22" "1.3.21b4" "1.3.21")',
+      ),
+    );
+  });
+
   it("uses only the b3-to-b4 changelog section for the 1.3.21b4 draft", () => {
     assert.ok(
       workflowSource.includes(
@@ -50,11 +58,10 @@ describe("fork draft release workflow", () => {
     assert.ok(workflowSource.includes('RELEASE_VERSIONS=("1.3.21b4")'));
   });
 
-  it("builds Windows only and leaves finalization disabled", () => {
+  it("builds Windows and macOS Universal while leaving unsupported targets disabled", () => {
     for (const job of [
       "build-macos-aarch64",
       "build-macos-x86_64",
-      "build-macos-universal",
       "build-linux",
       "finalize-legacy-latest",
       "upload-checksums",
@@ -72,5 +79,12 @@ describe("fork draft release workflow", () => {
     const windowsStart = workflowSource.indexOf("  build-windows:");
     const windowsHeader = workflowSource.slice(windowsStart, windowsStart + 180);
     assert.equal(windowsHeader.includes("if: ${{ false }}"), false);
+
+    const universalStart = workflowSource.indexOf("  build-macos-universal:");
+    const universalHeader = workflowSource.slice(
+      universalStart,
+      universalStart + 180,
+    );
+    assert.equal(universalHeader.includes("if: ${{ false }}"), false);
   });
 });
