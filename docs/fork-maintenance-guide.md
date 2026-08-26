@@ -51,6 +51,8 @@
 
 当前 fork 的 Release workflow 只发布 Windows 草稿构建；macOS Apple Silicon、macOS Intel、macOS Universal 和 Linux job 均保持禁用。上游若重新启用这些平台，合并时必须先确认草稿 tag、Release 上传目标和签名资产策略，不得因上游并行构建改动而自动恢复 macOS 构建。
 
+发布说明也属于 fork 的交付不变量：一次升级若跨越多个上游版本，草稿 Release 的中英文说明必须按降序完整包含本次合并范围内的每个版本章节；若同时包含 fork beta 修正，还要单独纳入对应 beta 章节。不能只提取最终版本，也不能因上游 workflow 改动而丢失中间版本或 fork 自定义变更。
+
 本轮已接受上游新增能力，没有恢复被上游替代的旧实现。真实合并与预演一致，只出现上述六个显式冲突；隐藏的重复 `handleRemoveLocalAccessAccount` 也按计划处理为唯一的上游原子删除调用。前端测试断言不得存在重复处理器，Rust 测试进一步确认删除目标账号后，剩余 preferred 路由、session affinity 和 TTL 保持不变。数值兼容测试同时覆盖数字字符串以及 `NaN`、`Infinity`、`-Infinity` 拒绝。
 
 真实合并提交为 `9ba91304`，父节点是 fork 施工文档提交 `4a3881a7` 与上游 release commit `971c283e`。合并后相对纯上游 `v1.3.21` 保留 75 个差异文件、3560 行新增和 850 行删除，差异集中在本文记录的去广告/更新边界、发布身份、调度观测、余额兼容、回归测试及历史维护文档，没有出现与 fork 目标无关的大面积旧代码保留。
@@ -65,7 +67,28 @@
 - 去广告/商业 URL 常量、updater 禁用开关、fork 签名与下载地址、draft-only Windows workflow 均已复核。模型与能力价格设置继续采用上游可选空值行为，中文错误提示明确“Token 阈值可留空”，未恢复旧的必填限制。
 - `cargo fmt --check`、索引与工作区 `git diff --check` 通过，无冲突标记或测试占位文件残留。
 
-### 2.2 `v1.3.16` 已验证基线（2026-08-06）
+### 2.2 `v1.3.31` 已验证基线（2026-08-27）
+
+本轮从已验证 fork `1.3.28b1`（`08cb9eec`）升级到上游 `v1.3.31`（release commit `3bafe717`），沿用升级分支 `codex/upgrade-upstream-v1.3.21`。施工采用 `git merge --no-commit --no-ff v1.3.31`，已完成双父 merge commit（父节点为 `08cb9eec` 与 `3bafe717`）；上游随后出现的 `v1.3.32` 不属于本轮范围。
+
+本轮同步的上游能力按版本归纳如下：
+
+- `v1.3.29`：统一 Codex 启动预览、设备代码授权、历史会话 Provider 迁移、Live/Realtime API、Responses WebSocket 和扩展模型目录。
+- `v1.3.30`：按有效 access token 与官方检查结果判断客户端可用性，并补充多开账号占用提示。
+- `v1.3.31`：删除账号 tombstone/generation 与旧快照拒绝、重新授权保护、`accounts/check` 仅在真正切号时调用、生图工具冲突修复、Responses Lite/WebSocket 工具兼容和 Gemini/Cursor 修复。
+
+施工裁决与 fork 不变量如下：
+
+- 接受上游 Codex 删除、重授权、启动、会话、模型和生图逻辑；这些状态变更不参与 API Service 调度观测。`accounts/check` 不会被重新接入普通启动路径。
+- 完整采用上游 `CLIProxyAPI v7.2.140`，唯一供应商源码目录仍是 `sidecars/cockpit-cliproxy/third_party/CLIProxyAPI`。fork 的 `recordingSelector` 继续包在模型排除、备用账号、额度保留、图片选择和 session affinity 选择链之外层，负责唯一一次 `auth_selected` 事件和 cache-hit 调度观测；上游新增 sidecar 网关不会覆盖或改变路由决策。
+- 普通 Codex 页和独立 API Service 页继续显示所有仍存在的账号，成员过多时在卡片内部滚动，并按“调度中 -> 最近调度 -> 其他”排序；最低优先级兜底暂停开关只占最低账号的操作位。
+- 请求统计以本地 `account_id` 为主键；删除账号不删除请求日志。`official_account_id` 只有与邮箱同时匹配时才可作为受控历史别名，不能把共享 Team/Workspace ID 的不同成员串账。`codex-auto-review` 继续使用 GPT-5.6 Luna 全矩阵，价格簿迁移会清除已识别的错误默认覆盖并后台重算相关历史日志。
+- 去广告、空公告/远端配置、禁用运行时 updater、Sub2API `/usage` 与 `/v1/usage` 余额回退、数字字符串解析和非有限值拒绝均保持不变。Antigravity 额度查询/白屏问题不在本轮判定或修复范围内，待升级后单独观察。
+- Release workflow 继续只构建 Windows 草稿；`1.3.31` 草稿说明按 `1.3.31` 到 `1.3.21`（含 `1.3.21b4`）降序完整聚合，中英文 CHANGELOG 与 workflow 列表保持一一对应。
+
+本轮已清理全部冲突标记。验证结果：`cargo fmt --all -- --check`、`COCKPIT_SKIP_CLIPROXY_BUILD=1 cargo check --workspace`、TypeScript `tsc --noEmit` 和 24 项定向 Node 测试通过；本机未安装 Go，sidecar Go 编译与测试交由 Windows CI 完成。发布 tag 和 CI 结果应在实际草稿构建后继续补记于本节。
+
+### 2.3 `v1.3.16` 已验证基线（2026-08-06）
 
 本轮从已验证 fork `1.3.10b2`（`ee49a89f`）升级到上游 `v1.3.16`（release commit `e1ef55ce`），升级分支为 `codex/upgrade-upstream-v1.3.16`。合并前 release 链与锚点如下：
 
@@ -114,7 +137,7 @@
 
 真实合并提交为 `1dc9fedd`，父节点是 fork 施工文档提交 `cdea997e` 与上游 `e1ef55ce`。
 
-### 2.3 `v1.3.10` 已验证基线（2026-07-20）
+### 2.4 `v1.3.10` 已验证基线（2026-07-20）
 
 本轮从已验证 fork `1.3.6b2`（`3be46a02`）升级到上游 `v1.3.10`，合并提交为 `50cf4c74`，父节点是 fork `3be46a02` 与上游 release commit `b331b093`。升级分支为 `codex/upgrade-upstream-v1.3.10`。release 链如下：
 
@@ -149,7 +172,7 @@
 - Rust `cockpit-tools` lib 共 673 项：`671 passed / 0 failed / 2 ignored`。另行复跑调度活动 2 项、OAuth 实际窗口和周窗口 Sidecar 映射各 1 项、Sub2API URL/数值各 1 项、配置接管 4 项、异步删除 1 项，全部通过。
 - 本机没有 Go，`TestRecordingSelectorRecordsSessionAffinityCacheHit` 等 Sidecar Go 测试未执行；发布 CI 必须真实编译并运行 Go 测试。纯源码复核确认根选择器不再直接发送事件，外层记录器测试仍验证首次选择和 affinity cache hit 各发送一次。
 
-### 2.4 `v1.3.6` 已验证基线（2026-07-16）
+### 2.5 `v1.3.6` 已验证基线（2026-07-16）
 
 本轮从已验证 fork HEAD `6f84cae8` 升级到上游 `v1.3.6`。上游没有发布 `v1.3.3` tag；`release: v1.3.3` 提交包含在后续 `v1.3.4` 中。release 链如下：
 
@@ -190,7 +213,7 @@
 
 Windows 本地运行 Rust 测试前必须为每个测试进程设置独立的 `COCKPIT_TOOLS_DATA_DIR`。只设置 `HOME`、`CODEX_HOME` 或 `COCKPIT_TOOLS_TEST_DATA_DIR` 不足以隔离 `cockpit-core`；上游部分测试会访问真实 `~/.antigravity_cockpit`。测试失败后也不能直接删除真实目录，应先根据测试前备份、明确的测试账号 ID/邮箱和时间戳制定最小恢复方案。
 
-### 2.5 `v1.3.2` 上一已验证基线
+### 2.6 `v1.3.2` 上一已验证基线
 
 当前已验证的同步状态（2026-07-15）：
 
@@ -492,7 +515,7 @@ OpenAI 的 `primary_window`/`secondary_window` 表示窗口顺序，不保证永
 
 - 不恢复普通设置页的 legacy/sidecar 运行时切换控件，也不把 legacy gateway 重新作为启动分支；`gateway_mode`、旧目录和旧日志仍只用于迁移、历史筛选和兼容读取。
 - 保留 sidecar 的 `auth_selected`、`usage`、`auth_result` 事件处理。`auth_selected` 负责开始账号活动，`usage` 及所有失败/取消/重试终点负责结束活动；上游若调整事件字段，先扩展解析器再改 UI。
-- 账号统计优先使用上游写入的 `official_account_id`，并以账号 ID、邮箱和旧 account_id 做兼容回退；重新授权或重新导入同一官方账号不能造成统计归零。
+- 账号统计以本地 `account_id` 为主键；`official_account_id` 只能在官方 ID 与邮箱同时匹配时作为受控历史别名，用于删除后重新授权/重新导入同一账号，不能仅凭共享官方 ID 合并 Team/Workspace 成员；删除账号不删除请求日志，历史费用继续保留。
 - `sidecars/cockpit-cliproxy/third_party/CLIProxyAPI` 是唯一供应商源码目录。上游路径迁移时必须同时检查 Rust build script、发布工作流和本地开发命令，不能留下可被误选的旧副本。
 - Linux 官方 ChatGPT/Codex 桌面实例管理、CLI/App 模式边界、Windows 恢复弹框和 Trae 修复直接跟随上游；除非触及本节的 sidecar 调度观测或去广告边界，不要回退上游生命周期逻辑。
 
@@ -710,6 +733,7 @@ GPT-5.6 Luna（美元 / 百万 token）：
 3. 阅读上游 release notes，但以 tag diff 为准。
 4. 先更新本文中的基线、已知缺口和新增热点，再进行代码合并。
 5. 建立独立升级分支，不直接改稳定分支。
+6. 明确本轮 Release 说明范围：记录旧上游锚点之后到目标 tag 的全部上游版本，必要时加上 fork beta 增量；同步规划 `CHANGELOG.md`、`CHANGELOG.zh-CN.md` 和 workflow 的 `RELEASE_VERSIONS`，不得只记录最终版本。
 
 ### 10.2 审计上游变化
 
@@ -801,11 +825,20 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 9. 打开“禁用模型”弹窗后从另一页面切换兜底开关，再尝试保存旧草稿；后端必须拒绝旧版本，重新打开弹窗后才能保存。
 10. 在独立 API 服务统计页分别选择近 24H、近 48H、近 7Day，确认起止时间按当前时刻滚动且共享管理弹窗不出现这三个选项。
 
+### 11.6 Release 平台范围与多版本变更信息检查
+
+1. 检查 `.github/workflows/release.yml`：`build-macos-aarch64`、`build-macos-x86_64`、`build-macos-universal`、`build-linux`、自动 finalize、checksum 和 Homebrew job 必须保持 `if: ${{ false }}`；当前 fork 草稿只构建 Windows。
+2. 检查启用的 Windows 上传步骤使用经过校验的 `RELEASE_TAG`，不得把数字 beta tag 改写成不存在的 `v${VERSION}` 正式 tag；草稿创建必须继续使用 `--draft`，不能自动发布。
+3. 对跨多个上游版本的升级，逐项确认 `CHANGELOG.md` 与 `CHANGELOG.zh-CN.md` 都有旧锚点之后至目标版本的完整章节，并按目标版本到旧版本降序聚合到 Release notes；有 fork beta 修正时同时核对 beta 章节。
+4. 确认 workflow 中的 `RELEASE_VERSIONS` 与上述章节一一对应，不能漏版本、重复版本或只保留最新版本；变更范围测试必须覆盖该精确列表。
+5. 至少运行 `node --test tests/releaseWorkflowDraft.test.ts`、`git diff --check`，并在推送 tag 前复核工作流没有重新启用 macOS job 或删除多版本日志聚合规则。
+
 ## 12. 完成定义
 
 一次上游升级只有同时满足以下条件才算完成：
 
 - 新版本号、依赖、release notes 和上游修复已同步。
+- Release 平台范围仍符合 fork 边界（只构建 Windows 草稿），且跨版本合并的中英文变更信息完整覆盖本轮所有上游版本和已纳入的 fork beta 变更。
 - 四组 fork 行为逐项通过本文验收。
 - 相对新上游的差异已收敛到本文热点和必要发布文件。
 - 没有冲突标记、重复实现、非预期 referral URL 或默认商业服务。

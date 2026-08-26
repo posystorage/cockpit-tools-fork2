@@ -49,6 +49,14 @@ describe("fork draft release workflow", () => {
     );
   });
 
+  it("combines every release from 1.3.21 through 1.3.31", () => {
+    assert.ok(
+      workflowSource.includes(
+        'RELEASE_VERSIONS=("1.3.31" "1.3.30" "1.3.29" "1.3.28" "1.3.27" "1.3.26" "1.3.25" "1.3.24" "1.3.23" "1.3.22" "1.3.21b4" "1.3.21")',
+      ),
+    );
+  });
+
   it("uses only the b3-to-b4 changelog section for the 1.3.21b4 draft", () => {
     assert.ok(
       workflowSource.includes(
