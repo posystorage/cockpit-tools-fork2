@@ -84,11 +84,33 @@
 - 普通 Codex 页和独立 API Service 页继续显示所有仍存在的账号，成员过多时在卡片内部滚动，并按“调度中 -> 最近调度 -> 其他”排序；最低优先级兜底暂停开关只占最低账号的操作位。
 - 请求统计以本地 `account_id` 为主键；删除账号不删除请求日志。`official_account_id` 只有与邮箱同时匹配时才可作为受控历史别名，不能把共享 Team/Workspace ID 的不同成员串账。`codex-auto-review` 继续使用 GPT-5.6 Luna 全矩阵，价格簿迁移会清除已识别的错误默认覆盖并后台重算相关历史日志。
 - 去广告、空公告/远端配置、禁用运行时 updater、Sub2API `/usage` 与 `/v1/usage` 余额回退、数字字符串解析和非有限值拒绝均保持不变。Antigravity 额度查询/白屏问题不在本轮判定或修复范围内，待升级后单独观察。
-- Release workflow 继续只构建 Windows 草稿；`1.3.31` 草稿说明按 `1.3.31` 到 `1.3.21`（含 `1.3.21b4`）降序完整聚合，中英文 CHANGELOG 与 workflow 列表保持一一对应。
+- Release workflow 继续只构建 Windows 草稿；每次升级只聚合“上一个 fork 基线之后、当前目标版本及其间所有上游版本”的章节。`1.3.31` 草稿保留其当轮范围，不能在后续 `1.3.32` 草稿中重复打包旧历史。
 
 本轮已清理全部冲突标记。验证结果：`cargo fmt --all -- --check`、`COCKPIT_SKIP_CLIPROXY_BUILD=1 cargo check --workspace`、TypeScript `tsc --noEmit` 和 24 项定向 Node 测试通过；本机未安装 Go，sidecar Go 编译与测试交由 Windows CI 完成。发布 tag 和 CI 结果应在实际草稿构建后继续补记于本节。
 
-### 2.3 `v1.3.16` 已验证基线（2026-08-06）
+### 2.3 `v1.3.32` 已验证基线（2026-08-28）
+
+本轮以 fork 合并提交 `3f23e54e`（其 fork 父节点为已验证的 `1.3.31` 状态）为基线，升级到上游 `v1.3.32`。上游 release commit 为 `38fd65ba`，与当前 `v1.3.31` 基线的 merge-base 为 `3bafe717`。本轮上游变更主要集中在 OAuth 凭据、共享 profile 写入和 sidecar 账号维护，未修改官方价格公式、价格簿或历史计费重算规则。
+
+同步的上游能力按主题归纳如下：
+
+- OAuth 账号取消跨实例占用限制；绑定 OAuth、默认实例、多开实例和 API Service 可以共享同一账号。该行为已按用户确认接受，不回退为旧的跨实例互斥。
+- 默认 profile 增加跨进程 mutation lease。API Service 接管默认 profile 前会识别仍占用该 profile 的官方 Codex 客户端并先关闭；开发版/正式版并发写入会报告冲突，避免旧进程覆盖新凭据。
+- OAuth 启动预览展示 `access_token`/`id_token` 到期状态，凭据导入优先使用官方 credential store（包括 macOS Keychain）；重新授权后的 Token 会同步到 API Service 绑定账号。
+- 额度后台刷新改为顺序节奏，并复用一轮 Windows 进程探测快照；手动批量刷新仍保留原有并发行为。
+- Codex 实验模型上下文预设使用紧凑标签；API Service 文本探测不再向无生图能力的 Provider 声明生图工具，正式生图路径保持可用。
+
+本轮合并裁决与 fork 边界：
+
+- 接受上游 OAuth 共享、profile 接管、凭据导入、Token 同步、顺序刷新和启动预览变化；这些逻辑不改变 API Service 的账号选择规则。
+- 保留 `CodexLocalAccessAccountActivity`、sidecar `recordingSelector`、`auth_selected`/finish 生命周期和 5 秒调度状态刷新。上游新增 sidecar 账号范围只扩展凭据维护范围，不得绕过 recording selector，也不得重复发送调度事件。
+- 保留普通 Codex/API Service 卡片的完整账号池、内部滚动、运行中/最近调度排序、最高/最低标记和最低优先级暂停开关。账号移除仍使用上游原子删除接口，不清空其他账号的优先级、session affinity 或 TTL 配置。
+- 保留 Sub2API `/usage`、`/v1/usage` 回退、数字字符串解析和非有限值拒绝；保留 New API 用量回退。价格公式、本地 `account_id` 主统计键、删除账号历史计费、Auto-review 按 GPT-5.6 Luna 全矩阵及历史重算均不受本轮上游改动影响。
+- 去广告、空公告/远端配置、禁用运行时 updater、通用 Provider 和 fork 下载/签名身份继续按本指南执行。macOS、Linux 构建 job 继续禁用，不因上游新增或修复平台构建而自动启用。
+
+合并检查结果：无未解决冲突或冲突标记；`npm run typecheck`、`npm run build`、Provider 预设隐私扫描、`cargo fmt --check` 和 `git diff --check` 通过。Rust 全量测试在本机受到缺少 Go 编译器和 Windows 测试二进制 `STATUS_ENTRYPOINT_NOT_FOUND` 环境问题阻塞，未发现业务断言失败；Sidecar Go 测试需在发布 CI 的 Windows 环境补跑。本轮 `1.3.32b1` Release notes 只包含 `1.3.32`，因为它的上一个 fork 基线是 `1.3.31`；若未来一次跨越多个上游版本，必须逐个纳入该次升级范围内的版本，不能按历史起点全量回放。
+
+### 2.4 `v1.3.16` 已验证基线（2026-08-06）
 
 本轮从已验证 fork `1.3.10b2`（`ee49a89f`）升级到上游 `v1.3.16`（release commit `e1ef55ce`），升级分支为 `codex/upgrade-upstream-v1.3.16`。合并前 release 链与锚点如下：
 
@@ -137,7 +159,7 @@
 
 真实合并提交为 `1dc9fedd`，父节点是 fork 施工文档提交 `cdea997e` 与上游 `e1ef55ce`。
 
-### 2.4 `v1.3.10` 已验证基线（2026-07-20）
+### 2.5 `v1.3.10` 已验证基线（2026-07-20）
 
 本轮从已验证 fork `1.3.6b2`（`3be46a02`）升级到上游 `v1.3.10`，合并提交为 `50cf4c74`，父节点是 fork `3be46a02` 与上游 release commit `b331b093`。升级分支为 `codex/upgrade-upstream-v1.3.10`。release 链如下：
 
@@ -172,7 +194,7 @@
 - Rust `cockpit-tools` lib 共 673 项：`671 passed / 0 failed / 2 ignored`。另行复跑调度活动 2 项、OAuth 实际窗口和周窗口 Sidecar 映射各 1 项、Sub2API URL/数值各 1 项、配置接管 4 项、异步删除 1 项，全部通过。
 - 本机没有 Go，`TestRecordingSelectorRecordsSessionAffinityCacheHit` 等 Sidecar Go 测试未执行；发布 CI 必须真实编译并运行 Go 测试。纯源码复核确认根选择器不再直接发送事件，外层记录器测试仍验证首次选择和 affinity cache hit 各发送一次。
 
-### 2.5 `v1.3.6` 已验证基线（2026-07-16）
+### 2.6 `v1.3.6` 已验证基线（2026-07-16）
 
 本轮从已验证 fork HEAD `6f84cae8` 升级到上游 `v1.3.6`。上游没有发布 `v1.3.3` tag；`release: v1.3.3` 提交包含在后续 `v1.3.4` 中。release 链如下：
 
@@ -213,7 +235,7 @@
 
 Windows 本地运行 Rust 测试前必须为每个测试进程设置独立的 `COCKPIT_TOOLS_DATA_DIR`。只设置 `HOME`、`CODEX_HOME` 或 `COCKPIT_TOOLS_TEST_DATA_DIR` 不足以隔离 `cockpit-core`；上游部分测试会访问真实 `~/.antigravity_cockpit`。测试失败后也不能直接删除真实目录，应先根据测试前备份、明确的测试账号 ID/邮箱和时间戳制定最小恢复方案。
 
-### 2.6 `v1.3.2` 上一已验证基线
+### 2.7 `v1.3.2` 上一已验证基线
 
 当前已验证的同步状态（2026-07-15）：
 

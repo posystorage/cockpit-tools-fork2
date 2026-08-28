@@ -57,6 +57,14 @@ describe("fork draft release workflow", () => {
     );
   });
 
+  it("includes only the current upgrade version for the 1.3.32 draft", () => {
+    assert.ok(
+      workflowSource.includes(
+        'RELEASE_VERSIONS=("1.3.32")',
+      ),
+    );
+  });
+
   it("uses only the b3-to-b4 changelog section for the 1.3.21b4 draft", () => {
     assert.ok(
       workflowSource.includes(
