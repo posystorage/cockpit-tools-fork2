@@ -5,7 +5,7 @@ import {
   getCodexConfigTomlPath,
   getCodexQuickConfig,
   openCodexConfigToml,
-  saveCodexQuickConfig,
+  saveCodexModelCatalog,
 } from '../../services/codexService';
 import { useEscClose } from '../../hooks/useEscClose';
 import type { CodexExperimentalModelDefinition, CodexQuickConfig } from '../../types/codex';
@@ -70,18 +70,15 @@ export function CodexQuickConfigCard({ onClose }: { onClose?: () => void }) {
       nextModels: CodexExperimentalModelDefinition[],
       nextDefaultModelId: string | null,
     ) => {
-      if (loading) return;
+      if (loading || !loadedConfig) return;
       const saveVersion = saveVersionRef.current + 1;
       saveVersionRef.current = saveVersion;
       setNotice(null);
       setError(null);
       setSaving(true);
-
       const save = async () => {
         try {
-          const saved = await saveCodexQuickConfig(
-            undefined,
-            undefined,
+          const saved = await saveCodexModelCatalog(
             enabled,
             nextModels,
             nextDefaultModelId,
@@ -108,7 +105,7 @@ export function CodexQuickConfigCard({ onClose }: { onClose?: () => void }) {
       };
       saveQueueRef.current = saveQueueRef.current.catch(() => undefined).then(save);
     },
-    [applyLoadedConfig, loading, t],
+    [applyLoadedConfig, loadedConfig, loading, t],
   );
 
   useEffect(() => {
@@ -208,6 +205,14 @@ export function CodexQuickConfigCard({ onClose }: { onClose?: () => void }) {
                       {t(
                         'codex.experimentalModelCatalog.enabledHint',
                         '启用后使用当前可见模型列表，重启 Codex 生效。',
+                      )}
+                    </p>
+                  )}
+                  {!catalogEnabled && (
+                    <p>
+                      {t(
+                        'codex.experimentalModelCatalog.disabledHint',
+                        '关闭后会移除 Cockpit 受管模型目录，恢复官方模型可见性；具体可用模型由官方账号权限决定。',
                       )}
                     </p>
                   )}

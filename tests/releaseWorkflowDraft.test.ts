@@ -57,10 +57,10 @@ describe("fork draft release workflow", () => {
     );
   });
 
-  it("includes only the current upgrade version for the 1.3.32 draft", () => {
+  it("combines the exact 1.3.33-to-1.3.40 upstream release range", () => {
     assert.ok(
       workflowSource.includes(
-        'RELEASE_VERSIONS=("1.3.32")',
+        'RELEASE_VERSIONS=("1.3.40" "1.3.39" "1.3.38" "1.3.36" "1.3.35" "1.3.34" "1.3.33")',
       ),
     );
   });

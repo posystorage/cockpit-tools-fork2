@@ -1615,6 +1615,9 @@ html[data-reduced-motion="true"] .codex-api-service-key-advanced-toggle[aria-exp
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 10px;
+  max-height: min(52vh, 560px);
+  overflow-y: auto;
+  padding-right: 4px;
   min-width: 0;
 }
 
@@ -1666,6 +1669,20 @@ html[data-reduced-motion="true"] .codex-api-service-key-advanced-toggle[aria-exp
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.codex-api-service-account-activity {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.codex-api-service-account-activity.is-running {
+  color: var(--accent-color, #2563eb);
+  font-weight: 650;
 }
 
 .codex-api-service-account-card-actions {
