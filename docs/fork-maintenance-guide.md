@@ -49,7 +49,7 @@
 
 预演树中的 fork 长期边界均仍存在：去广告与赞助硬开关、空公告/远端配置/商业默认 URL、禁用运行时 updater 与更新 UI、fork updater 身份、draft-only Windows release，以及普通 Codex 页完整账号池、内部滚动、运行中/最近调度排序、最高/最低标记和服务运行时五秒轮询。Sidecar 的 `recordingSelector` 仍包住模型排除、备用、额度保留、图片选择和 session affinity 整条 selector 链，`cockpitSelector.Pick()` 没有恢复直接发送 `auth_selected`。
 
-当前 fork 的 Release workflow 只发布 Windows 草稿构建；macOS Apple Silicon、macOS Intel、macOS Universal 和 Linux job 均保持禁用。上游若重新启用这些平台，合并时必须先确认草稿 tag、Release 上传目标和签名资产策略，不得因上游并行构建改动而自动恢复 macOS 构建。
+当前 fork 的 Release workflow 同时发布 Windows 与 macOS 草稿构建，包括 macOS Apple Silicon、macOS Intel 和 macOS Universal；Linux job 保持禁用。所有平台上传必须使用 `prepare-release` 输出的真实 `release_tag`，不能根据应用版本拼接 `v${VERSION}`，否则 beta 草稿会出现 `release not found`。
 
 发布说明也属于 fork 的交付不变量：一次升级若跨越多个上游版本，草稿 Release 的中英文说明必须按降序完整包含本次合并范围内的每个版本章节；若同时包含 fork beta 修正，还要单独纳入对应 beta 章节。不能只提取最终版本，也不能因上游 workflow 改动而丢失中间版本或 fork 自定义变更。
 
@@ -84,7 +84,7 @@
 - 普通 Codex 页和独立 API Service 页继续显示所有仍存在的账号，成员过多时在卡片内部滚动，并按“调度中 -> 最近调度 -> 其他”排序；最低优先级兜底暂停开关只占最低账号的操作位。
 - 请求统计以本地 `account_id` 为主键；删除账号不删除请求日志。`official_account_id` 只有与邮箱同时匹配时才可作为受控历史别名，不能把共享 Team/Workspace ID 的不同成员串账。`codex-auto-review` 继续使用 GPT-5.6 Luna 全矩阵，价格簿迁移会清除已识别的错误默认覆盖并后台重算相关历史日志。
 - 去广告、空公告/远端配置、禁用运行时 updater、Sub2API `/usage` 与 `/v1/usage` 余额回退、数字字符串解析和非有限值拒绝均保持不变。Antigravity 额度查询/白屏问题不在本轮判定或修复范围内，待升级后单独观察。
-- Release workflow 继续只构建 Windows 草稿；每次升级只聚合“上一个 fork 基线之后、当前目标版本及其间所有上游版本”的章节。`1.3.31` 草稿保留其当轮范围，不能在后续 `1.3.32` 草稿中重复打包旧历史。
+- Release workflow 当前构建 Windows 与 macOS 草稿；每次升级只聚合“上一个 fork 基线之后、当前目标版本及其间所有上游版本”的章节。`1.3.31` 草稿保留其当轮范围，不能在后续 `1.3.32` 草稿中重复打包旧历史。
 
 本轮已清理全部冲突标记。验证结果：`cargo fmt --all -- --check`、`COCKPIT_SKIP_CLIPROXY_BUILD=1 cargo check --workspace`、TypeScript `tsc --noEmit` 和 24 项定向 Node 测试通过；本机未安装 Go，sidecar Go 编译与测试交由 Windows CI 完成。发布 tag 和 CI 结果应在实际草稿构建后继续补记于本节。
 
@@ -106,7 +106,7 @@
 - 保留 `CodexLocalAccessAccountActivity`、sidecar `recordingSelector`、`auth_selected`/finish 生命周期和 5 秒调度状态刷新。上游新增 sidecar 账号范围只扩展凭据维护范围，不得绕过 recording selector，也不得重复发送调度事件。
 - 保留普通 Codex/API Service 卡片的完整账号池、内部滚动、运行中/最近调度排序、最高/最低标记和最低优先级暂停开关。账号移除仍使用上游原子删除接口，不清空其他账号的优先级、session affinity 或 TTL 配置。
 - 保留 Sub2API `/usage`、`/v1/usage` 回退、数字字符串解析和非有限值拒绝；保留 New API 用量回退。价格公式、本地 `account_id` 主统计键、删除账号历史计费、Auto-review 按 GPT-5.6 Luna 全矩阵及历史重算均不受本轮上游改动影响。
-- 去广告、空公告/远端配置、禁用运行时 updater、通用 Provider 和 fork 下载/签名身份继续按本指南执行。macOS、Linux 构建 job 继续禁用，不因上游新增或修复平台构建而自动启用。
+- 去广告、空公告/远端配置、禁用运行时 updater、通用 Provider 和 fork 下载/签名身份继续按本指南执行。Release 当前构建 Windows 与三种 macOS 目标；Linux 仍不参与草稿构建。
 
 合并检查结果：无未解决冲突或冲突标记；`npm run typecheck`、`npm run build`、Provider 预设隐私扫描、`cargo fmt --check` 和 `git diff --check` 通过。Rust 全量测试在本机受到缺少 Go 编译器和 Windows 测试二进制 `STATUS_ENTRYPOINT_NOT_FOUND` 环境问题阻塞，未发现业务断言失败；Sidecar Go 测试需在发布 CI 的 Windows 环境补跑。本轮 `1.3.32b1` Release notes 只包含 `1.3.32`，因为它的上一个 fork 基线是 `1.3.31`；若未来一次跨越多个上游版本，必须逐个纳入该次升级范围内的版本，不能按历史起点全量回放。
 
@@ -122,7 +122,7 @@ fork 仍必须保留：
 - 普通 Codex/API Service 卡片的完整账号池、内部滚动、调度中/最近调度排序、最低优先级暂停开关，以及删除账号历史请求的本地 `account_id` 主统计键和最终 ID/邮箱展示。
 - 价格簿版本 4、`codex-auto-review` 的 GPT-5.6 Luna 全矩阵、旧错误默认价清除和历史日志后台重算；`gpt-reserve` 计费必须使用实际响应模型，不按别名错误套价。
 - 独立 API Service 页面专用的 `last24h`、`last48h`、`last7d` 统计范围；普通共享弹窗不增加这些选项。
-- 去广告、空公告/远端配置、禁用运行时 updater、Provider 中性化、Sub2API `/usage` 回退，以及只构建 Windows 草稿的 Release workflow。macOS/Linux job、自动 finalize、checksum 和 Homebrew job 必须继续 `if: ${{ false }}`。
+- 去广告、空公告/远端配置、禁用运行时 updater、Provider 中性化、Sub2API `/usage` 回退，以及同时构建 Windows 与 macOS 的草稿 Release workflow。Linux、自动 finalize、checksum 和 Homebrew job 必须继续 `if: ${{ false }}`。
 
 当前新模块迁移检查重点：不要恢复旧版巨型 `CodexAccountsPage.tsx`、`CodexApiServicePage.tsx` 或 `codex_local_access.rs`；应把 fork 行为放进上游对应的 overview/controller/view、gateway runtime、sidecar runtime 和 request-log 模块，并在每轮合并后检查 `git diff --check`、TypeScript 类型、Rust（可用 `COCKPIT_SKIP_CLIPROXY_BUILD=1`）和 Sidecar Go CI 编译。
 
@@ -865,7 +865,7 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 
 ### 11.6 Release 平台范围与多版本变更信息检查
 
-1. 检查 `.github/workflows/release.yml`：`build-macos-aarch64`、`build-macos-x86_64`、`build-macos-universal`、`build-linux`、自动 finalize、checksum 和 Homebrew job 必须保持 `if: ${{ false }}`；当前 fork 草稿只构建 Windows。
+1. 检查 `.github/workflows/release.yml`：`build-windows`、`build-macos-aarch64`、`build-macos-x86_64`、`build-macos-universal` 必须启用并统一使用真实 `release_tag`；`build-linux`、自动 finalize、checksum 和 Homebrew job 保持 `if: ${{ false }}`。
 2. 检查启用的 Windows 上传步骤使用经过校验的 `RELEASE_TAG`，不得把数字 beta tag 改写成不存在的 `v${VERSION}` 正式 tag；草稿创建必须继续使用 `--draft`，不能自动发布。
 3. 对跨多个上游版本的升级，逐项确认 `CHANGELOG.md` 与 `CHANGELOG.zh-CN.md` 都有旧锚点之后至目标版本的完整章节，并按目标版本到旧版本降序聚合到 Release notes；有 fork beta 修正时同时核对 beta 章节。
 4. 确认 workflow 中的 `RELEASE_VERSIONS` 与上述章节一一对应，不能漏版本、重复版本或只保留最新版本；变更范围测试必须覆盖该精确列表。
@@ -876,7 +876,7 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 一次上游升级只有同时满足以下条件才算完成：
 
 - 新版本号、依赖、release notes 和上游修复已同步。
-- Release 平台范围仍符合 fork 边界（只构建 Windows 草稿），且跨版本合并的中英文变更信息完整覆盖本轮所有上游版本和已纳入的 fork beta 变更。
+- Release 平台范围仍符合 fork 边界（构建 Windows 与 macOS 草稿，Linux 禁用），且跨版本合并的中英文变更信息完整覆盖本轮所有上游版本和已纳入的 fork beta 变更。
 - 四组 fork 行为逐项通过本文验收。
 - 相对新上游的差异已收敛到本文热点和必要发布文件。
 - 没有冲突标记、重复实现、非预期 referral URL 或默认商业服务。

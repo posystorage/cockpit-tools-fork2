@@ -276,6 +276,8 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
       const queries = memberAccounts.flatMap((account) =>
         buildCodexAccountWindowStatQueries(
           account.id,
+          account.account_id ?? "",
+          account.email,
           getCodexQuotaWindows(account.quota),
           now,
         ),

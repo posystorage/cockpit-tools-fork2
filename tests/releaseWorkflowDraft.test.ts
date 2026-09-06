@@ -74,11 +74,8 @@ describe("fork draft release workflow", () => {
     assert.ok(workflowSource.includes('RELEASE_VERSIONS=("1.3.21b4")'));
   });
 
-  it("builds Windows only while leaving macOS, Linux, and finalization disabled", () => {
+  it("builds Windows and macOS while leaving Linux and finalization disabled", () => {
     for (const job of [
-      "build-macos-aarch64",
-      "build-macos-x86_64",
-      "build-macos-universal",
       "build-linux",
       "finalize-legacy-latest",
       "upload-checksums",
@@ -91,6 +88,17 @@ describe("fork draft release workflow", () => {
         jobHeader.includes("if: ${{ false }}"),
         `${job} must stay disabled`,
       );
+    }
+
+    for (const job of [
+      "build-macos-aarch64",
+      "build-macos-x86_64",
+      "build-macos-universal",
+    ]) {
+      const jobStart = workflowSource.indexOf(`  ${job}:`);
+      assert.ok(jobStart >= 0, `missing ${job} job`);
+      const jobHeader = workflowSource.slice(jobStart, jobStart + 180);
+      assert.equal(jobHeader.includes("if: ${{ false }}"), false, `${job} must be enabled`);
     }
 
     const windowsStart = workflowSource.indexOf("  build-windows:");

@@ -14,7 +14,8 @@
 - 合并上游 1.3.33、1.3.34、1.3.35、1.3.36、1.3.38、1.3.39、1.3.40 的全部变更；本轮不重复聚合 1.3.32 及更早版本。
 - 在上游拆分后的 Gateway/Sidecar 模块中恢复 API Service 调度观测：所有账号的运行中/最近调度状态、唯一 `auth_selected` 事件、请求完成收口、卡片调度排序和账号过多时的内部滚动均保留。
 - 价格簿升级到 v4，`codex-auto-review` 继续按 GPT-5.6 Luna 全矩阵计费；清理旧 Sol 默认覆盖并后台重算历史请求，`gpt-reserve` 按最终响应模型计费。
-- 保留删除账号历史计费、本地账号主键、独立 API Service 页的近 24H/48H/7Day 统计、去广告/空远端配置和 Windows-only 草稿 Release 流程；macOS/Linux 构建继续禁用。
+- 保留删除账号历史计费、本地账号主键、独立 API Service 页的近 24H/48H/7Day 统计、去广告/空远端配置和 Windows + macOS 草稿 Release 流程；Linux 构建继续禁用。
+- `1.3.40b2` 修复 Codex 账号总览窗口统计调用缺少官方账号 ID/邮箱的 TypeScript 构建错误；Release workflow 恢复 Apple Silicon、Intel 与 Universal macOS 草稿产物，并改用真实 beta tag 上传资产。
 
 ### 新增
 

@@ -354,7 +354,6 @@ jobs:
 
   build-macos-aarch64:
     name: "🏗️ Build: macOS Apple Silicon"
-    if: ${{ false }}
     # Parallel with Windows / macOS Intel after prepare (no hard platform deps).
     needs:
       - prepare-release
@@ -364,6 +363,7 @@ jobs:
     env:
       GH_REPO: ${{ github.repository }}
       VERSION: ${{ needs.prepare-release.outputs.version }}
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
@@ -436,7 +436,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v${VERSION}"
+          TAG="${RELEASE_TAG}"
           shopt -s nullglob
           ASSETS=(release-assets/*)
           test "${#ASSETS[@]}" -gt 0
@@ -457,10 +457,11 @@ jobs:
             --published-at "$(cat release-metadata/published-at.txt)" \
             --targets "darwin-aarch64-app" \
             --output-dir "target-manifests"
-          gh release upload "v${VERSION}" target-manifests/*.json --clobber
+          gh release upload "${RELEASE_TAG}" target-manifests/*.json --clobber
 
       # Tag URL (not /releases/latest/) — see Windows verify comment.
       - name: 🔍 Verify published macOS Apple Silicon updater manifest
+        if: ${{ false }}
         shell: bash
         run: |
           set -euo pipefail
@@ -472,7 +473,6 @@ jobs:
 
   build-macos-x86_64:
     name: "🏗️ Build: macOS Intel"
-    if: ${{ false }}
     # Parallel with Windows / macOS Apple Silicon after prepare.
     needs:
       - prepare-release
@@ -482,6 +482,7 @@ jobs:
     env:
       GH_REPO: ${{ github.repository }}
       VERSION: ${{ needs.prepare-release.outputs.version }}
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
@@ -554,7 +555,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v${VERSION}"
+          TAG="${RELEASE_TAG}"
           shopt -s nullglob
           ASSETS=(release-assets/*)
           test "${#ASSETS[@]}" -gt 0
@@ -575,10 +576,11 @@ jobs:
             --published-at "$(cat release-metadata/published-at.txt)" \
             --targets "darwin-x86_64-app" \
             --output-dir "target-manifests"
-          gh release upload "v${VERSION}" target-manifests/*.json --clobber
+          gh release upload "${RELEASE_TAG}" target-manifests/*.json --clobber
 
       # Tag URL (not /releases/latest/) — see Windows verify comment.
       - name: 🔍 Verify published macOS Intel updater manifest
+        if: ${{ false }}
         shell: bash
         run: |
           set -euo pipefail
@@ -590,9 +592,6 @@ jobs:
 
   build-macos-universal:
     name: "🏗️ Build: macOS Universal"
-    if: ${{ false }}
-    # Fork draft releases currently publish Windows assets only; keep all
-    # macOS jobs disabled until macOS artifacts are explicitly needed again.
     # This is an independent source build; run it in parallel with the two
     # architecture-specific jobs instead of waiting for their release assets.
     needs:
@@ -603,6 +602,7 @@ jobs:
     env:
       GH_REPO: ${{ github.repository }}
       VERSION: ${{ needs.prepare-release.outputs.version }}
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
@@ -669,7 +669,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v${VERSION}"
+          TAG="${RELEASE_TAG}"
           shopt -s nullglob
           ASSETS=(release-assets/*)
           test "${#ASSETS[@]}" -gt 0

@@ -14,7 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Merged all upstream changes from 1.3.33, 1.3.34, 1.3.35, 1.3.36, 1.3.38, 1.3.39, and 1.3.40; this release does not repeat 1.3.32 or earlier history.
 - Restored API Service dispatch observability in the upstream-split Gateway/Sidecar modules: running/recent activity for every account, one `auth_selected` event, request completion, dispatch ordering, and an internal scroll area for large account pools.
 - Raised the pricing book to v4; `codex-auto-review` remains on the full GPT-5.6 Luna matrix. Old Sol defaults are removed and historical requests are repriced in the background; `gpt-reserve` is billed from the final response model.
-- Preserved deleted-account historical billing, local account IDs as the primary key, 24H/48H/7Day ranges on the standalone API Service page, ad/remote-config disabling, and Windows-only draft releases; macOS/Linux builds remain disabled.
+- Preserved deleted-account historical billing, local account IDs as the primary key, 24H/48H/7Day ranges on the standalone API Service page, ad/remote-config disabling, and Windows + macOS draft releases; Linux builds remain disabled.
+- `1.3.40b2` fixes the TypeScript build error caused by omitting the official account ID/email from Codex overview window-stat queries; the Release workflow now builds Apple Silicon, Intel, and Universal macOS draft assets and uploads them using the real beta tag.
 
 ### Added
 
