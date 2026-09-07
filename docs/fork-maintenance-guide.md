@@ -13,6 +13,17 @@
 
 除此以外，原则上跟随上游。发布工作流、fork 下载地址、签名密钥和免责声明属于交付差异，不应扩张成新的产品分叉。
 
+### 当前发布构建硬性要求
+
+以后每一个用于草稿或正式 Release 的编译 tag，都必须同时生成并上传 Windows 与 macOS 安装产物：
+
+- Windows x86_64（MSI、NSIS）；
+- macOS Apple Silicon（aarch64）；
+- macOS Intel（x86_64）；
+- macOS Universal（同时兼容 Apple Silicon 与 Intel）。
+
+Release workflow 中 `build-windows`、`build-macos-aarch64`、`build-macos-x86_64` 和 `build-macos-universal` 必须保持启用，并把所有产物上传到同一个草稿 Release tag。Linux、自动 finalize、checksum 和 Homebrew job 仍按 fork 策略禁用。任何只生成 Windows、跳过 macOS、或把 beta tag 上传到其他版本 tag 的结果都视为发布失败，必须修正 workflow 后重新触发编译。
+
 事实来源按优先级排序：
 
 1. 当前代码与测试。
@@ -139,7 +150,7 @@ fork 仍必须保留：
 
 `v1.3.10..v1.3.16` 共 37 个提交、209 个文件，净变化为 30991 行新增、3832 行删除。`git merge-tree` 预演确认只有两个文本冲突文件和一个删除/修改冲突：
 
-- `.github/workflows/release.yml`：约 12 个冲突块。吸收上游缓存、并发保护和 action 更新，继续保留 fork 数字草稿标签、Windows 构建范围、签名、release notes 与禁用非目标平台的策略。
+- `.github/workflows/release.yml`：约 12 个冲突块。吸收上游缓存、并发保护和 action 更新，继续保留 fork 数字草稿标签、Windows 与 macOS 构建范围、签名、release notes 与禁用 Linux 等非目标平台的策略。
 - `src-tauri/src/modules/codex_local_access.rs`：约 5 个冲突块，集中在模型 import、state snapshot 和测试 import。合并上游 preparing/refreshing、reasoning/token breakdown、Agent Identity 和使用优先级字段，同时保留 fork 的 `runningRequests/accountActivity` 及 selected/finish 生命周期。
 - `Casks/cockpit-tools.rb`：fork 删除、上游修改；继续保持删除。
 
@@ -158,7 +169,7 @@ fork 仍必须保留：
 
 真实合并与预演一致，只出现上述三个显式冲突。最终裁决如下：
 
-- `.github/workflows/release.yml` 同时保留上游的 concurrency、Rust/Tauri 缓存和 action 命名更新，以及 fork 的数字/草稿 tag、仅构建 Windows、禁用自动 finalize/checksum/Homebrew 和旧 `latest.json` 保护。复核时发现旧 fork 的 prepare 阶段虽然文案称“草稿”，实际会立即执行 `--draft=false`；本轮改为新建和重跑都必须保持 draft，若同 tag 已正式发布则直接拒绝覆盖。
+- `.github/workflows/release.yml` 同时保留上游的 concurrency、Rust/Tauri 缓存和 action 命名更新，以及 fork 的数字/草稿 tag、Windows + macOS 构建、禁用自动 finalize/checksum/Homebrew 和旧 `latest.json` 保护。复核时发现旧 fork 的 prepare 阶段虽然文案称“草稿”，实际会立即执行 `--draft=false`；本轮改为新建和重跑都必须保持 draft，若同 tag 已正式发布则直接拒绝覆盖。
 - `src-tauri/src/modules/codex_local_access.rs` 合并双方 import、state snapshot 与测试 import。保留 `running_requests/account_activity`，并接受上游 `service_enabled`、准备/刷新进度、token breakdown、Agent Identity、模型排除和最高/最低优先级。Rust 首次编译还发现 Responses rejected-field 错误映射漏填新增的 `activity_request_id`，已使用当前请求 ID 修复，保证异常结束路径能正确清理调度活动。
 - `Casks/cockpit-tools.rb` 继续删除。Sidecar 自动合并结果保留最外层 `recordingSelector`，`cockpitSelector.Pick()` 不直接发送事件；上游模型排除、最高/普通/最低、额度保留、图片和 session affinity 全部位于记录器内部。
 - 普通 Codex 卡片继续完整渲染并内部滚动，排序仍只依据运行中和最近调度活动；静态优先级只显示“最高/最低”紧凑标记。移出成员时会过滤并保留剩余 preferred/backup ID，同时原样传递 session affinity 和 TTL。
@@ -737,7 +748,7 @@ GPT-5.6 Luna（美元 / 百万 token）：
 
 这些差异通常保留，但与四组核心产品行为分开审查：
 
-- `.github/workflows/release.yml`：fork 的 draft/tag、Windows 构建和 release notes 策略；非目标平台 job 当前被禁用。
+- `.github/workflows/release.yml`：fork 的 draft/tag、Windows + macOS 构建和 release notes 策略；Linux、自动 finalize、checksum 和 Homebrew 等非目标 job 当前被禁用。历史章节中出现的“仅构建 Windows”只描述当时的旧策略，不得作为当前发布配置依据。
 - `src-tauri/tauri.conf.json`：fork updater 公钥和 fork release endpoint。即使 runtime updater 已禁用，也不能指回上游签名/制品。
 - `src/utils/updaterReleaseNotes.ts`：fallback release URL 指向 fork。
 - `README.md`、`README.en.md`、`README.pt-br.md`：fork 差异和免责声明。
@@ -866,10 +877,11 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 ### 11.6 Release 平台范围与多版本变更信息检查
 
 1. 检查 `.github/workflows/release.yml`：`build-windows`、`build-macos-aarch64`、`build-macos-x86_64`、`build-macos-universal` 必须启用并统一使用真实 `release_tag`；`build-linux`、自动 finalize、checksum 和 Homebrew job 保持 `if: ${{ false }}`。
-2. 检查启用的 Windows 上传步骤使用经过校验的 `RELEASE_TAG`，不得把数字 beta tag 改写成不存在的 `v${VERSION}` 正式 tag；草稿创建必须继续使用 `--draft`，不能自动发布。
-3. 对跨多个上游版本的升级，逐项确认 `CHANGELOG.md` 与 `CHANGELOG.zh-CN.md` 都有旧锚点之后至目标版本的完整章节，并按目标版本到旧版本降序聚合到 Release notes；有 fork beta 修正时同时核对 beta 章节。
-4. 确认 workflow 中的 `RELEASE_VERSIONS` 与上述章节一一对应，不能漏版本、重复版本或只保留最新版本；变更范围测试必须覆盖该精确列表。
-5. 至少运行 `node --test tests/releaseWorkflowDraft.test.ts`、`git diff --check`，并在推送 tag 前复核工作流没有重新启用 macOS job 或删除多版本日志聚合规则。
+2. 每个编译 tag 必须在同一个草稿 Release 中看到 Windows MSI/NSIS、macOS Apple Silicon、macOS Intel 和 macOS Universal 产物；任一 macOS job 被跳过或没有上传资产都视为失败。
+3. 检查启用的 Windows 和 macOS 上传步骤使用经过校验的 `RELEASE_TAG`，不得把数字 beta tag 改写成不存在的 `v${VERSION}` 正式 tag；草稿创建必须继续使用 `--draft`，不能自动发布。
+4. 对跨多个上游版本的升级，逐项确认 `CHANGELOG.md` 与 `CHANGELOG.zh-CN.md` 都有旧锚点之后至目标版本的完整章节，并按目标版本到旧版本降序聚合到 Release notes；有 fork beta 修正时同时核对 beta 章节。
+5. 确认 workflow 中的 `RELEASE_VERSIONS` 与上述章节一一对应，不能漏版本、重复版本或只保留最新版本；变更范围测试必须覆盖该精确列表。
+6. 至少运行 `node --test tests/releaseWorkflowDraft.test.ts`、`git diff --check`，并在推送 tag 前复核工作流没有重新禁用 macOS job 或删除多版本日志聚合规则。
 
 ## 12. 完成定义
 
