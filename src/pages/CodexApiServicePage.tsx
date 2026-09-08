@@ -74,10 +74,13 @@ import { requestCodexOpenAddAccount } from "../utils/codexAddAccountRequest";
 import { scrollElementTo } from "../utils/reducedMotion";
 import { useCodexAccountOverviewMemberView } from "../hooks/useCodexAccountOverviewMemberView";
 import {
-  buildCodexStatsTimeRange,
   type CodexStatsRangeKey,
   type CodexStatsTimeRange,
 } from "../utils/codexStatsRange";
+import {
+  persistCodexStatsRangeSelection,
+  readCodexStatsRangeSelection,
+} from "../utils/codexStatsRangePreference";
 import "./CodexApiServicePage.css";
 import { CodexApiServiceView } from "./CodexApiServiceView";
 
@@ -183,33 +186,6 @@ function readStoredAddressKind(): CodexLocalAccessAddressKind {
 function persistAddressKind(value: CodexLocalAccessAddressKind): void {
   try {
     localStorage.setItem(ADDRESS_KIND_STORAGE_KEY, value);
-  } catch {
-    // ignore storage failures
-  }
-}
-
-function normalizeStatsRange(value: string | null | undefined): CodexStatsRangeKey {
-  if (
-    value === "weekly" ||
-    value === "monthly" ||
-    value === "last24h" ||
-    value === "last48h" ||
-    value === "last7d"
-  ) return value;
-  return "daily";
-}
-
-function readStoredStatsRange(): CodexStatsRangeKey {
-  try {
-    return normalizeStatsRange(localStorage.getItem(STATS_RANGE_STORAGE_KEY));
-  } catch {
-    return "daily";
-  }
-}
-
-function persistStatsRange(value: CodexStatsRangeKey): void {
-  try {
-    localStorage.setItem(STATS_RANGE_STORAGE_KEY, value);
   } catch {
     // ignore storage failures
   }
@@ -742,12 +718,10 @@ export function useCodexApiServicePageController() {
   const [groups, setGroups] = useState<CodexAccountGroup[]>([]);
   const [activeTab, setActiveTab] = useState<ServiceTab>("overview");
   const [statsLogTab, setStatsLogTab] = useState<StatsLogTab>("logs");
-  const [statsRange, setStatsRange] = useState<CodexStatsRangeKey>(() =>
-    readStoredStatsRange(),
+  const [statsSelection, setStatsSelection] = useState(() =>
+    readCodexStatsRangeSelection(STATS_RANGE_STORAGE_KEY),
   );
-  const [statsTimeRange, setStatsTimeRange] = useState<CodexStatsTimeRange>(() =>
-    buildCodexStatsTimeRange(readStoredStatsRange()),
-  );
+  const { key: statsRange, range: statsTimeRange } = statsSelection;
   const [filteredStatsWindow, setFilteredStatsWindow] =
     useState<CodexLocalAccessStatsWindow | null>(null);
   const [statsRangeError, setStatsRangeError] = useState("");
@@ -830,6 +804,8 @@ export function useCodexApiServicePageController() {
     useState<CodexLocalAccessUsageEventPage | null>(null);
   const [requestLogLoading, setRequestLogLoading] = useState(false);
   const [requestLogError, setRequestLogError] = useState("");
+  const [statsDetailsRefreshing, setStatsDetailsRefreshing] = useState(false);
+  const [requestLogRefreshNonce, setRequestLogRefreshNonce] = useState(0);
   const [requestLogKindFilter, setRequestLogKindFilter] =
     useState<RequestLogKindFilter>("all");
   const [requestLogStatusFilter, setRequestLogStatusFilter] =
@@ -890,11 +866,17 @@ export function useCodexApiServicePageController() {
   const selectedStatsWindow =
     useMemo<CodexLocalAccessStatsWindow | null>(() => {
       if (filteredStatsWindow) return filteredStatsWindow;
-      if (!stats || statsRange === "custom") return null;
-      if (statsRange === "daily" || statsRange === "weekly" || statsRange === "monthly") {
-        return stats[statsRange];
+      if (
+        !stats ||
+        statsRange === "custom" ||
+        statsRange === "rolling7d" ||
+        statsRange === "last24h" ||
+        statsRange === "last48h" ||
+        statsRange === "last7d"
+      ) {
+        return filteredStatsWindow;
       }
-      return null;
+      return stats[statsRange];
     }, [filteredStatsWindow, stats, statsRange]);
   const apiKeyStatsById = new Map(
     (selectedStatsWindow?.apiKeys ?? []).map((item) => [item.apiKeyId, item]),
@@ -1261,6 +1243,32 @@ export function useCodexApiServicePageController() {
     }
   }, []);
 
+  const handleRefreshStatsDetails = useCallback(async () => {
+    if (statsDetailsRefreshing) return;
+    setStatsDetailsRefreshing(true);
+    setStatsRangeError("");
+    setRequestLogError("");
+    try {
+      const [nextStats] = await Promise.all([
+        codexLocalAccessService.queryCodexLocalAccessStats(
+          statsTimeRange.startAt,
+          statsTimeRange.endAt,
+        ),
+        reloadState(),
+      ]);
+      if (mountedRef.current) {
+        setFilteredStatsWindow(nextStats);
+        setRequestLogRefreshNonce((value) => value + 1);
+      }
+    } catch (refreshError) {
+      if (mountedRef.current) {
+        setStatsRangeError(String(refreshError).replace(/^Error:\s*/, ""));
+      }
+    } finally {
+      if (mountedRef.current) setStatsDetailsRefreshing(false);
+    }
+  }, [reloadState, statsDetailsRefreshing, statsTimeRange.endAt, statsTimeRange.startAt]);
+
   useEffect(() => {
     mountedRef.current = true;
     void reloadState().catch((err) =>
@@ -1368,10 +1376,6 @@ export function useCodexApiServicePageController() {
   }, [reloadState, t]);
 
   useEffect(() => {
-    persistStatsRange(statsRange);
-  }, [statsRange]);
-
-  useEffect(() => {
     const requestSeq = ++statsRequestSeqRef.current;
     setStatsRangeError("");
     void codexLocalAccessService
@@ -1390,13 +1394,15 @@ export function useCodexApiServicePageController() {
     key: Exclude<CodexStatsRangeKey, "custom">,
     range: CodexStatsTimeRange,
   ) => {
-    setStatsRange(key);
-    setStatsTimeRange(range);
+    const selection = { key, range };
+    setStatsSelection(selection);
+    persistCodexStatsRangeSelection(STATS_RANGE_STORAGE_KEY, selection);
   };
 
   const handleCustomStatsRangeApply = (range: CodexStatsTimeRange) => {
-    setStatsRange("custom");
-    setStatsTimeRange(range);
+    const selection = { key: "custom" as const, range };
+    setStatsSelection(selection);
+    persistCodexStatsRangeSelection(STATS_RANGE_STORAGE_KEY, selection);
   };
 
   useEffect(() => {
@@ -1469,7 +1475,14 @@ export function useCodexApiServicePageController() {
       .queryCodexLocalAccessRequestLogs({
         page: requestLogPage,
         pageSize: requestLogPageSize,
-        statsRange: statsRange === "custom" ? null : statsRange,
+        statsRange:
+          statsRange === "custom" ||
+          statsRange === "rolling7d" ||
+          statsRange === "last24h" ||
+          statsRange === "last48h" ||
+          statsRange === "last7d"
+            ? null
+            : statsRange,
         startAt: statsTimeRange.startAt,
         endAt: statsTimeRange.endAt,
         modelQuery: requestLogModelQuery,
@@ -1522,6 +1535,7 @@ export function useCodexApiServicePageController() {
     requestLogApiKeyQuery,
     requestLogInstanceQuery,
     requestLogErrorQuery,
+    requestLogRefreshNonce,
     stats?.updatedAt,
   ]);
 
@@ -3416,6 +3430,8 @@ export function useCodexApiServicePageController() {
   const selectedStatsRangeTitle =
     statsRange === "daily"
       ? t("codex.apiService.statsRange.today", "Today")
+      : statsRange === "rolling7d"
+        ? t("codex.sessionUsage.range.7d", "近 7 天")
       : statsRange === "weekly"
         ? t("codex.apiService.statsRange.thisWeek", "This week")
         : statsRange === "monthly"
@@ -3681,6 +3697,7 @@ export function useCodexApiServicePageController() {
     handleActivateService,
     handleApplyAccountModelRuleBulk,
     handleClearStats,
+    handleRefreshStatsDetails,
     handleCloseAccountModelMappings,
     handleCloseAccountModelRules,
     handleCloseTestDialog,
@@ -3775,6 +3792,7 @@ export function useCodexApiServicePageController() {
     requestLogKindFilter,
     requestLogKindOptions,
     requestLogLoading,
+    statsDetailsRefreshing,
     requestLogModelQuery,
     requestLogPageSize,
     requestLogRangeEnd,

@@ -121,7 +121,7 @@ Release workflow 中 `build-windows`、`build-macos-aarch64`、`build-macos-x86_
 
 合并检查结果：无未解决冲突或冲突标记；`npm run typecheck`、`npm run build`、Provider 预设隐私扫描、`cargo fmt --check` 和 `git diff --check` 通过。Rust 全量测试在本机受到缺少 Go 编译器和 Windows 测试二进制 `STATUS_ENTRYPOINT_NOT_FOUND` 环境问题阻塞，未发现业务断言失败；Sidecar Go 测试需在发布 CI 的 Windows 环境补跑。本轮 `1.3.32b1` Release notes 只包含 `1.3.32`，因为它的上一个 fork 基线是 `1.3.31`；若未来一次跨越多个上游版本，必须逐个纳入该次升级范围内的版本，不能按历史起点全量回放。
 
-### 2.4 `v1.3.40` 合并边界（施工中，2026-09-06）
+### 2.4 `v1.3.40` 合并边界（已验证，2026-09-06）
 
 本轮从已验证 fork `1.3.32b1` 升级到上游 `v1.3.40`，实际 Release 说明只聚合本轮跨越的上游章节：`1.3.40`、`1.3.39`、`1.3.38`、`1.3.36`、`1.3.35`、`1.3.34`、`1.3.33`。`1.3.32` 及更早版本已属于上一轮基线，不得重复写入本轮说明。
 
@@ -132,10 +132,19 @@ fork 仍必须保留：
 - API Service 调度观测的 `running_requests`、`account_activity`、`auth_selected` 唯一事件和请求完成收口；`recordingSelector` 必须位于上游 selector 链最外层，以覆盖 session-affinity cache-hit。
 - 普通 Codex/API Service 卡片的完整账号池、内部滚动、调度中/最近调度排序、最低优先级暂停开关，以及删除账号历史请求的本地 `account_id` 主统计键和最终 ID/邮箱展示。
 - 价格簿版本 4、`codex-auto-review` 的 GPT-5.6 Luna 全矩阵、旧错误默认价清除和历史日志后台重算；`gpt-reserve` 计费必须使用实际响应模型，不按别名错误套价。
-- 独立 API Service 页面专用的 `last24h`、`last48h`、`last7d` 统计范围；普通共享弹窗不增加这些选项。
+- 独立 API Service 页面专用的 `last24h`、`last48h` 统计范围；默认 7 天范围使用上游 `rolling7d`，普通共享弹窗不增加 24H/48H 选项。
 - 去广告、空公告/远端配置、禁用运行时 updater、Provider 中性化、Sub2API `/usage` 回退，以及同时构建 Windows 与 macOS 的草稿 Release workflow。Linux、自动 finalize、checksum 和 Homebrew job 必须继续 `if: ${{ false }}`。
 
 当前新模块迁移检查重点：不要恢复旧版巨型 `CodexAccountsPage.tsx`、`CodexApiServicePage.tsx` 或 `codex_local_access.rs`；应把 fork 行为放进上游对应的 overview/controller/view、gateway runtime、sidecar runtime 和 request-log 模块，并在每轮合并后检查 `git diff --check`、TypeScript 类型、Rust（可用 `COCKPIT_SKIP_CLIPROXY_BUILD=1`）和 Sidecar Go CI 编译。
+
+### 2.4.1 `v1.3.41`-`v1.3.42` 合并边界（施工中）
+
+本轮从已验证的 `v1.3.40` fork 基线升级到上游 `v1.3.42`，Release 说明只聚合 `1.3.41` 和 `1.3.42` 两个本轮实际跨越的版本，不回放 `1.3.40` 及更早版本。
+
+- 统计范围接受上游 `rolling7d` 并作为默认值；fork 的 `last24h`、`last48h` 只在独立 API Service 页面保留。旧 `last7d` localStorage 值仅作为兼容输入迁移为 `rolling7d`，不得再创建第二个 7 天可见选项。
+- Sidecar 接受上游 quota cooldown、容量错误重试、Credits/unlimited 资格判断、自动恢复和刷新锁回收；合并时必须保留 fork 的五小时/周窗口分离、`gpt-reserve` 规则、删除账号历史计费和 `recordingSelector` 最外层事件记录。
+- `running_requests`、`account_activity`、`auth_selected`、请求完成收口、普通 Codex 页面完整账号池、调度优先排序和大账号池滚动显示属于 fork 业务边界，不得被上游统计趋势、健康弹框或 Sidecar selector 重构删除。
+- 上游 `trend`/`trendHourly`、统计明细刷新、context management、模型目录和会话用量趋势可以接收，但必须继续保留 GPT-5.6 Luna 计费、Sub2API 用量回退、去广告/空远端配置、运行时 updater 禁用，以及 Windows + macOS 草稿构建要求。
 
 ### 2.5 `v1.3.16` 已验证基线（2026-08-06）
 

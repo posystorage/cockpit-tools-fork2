@@ -12,6 +12,7 @@ import { SingleSelectDropdown } from "../components/SingleSelectDropdown";
 import { CodexLocalAccessModal } from "../components/CodexLocalAccessModal";
 import { CodexAccountPoolHealthModal } from "../components/CodexAccountPoolHealthModal";
 import { CodexStatsRangePicker } from "../components/CodexStatsRangePicker";
+import { CodexUsageTrend } from "../components/codex/CodexUsageTrend";
 import { PaginationControls } from "../components/PaginationControls";
 import type {
   CodexLocalAccessCustomRoutingRule,
@@ -90,6 +91,7 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
     handleActivateService,
     handleApplyAccountModelRuleBulk,
     handleClearStats,
+    handleRefreshStatsDetails,
     handleCloseAccountModelMappings,
     handleCloseAccountModelRules,
     handleCloseTestDialog,
@@ -184,6 +186,7 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
     requestLogKindFilter,
     requestLogKindOptions,
     requestLogLoading,
+    statsDetailsRefreshing,
     requestLogModelQuery,
     requestLogPageSize,
     requestLogRangeEnd,
@@ -535,6 +538,7 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
             disabled={busy}
             error={statsRangeError}
             compact
+            showRollingPresets
           />
         </section>
 
@@ -547,6 +551,8 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
             </div>
           ))}
         </section>
+
+        <CodexUsageTrend statsWindow={selectedStatsWindow} />
 
         {activeTab === "overview" && (
           <div className="codex-api-service-grid two">
@@ -844,7 +850,7 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
           <section className="codex-api-service-panel">
             <div className="codex-api-service-panel-head">
               <h2>{t("codex.localAccess.apiKeysTitle", "客户端 Key")}</h2>
-              <div className="codex-api-service-head-actions">
+                <div className="codex-api-service-head-actions">
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"
@@ -2055,6 +2061,19 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                 ))}
               </div>
               <div className="codex-api-service-head-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => void handleRefreshStatsDetails()}
+                  disabled={busy || statsDetailsRefreshing}
+                  title={t("codex.localAccess.refreshStats", "刷新统计")}
+                >
+                  <RefreshCw
+                    size={14}
+                    className={statsDetailsRefreshing ? "loading-spinner" : ""}
+                  />
+                  {t("common.refresh", "刷新")}
+                </button>
                 <button
                   type="button"
                   className="btn btn-danger btn-sm"

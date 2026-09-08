@@ -78,10 +78,13 @@ import { PaginationControls } from "./PaginationControls";
 import { CodexStatsRangePicker } from "./CodexStatsRangePicker";
 import { queryCodexLocalAccessStats } from "../services/codexLocalAccessService";
 import {
-  buildCodexStatsTimeRange,
   type CodexStatsRangeKey,
   type CodexStatsTimeRange,
 } from "../utils/codexStatsRange";
+import {
+  persistCodexStatsRangeSelection,
+  readCodexStatsRangeSelection,
+} from "../utils/codexStatsRangePreference";
 import { useEscClose } from "../hooks/useEscClose";
 import {
   buildPaginationPageSizeStorageKey,
@@ -215,15 +218,6 @@ function normalizeAccessScope(value: string): CodexLocalAccessScope {
   return value === "lan" ? "lan" : "localhost";
 }
 
-function normalizeStatsRangeKey(
-  value: string | null | undefined,
-): CodexStatsRangeKey {
-  if (value === "weekly" || value === "monthly") {
-    return value;
-  }
-  return "daily";
-}
-
 function clampInteger(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, Math.round(value)));
@@ -251,24 +245,6 @@ function resolveAccountUsagePriority(
   if (rule?.isPreferred) return "highest";
   if (rule?.isBackup) return "lowest";
   return "normal";
-}
-
-function readStoredStatsRange(): CodexStatsRangeKey {
-  try {
-    return normalizeStatsRangeKey(
-      localStorage.getItem(CODEX_LOCAL_ACCESS_STATS_RANGE_STORAGE_KEY),
-    );
-  } catch {
-    return "daily";
-  }
-}
-
-function persistStatsRange(value: CodexStatsRangeKey): void {
-  try {
-    localStorage.setItem(CODEX_LOCAL_ACCESS_STATS_RANGE_STORAGE_KEY, value);
-  } catch {
-    // ignore storage write failures
-  }
 }
 
 function formatCompactNumber(value: number): string {
@@ -420,12 +396,10 @@ export function CodexLocalAccessModal({
   const [keyVisible, setKeyVisible] = useState(false);
   const [copiedField, setCopiedField] = useState<CopyableField | null>(null);
   const [selectedModelId, setSelectedModelId] = useState("");
-  const [statsRange, setStatsRange] = useState<CodexStatsRangeKey>(() =>
-    readStoredStatsRange(),
+  const [statsSelection, setStatsSelection] = useState(() =>
+    readCodexStatsRangeSelection(CODEX_LOCAL_ACCESS_STATS_RANGE_STORAGE_KEY),
   );
-  const [statsTimeRange, setStatsTimeRange] = useState<CodexStatsTimeRange>(() =>
-    buildCodexStatsTimeRange(readStoredStatsRange()),
-  );
+  const { key: statsRange, range: statsTimeRange } = statsSelection;
   const [filteredStatsWindow, setFilteredStatsWindow] =
     useState<CodexLocalAccessStatsWindow | null>(null);
   const [statsRangeError, setStatsRangeError] = useState("");
@@ -476,11 +450,12 @@ export function CodexLocalAccessModal({
       if (
         !stats ||
         statsRange === "custom" ||
+        statsRange === "rolling7d" ||
         statsRange === "last24h" ||
         statsRange === "last48h" ||
         statsRange === "last7d"
       ) {
-        return null;
+        return filteredStatsWindow;
       }
       return stats[statsRange];
     }, [filteredStatsWindow, stats, statsRange]);
@@ -789,8 +764,10 @@ export function CodexLocalAccessModal({
   }, [modelIds]);
 
   useEffect(() => {
-    persistStatsRange(statsRange);
-  }, [statsRange]);
+    if (isOpen) {
+      setStatsSelection(readCodexStatsRangeSelection(CODEX_LOCAL_ACCESS_STATS_RANGE_STORAGE_KEY));
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -811,13 +788,15 @@ export function CodexLocalAccessModal({
     key: Exclude<CodexStatsRangeKey, "custom">,
     range: CodexStatsTimeRange,
   ) => {
-    setStatsRange(key);
-    setStatsTimeRange(range);
+    const selection = { key, range };
+    setStatsSelection(selection);
+    persistCodexStatsRangeSelection(CODEX_LOCAL_ACCESS_STATS_RANGE_STORAGE_KEY, selection);
   };
 
   const handleCustomStatsRangeApply = (range: CodexStatsTimeRange) => {
-    setStatsRange("custom");
-    setStatsTimeRange(range);
+    const selection = { key: "custom" as const, range };
+    setStatsSelection(selection);
+    persistCodexStatsRangeSelection(CODEX_LOCAL_ACCESS_STATS_RANGE_STORAGE_KEY, selection);
   };
 
   useEffect(() => {

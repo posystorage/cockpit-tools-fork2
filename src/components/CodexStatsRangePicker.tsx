@@ -66,6 +66,7 @@ export function CodexStatsRangePicker({
 
   const presets = [
     { key: "daily" as const, label: t("codex.localAccess.statsRange.daily", "日") },
+    { key: "rolling7d" as const, label: t("codex.sessionUsage.range.7d", "近 7 天") },
     { key: "weekly" as const, label: t("codex.localAccess.statsRange.weekly", "周") },
     { key: "monthly" as const, label: t("codex.localAccess.statsRange.monthly", "月") },
     ...(showRollingPresets
@@ -77,10 +78,6 @@ export function CodexStatsRangePicker({
           {
             key: "last48h" as const,
             label: t("codex.localAccess.statsRange.last48h", "48H"),
-          },
-          {
-            key: "last7d" as const,
-            label: t("codex.localAccess.statsRange.last7d", "7Day"),
           },
         ]
       : []),
