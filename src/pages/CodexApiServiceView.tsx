@@ -13,6 +13,7 @@ import { CodexLocalAccessModal } from "../components/CodexLocalAccessModal";
 import { CodexAccountPoolHealthModal } from "../components/CodexAccountPoolHealthModal";
 import { CodexStatsRangePicker } from "../components/CodexStatsRangePicker";
 import { CodexUsageTrend } from "../components/codex/CodexUsageTrend";
+import { isCodexLocalAccessBackupDispatchEnabled } from "../utils/codexLocalAccessBackupDispatch";
 import { PaginationControls } from "../components/PaginationControls";
 import type {
   CodexLocalAccessCustomRoutingRule,
@@ -61,6 +62,7 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
     apiServiceIsCurrent,
     applyTimeoutPreset,
     availableAccountCount,
+    backupAccountIdSet,
     busy,
     cleanRequestLogErrorDetail,
     clearRequestLogFilters,
@@ -129,6 +131,7 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
     handleSetApiKeyAccountPriority,
     handleStatsPresetChange,
     handleToggleApiKey,
+    handleToggleBackupDispatch,
     handleToggleEnabled,
     handleUpdateAccessScope,
     handleUpdateClientBaseUrlHost,
@@ -136,6 +139,7 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
     handleUpdateTimeoutPreset,
     hasRequestLogFilters,
     healthByAccountId,
+    historicalAccountRows,
     healthModalOpen,
     imageUnavailableCount,
     immediateSseResponseDraft,
@@ -282,6 +286,61 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
     updatePricingDraft,
     updateTimeoutDraft,
   } = props;
+  const renderHistoricalAccountSection = (keyPrefix: string) =>
+    historicalAccountRows.length > 0 ? (
+      <>
+        <h3 className="codex-api-service-account-section-title is-history">
+          {t("codex.localAccess.historicalAccounts", "历史账号")}
+        </h3>
+        <div className="codex-api-service-account-grid codex-api-service-history-account-grid">
+          {historicalAccountRows.map(({ stat, account, status }) => {
+            const presentation = account
+              ? buildCodexAccountPresentation(account, t)
+              : null;
+            const displayName =
+              presentation?.displayName || stat.email || stat.accountId;
+            return (
+              <div
+                key={`${keyPrefix}-${stat.accountId}`}
+                className="codex-api-service-account-card codex-api-service-history-account-card"
+              >
+                <div>
+                  <strong title={displayName}>
+                    {maskAccountText(displayName)}
+                  </strong>
+                  {presentation && (
+                    <span className={`tier-badge ${presentation.planClass}`}>
+                      {presentation.planLabel}
+                    </span>
+                  )}
+                  <span
+                    className={`codex-api-service-history-account-tag is-${status}`}
+                  >
+                    {status === "not-joined"
+                      ? t("codex.localAccess.historyNotJoined", "未加入")
+                      : t("codex.localAccess.historyDeleted", "已删除")}
+                  </span>
+                </div>
+                <div className="codex-api-service-account-meta">
+                  <span>
+                    {t("codex.localAccess.stats.accountRequests", {
+                      count: stat.usage.requestCount,
+                      defaultValue: "{{count}} 次",
+                    })}
+                  </span>
+                  <span className="codex-api-service-account-meta-token">
+                    {formatAccountTokenUsage(stat.usage)}
+                  </span>
+                  <span>{formatRequestResultDetail(stat.usage)}</span>
+                  <span>{formatUsdCost(stat.usage.estimatedCostUsd)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </>
+    ) : null;
+
   return (
     <div className="codex-api-service-page">
       <div className="page-top-strip">
@@ -1637,6 +1696,19 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                     );
                     const health = healthByAccountId.get(account.id);
                     const activity = activityByAccountId.get(account.id);
+                    const isBackupAccount = backupAccountIdSet.has(account.id);
+                    const backupDispatchEnabled =
+                      isCodexLocalAccessBackupDispatchEnabled(
+                        collection?.accountModelRules,
+                        account.id,
+                      );
+                    const activityPredatesPause =
+                      isBackupAccount &&
+                      !backupDispatchEnabled &&
+                      (activity?.lastSelectedAt ?? 0) > 0 &&
+                      (collection?.updatedAt ?? 0) > 0 &&
+                      (activity?.lastSelectedAt ?? 0) <=
+                        (collection?.updatedAt ?? 0);
                     const stat = selectedStatsWindow?.accounts.find(
                       (item) => item.accountId === account.id,
                     );
@@ -1696,11 +1768,15 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                                   )
                                 : t("codex.localAccess.healthAvailable", "可用")}
                           </span>
-                          {activity && (activity.runningCount > 0 || activity.lastSelectedAt > 0) ? (
+                          {activity &&
+                          (activity.runningCount > 0 ||
+                            (activity.lastSelectedAt > 0 && !activityPredatesPause)) ? (
                             <span className={activity.runningCount > 0 ? "codex-api-service-account-activity is-running" : "codex-api-service-account-activity"}>
                               <Activity size={12} />
                               {activity.runningCount > 0
-                                ? t("codex.apiService.accountActivity.running", { count: activity.runningCount, defaultValue: "调度中 {{count}}" })
+                                ? activityPredatesPause
+                                  ? t("codex.localAccess.backupDispatchDraining", { count: activity.runningCount, defaultValue: "已暂停；关闭前请求处理中 {{count}}" })
+                                  : t("codex.apiService.accountActivity.running", { count: activity.runningCount, defaultValue: "调度中 {{count}}" })
                                 : t("codex.apiService.accountActivity.recent", { seconds: Math.max(0, Math.floor((Date.now() - Math.max(activity.lastFinishedAt ?? 0, activity.lastSelectedAt)) / 1000)), defaultValue: "刚调度 {{seconds}} 秒前" })}
                             </span>
                           ) : null}
@@ -1734,19 +1810,47 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                             </span>
                           )}
                         </div>
-                        <button
-                          type="button"
-                          className="folder-icon-btn"
-                          onClick={() => void handleRemoveMember(account.id)}
-                          disabled={busy}
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        <div className="codex-api-service-account-card-actions">
+                          {isBackupAccount && (
+                            <label
+                              className="codex-api-service-backup-dispatch-switch"
+                              title={t(
+                                "codex.localAccess.backupDispatchToggle",
+                                "允许该最低优先级账号参与兜底调度",
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={backupDispatchEnabled}
+                                onChange={(event) =>
+                                  void handleToggleBackupDispatch(
+                                    account.id,
+                                    event.target.checked,
+                                  )
+                                }
+                                disabled={busy}
+                                aria-label={t(
+                                  "codex.localAccess.backupDispatchToggle",
+                                  "允许该最低优先级账号参与兜底调度",
+                                )}
+                              />
+                            </label>
+                          )}
+                          <button
+                            type="button"
+                            className="folder-icon-btn"
+                            onClick={() => void handleRemoveMember(account.id)}
+                            disabled={busy}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </div>
                     );
                   })
                 )}
               </div>
+              {renderHistoricalAccountSection("overview-history")}
             </section>
 
             <section className="codex-api-service-panel">
@@ -2170,6 +2274,7 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                     );
                   })
                 )}
+                {renderHistoricalAccountSection("stats-history")}
               </div>
             )}
 

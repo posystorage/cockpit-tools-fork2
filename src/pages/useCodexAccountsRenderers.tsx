@@ -12,6 +12,7 @@ import { SingleSelectDropdown } from "../components/SingleSelectDropdown";
 import { CODEX_API_SERVICE_BIND_ID } from "../types/instance";
 import { COCKPIT_API_BASE_URL } from "../utils/codexProviderPresets";
 import { formatCodexQuotaPoolPercent, formatCodexQuotaPoolWindowLabel } from "../utils/codexQuotaPool";
+import { isCodexLocalAccessBackupDispatchEnabled } from "../utils/codexLocalAccessBackupDispatch";
 import { resolveNewApiQuotaSnapshot } from "../services/modelProviderUsageService";
 import { CODEX_LOCAL_ACCESS_FALLBACK_API_KEY_MASK, formatCockpitApiInteger, formatCockpitApiTokenCount, getCockpitApiStatsRecord, getCockpitApiUsageRecord, getCodexAccountNoteTitle, hasCodexAccountNoteDetails, isPendingOAuthCodexAccount, isSponsorModelProvider, readCockpitApiNumber, readCockpitApiString, resolveApiKeyUsageMode, toCockpitApiRecord, type CockpitApiJsonRecord } from "./codexAccountsControllerModel";
 import type { useCodexAccountsBaseController } from "./useCodexAccountsBaseController";
@@ -75,6 +76,7 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
   | "handleSubmitInlineRename"
   | "handleSwitch"
   | "handleToggleOverviewAccount"
+  | "handleToggleLocalAccessBackupDispatch"
   | "hideRelayQuota"
   | "importApiServiceGuideCount"
   | "inlineRenameDiscardRef"
@@ -219,6 +221,7 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
     handleSubmitInlineRename,
     handleSwitch,
     handleToggleOverviewAccount,
+    handleToggleLocalAccessBackupDispatch,
     hideRelayQuota,
     importApiServiceGuideCount,
     inlineRenameDiscardRef,
@@ -1722,18 +1725,37 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
                     );
                     const memberPriority =
                       localAccessMemberPriorityByAccountId.get(account.id);
+                    const isBackupAccount = memberPriority === "lowest";
+                    const backupDispatchEnabled =
+                      isCodexLocalAccessBackupDispatchEnabled(
+                        localAccessCollection?.accountModelRules,
+                        account.id,
+                      );
                     const runningCount = activity?.runningCount ?? 0;
                     const recentAt = Math.max(
                       activity?.lastFinishedAt ?? 0,
                       activity?.lastSelectedAt ?? 0,
                     );
-                    const hasActivity = runningCount > 0 || recentAt > 0;
+                    const activityPredatesPause =
+                      isBackupAccount &&
+                      !backupDispatchEnabled &&
+                      (activity?.lastSelectedAt ?? 0) > 0 &&
+                      (localAccessCollection?.updatedAt ?? 0) > 0 &&
+                      (activity?.lastSelectedAt ?? 0) <=
+                        (localAccessCollection?.updatedAt ?? 0);
+                    const hasActivity =
+                      runningCount > 0 || (recentAt > 0 && !activityPredatesPause);
                     const activityText =
                       runningCount > 0
-                        ? t("codex.apiService.accountActivity.running", {
-                            count: runningCount,
-                            defaultValue: "调度中 {{count}}",
-                          })
+                        ? activityPredatesPause
+                          ? t("codex.localAccess.backupDispatchDraining", {
+                              count: runningCount,
+                              defaultValue: "已暂停；关闭前请求处理中 {{count}}",
+                            })
+                          : t("codex.apiService.accountActivity.running", {
+                              count: runningCount,
+                              defaultValue: "调度中 {{count}}",
+                            })
                         : t("codex.apiService.accountActivity.recent", {
                             seconds: Math.max(
                               0,
@@ -1797,16 +1819,43 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
                         >
                           {presentation.planLabel}
                         </span>
-                        <button
-                          type="button"
-                          className="folder-preview-remove-btn"
-                          onClick={() => void handleRemoveLocalAccessAccount(account.id)}
-                          title={t("accounts.groups.removeFromGroup")}
-                          aria-label={`${t("accounts.groups.removeFromGroup")}: ${maskAccountText(presentation.displayName)}`}
-                          disabled={localAccessBusy}
-                        >
-                          <LogOut size={12} />
-                        </button>
+                        <div className="codex-local-access-member-actions">
+                          {isBackupAccount && (
+                            <label
+                              className="codex-local-access-backup-dispatch-switch"
+                              title={t(
+                                "codex.localAccess.backupDispatchToggle",
+                                "允许该最低优先级账号参与兜底调度",
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={backupDispatchEnabled}
+                                onChange={(event) =>
+                                  void handleToggleLocalAccessBackupDispatch(
+                                    account.id,
+                                    event.target.checked,
+                                  )
+                                }
+                                disabled={localAccessBusy}
+                                aria-label={t(
+                                  "codex.localAccess.backupDispatchToggle",
+                                  "允许该最低优先级账号参与兜底调度",
+                                )}
+                              />
+                            </label>
+                          )}
+                          <button
+                            type="button"
+                            className="folder-preview-remove-btn"
+                            onClick={() => void handleRemoveLocalAccessAccount(account.id)}
+                            title={t("accounts.groups.removeFromGroup")}
+                            aria-label={`${t("accounts.groups.removeFromGroup")}: ${maskAccountText(presentation.displayName)}`}
+                            disabled={localAccessBusy}
+                          >
+                            <LogOut size={12} />
+                          </button>
+                        </div>
                       </div>
                     );
                   })

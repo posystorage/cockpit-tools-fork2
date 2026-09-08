@@ -759,6 +759,8 @@ export function useCodexApiServicePageController() {
   const [modelAliasesText, setModelAliasesText] = useState("");
   const [excludedModelsText, setExcludedModelsText] = useState("");
   const [accountModelRulesOpen, setAccountModelRulesOpen] = useState(false);
+  const [accountModelRulesBaseUpdatedAt, setAccountModelRulesBaseUpdatedAt] =
+    useState<number | null>(null);
   const [accountModelRuleDrafts, setAccountModelRuleDrafts] = useState<
     Record<string, string>
   >({});
@@ -910,6 +912,40 @@ export function useCodexApiServicePageController() {
     () => memberAccounts.map((account) => account.id),
     [memberAccounts],
   );
+  const localAccessAccountById = useMemo(
+    () => new Map(localAccessAccounts.map((account) => [account.id, account])),
+    [localAccessAccounts],
+  );
+  const memberAccountIdSet = useMemo(
+    () => new Set(memberAccountIds),
+    [memberAccountIds],
+  );
+  const historicalAccountRows = useMemo(
+    () =>
+      (selectedStatsWindow?.accounts ?? [])
+        .filter((stat) => !memberAccountIdSet.has(stat.accountId))
+        .map((stat) => ({
+          stat,
+          account: localAccessAccountById.get(stat.accountId) ?? null,
+          status: localAccessAccountById.has(stat.accountId)
+            ? ("not-joined" as const)
+            : ("deleted" as const),
+        })),
+    [
+      localAccessAccountById,
+      memberAccountIdSet,
+      selectedStatsWindow?.accounts,
+    ],
+  );
+  const backupAccountIdSet = useMemo(
+    () =>
+      new Set(
+        (collection?.customRoutingRules ?? [])
+          .filter((rule) => rule.isBackup)
+          .map((rule) => rule.accountId),
+      ),
+    [collection?.customRoutingRules],
+  );
   const mappingMemberAccounts = useMemo(
     () => memberAccounts.filter((account) => isCodexApiKeyAccount(account)),
     [memberAccounts],
@@ -925,7 +961,10 @@ export function useCodexApiServicePageController() {
     });
     return next;
   }, [localAccessAccounts, t]);
-  const accountModelRuleCount = collection?.accountModelRules.length ?? 0;
+  const accountModelRuleCount =
+    collection?.accountModelRules.filter((rule) =>
+      rule.excludedModels.some((model) => model.trim() !== "*"),
+    ).length ?? 0;
   const accountModelRuleAllSelected =
     memberAccounts.length > 0 &&
     memberAccounts.every((account) => accountModelRuleSelected.has(account.id));
@@ -2485,11 +2524,13 @@ export function useCodexApiServicePageController() {
 
   const handleOpenAccountModelRules = () => {
     resetAccountModelRuleDraftsFromCollection();
+    setAccountModelRulesBaseUpdatedAt(collection?.updatedAt ?? null);
     setAccountModelRulesOpen(true);
   };
 
   const handleCloseAccountModelRules = () => {
     resetAccountModelRuleDraftsFromCollection();
+    setAccountModelRulesBaseUpdatedAt(null);
     setAccountModelRulesOpen(false);
   };
 
@@ -2671,14 +2712,35 @@ export function useCodexApiServicePageController() {
         const next =
           await codexLocalAccessService.updateCodexLocalAccessAccountModelRules(
             rules,
+            accountModelRulesBaseUpdatedAt ?? undefined,
           );
         setState(next);
+        setAccountModelRulesBaseUpdatedAt(null);
         setAccountModelRulesOpen(false);
       },
       t(
         "codex.apiService.accountModelRules.saveSuccess",
         "账号模型禁用规则已保存",
       ),
+    );
+  };
+
+  const handleToggleBackupDispatch = async (
+    accountId: string,
+    enabled: boolean,
+  ) => {
+    if (!collection || !backupAccountIdSet.has(accountId)) return;
+    await runAction(
+      async () => {
+        const next =
+          await codexLocalAccessService.updateCodexLocalAccessBackupDispatch(
+            accountId,
+            enabled,
+          );
+        setState(next);
+        window.dispatchEvent(new Event("codex-local-access-state-updated"));
+      },
+      t("codex.localAccess.backupDispatchSaved", "最低优先级调度设置已更新"),
     );
   };
 
@@ -3649,6 +3711,7 @@ export function useCodexApiServicePageController() {
     accountModelRuleCount,
     accountModelRuleDrafts,
     accountModelRuleSelected,
+    accountModelRulesBaseUpdatedAt,
     accountModelRulesOpen,
     accounts,
     accountsLoaded,
@@ -3667,6 +3730,7 @@ export function useCodexApiServicePageController() {
     apiServiceIsCurrent,
     applyTimeoutPreset,
     availableAccountCount,
+    backupAccountIdSet,
     busy,
     cleanRequestLogErrorDetail,
     clearRequestLogFilters,
@@ -3735,6 +3799,7 @@ export function useCodexApiServicePageController() {
     handleSetApiKeyAccountPriority,
     handleStatsPresetChange,
     handleToggleApiKey,
+    handleToggleBackupDispatch,
     handleToggleEnabled,
     handleUpdateAccessScope,
     handleUpdateClientBaseUrlHost,
@@ -3742,6 +3807,7 @@ export function useCodexApiServicePageController() {
     handleUpdateTimeoutPreset,
     hasRequestLogFilters,
     healthByAccountId,
+    historicalAccountRows,
     healthModalOpen,
     imageUnavailableCount,
     immediateSseResponseDraft,

@@ -162,8 +162,9 @@ pub async fn codex_local_access_update_custom_routing(
 #[tauri::command]
 pub async fn codex_local_access_update_account_model_rules(
     rules: Vec<CodexLocalAccessAccountModelRule>,
+    expected_updated_at: Option<i64>,
 ) -> Result<CodexLocalAccessState, String> {
-    codex_local_access::update_local_access_account_model_rules(rules).await
+    codex_local_access::update_local_access_account_model_rules(rules, expected_updated_at).await
 }
 
 #[tauri::command]

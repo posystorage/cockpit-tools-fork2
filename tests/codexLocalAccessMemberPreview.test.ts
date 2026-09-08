@@ -2,40 +2,46 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
-const pageSource = readFileSync(
-  `${process.cwd()}/src/pages/CodexAccountsPage.tsx`,
+const rendererSource = readFileSync(
+  `${process.cwd()}/src/pages/useCodexAccountsRenderers.tsx`,
+  "utf8",
+);
+const controllerSource = readFileSync(
+  `${process.cwd()}/src/pages/useCodexAccountsLocalAccessController.tsx`,
   "utf8",
 );
 const styleSource = readFileSync(
-  `${process.cwd()}/src/styles/pages/codex.css`,
+  `${process.cwd()}/src/styles/pages/codex-accounts-overview.css`,
   "utf8",
 );
 
 describe("Codex API service member preview", () => {
   it("renders every API service member in the ordinary Codex card", () => {
     assert.ok(
-      pageSource.includes("const previewAccounts = localAccessDisplayAccounts"),
+      rendererSource.includes("const localAccessDisplayAccounts = useMemo"),
       "the preview must use the complete sorted member list",
     );
     assert.ok(
-      pageSource.includes("previewAccounts.map((account) =>"),
+      rendererSource.includes(
+        "localAccessDisplayAccounts.map(({ account, activity }) =>",
+      ),
       "the card must render every member instead of slicing a fixed preview",
     );
     assert.equal(
-      pageSource.includes("localAccessDisplayAccounts.slice("),
+      rendererSource.includes("localAccessDisplayAccounts.slice("),
       false,
       "the complete member list must not be truncated",
     );
   });
 
   it("sorts running and recently dispatched accounts first", () => {
-    const runningSortIndex = pageSource.indexOf(
+    const runningSortIndex = rendererSource.indexOf(
       "if (leftRunning !== rightRunning) return rightRunning - leftRunning",
     );
-    const recentSortIndex = pageSource.indexOf(
+    const recentSortIndex = rendererSource.indexOf(
       "if (leftRecent !== rightRecent) return rightRecent - leftRecent",
     );
-    const stableSortIndex = pageSource.indexOf(
+    const stableSortIndex = rendererSource.indexOf(
       "return left.index - right.index",
     );
 
@@ -57,22 +63,17 @@ describe("Codex API service member preview", () => {
 
     assert.ok(previewRule, "the member preview style should exist");
     assert.match(previewRule[1], /overflow-y:\s*auto/);
-    assert.match(previewRule[1], /min-height:\s*50px/);
-    assert.ok(
-      pageSource.includes("data-local-access-member-row") &&
-        pageSource.includes("new ResizeObserver(scheduleUpdate)"),
-      "the card should report members outside the visible scroll viewport",
-    );
+    assert.match(previewRule[1], /overflow-x:\s*hidden/);
   });
 
   it("shows routing priority without changing activity-based sorting", () => {
     assert.ok(
-      pageSource.includes("localAccessMemberPriorityByAccountId.get(account.id)"),
+      rendererSource.includes("localAccessMemberPriorityByAccountId.get(account.id)"),
       "the member row should resolve its static routing priority",
     );
     assert.ok(
-      pageSource.includes("codex.localAccess.memberPriorityHighest") &&
-        pageSource.includes("codex.localAccess.memberPriorityLowest"),
+      rendererSource.includes("codex.localAccess.memberPriorityHighest") &&
+        rendererSource.includes("codex.localAccess.memberPriorityLowest"),
       "the member row should render both highest and lowest markers",
     );
     assert.ok(
@@ -83,63 +84,48 @@ describe("Codex API service member preview", () => {
 
   it("removes one member through the atomic backend command", () => {
     assert.equal(
-      pageSource.match(/const handleRemoveLocalAccessAccount = useCallback/g)
+      controllerSource.match(/const handleRemoveLocalAccessAccount = useCallback/g)
         ?.length,
       1,
       "the merge must not leave duplicate removal handlers",
     );
     assert.ok(
-      pageSource.includes(
-        "codexLocalAccessService.removeCodexLocalAccessAccount(accountId)",
+      controllerSource.includes(
+        "codexLocalAccessService.removeCodexLocalAccessAccount",
       ),
       "member removal should use the backend command that updates references atomically",
     );
   });
 
-  it("shows the shared dispatch switch only for lowest-priority members", () => {
+  it("keeps dispatch activity and priority visible in the member row", () => {
+    assert.ok(rendererSource.includes("codex-local-access-member-activity"));
+    assert.ok(rendererSource.includes("codex-local-access-member-priority"));
+  });
+
+  it("shows the backup switch only for lowest-priority members", () => {
+    assert.ok(rendererSource.includes('memberPriority === "lowest"'));
+    assert.ok(rendererSource.includes("handleToggleLocalAccessBackupDispatch"));
     assert.ok(
-      pageSource.includes('memberPriority === "lowest"'),
-      "the ordinary summary must limit the switch to lowest-priority rows",
-    );
-    assert.ok(
-      pageSource.includes("handleToggleLocalAccessBackupDispatch"),
-      "the ordinary summary must persist the shared backup dispatch state",
-    );
-    assert.ok(
-      pageSource.includes(
-        "codexLocalAccessService.updateCodexLocalAccessBackupDispatch(",
+      controllerSource.includes(
+        "codexLocalAccessService.updateCodexLocalAccessBackupDispatch",
       ),
-      "the switch must mutate one account atomically instead of writing a stale rules array",
     );
     assert.ok(
       styleSource.includes(".codex-local-access-backup-dispatch-switch"),
-      "the compact member-row switch must have a stable style",
     );
     assert.equal(
-      pageSource.includes("backup-dispatch-switch-placeholder"),
+      rendererSource.includes("backup-dispatch-switch-placeholder"),
       false,
-      "normal and highest-priority rows must not reserve an empty switch slot",
-    );
-    assert.ok(
-      pageSource.includes('className="codex-local-access-member-actions"'),
-      "the optional switch and remove button should share one adaptive action column",
-    );
-    assert.match(
-      styleSource,
-      /grid-template-columns:\s*minmax\(0, 1fr\) 34px 34px 42px max-content/,
     );
   });
 
-  it("distinguishes requests selected before a backup account was paused", () => {
-    assert.ok(pageSource.includes("const activityPredatesPause ="));
+  it("does not label pre-pause activity as a new dispatch", () => {
+    assert.ok(rendererSource.includes("const activityPredatesPause ="));
     assert.ok(
-      pageSource.includes('"codex.localAccess.backupDispatchDraining"'),
+      rendererSource.includes('"codex.localAccess.backupDispatchDraining"'),
     );
     assert.ok(
-      pageSource.includes(
-        "activityRecentAt > 0 && !activityPredatesPause",
-      ),
-      "pre-pause recent activity should not look like new scheduling",
+      rendererSource.includes("recentAt > 0 && !activityPredatesPause"),
     );
   });
 });

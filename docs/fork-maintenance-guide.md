@@ -137,7 +137,7 @@ fork 仍必须保留：
 
 当前新模块迁移检查重点：不要恢复旧版巨型 `CodexAccountsPage.tsx`、`CodexApiServicePage.tsx` 或 `codex_local_access.rs`；应把 fork 行为放进上游对应的 overview/controller/view、gateway runtime、sidecar runtime 和 request-log 模块，并在每轮合并后检查 `git diff --check`、TypeScript 类型、Rust（可用 `COCKPIT_SKIP_CLIPROXY_BUILD=1`）和 Sidecar Go CI 编译。
 
-### 2.4.1 `v1.3.41`-`v1.3.42` 合并边界（施工中）
+### 2.4.1 `v1.3.41`-`v1.3.42` 已验证合并边界（2026-09-08）
 
 本轮从已验证的 `v1.3.40` fork 基线升级到上游 `v1.3.42`，Release 说明只聚合 `1.3.41` 和 `1.3.42` 两个本轮实际跨越的版本，不回放 `1.3.40` 及更早版本。
 
@@ -145,6 +145,10 @@ fork 仍必须保留：
 - Sidecar 接受上游 quota cooldown、容量错误重试、Credits/unlimited 资格判断、自动恢复和刷新锁回收；合并时必须保留 fork 的五小时/周窗口分离、`gpt-reserve` 规则、删除账号历史计费和 `recordingSelector` 最外层事件记录。
 - `running_requests`、`account_activity`、`auth_selected`、请求完成收口、普通 Codex 页面完整账号池、调度优先排序和大账号池滚动显示属于 fork 业务边界，不得被上游统计趋势、健康弹框或 Sidecar selector 重构删除。
 - 上游 `trend`/`trendHourly`、统计明细刷新、context management、模型目录和会话用量趋势可以接收，但必须继续保留 GPT-5.6 Luna 计费、Sub2API 用量回退、去广告/空远端配置、运行时 updater 禁用，以及 Windows + macOS 草稿构建要求。
+
+真实双父合并提交为 `c8f278b2`，父节点是 fork `1.3.40b5` 基线 `2074c84f` 与上游 `v1.3.42` release commit `726dbe13`。合并后的复核补回了页面拆分过程中遗漏的删除账号历史统计、最低优先级兜底开关、暂停前活动状态、普通 Codex 页完整账号池，以及账号模型规则整表保存的 `updatedAt` 并发保护；最低优先级账号恢复调度时仅移除暂停机制写入的 `*`，不删除其他模型排除规则。
+
+本轮 TypeScript 严格检查、Vite 生产构建、Rust `cargo check --lib` 和 26 项统计/账号池定向前端测试通过。Windows 本地 Rust 单测二进制已完成编译，但当前运行环境以 `STATUS_ENTRYPOINT_NOT_FOUND` 退出，未产生断言失败；完整 Rust/Sidecar 行为继续由 Windows 与 macOS 草稿云编译验证。`1.3.42b1` 的 Release notes 必须只聚合 `1.3.42` 与 `1.3.41`，不得带入 `1.3.40` 及更早版本。
 
 ### 2.5 `v1.3.16` 已验证基线（2026-08-06）
 

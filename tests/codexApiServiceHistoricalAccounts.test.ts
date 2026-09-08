@@ -2,8 +2,20 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
-const pageSource = readFileSync(
+const controllerSource = readFileSync(
   `${process.cwd()}/src/pages/CodexApiServicePage.tsx`,
+  "utf8",
+);
+const viewSource = readFileSync(
+  `${process.cwd()}/src/pages/CodexApiServiceView.tsx`,
+  "utf8",
+);
+const commandSource = readFileSync(
+  `${process.cwd()}/src-tauri/src/commands/codex_local_access_commands.rs`,
+  "utf8",
+);
+const moduleSource = readFileSync(
+  `${process.cwd()}/src-tauri/src/modules/codex_local_access_commands.rs`,
   "utf8",
 );
 const styleSource = readFileSync(
@@ -13,29 +25,30 @@ const styleSource = readFileSync(
 
 describe("Codex API service historical accounts", () => {
   it("builds history from selected-range stats outside the live member set", () => {
-    assert.ok(pageSource.includes("const historicalAccountRows = useMemo"));
+    assert.ok(controllerSource.includes("const historicalAccountRows = useMemo"));
     assert.ok(
-      pageSource.includes(
+      controllerSource.includes(
         ".filter((stat) => !memberAccountIdSet.has(stat.accountId))",
       ),
     );
-    assert.ok(pageSource.includes('? ("not-joined" as const)'));
-    assert.ok(pageSource.includes(': ("deleted" as const)'));
+    assert.ok(controllerSource.includes('? ("not-joined" as const)'));
+    assert.ok(controllerSource.includes(': ("deleted" as const)'));
   });
 
   it("keeps current and historical accounts in separate sections", () => {
-    assert.ok(pageSource.includes('"codex.localAccess.currentAccounts"'));
-    assert.ok(pageSource.includes('"codex.localAccess.historicalAccounts"'));
-    assert.ok(pageSource.includes('"codex.localAccess.historyNotJoined"'));
-    assert.ok(pageSource.includes('"codex.localAccess.historyDeleted"'));
+    assert.ok(viewSource.includes('"codex.localAccess.historicalAccounts"'));
+    assert.ok(viewSource.includes('"codex.localAccess.historyNotJoined"'));
+    assert.ok(viewSource.includes('"codex.localAccess.historyDeleted"'));
+    assert.ok(viewSource.includes('renderHistoricalAccountSection("overview-history")'));
+    assert.ok(viewSource.includes('renderHistoricalAccountSection("stats-history")'));
   });
 
   it("renders the plan badge before the historical state badge", () => {
-    const historyCardStart = pageSource.indexOf(
-      'key={`history-${stat.accountId}`}',
+    const historyCardStart = viewSource.indexOf(
+      'key={`${keyPrefix}-${stat.accountId}`}',
     );
-    const planBadge = pageSource.indexOf("presentation.planLabel", historyCardStart);
-    const statusBadge = pageSource.indexOf(
+    const planBadge = viewSource.indexOf("presentation.planLabel", historyCardStart);
+    const statusBadge = viewSource.indexOf(
       "codex-api-service-history-account-tag",
       historyCardStart,
     );
@@ -55,10 +68,10 @@ describe("Codex API service historical accounts", () => {
   });
 
   it("places the lowest-priority switch beside account-card actions", () => {
-    assert.ok(pageSource.includes("codex-api-service-account-card-actions"));
-    assert.ok(pageSource.includes("handleToggleBackupDispatch"));
+    assert.ok(viewSource.includes("codex-api-service-account-card-actions"));
+    assert.ok(controllerSource.includes("handleToggleBackupDispatch"));
     assert.ok(
-      pageSource.includes(
+      controllerSource.includes(
         "codexLocalAccessService.updateCodexLocalAccessBackupDispatch(",
       ),
     );
@@ -68,17 +81,19 @@ describe("Codex API service historical accounts", () => {
   });
 
   it("rejects stale full-table model-rule drafts", () => {
-    assert.ok(pageSource.includes("accountModelRulesBaseUpdatedAt"));
-    assert.ok(pageSource.includes("collection?.updatedAt ?? null"));
+    assert.ok(controllerSource.includes("accountModelRulesBaseUpdatedAt"));
+    assert.ok(controllerSource.includes("collection?.updatedAt ?? null"));
     assert.ok(
-      pageSource.includes("accountModelRulesBaseUpdatedAt ?? undefined"),
+      controllerSource.includes("accountModelRulesBaseUpdatedAt ?? undefined"),
     );
+    assert.ok(commandSource.includes("expected_updated_at: Option<i64>"));
+    assert.ok(moduleSource.includes("collection.updated_at != expected_updated_at"));
   });
 
   it("labels in-flight requests selected before fallback was paused", () => {
-    assert.ok(pageSource.includes("const activityPredatesPause ="));
+    assert.ok(viewSource.includes("const activityPredatesPause ="));
     assert.ok(
-      pageSource.includes('"codex.localAccess.backupDispatchDraining"'),
+      viewSource.includes('"codex.localAccess.backupDispatchDraining"'),
     );
   });
 });

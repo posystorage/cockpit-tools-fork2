@@ -599,6 +599,42 @@ data: {"type":"response.completed","response":{"id":"resp_123","usage":{"input_t
     }
 
     #[test]
+    fn leaving_lowest_priority_clears_only_the_pause_wildcard() {
+        let mut collection =
+            test_local_access_collection(vec!["lowest".to_string(), "normal".to_string()]);
+        apply_account_usage_priority_ids(&mut collection, Some(&["lowest".to_string()]), None);
+        collection.account_model_rules = vec![
+            CodexLocalAccessAccountModelRule {
+                account_id: "lowest".to_string(),
+                excluded_models: vec!["*".to_string(), "gpt-5.4-mini".to_string()],
+            },
+            CodexLocalAccessAccountModelRule {
+                account_id: "normal".to_string(),
+                excluded_models: vec!["*".to_string()],
+            },
+        ];
+
+        apply_account_usage_priority_ids(
+            &mut collection,
+            Some(&[]),
+            Some(&["lowest".to_string()]),
+        );
+
+        let resumed = collection
+            .account_model_rules
+            .iter()
+            .find(|rule| rule.account_id == "lowest")
+            .expect("non-pause model rule should remain");
+        assert_eq!(resumed.excluded_models, vec!["gpt-5.4-mini"]);
+        let manual_wildcard = collection
+            .account_model_rules
+            .iter()
+            .find(|rule| rule.account_id == "normal")
+            .expect("manual wildcard on a normal account should remain");
+        assert_eq!(manual_wildcard.excluded_models, vec!["*"]);
+    }
+
+    #[test]
     fn legacy_backup_rule_defaults_to_lowest_without_preferred_field() {
         let rule = serde_json::from_value::<CodexLocalAccessCustomRoutingRule>(serde_json::json!({
             "accountId": "legacy-backup",

@@ -105,6 +105,12 @@ fn apply_account_usage_priority_ids(
     backup_account_ids: Option<&[String]>,
     preferred_account_ids: Option<&[String]>,
 ) {
+    let previous_backup_ids = collection
+        .custom_routing_rules
+        .iter()
+        .filter(|rule| rule.is_backup)
+        .map(|rule| rule.account_id.clone())
+        .collect::<HashSet<_>>();
     let account_set: HashSet<&str> = collection.account_ids.iter().map(String::as_str).collect();
     let normalize_ids = |account_ids: &[String]| {
         account_ids
@@ -165,6 +171,26 @@ fn apply_account_usage_priority_ids(
         collection.custom_routing_rules.clone(),
         &collection.account_ids,
     );
+
+    let current_backup_ids = collection
+        .custom_routing_rules
+        .iter()
+        .filter(|rule| rule.is_backup)
+        .map(|rule| rule.account_id.as_str())
+        .collect::<HashSet<_>>();
+    let resumed_account_ids = previous_backup_ids
+        .iter()
+        .filter(|account_id| !current_backup_ids.contains(account_id.as_str()))
+        .cloned()
+        .collect::<HashSet<_>>();
+    for rule in &mut collection.account_model_rules {
+        if resumed_account_ids.contains(&rule.account_id) {
+            rule.excluded_models.retain(|model| model.trim() != "*");
+        }
+    }
+    collection
+        .account_model_rules
+        .retain(|rule| !rule.excluded_models.is_empty());
 }
 
 pub async fn save_local_access_accounts(
@@ -176,6 +202,7 @@ pub async fn save_local_access_accounts(
     session_affinity_ttl_ms: Option<i64>,
     image_generation_account_policies:
         Option<HashMap<String, CodexLocalAccessImageGenerationPolicy>>,
+    >,
 ) -> Result<CodexLocalAccessState, String> {
     ensure_runtime_loaded_without_start().await?;
 
@@ -389,6 +416,7 @@ pub async fn update_local_access_custom_routing(
 
 pub async fn update_local_access_account_model_rules(
     rules: Vec<CodexLocalAccessAccountModelRule>,
+    expected_updated_at: Option<i64>,
 ) -> Result<CodexLocalAccessState, String> {
     ensure_runtime_loaded().await?;
 
@@ -400,6 +428,12 @@ pub async fn update_local_access_account_model_rules(
     let Some(mut collection) = maybe_collection else {
         return Err("本地接入集合尚未创建".to_string());
     };
+
+    if let Some(expected_updated_at) = expected_updated_at {
+        if collection.updated_at != expected_updated_at {
+            return Err("本地接入账号模型规则已被其他操作更新，请重新打开后再保存".to_string());
+        }
+    }
 
     collection.account_model_rules = normalize_account_model_rules(rules, &collection.account_ids);
     collection.updated_at = now_ms();

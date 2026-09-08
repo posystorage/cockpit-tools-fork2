@@ -1822,6 +1822,52 @@ export function useCodexAccountsLocalAccessController(context: Pick<ReturnType<t
         });
       }
     }, [handleToggleLocalAccessEnabled, setMessage, t]);
+
+    const handleToggleLocalAccessBackupDispatch = useCallback(
+      async (accountId: string, enabled: boolean) => {
+        const isBackup = (localAccessCollection?.customRoutingRules ?? []).some(
+          (rule) => rule.accountId === accountId && rule.isBackup,
+        );
+        if (!isBackup || localAccessSaving) return;
+        setLocalAccessSaving(true);
+        try {
+          const nextState =
+            await codexLocalAccessService.updateCodexLocalAccessBackupDispatch(
+              accountId,
+              enabled,
+            );
+          setLocalAccessState(nextState);
+          window.dispatchEvent(new Event("codex-local-access-state-updated"));
+          setMessage({
+            text: t(
+              "codex.localAccess.backupDispatchSaved",
+              "最低优先级调度设置已更新",
+            ),
+          });
+        } catch (error) {
+          setMessage({
+            text: t("messages.actionFailed", {
+              action: t(
+                "codex.localAccess.backupDispatchToggle",
+                "最低优先级兜底调度",
+              ),
+              error: String(error).replace(/^Error:\s*/, ""),
+            }),
+            tone: "error",
+          });
+        } finally {
+          setLocalAccessSaving(false);
+        }
+      },
+      [
+        localAccessCollection,
+        localAccessSaving,
+        setLocalAccessSaving,
+        setLocalAccessState,
+        setMessage,
+        t,
+      ],
+    );
   
     const handleExecuteLocalAccessLaunchPreview =
       useCallback(async (): Promise<boolean> => {
@@ -1970,6 +2016,7 @@ export function useCodexAccountsLocalAccessController(context: Pick<ReturnType<t
     handleRotateLocalAccessApiKey,
     handleSaveLocalAccessAccounts,
     handleToggleLocalAccessEnabled,
+    handleToggleLocalAccessBackupDispatch,
     handleUpdateLocalAccessAccessScope,
     handleUpdateLocalAccessCustomRouting,
     handleUpdateLocalAccessPort,

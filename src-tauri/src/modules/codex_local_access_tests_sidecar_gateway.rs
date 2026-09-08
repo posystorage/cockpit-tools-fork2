@@ -538,12 +538,16 @@
             vec![
                 CodexLocalAccessAccountWindowQuery {
                     account_id: "local-member-a".to_string(),
+                    official_account_id: String::new(),
+                    account_email: String::new(),
                     window_key: "primary".to_string(),
                     start_at: 1_699_999_999_000,
                     end_at: 1_700_000_001_000,
                 },
                 CodexLocalAccessAccountWindowQuery {
                     account_id: "local-member-b".to_string(),
+                    official_account_id: String::new(),
+                    account_email: String::new(),
                     window_key: "primary".to_string(),
                     start_at: 1_699_999_999_000,
                     end_at: 1_700_000_001_000,
@@ -622,6 +626,7 @@
         build_request_routing_hint, build_runtime_account, build_upstream_websocket_url,
         calculate_usage_cost_usd, calendar_stats_window_starts, canonical_model_for_client_model,
         account_has_gpt_reserve_entitlement,
+        DEFAULT_MODEL_PRICING_BOOK_VERSION,
         classify_upstream_error_category, cleanup_profile_takeover_without_backup,
         cleanup_provider_gateway_profile_model_overrides, codex_price,
         collect_local_access_profile_takeover_dirs_from_store, compare_routing_candidates,
@@ -954,6 +959,7 @@
             account_model_rules: Vec::new(),
             model_aliases: Vec::new(),
             model_pricing_version: DEFAULT_MODEL_PRICING_VERSION,
+            model_pricing_book_version: DEFAULT_MODEL_PRICING_BOOK_VERSION,
             model_pricings: Vec::new(),
             excluded_models: Vec::new(),
             session_affinity: true,
