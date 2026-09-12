@@ -202,7 +202,6 @@ pub async fn save_local_access_accounts(
     session_affinity_ttl_ms: Option<i64>,
     image_generation_account_policies:
         Option<HashMap<String, CodexLocalAccessImageGenerationPolicy>>,
-    >,
 ) -> Result<CodexLocalAccessState, String> {
     ensure_runtime_loaded_without_start().await?;
 

@@ -150,6 +150,8 @@ fork 仍必须保留：
 
 本轮 TypeScript 严格检查、Vite 生产构建、Rust `cargo check --lib` 和 26 项统计/账号池定向前端测试通过。Windows 本地 Rust 单测二进制已完成编译，但当前运行环境以 `STATUS_ENTRYPOINT_NOT_FOUND` 退出，未产生断言失败；完整 Rust/Sidecar 行为继续由 Windows 与 macOS 草稿云编译验证。`1.3.42b1` 的 Release notes 必须只聚合 `1.3.42` 与 `1.3.41`，不得带入 `1.3.40` 及更早版本。
 
+`1.3.42b1` 的 Windows、macOS Apple Silicon、macOS Intel 和 macOS Universal job 均在 Rust 编译阶段失败，未进入产物上传步骤。根因是人工清理格式化噪音时，`save_local_access_accounts` 的 `image_generation_account_policies` 参数后遗留了独立的 `>,`，导致语法错误并派生出错误的“缺少第 8 个参数”诊断。`1.3.42b2` 删除该残留行后，必须重新执行本地 Rust 检查，并等待四个平台云构建实际生成和上传安装包；不能仅以 prepare-release 成功判定发布成功。
+
 ### 2.5 `v1.3.16` 已验证基线（2026-08-06）
 
 本轮从已验证 fork `1.3.10b2`（`ee49a89f`）升级到上游 `v1.3.16`（release commit `e1ef55ce`），升级分支为 `codex/upgrade-upstream-v1.3.16`。合并前 release 链与锚点如下：
