@@ -3121,6 +3121,64 @@ func TestAuthHookEmitsRequestScopedResultDiagnostics(t *testing.T) {
 	}
 }
 
+func TestAuthHookObservesOnlyCodexUpstreamTurnStateLength(t *testing.T) {
+	account := &accountSpec{ID: "account_1", AuthID: "auth.json"}
+	hook := &authHook{
+		manifest: &manifest{accountByAuthID: map[string]*accountSpec{"auth.json": account}},
+		emitter: &eventEmitter{},
+	}
+	result := coreauth.Result{AuthID: "auth.json", Provider: "codex", Model: "gpt-test", Success: true}
+	key := &apiKeySpec{ID: "key_1", Enabled: true}
+	base := context.WithValue(context.Background(), clientAPIKeyContextKey, key)
+	secret := strings.Repeat("z", 312)
+	first := internallogging.WithFreshResponseHeadersHolder(base)
+	internallogging.SetResponseHeaders(first, http.Header{"X-Codex-Turn-State": {secret}})
+	output := captureStdout(t, func() { hook.OnResult(first, result) })
+	if strings.Contains(output, secret) {
+		t.Fatal("raw Turn-State value must never enter diagnostics")
+	}
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected one observation and one result, got %d: %s", len(lines), output)
+	}
+	var observed struct {
+		Type string `json:"type"`
+		AccountID string `json:"accountId"`
+		APIKeyID string `json:"apiKeyId"`
+		Length int `json:"length"`
+		ObservedAt int64 `json:"observedAt"`
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal([]byte(lines[0]), &observed); err != nil {
+		t.Fatal(err)
+	}
+	if observed.Type != "codex_turn_state_observed" || observed.AccountID != "account_1" || observed.APIKeyID != "key_1" || observed.Length != 312 || observed.ObservedAt <= 0 || observed.Model != "gpt-test" {
+		t.Fatalf("unexpected observation: %+v", observed)
+	}
+	for name, ctx := range map[string]context.Context{
+		"retry without response": internallogging.WithFreshResponseHeadersHolder(first),
+		"request header only": context.WithValue(internallogging.WithFreshResponseHeadersHolder(base), "requestHeader", secret),
+		"unsupported length": func() context.Context {
+			ctx := internallogging.WithFreshResponseHeadersHolder(base)
+			internallogging.SetResponseHeaders(ctx, http.Header{"X-Codex-Turn-State": {strings.Repeat("z", 311)}})
+			return ctx
+		}(),
+		"internal key": func() context.Context {
+			ctx := context.WithValue(context.Background(), clientAPIKeyContextKey, &apiKeySpec{ID: "__cockpit_internal__", Internal: true})
+			ctx = internallogging.WithFreshResponseHeadersHolder(ctx)
+			internallogging.SetResponseHeaders(ctx, http.Header{"X-Codex-Turn-State": {secret}})
+			return ctx
+		}(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			output := captureStdout(t, func() { hook.OnResult(ctx, result) })
+			if strings.Contains(output, "codex_turn_state_observed") || strings.Contains(output, secret) {
+				t.Fatalf("must not emit observation: %s", output)
+			}
+		})
+	}
+}
+
 func TestResolveModelRoutingSeparatesOAuthAndProviderModels(t *testing.T) {
 	gateway := &providerGatewaySpec{
 		BaseURL:        "https://provider.example/v1",

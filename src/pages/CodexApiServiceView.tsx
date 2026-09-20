@@ -13,6 +13,7 @@ import { CodexLocalAccessModal } from "../components/CodexLocalAccessModal";
 import { CodexAccountPoolHealthModal } from "../components/CodexAccountPoolHealthModal";
 import { CodexStatsRangePicker } from "../components/CodexStatsRangePicker";
 import { CodexUsageTrend } from "../components/codex/CodexUsageTrend";
+import { CodexTurnStateObservations } from "../components/codex/CodexTurnStateObservations";
 import { isCodexLocalAccessBackupDispatchEnabled } from "../utils/codexLocalAccessBackupDispatch";
 import { PaginationControls } from "../components/PaginationControls";
 import type {
@@ -1740,6 +1741,11 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                           </span>
                         </div>
                         <div className="codex-api-service-account-meta">
+                          <CodexTurnStateObservations
+                            accountId={account.id}
+                            enabled={Boolean(collection?.enabled)}
+                            observations={state?.turnStateObservations ?? []}
+                          />
                           <span>
                             {t("codex.localAccess.stats.accountRequests", {
                               count: stat?.usage.requestCount ?? 0,

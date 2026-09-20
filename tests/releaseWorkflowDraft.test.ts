@@ -126,4 +126,11 @@ describe("fork draft release workflow", () => {
     const windowsHeader = workflowSource.slice(windowsStart, windowsStart + 180);
     assert.equal(windowsHeader.includes("if: ${{ false }}"), false);
   });
+
+  it("uses only the Turn-State listener delta for the 1.3.57b2 draft", () => {
+    assert.ok(workflowSource.includes('if [[ "${GITHUB_REF_NAME}" == "1.3.57b2" || "${GITHUB_REF_NAME}" == "v1.3.57b2" ]]'));
+    assert.ok(workflowSource.includes('RELEASE_VERSIONS=("1.3.57b2")'));
+    assert.ok(englishChangelog.includes("## [1.3.57b2]"));
+    assert.ok(chineseChangelog.includes("## [1.3.57b2]"));
+  });
 });

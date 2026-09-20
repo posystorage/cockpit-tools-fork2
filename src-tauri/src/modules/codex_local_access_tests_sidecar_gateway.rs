@@ -1015,6 +1015,28 @@
     }
 
     #[test]
+    fn turn_state_observation_requires_enabled_service_member_and_authorized_key() {
+        let mut collection = test_local_access_collection(vec!["member".to_string()]);
+        let now = 1_800_000_000_000;
+        let mut event = super::SidecarTurnStateEvent {
+            account_id: "member".to_string(), api_key_id: "legacy".to_string(),
+            length: 312, observed_at: now, model: "gpt-test".to_string(),
+        };
+        assert!(super::accept_turn_state_event(&event, &collection, now));
+        event.length = 311;
+        assert!(!super::accept_turn_state_event(&event, &collection, now));
+        event.length = 312;
+        event.api_key_id = "__cockpit_internal__".to_string();
+        assert!(!super::accept_turn_state_event(&event, &collection, now));
+        event.api_key_id = "legacy".to_string();
+        event.account_id = "outsider".to_string();
+        assert!(!super::accept_turn_state_event(&event, &collection, now));
+        event.account_id = "member".to_string();
+        collection.enabled = false;
+        assert!(!super::accept_turn_state_event(&event, &collection, now));
+    }
+
+    #[test]
     fn provider_gateway_model_aliases_stay_off_the_oauth_channel() {
         let dir = make_temp_dir("codex-provider-gateway-alias");
         let mut collection = test_local_access_collection(vec!["provider-account".to_string()]);

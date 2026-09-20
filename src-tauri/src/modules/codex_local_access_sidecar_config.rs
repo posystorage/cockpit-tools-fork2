@@ -162,6 +162,17 @@ struct SidecarUsageEvent {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct SidecarTurnStateEvent {
+    account_id: String,
+    api_key_id: String,
+    length: u16,
+    observed_at: i64,
+    #[serde(default)]
+    model: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct SidecarAuthResultEvent {
     #[serde(default)]
     api_key_id: String,

@@ -449,6 +449,14 @@ export interface CodexLocalAccessState {
   quotaReserveStatus: CodexLocalAccessQuotaReserveStatus | null;
   runningRequests: CodexLocalAccessRunningRequest[];
   accountActivity: CodexLocalAccessAccountActivity[];
+  turnStateObservations: CodexTurnStateObservation[];
+}
+
+export interface CodexTurnStateObservation {
+  accountId: string;
+  length: 292 | 312 | 332 | 356;
+  observedAt: number;
+  model: string;
 }
 
 export interface CodexLocalAccessAppendAccountSkipped {

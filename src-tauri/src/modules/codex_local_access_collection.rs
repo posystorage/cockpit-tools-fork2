@@ -1900,6 +1900,25 @@ async fn ensure_runtime_loaded_without_start_with_profile_restore(
         // After the base runtime is visible, prune stale account membership in background.
         ensure_collection_account_sanitize_started();
 
+        tauri::async_runtime::spawn(async {
+            match tauri::async_runtime::spawn_blocking(load_turn_state_observations).await {
+                Ok(Ok(observations)) => {
+                    let mut runtime = gateway_runtime().lock().await;
+                    for (key, observation) in observations {
+                        if runtime.turn_state_observations.get(&key)
+                            .is_none_or(|current| current.observed_at < observation.observed_at)
+                        {
+                            runtime.turn_state_observations.insert(key, observation);
+                        }
+                    }
+                    drop(runtime);
+                    emit_local_access_state_updated();
+                }
+                Ok(Err(error)) => logger::log_codex_api_warn(&format!("读取 Codex Turn-State 观测记录失败: {}", error)),
+                Err(error) => logger::log_codex_api_warn(&format!("加载 Codex Turn-State 观测任务失败: {}", error)),
+            }
+        });
+
         if restore_disabled_profiles
             && next_collection
                 .as_ref()

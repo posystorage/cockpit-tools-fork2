@@ -14,6 +14,7 @@ import { CODEX_API_SERVICE_BIND_ID } from "../types/instance";
 import { COCKPIT_API_BASE_URL } from "../utils/codexProviderPresets";
 import { formatCodexQuotaPoolPercent, formatCodexQuotaPoolWindowLabel } from "../utils/codexQuotaPool";
 import { isCodexLocalAccessBackupDispatchEnabled } from "../utils/codexLocalAccessBackupDispatch";
+import { CodexTurnStateObservations } from "../components/codex/CodexTurnStateObservations";
 import { resolveNewApiQuotaSnapshot } from "../services/modelProviderUsageService";
 import { CODEX_LOCAL_ACCESS_FALLBACK_API_KEY_MASK, formatCockpitApiInteger, formatCockpitApiTokenCount, getCockpitApiStatsRecord, getCockpitApiUsageRecord, getCodexAccountNoteTitle, hasCodexAccountNoteDetails, isPendingOAuthCodexAccount, isSponsorModelProvider, readCockpitApiNumber, readCockpitApiString, resolveApiKeyUsageMode, toCockpitApiRecord, type CockpitApiJsonRecord } from "./codexAccountsControllerModel";
 import type { useCodexAccountsBaseController } from "./useCodexAccountsBaseController";
@@ -837,6 +838,13 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
                 {displayPlanLabel}
               </span>
             </div>
+            {!isApiKeyAccount && (isInLocalAccess || (localAccessState?.turnStateObservations ?? []).some((item) => item.accountId === account.id)) && (
+              <CodexTurnStateObservations
+                accountId={account.id}
+                enabled={Boolean(localAccessCollection?.enabled && isInLocalAccess)}
+                observations={localAccessState?.turnStateObservations ?? []}
+              />
+            )}
             {(meta.accountContextText ||
               isInLocalAccess ||
               canAddToLocalAccess ||

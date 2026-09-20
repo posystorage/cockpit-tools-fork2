@@ -927,6 +927,21 @@ fn sidecar_ready_signal_from_value(value: &Value) -> SidecarReadySignal {
     SidecarReadySignal { host, port }
 }
 
+fn accept_turn_state_event(event: &SidecarTurnStateEvent, collection: &CodexLocalAccessCollection, now: i64) -> bool {
+    matches!(event.length, 292 | 312 | 332 | 356)
+        && event.observed_at > 0
+        && event.observed_at <= now.saturating_add(60_000)
+        && event.api_key_id != "__cockpit_internal__"
+        && !event.account_id.trim().is_empty()
+        && collection.enabled
+        && collection.account_ids.contains(&event.account_id)
+        && ((event.api_key_id == "legacy" && legacy_api_key_is_active(collection))
+            || collection.api_keys.iter().any(|key| {
+                key.id == event.api_key_id && key.enabled
+                    && effective_api_key_account_ids(collection, key).contains(&event.account_id)
+            }))
+}
+
 async fn handle_sidecar_stdout_line(
     line: &str,
     ready_sender: &mut Option<oneshot::Sender<SidecarReadySignal>>,
@@ -946,6 +961,34 @@ async fn handle_sidecar_stdout_line(
         .and_then(Value::as_str)
         .unwrap_or_default();
     match event_type {
+        "codex_turn_state_observed" => match serde_json::from_value::<SidecarTurnStateEvent>(value) {
+            Ok(event) => {
+                let mut runtime = gateway_runtime().lock().await;
+                if !runtime.collection.as_ref().is_some_and(|collection| accept_turn_state_event(&event, collection, now_ms())) {
+                    return;
+                }
+                let key = (event.account_id.clone(), event.length);
+                if runtime.turn_state_observations.get(&key)
+                    .is_some_and(|previous| previous.observed_at >= event.observed_at)
+                {
+                    return;
+                }
+                let observation = CodexTurnStateObservation {
+                    account_id: event.account_id,
+                    length: event.length,
+                    observed_at: event.observed_at,
+                    model: event.model.chars().take(128).collect(),
+                };
+                runtime.turn_state_observations.insert(key, observation.clone());
+                drop(runtime);
+                tauri::async_runtime::spawn_blocking(move || {
+                    if let Err(error) = persist_turn_state_observation(&observation) {
+                        logger::log_codex_api_warn(&format!("持久化 Codex Turn-State 观测失败: {}", error));
+                    }
+                });
+            }
+            Err(error) => logger::log_codex_api_warn(&format!("Codex Turn-State 事件解析失败: {}", error)),
+        },
         "auth_selected" => match serde_json::from_value::<SidecarAuthSelectedEvent>(value) {
             Ok(event) => {
                 record_account_activity_selected(RequestActivitySelection {

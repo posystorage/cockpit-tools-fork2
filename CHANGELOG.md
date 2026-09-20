@@ -7,6 +7,13 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [1.3.57b2] - 2026-09-20
+
+### Added
+
+- **Read-only Codex Turn-State observation**: while the API service is enabled, record the most recent observation time and model for each upstream `X-Codex-Turn-State` response-header length of 292, 312, 332, or 356 per local OAuth account. The regular Codex account card and standalone API-service account-pool card show all four values; a removed member retains its last observations on the regular card with monitoring marked off. These numbers are opaque header lengths, not HTTP status codes or evidence of token validity. The listener never probes, injects or replaces headers, changes routing, or stores the raw state.
+- **Protected Turn-State diagnostics**: the sidecar omits internal API-key requests, Rust verifies membership and key scope, and upstream debug-header logging fully redacts this opaque header. Observation metadata persists separately from billing logs; background loading and writing keep it off the request and service-start paths.
+
 ## [1.3.57] - 2026-09-18
 
 ### Added

@@ -1,0 +1,27 @@
+.codex-turn-state {
+  min-width: 0;
+  padding: 5px 0;
+  color: var(--text-secondary, #5c656b);
+  font-size: 11px;
+}
+
+.codex-turn-state-label {
+  display: block;
+  margin-bottom: 3px;
+}
+
+.codex-turn-state-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.codex-turn-state-value {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.codex-turn-state-value b {
+  color: var(--text-primary, #202729);
+  font-weight: 600;
+}

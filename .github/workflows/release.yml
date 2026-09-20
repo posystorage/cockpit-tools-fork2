@@ -105,7 +105,9 @@ jobs:
 
           # Fork beta tags describe only the delta since the previous beta.
           # Keep formal 1.3.21 releases on the established upstream bundle.
-          if [[ "${GITHUB_REF_NAME}" == "1.3.21b4" || "${GITHUB_REF_NAME}" == "v1.3.21b4" ]]; then
+          if [[ "${GITHUB_REF_NAME}" == "1.3.57b2" || "${GITHUB_REF_NAME}" == "v1.3.57b2" ]]; then
+            RELEASE_VERSIONS=("1.3.57b2")
+          elif [[ "${GITHUB_REF_NAME}" == "1.3.21b4" || "${GITHUB_REF_NAME}" == "v1.3.21b4" ]]; then
             RELEASE_VERSIONS=("1.3.21b4")
           else
             case "${VERSION}" in
