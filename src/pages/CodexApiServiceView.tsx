@@ -1741,11 +1741,6 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                           </span>
                         </div>
                         <div className="codex-api-service-account-meta">
-                          <CodexTurnStateObservations
-                            accountId={account.id}
-                            enabled={Boolean(collection?.enabled)}
-                            observations={state?.turnStateObservations ?? []}
-                          />
                           <span>
                             {t("codex.localAccess.stats.accountRequests", {
                               count: stat?.usage.requestCount ?? 0,
@@ -1824,6 +1819,11 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                             </span>
                           )}
                         </div>
+                        <CodexTurnStateObservations
+                          accountId={account.id}
+                          enabled={Boolean(collection?.enabled)}
+                          observations={state?.turnStateObservations ?? []}
+                        />
                         <div className="codex-api-service-account-card-actions">
                           {isBackupAccount && (
                             <label

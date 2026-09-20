@@ -928,7 +928,7 @@ fn sidecar_ready_signal_from_value(value: &Value) -> SidecarReadySignal {
 }
 
 fn accept_turn_state_event(event: &SidecarTurnStateEvent, collection: &CodexLocalAccessCollection, now: i64) -> bool {
-    matches!(event.length, 292 | 312 | 332 | 356)
+    (1..=4096).contains(&event.length)
         && event.observed_at > 0
         && event.observed_at <= now.saturating_add(60_000)
         && event.api_key_id != "__cockpit_internal__"
@@ -980,6 +980,7 @@ async fn handle_sidecar_stdout_line(
                     model: event.model.chars().take(128).collect(),
                 };
                 runtime.turn_state_observations.insert(key, observation.clone());
+                prune_unknown_turn_state_observations(&mut runtime.turn_state_observations, &observation.account_id);
                 drop(runtime);
                 tauri::async_runtime::spawn_blocking(move || {
                     if let Err(error) = persist_turn_state_observation(&observation) {

@@ -128,9 +128,17 @@ describe("fork draft release workflow", () => {
   });
 
   it("uses only the Turn-State listener delta for the 1.3.57b2 draft", () => {
-    assert.ok(workflowSource.includes('if [[ "${GITHUB_REF_NAME}" == "1.3.57b2" || "${GITHUB_REF_NAME}" == "v1.3.57b2" ]]'));
+    assert.ok(workflowSource.includes('"${GITHUB_REF_NAME}" == "1.3.57b2" || "${GITHUB_REF_NAME}" == "v1.3.57b2"'));
     assert.ok(workflowSource.includes('RELEASE_VERSIONS=("1.3.57b2")'));
     assert.ok(englishChangelog.includes("## [1.3.57b2]"));
     assert.ok(chineseChangelog.includes("## [1.3.57b2]"));
+  });
+
+  it("reuses the b2 release text for the b3 UI draft on Windows and macOS", () => {
+    assert.ok(workflowSource.includes('"${GITHUB_REF_NAME}" == "1.3.57b3" || "${GITHUB_REF_NAME}" == "v1.3.57b3"'));
+    assert.ok(workflowSource.includes('RELEASE_VERSIONS=("1.3.57b2")'));
+    for (const job of ["build-windows", "build-macos-aarch64", "build-macos-x86_64", "build-macos-universal"]) {
+      assert.ok(workflowSource.includes(`  ${job}:`));
+    }
   });
 });

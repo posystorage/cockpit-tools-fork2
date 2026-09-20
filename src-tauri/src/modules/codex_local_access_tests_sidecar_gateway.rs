@@ -1024,6 +1024,10 @@
         };
         assert!(super::accept_turn_state_event(&event, &collection, now));
         event.length = 311;
+        assert!(super::accept_turn_state_event(&event, &collection, now));
+        event.length = 4097;
+        assert!(!super::accept_turn_state_event(&event, &collection, now));
+        event.length = 0;
         assert!(!super::accept_turn_state_event(&event, &collection, now));
         event.length = 312;
         event.api_key_id = "__cockpit_internal__".to_string();
@@ -1034,6 +1038,21 @@
         event.account_id = "member".to_string();
         collection.enabled = false;
         assert!(!super::accept_turn_state_event(&event, &collection, now));
+    }
+
+    #[test]
+    fn turn_state_keeps_all_known_lengths_and_four_recent_unknown_lengths() {
+        let mut observations = HashMap::new();
+        for (length, time) in [(292, 1), (312, 2), (332, 3), (356, 4), (301, 10), (302, 20), (303, 30), (304, 40), (305, 50)] {
+            observations.insert(("a".to_string(), length), super::CodexTurnStateObservation {
+                account_id: "a".to_string(), length, observed_at: time, model: String::new(),
+            });
+        }
+        super::prune_unknown_turn_state_observations(&mut observations, "a");
+        assert_eq!(observations.len(), 8);
+        assert!(!observations.contains_key(&("a".to_string(), 301)));
+        assert!(observations.contains_key(&("a".to_string(), 292)));
+        assert!(observations.contains_key(&("a".to_string(), 305)));
     }
 
     #[test]

@@ -1685,8 +1685,7 @@ func (h *authHook) OnResult(ctx context.Context, result coreauth.Result) {
 	account := h.accountForAuthID(result.AuthID)
 	if strings.EqualFold(result.Provider, "codex") && account != nil && spec != nil && !spec.Internal {
 		if state := internallogging.GetResponseHeaders(ctx).Get("X-Codex-Turn-State"); state != "" {
-			switch len(state) {
-			case 292, 312, 332, 356:
+			if len(state) <= 4096 {
 				h.emitter.emit(map[string]any{
 					"type": "codex_turn_state_observed", "accountId": stringFromAccount(account, "id"),
 					"apiKeyId": stringFromAPIKey(spec, "id"), "length": len(state),

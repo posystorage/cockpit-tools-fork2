@@ -3155,12 +3155,18 @@ func TestAuthHookObservesOnlyCodexUpstreamTurnStateLength(t *testing.T) {
 	if observed.Type != "codex_turn_state_observed" || observed.AccountID != "account_1" || observed.APIKeyID != "key_1" || observed.Length != 312 || observed.ObservedAt <= 0 || observed.Model != "gpt-test" {
 		t.Fatalf("unexpected observation: %+v", observed)
 	}
+	unknown := internallogging.WithFreshResponseHeadersHolder(base)
+	internallogging.SetResponseHeaders(unknown, http.Header{"X-Codex-Turn-State": {strings.Repeat("z", 311)}})
+	output = captureStdout(t, func() { hook.OnResult(unknown, result) })
+	if strings.Contains(output, strings.Repeat("z", 311)) || !strings.Contains(output, `"length":311`) {
+		t.Fatalf("unknown length should be observed without raw value: %s", output)
+	}
 	for name, ctx := range map[string]context.Context{
 		"retry without response": internallogging.WithFreshResponseHeadersHolder(first),
 		"request header only": context.WithValue(internallogging.WithFreshResponseHeadersHolder(base), "requestHeader", secret),
-		"unsupported length": func() context.Context {
+		"oversized length": func() context.Context {
 			ctx := internallogging.WithFreshResponseHeadersHolder(base)
-			internallogging.SetResponseHeaders(ctx, http.Header{"X-Codex-Turn-State": {strings.Repeat("z", 311)}})
+			internallogging.SetResponseHeaders(ctx, http.Header{"X-Codex-Turn-State": {strings.Repeat("z", 4097)}})
 			return ctx
 		}(),
 		"internal key": func() context.Context {

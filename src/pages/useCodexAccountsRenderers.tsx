@@ -838,13 +838,6 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
                 {displayPlanLabel}
               </span>
             </div>
-            {!isApiKeyAccount && (isInLocalAccess || (localAccessState?.turnStateObservations ?? []).some((item) => item.accountId === account.id)) && (
-              <CodexTurnStateObservations
-                accountId={account.id}
-                enabled={Boolean(localAccessCollection?.enabled && isInLocalAccess)}
-                observations={localAccessState?.turnStateObservations ?? []}
-              />
-            )}
             {(meta.accountContextText ||
               isInLocalAccess ||
               canAddToLocalAccess ||
@@ -1082,6 +1075,13 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
                   </div>
                 )}
               </div>
+            )}
+            {!isApiKeyAccount && (isInLocalAccess || (localAccessState?.turnStateObservations ?? []).some((item) => item.accountId === account.id)) && (
+              <CodexTurnStateObservations
+                accountId={account.id}
+                enabled={Boolean(localAccessCollection?.enabled && isInLocalAccess)}
+                observations={localAccessState?.turnStateObservations ?? []}
+              />
             )}
             <div className="codex-card-bottom">
               <span className="card-date">{formatDate(account.created_at)}</span>

@@ -454,7 +454,7 @@ export interface CodexLocalAccessState {
 
 export interface CodexTurnStateObservation {
   accountId: string;
-  length: 292 | 312 | 332 | 356;
+  length: number;
   observedAt: number;
   model: string;
 }

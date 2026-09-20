@@ -473,6 +473,17 @@ fn open_local_access_logs_db_for_write(
     open_local_access_logs_db_with_schema_for_write(true)
 }
 
+fn prune_unknown_turn_state_observations(
+    observations: &mut HashMap<(String, u16), CodexTurnStateObservation>, account_id: &str,
+) {
+    let mut unknown = observations.values()
+        .filter(|entry| entry.account_id == account_id && !matches!(entry.length, 292 | 312 | 332 | 356))
+        .collect::<Vec<_>>();
+    unknown.sort_by(|a, b| b.observed_at.cmp(&a.observed_at).then(a.length.cmp(&b.length)));
+    let keep = unknown.iter().take(4).map(|entry| entry.length).collect::<Vec<_>>();
+    observations.retain(|(id, length), _| id != account_id || matches!(length, 292 | 312 | 332 | 356) || keep.contains(length));
+}
+
 fn load_turn_state_observations() -> Result<HashMap<(String, u16), CodexTurnStateObservation>, String> {
     let conn = open_local_access_logs_db()?;
     let mut stmt = conn.prepare("SELECT account_id, length, observed_at, model FROM codex_turn_state_observations")
@@ -487,9 +498,13 @@ fn load_turn_state_observations() -> Result<HashMap<(String, u16), CodexTurnStat
     let mut observations = HashMap::new();
     for row in rows {
         let observation = row.map_err(|error| error.to_string())?;
-        if matches!(observation.length, 292 | 312 | 332 | 356) {
+        if (1..=4096).contains(&observation.length) && observation.observed_at > 0 {
             observations.insert((observation.account_id.clone(), observation.length), observation);
         }
+    }
+    let accounts = observations.keys().map(|(account_id, _)| account_id.clone()).collect::<std::collections::HashSet<_>>();
+    for account_id in accounts {
+        prune_unknown_turn_state_observations(&mut observations, &account_id);
     }
     Ok(observations)
 }
@@ -503,6 +518,16 @@ fn persist_turn_state_observation(observation: &CodexTurnStateObservation) -> Re
            observed_at = excluded.observed_at, model = excluded.model
          WHERE excluded.observed_at > codex_turn_state_observations.observed_at",
         params![observation.account_id, observation.length, observation.observed_at, observation.model],
+    ).map_err(|error| error.to_string())?;
+    conn.execute(
+        "DELETE FROM codex_turn_state_observations
+         WHERE account_id = ?1 AND length NOT IN (292, 312, 332, 356)
+           AND length NOT IN (
+               SELECT length FROM codex_turn_state_observations
+               WHERE account_id = ?1 AND length NOT IN (292, 312, 332, 356)
+               ORDER BY observed_at DESC, length ASC LIMIT 4
+           )",
+        params![observation.account_id],
     ).map_err(|error| error.to_string())?;
     Ok(())
 }

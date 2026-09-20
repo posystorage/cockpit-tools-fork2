@@ -1885,9 +1885,8 @@ html[data-reduced-motion="true"] .codex-api-service-key-advanced-toggle[aria-exp
   overflow-wrap: anywhere;
 }
 
-.codex-api-service-account-meta > .codex-turn-state {
-  flex-basis: 100%;
-  padding: 0;
+.codex-api-service-account-card > .codex-turn-state {
+  grid-column: 1 / -1;
 }
 
 .codex-api-service-account-meta .codex-api-service-account-meta-token {

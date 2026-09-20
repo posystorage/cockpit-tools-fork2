@@ -1911,6 +1911,12 @@ async fn ensure_runtime_loaded_without_start_with_profile_restore(
                             runtime.turn_state_observations.insert(key, observation);
                         }
                     }
+                    let accounts = runtime.turn_state_observations.keys()
+                        .map(|(account_id, _)| account_id.clone())
+                        .collect::<std::collections::HashSet<_>>();
+                    for account_id in accounts {
+                        prune_unknown_turn_state_observations(&mut runtime.turn_state_observations, &account_id);
+                    }
                     drop(runtime);
                     emit_local_access_state_updated();
                 }
