@@ -91,6 +91,7 @@ fn start_codex_default_internal(
             before_probe_started.elapsed().as_millis()
         ));
 
+        let mut store_entry_launched = false;
         let app_user_model_id = detect_codex_store_app_user_model_id();
         if let Some(app_user_model_id) = app_user_model_id {
             crate::modules::logger::log_info(&format!(
@@ -100,6 +101,7 @@ fn start_codex_default_internal(
             let args = build_codex_default_launch_args(extra_args);
             match launch_codex_via_store_app_user_model_id(&app_user_model_id, None, None, &args) {
                 Ok(()) => {
+                    store_entry_launched = true;
                     crate::modules::logger::log_info(&format!(
                         "[Codex Start] 已通过系统入口启动 Codex: {}",
                         app_user_model_id
@@ -168,8 +170,20 @@ fn start_codex_default_internal(
                             ));
                         }
                     }
+                    // Store 激活后的进程注册可能晚于主探测窗口，保留短宽限期避免偶发误报。
+                    let grace_started = Instant::now();
+                    while grace_started.elapsed() < Duration::from_secs(5) {
+                        if let Some(pid) = resolve_codex_pid(None, None) {
+                            crate::modules::logger::log_info(&format!(
+                                "[Codex Start] 系统入口已启动 Codex，未匹配到新 PID 但已确认主进程 pid={} app_id={}",
+                                pid, app_user_model_id
+                            ));
+                            return Ok(pid);
+                        }
+                        thread::sleep(Duration::from_millis(250));
+                    }
                     crate::modules::logger::log_warn(
-                        "[Codex Start] 系统入口已调用，但 15s 内未探测到 Codex 主进程，准备回退可执行路径",
+                        "[Codex Start] 系统入口已调用，但 15s 内未确认到 Codex 主进程；后续仅在安全路径可用时回退",
                     );
                 }
                 Err(err) => {
@@ -185,11 +199,51 @@ fn start_codex_default_internal(
             );
         }
 
+        if store_entry_launched {
+            let message = "Codex 已通过系统入口启动，但未确认到主进程；请手动打开 Codex 后重试";
+            crate::modules::logger::log_warn(&format!("[Codex Start] {}", message));
+            return Err(crate::modules::windows_operation::format_error(
+                "launch_app",
+                message,
+                "系统入口已调用成功，但 15s 内未确认到 Codex 主进程；为避免重复启动，已跳过 exe 回退",
+                None,
+                &[],
+                true,
+                false,
+                true,
+            ));
+        }
+
         let launch_path = resolve_codex_launch_path()?;
+        let launch_path_text = launch_path.to_string_lossy().to_string();
         crate::modules::logger::log_info(&format!(
             "[Codex Start] 启动策略=exe-path launch_path={}",
-            launch_path.to_string_lossy()
+            launch_path_text
         ));
+        if is_windowsapps_launch_path(&launch_path) {
+            if let Some(pid) = resolve_codex_pid(None, None) {
+                crate::modules::logger::log_info(&format!(
+                    "[Codex Start] 已跳过 WindowsApps 直接启动；确认 Codex 正在运行 pid={} launch_path={}",
+                    pid, launch_path_text
+                ));
+                return Ok(pid);
+            }
+            let message = "未探测到 Codex 的 Store 启动入口；请确认 PowerShell 可用，或手动打开 Codex";
+            crate::modules::logger::log_warn(&format!(
+                "[Codex Start] {} launch_path={}",
+                message, launch_path_text
+            ));
+            return Err(crate::modules::windows_operation::format_error(
+                "launch_app",
+                message,
+                "WindowsApps 目录下的 Codex 可执行文件拒绝普通进程直接启动（ACCESS_DENIED / os error 5）",
+                None,
+                &[],
+                true,
+                false,
+                true,
+            ));
+        }
         let mut cmd = Command::new(&launch_path);
         apply_managed_proxy_env_to_command(&mut cmd);
         if should_detach_child() {
@@ -204,11 +258,35 @@ fn start_codex_default_internal(
             cmd.arg(arg);
         }
 
-        let child =
-            spawn_command_with_trace(&mut cmd).map_err(|e| format!("启动 Codex 失败: {}", e))?;
+        let child = match spawn_command_with_trace(&mut cmd) {
+            Ok(child) => child,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::PermissionDenied
+                    && is_windowsapps_launch_path(&launch_path) =>
+            {
+                if let Some(pid) = resolve_codex_pid(None, None) {
+                    crate::modules::logger::log_info(&format!(
+                        "[Codex Start] WindowsApps 直接启动被拒绝，但确认 Codex 正在运行 pid={} launch_path={}",
+                        pid, launch_path_text
+                    ));
+                    return Ok(pid);
+                }
+                return Err(crate::modules::windows_operation::format_error(
+                    "launch_app",
+                    "无法启动 WindowsApps 中的 Codex；请手动打开 Codex 后重试",
+                    &format!("启动 Codex 失败: {}", error),
+                    None,
+                    &[],
+                    true,
+                    false,
+                    true,
+                ));
+            }
+            Err(error) => return Err(format!("启动 Codex 失败: {}", error)),
+        };
         crate::modules::logger::log_info(&format!(
             "[Codex Start] 启动策略=exe-path launch_path={} pid={}",
-            launch_path.to_string_lossy(),
+            launch_path_text,
             child.id()
         ));
         return Ok(child.id());
@@ -1273,15 +1351,159 @@ pub fn find_pids_by_port(port: u16) -> Result<Vec<u32>, String> {
         }
     }
 
-    Ok(pids.into_iter().collect())
+    let mut pids = pids.into_iter().collect::<Vec<_>>();
+    pids.sort_unstable();
+    Ok(pids)
 }
 
 pub fn is_port_in_use(port: u16) -> Result<bool, String> {
     Ok(!find_pids_by_port(port)?.is_empty())
 }
 
-pub fn kill_port_processes(port: u16) -> Result<usize, String> {
+fn process_command_line_for_pid(pid: u32) -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("ps")
+            .args(["-p", &pid.to_string(), "-o", "command="])
+            .output()
+            .map_err(|error| format!("读取 pid {} 命令行失败: {}", pid, error))?;
+        if !output.status.success() {
+            return Err(format!("读取 pid {} 命令行失败: {}", pid, output.status));
+        }
+        let command_line = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if command_line.is_empty() {
+            return Err(format!("pid {} 命令行为空", pid));
+        }
+        return Ok(command_line);
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let raw = std::fs::read(format!("/proc/{}/cmdline", pid))
+            .map_err(|error| format!("读取 pid {} 命令行失败: {}", pid, error))?;
+        let command_line = String::from_utf8_lossy(&raw).replace('\0', " ");
+        let command_line = command_line.trim().to_string();
+        if command_line.is_empty() {
+            return Err(format!("pid {} 命令行为空", pid));
+        }
+        return Ok(command_line);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut system = System::new();
+        system.refresh_processes_specifics(
+            sysinfo::ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing()
+                .with_exe(UpdateKind::Always)
+                .with_cmd(UpdateKind::Always),
+        );
+        let process = system
+            .process(Pid::from(pid as usize))
+            .ok_or_else(|| format!("pid {} 已退出", pid))?;
+        let command_line = process
+            .cmd()
+            .iter()
+            .map(|value| value.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(" ");
+        if command_line.trim().is_empty() {
+            return Err(format!("pid {} 命令行为空", pid));
+        }
+        return Ok(command_line);
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        let _ = pid;
+        Err("当前系统不支持读取进程命令行".to_string())
+    }
+}
+
+fn normalized_process_argument(value: &str) -> String {
+    value
+        .trim()
+        .trim_matches(|character| character == '\'' || character == '"')
+        .replace('\\', "/")
+        .to_ascii_lowercase()
+}
+
+fn command_line_parent_pid(command_line: &str) -> Option<u32> {
+    let marker_index = command_line.find("--parent-pid")?;
+    let suffix = command_line[marker_index + "--parent-pid".len()..].trim_start_matches(
+        |character: char| {
+            character.is_whitespace() || character == '=' || character == '\'' || character == '"'
+        },
+    );
+    let digits = suffix
+        .chars()
+        .take_while(|character| character.is_ascii_digit())
+        .collect::<String>();
+    (!digits.is_empty())
+        .then(|| digits.parse::<u32>().ok())
+        .flatten()
+}
+
+fn managed_sidecar_command_matches(
+    command_line: &str,
+    binary_name: &str,
+    config_path: &Path,
+) -> bool {
+    let normalized = normalized_process_argument(command_line);
+    let binary_name = normalized_process_argument(binary_name);
+    let config_path = normalized_process_argument(config_path.to_string_lossy().as_ref());
+    normalized.contains(&binary_name)
+        && normalized.contains("--config")
+        && normalized.contains(&config_path)
+}
+
+fn managed_sidecar_parent_allows_cleanup(
+    parent_pid: Option<u32>,
+    current_parent_pid: u32,
+    parent_running: bool,
+) -> bool {
+    parent_pid == Some(current_parent_pid)
+        || parent_pid.is_some_and(|parent_pid| parent_pid > 0 && !parent_running)
+}
+
+/// Stops only the sidecar attached to this Cockpit process, or an orphan whose
+/// recorded parent has already exited. A sidecar owned by another live Cockpit
+/// instance is deliberately left untouched so concurrent app copies cannot
+/// interrupt each other's API service.
+pub fn kill_managed_sidecar_port_processes(
+    port: u16,
+    binary_name: &str,
+    config_path: &Path,
+    current_parent_pid: u32,
+) -> Result<usize, String> {
     let pids = find_pids_by_port(port)?;
+    for pid in &pids {
+        let command_line = process_command_line_for_pid(*pid)?;
+        let parent_pid = command_line_parent_pid(&command_line);
+        let matching_sidecar =
+            managed_sidecar_command_matches(&command_line, binary_name, config_path);
+        let parent_running = parent_pid.is_some_and(is_pid_running);
+        let owned_or_orphaned = managed_sidecar_parent_allows_cleanup(
+            parent_pid,
+            current_parent_pid,
+            parent_running,
+        );
+        if !matching_sidecar || !owned_or_orphaned {
+            return Err(format!(
+                "端口 {} 由其他运行中的进程占用，已保留该进程: pid={}, parent_pid={}",
+                port,
+                pid,
+                parent_pid
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "unknown".to_string())
+            ));
+        }
+    }
+    kill_processes_by_pid(&pids)
+}
+
+fn kill_processes_by_pid(pids: &[u32]) -> Result<usize, String> {
     if pids.is_empty() {
         return Ok(0);
     }
@@ -1292,7 +1514,7 @@ pub fn kill_port_processes(port: u16) -> Result<usize, String> {
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
-        for pid in &pids {
+        for pid in pids {
             if *pid == 0 || !is_pid_running(*pid) {
                 cleaned += 1;
                 continue;
@@ -1329,7 +1551,7 @@ pub fn kill_port_processes(port: u16) -> Result<usize, String> {
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
-        for pid in &pids {
+        for pid in pids {
             if *pid == 0 || !is_pid_running(*pid) {
                 cleaned += 1;
                 continue;
@@ -1382,4 +1604,9 @@ pub fn kill_port_processes(port: u16) -> Result<usize, String> {
     }
 
     Ok(cleaned)
+}
+
+pub fn kill_port_processes(port: u16) -> Result<usize, String> {
+    let pids = find_pids_by_port(port)?;
+    kill_processes_by_pid(&pids)
 }

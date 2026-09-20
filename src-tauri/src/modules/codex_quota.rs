@@ -1,8 +1,6 @@
 use crate::models::codex::{CodexAccount, CodexQuota, CodexQuotaErrorInfo, CodexResetCredit};
 use crate::modules::{codex_account, codex_agent_identity, logger};
-use reqwest::header::{
-    HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE, REFERER, USER_AGENT,
-};
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, REFERER, USER_AGENT};
 use reqwest::{Method, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -21,6 +19,7 @@ const LEGACY_NEW_API_PROVIDER_ID: &str = "new_api";
 const COCKPIT_API_PLAN_TYPE: &str = "Cockpit Api";
 const LEGACY_NEW_API_EXCLUSIVE_PLAN_TYPE: &str = "NEW_API_EXCLUSIVE";
 const COCKPIT_API_BASE_URL: &str = "";
+const CODEX_DESKTOP_ORIGINATOR: &str = "Codex Desktop";
 const CHATGPT_WEB_REFERER: &str = "https://chatgpt.com/";
 const CHATGPT_WEB_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
 const RESET_CREDITS_MOCK_JSON_ENV: &str = "CODEX_RESET_CREDITS_MOCK_JSON";
@@ -1242,17 +1241,18 @@ fn build_codex_api_headers(
                 .map_err(|e| format!("构建 Authorization 头失败: {}", e))?,
         );
     }
-    headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    headers.insert(REFERER, HeaderValue::from_static(CHATGPT_WEB_REFERER));
-    headers.insert(USER_AGENT, HeaderValue::from_static(CHATGPT_WEB_USER_AGENT));
-    headers.insert("OpenAI-Beta", HeaderValue::from_static("codex-1"));
-    headers.insert("oai-language", HeaderValue::from_static("zh-CN"));
-    headers.insert("originator", HeaderValue::from_static("Codex Desktop"));
-    headers.insert("sec-fetch-site", HeaderValue::from_static("none"));
-    headers.insert("sec-fetch-mode", HeaderValue::from_static("no-cors"));
-    headers.insert("sec-fetch-dest", HeaderValue::from_static("empty"));
-    headers.insert("priority", HeaderValue::from_static("u=4, i"));
+    // 与官方 codex `default_client` 一致：只带 originator + codex 形态 User-Agent，
+    // 不伪装成 chatgpt.com 网页请求（不写 Referer / sec-fetch-* / OpenAI-Beta / oai-language）。
+    // 请求体的 Content-Type 由 `.json(body)` 自动补齐，与官方 consume 请求一致。
+    headers.insert(
+        USER_AGENT,
+        HeaderValue::from_str(&codex_desktop_user_agent())
+            .map_err(|e| format!("构建 User-Agent 头失败: {}", e))?,
+    );
+    headers.insert(
+        "originator",
+        HeaderValue::from_static(CODEX_DESKTOP_ORIGINATOR),
+    );
 
     if account
         .agent_identity
@@ -1271,6 +1271,34 @@ fn build_codex_api_headers(
     }
 
     Ok(headers)
+}
+
+/// 官方 codex 的 User-Agent 形态：`<originator>/<version> (<os> <os_version>; <arch>)`。
+///
+/// 桌面端还会在尾部追加终端/宿主信息，本工具无法复现该段，只保留官方形态的前缀部分。
+fn codex_desktop_user_agent() -> String {
+    let os_type = match std::env::consts::OS {
+        "macos" => "Mac OS",
+        "windows" => "Windows",
+        "linux" => "Linux",
+        value => value,
+    };
+    let arch = match std::env::consts::ARCH {
+        "aarch64" => "arm64",
+        value => value,
+    };
+    let os_version = sysinfo::System::os_version().unwrap_or_default();
+    let os_label = if os_version.trim().is_empty() {
+        os_type.to_string()
+    } else {
+        format!("{} {}", os_type, os_version.trim())
+    };
+
+    format!(
+        "{}/{version} ({os_label}; {arch})",
+        CODEX_DESKTOP_ORIGINATOR,
+        version = crate::modules::codex_oauth::official_client_version()
+    )
 }
 
 struct CodexApiResponse {
@@ -1615,7 +1643,7 @@ async fn refresh_account_quota_once(
                 sync_subscription_from_token(&mut account, result.plan_type.clone(), None);
             }
             normalize_subscription_retry_state(&mut account);
-            account.quota = Some(result.quota.clone());
+            account.replace_quota_preserving_team_history(result.quota.clone(), now_timestamp());
             account.quota_error = None;
             account.usage_updated_at = Some(now_timestamp());
             codex_account::save_account(&account)?;
@@ -1642,7 +1670,7 @@ async fn refresh_account_quota_once(
         if result.plan_type.is_some() {
             sync_subscription_from_token(&mut account, result.plan_type.clone(), None);
         }
-        account.quota = Some(result.quota.clone());
+        account.replace_quota_preserving_team_history(result.quota.clone(), now_timestamp());
         account.quota_error = None;
         account.usage_updated_at = Some(now_timestamp());
         codex_account::save_account(&account)?;
@@ -1708,7 +1736,7 @@ async fn refresh_account_quota_once(
         ));
     }
 
-    account.quota = Some(result.quota.clone());
+    account.replace_quota_preserving_team_history(result.quota.clone(), now_timestamp());
     account.quota_error = None;
     account.usage_updated_at = Some(now_timestamp());
     codex_account::save_account(&account)?;
@@ -1744,6 +1772,18 @@ async fn refresh_account_quota_with_runtime_snapshot(
 }
 
 pub async fn refresh_account_quota(account_id: &str) -> Result<CodexQuota, String> {
+    crate::modules::codex_quota_refresh_scheduler::refresh_account(account_id, None).await
+}
+
+pub async fn refresh_account_quota_background(account_id: &str) -> Result<CodexQuota, String> {
+    crate::modules::codex_quota_refresh_scheduler::refresh_account_background(account_id, None)
+        .await
+}
+
+pub(crate) async fn refresh_account_quota_unqueued(
+    account_id: &str,
+    runtime_snapshot: Option<&codex_account::CodexQuotaRuntimeSnapshot>,
+) -> Result<CodexQuota, String> {
     let account = codex_account::load_account(account_id)
         .ok_or_else(|| format!("账号不存在: {}", account_id))?;
     if account.is_api_key_auth()
@@ -1752,6 +1792,9 @@ pub async fn refresh_account_quota(account_id: &str) -> Result<CodexQuota, Strin
     {
         let runtime_snapshot = codex_account::CodexQuotaRuntimeSnapshot::empty();
         return refresh_account_quota_with_runtime_snapshot(account_id, &runtime_snapshot).await;
+    }
+    if let Some(runtime_snapshot) = runtime_snapshot {
+        return refresh_account_quota_with_runtime_snapshot(account_id, runtime_snapshot).await;
     }
     let runtime_snapshot = codex_account::CodexQuotaRuntimeSnapshot::capture().await?;
     refresh_account_quota_with_runtime_snapshot(account_id, &runtime_snapshot).await
@@ -1801,7 +1844,7 @@ pub async fn refresh_freshly_authorized_account_quota(
         sync_subscription_from_token(&mut latest, result.plan_type.clone(), None);
     }
     normalize_subscription_retry_state(&mut latest);
-    latest.quota = Some(result.quota.clone());
+    latest.replace_quota_preserving_team_history(result.quota.clone(), now_timestamp());
     latest.quota_error = None;
     latest.usage_updated_at = Some(now_timestamp());
     codex_account::save_account(&latest)?;
@@ -1894,8 +1937,6 @@ pub async fn refresh_account_subscription_info(
     }
 }
 
-const CODEX_QUOTA_REFRESH_MAX_CONCURRENT: usize = 5;
-
 fn attach_runtime_snapshot_to_account_ids(
     account_ids: Vec<String>,
     runtime_snapshot: Arc<codex_account::CodexQuotaRuntimeSnapshot>,
@@ -1924,6 +1965,20 @@ pub async fn refresh_quotas_for_account_ids_with_options(
         account_ids,
         respect_group_quota_refresh,
         None,
+        crate::modules::codex_quota_refresh_scheduler::RefreshPriority::Manual,
+    )
+    .await
+}
+
+pub async fn refresh_quotas_for_account_ids_in_background(
+    account_ids: &[String],
+    respect_group_quota_refresh: bool,
+) -> Result<Vec<(String, Result<CodexQuota, String>)>, String> {
+    refresh_quotas_for_account_ids_with_options_and_runtime_snapshot(
+        account_ids,
+        respect_group_quota_refresh,
+        None,
+        crate::modules::codex_quota_refresh_scheduler::RefreshPriority::Background,
     )
     .await
 }
@@ -1932,10 +1987,15 @@ async fn refresh_quotas_for_account_ids_with_options_and_runtime_snapshot(
     account_ids: &[String],
     respect_group_quota_refresh: bool,
     runtime_snapshot: Option<Arc<codex_account::CodexQuotaRuntimeSnapshot>>,
+    priority: crate::modules::codex_quota_refresh_scheduler::RefreshPriority,
 ) -> Result<Vec<(String, Result<CodexQuota, String>)>, String> {
-    use futures::future::join_all;
+    use futures_util::StreamExt;
     use std::collections::HashSet;
-    use tokio::sync::Semaphore;
+
+    let background_epoch = crate::modules::codex_quota_refresh_scheduler::background_epoch();
+    if priority == crate::modules::codex_quota_refresh_scheduler::RefreshPriority::Manual {
+        crate::modules::codex_quota_refresh_scheduler::cancel_queued_background_refreshes(None);
+    }
 
     if account_ids.is_empty() {
         return Ok(Vec::new());
@@ -1982,48 +2042,49 @@ async fn refresh_quotas_for_account_ids_with_options_and_runtime_snapshot(
         }
         None => Arc::new(codex_account::CodexQuotaRuntimeSnapshot::empty()),
     };
-    let semaphore = Arc::new(Semaphore::new(CODEX_QUOTA_REFRESH_MAX_CONCURRENT));
-    let tasks: Vec<_> = attach_runtime_snapshot_to_account_ids(unique_ids, runtime_snapshot)
-        .into_iter()
-        .map(|(account_id, runtime_snapshot)| {
-            let semaphore = semaphore.clone();
-            async move {
-                let _permit = semaphore
-                    .acquire_owned()
-                    .await
-                    .map_err(|e| format!("获取 Codex 刷新并发许可失败: {}", e))?;
-                let result =
-                    refresh_account_quota_with_runtime_snapshot(&account_id, &runtime_snapshot)
-                        .await;
-                Ok::<(String, Result<CodexQuota, String>), String>((account_id, result))
-            }
-        })
-        .collect();
-
-    let mut results = Vec::with_capacity(tasks.len());
-    for task in join_all(tasks).await {
-        match task {
-            Ok(item) => results.push(item),
-            Err(err) => return Err(err),
-        }
-    }
-    Ok(results)
+    let requests = futures_util::stream::iter(attach_runtime_snapshot_to_account_ids(
+        unique_ids,
+        runtime_snapshot,
+    ))
+    .map(|(account_id, runtime_snapshot)| async move {
+        let result = crate::modules::codex_quota_refresh_scheduler::refresh_account_with_priority(
+            &account_id,
+            Some(runtime_snapshot),
+            priority,
+            Some(background_epoch),
+        )
+        .await;
+        (account_id, result)
+    })
+    .buffered(4)
+    .collect::<Vec<_>>()
+    .await;
+    Ok(requests)
 }
 
 /// 刷新所有账号配额（自动跳过分组「不刷新」账号）
 pub async fn refresh_all_quotas() -> Result<Vec<(String, Result<CodexQuota, String>)>, String> {
-    refresh_all_quotas_with_options(false).await
+    refresh_all_quotas_with_options(
+        false,
+        crate::modules::codex_quota_refresh_scheduler::RefreshPriority::Manual,
+    )
+    .await
 }
 
 /// 后台自动刷新所有账号配额；运行中的 OAuth 账号由官方 app-server 自己维护凭据，
 /// 避免外部轮换 refresh_token 后让已运行进程进入 Auth/relogin。
 pub async fn refresh_all_quotas_for_background(
 ) -> Result<Vec<(String, Result<CodexQuota, String>)>, String> {
-    refresh_all_quotas_with_options(true).await
+    refresh_all_quotas_with_options(
+        true,
+        crate::modules::codex_quota_refresh_scheduler::RefreshPriority::Background,
+    )
+    .await
 }
 
 async fn refresh_all_quotas_with_options(
     skip_running_oauth_accounts: bool,
+    priority: crate::modules::codex_quota_refresh_scheduler::RefreshPriority,
 ) -> Result<Vec<(String, Result<CodexQuota, String>)>, String> {
     let disabled = codex_account::load_quota_refresh_disabled_account_ids();
     let runtime_snapshot = if skip_running_oauth_accounts {
@@ -2062,6 +2123,7 @@ async fn refresh_all_quotas_with_options(
         &account_ids,
         false,
         runtime_snapshot,
+        priority,
     )
     .await
 }
@@ -2072,13 +2134,14 @@ mod tests {
         attach_runtime_snapshot_to_account_ids, build_codex_api_headers,
         normalize_http_error_body_for_display, normalize_remaining_percentage,
         parse_account_check_snapshot, parse_reset_credits_snapshot,
-        send_codex_api_request_with_agent_auth_base_url, WindowInfo,
+        send_codex_api_request_with_agent_auth_base_url, WindowInfo, CODEX_DESKTOP_ORIGINATOR,
         HTTP_ERROR_BODY_DISPLAY_MAX_CHARS,
     };
     use crate::models::codex::{CodexAccount, CodexAgentIdentity, CodexTokens};
     use base64::{engine::general_purpose, Engine as _};
     use ed25519_dalek::{pkcs8::EncodePrivateKey, SigningKey};
     use rand::rngs::OsRng;
+    use reqwest::header::{REFERER, USER_AGENT};
     use reqwest::Method;
     use serde_json::json;
     use std::sync::{Arc, Mutex};
@@ -2369,10 +2432,20 @@ mod tests {
         let headers = build_codex_api_headers(&account, account.account_id.as_deref())
             .expect("build common headers");
         assert!(headers.get("authorization").is_none());
-        assert_eq!(headers.get("openai-beta").unwrap(), "codex-1");
-        assert_eq!(headers.get("originator").unwrap(), "Codex Desktop");
+        assert_eq!(headers.get("originator").unwrap(), CODEX_DESKTOP_ORIGINATOR);
         assert_eq!(headers.get("chatgpt-account-id").unwrap(), "team-test");
         assert_eq!(headers.get("x-openai-fedramp").unwrap(), "true");
+        assert!(
+            headers
+                .get(USER_AGENT)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.starts_with("Codex Desktop/")),
+            "额度请求必须使用官方 codex 形态 User-Agent: {:?}",
+            headers.get(USER_AGENT)
+        );
+        assert!(headers.get("openai-beta").is_none());
+        assert!(headers.get(REFERER).is_none());
+        assert!(headers.get("sec-fetch-site").is_none());
 
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
@@ -2444,10 +2517,13 @@ mod tests {
         );
         assert!(usage_requests.iter().all(|request| {
             let lower = request.to_ascii_lowercase();
-            lower.contains("openai-beta: codex-1")
+            lower.contains("user-agent: codex desktop/")
                 && lower.contains("originator: codex desktop")
                 && lower.contains("chatgpt-account-id: team-test")
                 && lower.contains("x-openai-fedramp: true")
+                && !lower.contains("openai-beta")
+                && !lower.contains("referer:")
+                && !lower.contains("sec-fetch-site:")
         }));
     }
 }

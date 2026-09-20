@@ -59,6 +59,87 @@ mod legacy_platform_adapter_cleanup_tests {
     }
 }
 
+#[cfg(test)]
+mod managed_sidecar_port_cleanup_tests {
+    use super::{
+        command_line_parent_pid, managed_sidecar_command_matches,
+        managed_sidecar_parent_allows_cleanup, normalized_process_argument,
+    };
+    use std::path::Path;
+
+    #[test]
+    fn parses_sidecar_parent_pid_forms() {
+        assert_eq!(
+            command_line_parent_pid("cockpit-cliproxy --parent-pid 1805"),
+            Some(1805)
+        );
+        assert_eq!(
+            command_line_parent_pid("cockpit-cliproxy --parent-pid=64680 --config x"),
+            Some(64680)
+        );
+        assert_eq!(command_line_parent_pid("cockpit-cliproxy"), None);
+    }
+
+    #[test]
+    fn requires_expected_sidecar_binary_and_config_path() {
+        let config =
+            Path::new("/Users/demo/.antigravity_cockpit/codex_local_access_sidecar/config.json");
+        let command = "/Applications/Cockpit Tools.app/Contents/MacOS/cockpit-cliproxy --config /Users/demo/.antigravity_cockpit/codex_local_access_sidecar/config.json --parent-pid 1805";
+        assert!(managed_sidecar_command_matches(
+            command,
+            "cockpit-cliproxy",
+            config
+        ));
+        assert!(!managed_sidecar_command_matches(
+            command,
+            "cockpit-cliproxy",
+            Path::new("/Users/demo/another/config.json")
+        ));
+        assert!(!managed_sidecar_command_matches(
+            "python server.py --config /Users/demo/.antigravity_cockpit/codex_local_access_sidecar/config.json",
+            "cockpit-cliproxy",
+            config
+        ));
+    }
+
+    #[test]
+    fn normalizes_windows_process_arguments() {
+        assert_eq!(
+            normalized_process_argument(
+                r#""C:\Program Files\Cockpit Tools\cockpit-cliproxy.exe""#
+            ),
+            "c:/program files/cockpit tools/cockpit-cliproxy.exe"
+        );
+    }
+
+    #[test]
+    fn cleanup_rejects_live_siblings_and_detached_sidecars() {
+        assert!(managed_sidecar_parent_allows_cleanup(
+            Some(1805),
+            1805,
+            true
+        ));
+        assert!(managed_sidecar_parent_allows_cleanup(
+            Some(1804),
+            1805,
+            false
+        ));
+        assert!(!managed_sidecar_parent_allows_cleanup(
+            Some(1804),
+            1805,
+            true
+        ));
+        assert!(!managed_sidecar_parent_allows_cleanup(
+            Some(0),
+            1805,
+            false
+        ));
+        assert!(!managed_sidecar_parent_allows_cleanup(
+            None, 1805, false
+        ));
+    }
+}
+
 #[cfg(all(test, target_os = "macos"))]
 mod qoder_macos_process_tests {
     use super::is_qoder_macos_main_process_command_line;
@@ -188,10 +269,39 @@ mod codex_launch_args_tests {
 
     #[test]
     fn managed_store_launch_error_is_machine_readable_and_keeps_causes() {
-        let error = codex_managed_store_launch_unsafe_error("denied", "fallback failed");
+        let error = codex_managed_store_launch_unsafe_error(
+            "denied",
+            "fallback failed",
+            "launch_path=C:\\Program Files\\WindowsApps\\OpenAI.Codex_1.0\\app\\ChatGPT.exe; launch_path_exists=true",
+        );
         assert!(error.starts_with(CODEX_MANAGED_STORE_LAUNCH_UNSAFE_PREFIX));
         assert!(error.contains("direct_error=denied"));
         assert!(error.contains("powershell_error=fallback failed"));
+        // 诊断信息要跟着错误一起回传，用户复制错误即可让支持侧看到实际路径。
+        assert!(error.contains("launch_path="));
+        assert!(error.contains("launch_path_exists=true"));
+    }
+
+    #[test]
+    fn managed_store_launch_error_keeps_package_identity_cause_readable() {
+        // 三层兜底（直启 / Start-Process / 包身份）都失败时，包身份原因也要留在
+        // 错误里，否则用户复制出来的诊断看不到真正卡在哪一层。
+        let error = codex_managed_store_launch_unsafe_error(
+            "拒绝访问。 (os error 5)",
+            "PowerShell 启动 Codex 失败",
+            "package_identity_error=包身份启动失败: status=exit code: 1; launch_path_exists=true",
+        );
+        assert!(error.contains("package_identity_error="));
+        assert!(error.contains("launch_path_exists=true"));
+    }
+
+    #[test]
+    fn managed_store_launch_error_omits_empty_diagnostics() {
+        let error = codex_managed_store_launch_unsafe_error("denied", "fallback failed", "  ");
+        assert_eq!(
+            error,
+            "CODEX_MANAGED_STORE_LAUNCH_UNSAFE:direct_error=denied; powershell_error=fallback failed"
+        );
     }
 }
 
@@ -502,5 +612,176 @@ mod tests {
             solo_cn,
             TraePlatformKind::TraeSolo
         ));
+    }
+}
+
+#[cfg(test)]
+mod windows_codex_exe_match_tests {
+    use super::{is_matching_codex_windows_exe, windowsapps_package_family};
+
+    const OLD_STORE: &str = r"c:\program files\windowsapps\openai.codex_26.820.7780.0_x64__2p2nqsd0c76g0\app\chatgpt.exe";
+    const NEW_STORE: &str = r"c:\program files\windowsapps\openai.codex_26.908.4834.0_x64__2p2nqsd0c76g0\app\chatgpt.exe";
+    const OTHER_FAMILY: &str = r"c:\program files\windowsapps\openai.chatgpt_1.0.0.0_x64__2p2nqsd0c76g0\app\chatgpt.exe";
+
+    #[test]
+    fn windowsapps_family_is_parsed_from_package_directory() {
+        assert_eq!(
+            windowsapps_package_family(OLD_STORE).as_deref(),
+            Some("openai.codex")
+        );
+        assert_eq!(
+            windowsapps_package_family(r"C:/Program Files/WindowsApps/OpenAI.Codex_1.0_x64__abc/app/Codex.exe")
+                .as_deref(),
+            Some("openai.codex")
+        );
+        assert!(windowsapps_package_family(r"c:\users\me\codex\codex.exe").is_none());
+    }
+
+    #[test]
+    fn store_package_matches_across_version_directories() {
+        // 商店更新后配置路径与运行中进程只差版本目录，必须仍然认作同一实例，
+        // 否则会误判「客户端没启动 / 已关闭」，官方登录更会直接判定失败。
+        assert!(is_matching_codex_windows_exe(NEW_STORE, OLD_STORE));
+        assert!(is_matching_codex_windows_exe(OLD_STORE, NEW_STORE));
+        assert!(is_matching_codex_windows_exe(NEW_STORE, NEW_STORE));
+    }
+
+    #[test]
+    fn package_family_and_file_name_still_have_to_match() {
+        // 不同包族：ChatGPT 桌面端与 Codex 是两个应用，不能混为一谈。
+        assert!(!is_matching_codex_windows_exe(OTHER_FAMILY, OLD_STORE));
+        // 同包族但不是同一个可执行文件（内置 codex.exe 不应当成主进程）。
+        assert!(!is_matching_codex_windows_exe(
+            r"c:\program files\windowsapps\openai.codex_26.908.4834.0_x64__2p2nqsd0c76g0\app\resources\codex.exe",
+            NEW_STORE
+        ));
+    }
+
+    #[test]
+    fn non_store_paths_keep_strict_comparison() {
+        let local = r"c:\users\me\appdata\local\programs\codex\codex.exe";
+        let other = r"d:\elsewhere\codex\codex.exe";
+        assert!(is_matching_codex_windows_exe(local, local));
+        assert!(!is_matching_codex_windows_exe(other, local));
+        // 一侧是商店路径、另一侧不是时不得放宽。
+        assert!(!is_matching_codex_windows_exe(local, NEW_STORE));
+        assert!(!is_matching_codex_windows_exe(NEW_STORE, local));
+    }
+
+    #[test]
+    fn empty_paths_never_match() {
+        assert!(!is_matching_codex_windows_exe("", NEW_STORE));
+        assert!(!is_matching_codex_windows_exe(NEW_STORE, ""));
+        assert!(!is_matching_codex_windows_exe("", ""));
+    }
+}
+
+#[cfg(test)]
+mod codex_package_identity_launch_tests {
+    use super::{
+        quote_windows_command_argument, windowsapps_install_location_from_launch_path,
+        windowsapps_package_family,
+    };
+    use std::path::Path;
+
+    #[test]
+    fn quotes_arguments_that_contain_spaces() {
+        // `--user-data-dir` 指向的实例目录常含空格，必须整体加引号。
+        assert_eq!(
+            quote_windows_command_argument(
+                r"--user-data-dir=C:\Users\some user\.antigravity_cockpit\ud"
+            ),
+            r#""--user-data-dir=C:\Users\some user\.antigravity_cockpit\ud""#
+        );
+    }
+
+    #[test]
+    fn leaves_simple_arguments_untouched() {
+        assert_eq!(
+            quote_windows_command_argument("--remote-debugging-port=9333"),
+            "--remote-debugging-port=9333"
+        );
+        assert_eq!(quote_windows_command_argument(""), "\"\"");
+    }
+
+    #[test]
+    fn escapes_embedded_quotes_and_backslash_runs() {
+        // CreateProcess 规则：引号前的反斜杠加倍，引号自身再转义一个。
+        assert_eq!(quote_windows_command_argument(r#"a"b"#), r#""a\"b""#);
+        assert_eq!(quote_windows_command_argument(r"a\b"), r"a\b");
+        // 以反斜杠结尾时收尾引号必须被保护，否则会把参数引号转义掉。
+        assert_eq!(
+            quote_windows_command_argument(r"C:\dir with space\"),
+            r#""C:\dir with space\\""#
+        );
+    }
+
+    #[test]
+    fn derives_install_location_from_store_launch_path() {
+        assert_eq!(
+            windowsapps_install_location_from_launch_path(Path::new(
+                r"C:\Program Files\WindowsApps\OpenAI.Codex_26.908.9136.0_x64__2p2nqsd0c76g0\app\ChatGPT.exe"
+            ))
+            .as_deref(),
+            Some(r"C:\Program Files\WindowsApps\OpenAI.Codex_26.908.9136.0_x64__2p2nqsd0c76g0")
+        );
+        // 非商店路径不能落到包身份分支上。
+        assert!(windowsapps_install_location_from_launch_path(Path::new(
+            r"C:\Users\me\AppData\Local\Programs\Codex\Codex.exe"
+        ))
+        .is_none());
+    }
+
+    #[test]
+    fn install_location_round_trips_to_the_registered_package_family() {
+        // 外层脚本按 InstallLocation 反查包，这里确认解析结果仍属同一包族。
+        let install_location = windowsapps_install_location_from_launch_path(Path::new(
+            r"C:\Program Files\WindowsApps\OpenAI.Codex_26.908.9136.0_x64__2p2nqsd0c76g0\app\ChatGPT.exe",
+        ))
+        .expect("store path should resolve");
+        let fake_exe = format!(r"{}\app\ChatGPT.exe", install_location);
+        assert_eq!(
+            windowsapps_package_family(&fake_exe).as_deref(),
+            Some("openai.codex")
+        );
+    }
+}
+
+#[cfg(test)]
+mod windows_launch_fallback_tests {
+    use super::{is_windowsapps_launch_path, windows_powershell_executable_candidates};
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn powershell_candidates_prefer_path_then_system32_then_pwsh() {
+        let candidates = windows_powershell_executable_candidates(Some(r"D:\Windows"));
+        assert_eq!(candidates[0], PathBuf::from("powershell.exe"));
+        assert_eq!(
+            candidates[1],
+            PathBuf::from(r"D:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
+        );
+        assert_eq!(candidates[2], PathBuf::from("pwsh.exe"));
+    }
+
+    #[test]
+    fn powershell_candidates_keep_windows_default_root_fallback() {
+        let candidates = windows_powershell_executable_candidates(None);
+        assert_eq!(
+            candidates[1],
+            PathBuf::from(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
+        );
+    }
+
+    #[test]
+    fn detects_windowsapps_launch_paths() {
+        assert!(is_windowsapps_launch_path(Path::new(
+            r"C:\Program Files\WindowsApps\OpenAI.Codex_1.0.0.0_x64__8wekyb3d8bbwe\app\ChatGPT.exe"
+        )));
+        assert!(is_windowsapps_launch_path(Path::new(
+            r"C:/Program Files/WindowsApps/OpenAI.Codex_1.0.0.0_x64__8wekyb3d8bbwe/app/Codex.exe"
+        )));
+        assert!(!is_windowsapps_launch_path(Path::new(
+            r"C:\Users\me\AppData\Local\Programs\Codex\Codex.exe"
+        )));
     }
 }

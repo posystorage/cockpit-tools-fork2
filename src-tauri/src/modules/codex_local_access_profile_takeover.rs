@@ -382,6 +382,25 @@ fn set_provider_header_value(
     }
 }
 
+fn has_managed_realtime_sideband_override(doc: &Document) -> bool {
+    let base_url = doc
+        .get("model_providers")
+        .and_then(|item| item.get(CODEX_LOCAL_ACCESS_RUNTIME_PROVIDER_ID))
+        .and_then(|item| item.get("base_url"))
+        .and_then(|item| item.as_str());
+    let sideband_url = doc
+        .get("experimental_realtime_ws_base_url")
+        .and_then(|item| item.as_str());
+    match (base_url, sideband_url) {
+        (Some(base), Some(sideband)) if base.trim_end_matches('/') == sideband.trim_end_matches('/') => {
+            url::Url::parse(base).ok().is_some_and(|url| {
+                matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"))
+            })
+        }
+        _ => false,
+    }
+}
+
 fn remove_codex_local_access_config(config_text: &str) -> Result<String, String> {
     if config_text.trim().is_empty() {
         return Ok(String::new());
@@ -398,6 +417,9 @@ fn remove_codex_local_access_config(config_text: &str) -> Result<String, String>
         return Ok(config_text.to_string());
     }
 
+    if has_managed_realtime_sideband_override(&doc) {
+        doc.remove("experimental_realtime_ws_base_url");
+    }
     let _ = doc.remove("model_provider");
     if doc
         .get("model_catalog_json")
@@ -509,6 +531,7 @@ fn restore_config_toml_from_takeover_backup(
         .and_then(|item| item.as_str())
         .is_some_and(is_cockpit_managed_model_catalog_name);
     if current_selected_local_access {
+        let restore_realtime_sideband = has_managed_realtime_sideband_override(&current_doc);
         let cleaned = remove_codex_local_access_config(
             &crate::modules::codex_config_format::codex_config_doc_to_string(&mut current_doc),
         )?;
@@ -518,6 +541,15 @@ fn restore_config_toml_from_takeover_backup(
             crate::modules::codex_config_format::read_codex_config_doc_from_str(&cleaned)
                 .map_err(|e| format!("解析清理后的 Codex config.toml 失败: {}", e))?
         };
+
+        if restore_realtime_sideband {
+            if let Some(original) = backup_doc
+                .as_ref()
+                .and_then(|doc| doc.get("experimental_realtime_ws_base_url"))
+            {
+                current_doc["experimental_realtime_ws_base_url"] = original.clone();
+            }
+        }
 
         if let Some(backup_provider) = backup_doc
             .as_ref()
@@ -581,11 +613,54 @@ fn restore_config_toml_from_takeover_backup(
         }
     }
 
+    // 接管期间为 DeepSeek 账号池启用的本地压缩兜底属于 Cockpit 写入的受管状态：
+    // 拆掉接管时按接管前备份还原，避免把用户的 profile 永久留在受管的压缩设置上。
+    restore_managed_local_compaction_fallback(&mut current_doc, backup_doc.as_ref());
+
     let content = crate::modules::codex_config_format::codex_config_doc_to_string(&mut current_doc);
     if content.trim().is_empty() {
         Ok(None)
     } else {
         Ok(Some(content))
+    }
+}
+
+/// 还原 `[features]` 里由 Cockpit 写入的压缩兜底键。
+///
+/// 只处理 `remote_compaction_v2` 与 `token_budget`：备份里写的是什么就恢复成什么，
+/// 备份里没有的键从当前配置移除，其它 features 键原样保留。
+fn restore_managed_local_compaction_fallback(
+    current_doc: &mut Document,
+    backup_doc: Option<&Document>,
+) {
+    let current_has_key = current_doc
+        .get("features")
+        .and_then(|item| item.as_table())
+        .is_some_and(|table| {
+            codex_account::DEEPSEEK_COMPACTION_FALLBACK_KEYS
+                .iter()
+                .any(|key| table.contains_key(*key))
+        });
+    if !current_has_key {
+        return;
+    }
+    let backup_features = backup_doc
+        .and_then(|doc| doc.get("features"))
+        .and_then(|item| item.as_table())
+        .cloned();
+    let Some(features) = current_doc
+        .get_mut("features")
+        .and_then(|item| item.as_table_mut())
+    else {
+        return;
+    };
+    for key in codex_account::DEEPSEEK_COMPACTION_FALLBACK_KEYS {
+        match backup_features.as_ref().and_then(|table| table.get(*key)) {
+            Some(item) => features[*key] = item.clone(),
+            None => {
+                let _ = features.remove(*key);
+            }
+        }
     }
 }
 

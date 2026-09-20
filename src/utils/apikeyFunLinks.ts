@@ -14,24 +14,15 @@ export function buildApiKeyFunProviderBaseUrl(endpoint: string): string {
 }
 
 export function normalizeApiKeyFunOfficialUrl(value?: string | null): string {
-  const raw = value?.trim() ?? '';
-  if (!raw) return '';
-  try {
-    const parsed = new URL(raw);
-    if (
-      parsed.hostname.toLowerCase() === 'apikey.fun' &&
-      (parsed.pathname === '/' || parsed.pathname === '/register')
-    ) {
-      return APIKEY_FUN_REGISTER_URL;
-    }
-  } catch {
-    return raw;
-  }
-  return raw;
+  return value?.trim() ?? '';
 }
 
 export function isApiKeyFunProviderBaseUrl(_value?: string | null): boolean {
   return false;
+}
+
+export function normalizeApiKeyFunProviderBaseUrl(value?: string | null): string {
+  return value?.trim() ?? '';
 }
 
 export function resolveApiKeyFunWireApi(

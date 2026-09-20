@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   Bug,
@@ -26,6 +26,11 @@ import { listen } from "@tauri-apps/api/event";
 import { confirm as confirmDialog } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 import type { CodexAccount } from "../types/codex";
+import {
+  isGrokApiKeyAccount,
+  type GrokAccount,
+} from "../types/grok";
+import { listGrokAccounts } from "../services/grokService";
 import type { CodexAccountGroup } from "../services/codexAccountGroupService";
 import type {
   CodexLocalAccessAddressKind,
@@ -74,6 +79,8 @@ import {
   type MultiSelectFilterOption,
 } from "./MultiSelectFilterDropdown";
 import { SingleSelectDropdown } from "./SingleSelectDropdown";
+import { CodexImageModelConfig } from "./CodexImageModelConfig";
+import { buildGrokMemberRowAccounts, CodexGrokBuildQuotaChip, isGrokMemberRowId } from "./codex/codexGrokMemberRows";
 import { PaginationControls } from "./PaginationControls";
 import { CodexStatsRangePicker } from "./CodexStatsRangePicker";
 import { queryCodexLocalAccessStats } from "../services/codexLocalAccessService";
@@ -124,6 +131,13 @@ interface CodexLocalAccessModalProps {
   accounts: CodexAccount[];
   accountsLoaded: boolean;
   accountGroups: CodexAccountGroup[];
+  /**
+   * 把 Grok 平台（已登录）账号加入 API 服务集合。
+   *
+   * 宿主负责创建/复用绑定的供应商账号并刷新账号列表，返回对应的 Codex 账号 ID；
+   * 未提供该回调时成员弹框不展示 Grok 平台分组。
+   */
+  onAddGrokMember?: (grokAccountId: string) => Promise<CodexAccount | null>;
   memberView?: CodexLocalAccessMemberViewConfig;
   initialSelectedIds: string[];
   maskAccountText: (value?: string | null) => string;
@@ -154,6 +168,7 @@ interface CodexLocalAccessModalProps {
     upstreamProxyUrl: string | null,
   ) => Promise<unknown> | unknown;
   onUpdateDebugLogs: (debugLogs: boolean) => Promise<unknown> | unknown;
+  onUpdateImageGenerationModel: (model: string) => Promise<unknown> | unknown;
   onRotateApiKey: () => Promise<unknown> | unknown;
   onRestartSidecar: () => Promise<unknown> | unknown;
   onKillPort: () => Promise<unknown> | unknown;
@@ -341,6 +356,7 @@ export function CodexLocalAccessModal({
   accounts,
   accountsLoaded,
   accountGroups,
+  onAddGrokMember,
   memberView,
   initialSelectedIds,
   maskAccountText,
@@ -355,6 +371,7 @@ export function CodexLocalAccessModal({
   onUpdateAccessScope,
   onUpdateUpstreamProxyConfig,
   onUpdateDebugLogs,
+  onUpdateImageGenerationModel,
   onRotateApiKey,
   onRestartSidecar,
   onKillPort,
@@ -381,6 +398,12 @@ export function CodexLocalAccessModal({
   const [sessionAffinityTtlError, setSessionAffinityTtlError] = useState("");
   const [imageGenerationPolicies, setImageGenerationPolicies] = useState<Record<string, CodexLocalAccessImageGenerationPolicy>>({});
   const [membersDraftDirty, setMembersDraftDirty] = useState(false);
+  // 跨平台成员：Grok 平台已登录账号（默认与 Codex 一起展示）。
+  const [grokMemberAccounts, setGrokMemberAccounts] = useState<GrokAccount[]>([]);
+  const [grokMemberLoading, setGrokMemberLoading] = useState(false);
+  const [grokMemberError, setGrokMemberError] = useState("");
+  const [grokMemberBusyId, setGrokMemberBusyId] = useState("");
+  const [platformFilter, setPlatformFilter] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [testDialogOpen, setTestDialogOpen] = useState(false);
@@ -926,9 +949,82 @@ export function CodexLocalAccessModal({
   const memberGroupFilterOptions =
     memberView?.groupFilterOptions ?? groupFilterOptions;
 
+  // 平台筛选：默认全部平台（Codex + Grok），后续可继续追加平台。
+  const platformFilterActive =
+    platformFilter.length > 0 && platformFilter.length < 2;
+  const showCodexPlatform =
+    !platformFilterActive || platformFilter.includes("codex");
+  const showGrokPlatform =
+    !platformFilterActive || platformFilter.includes("grok");
+
+  // Grok 平台账号：仅 OAuth(订阅) 账号可作为 API 服务上游，API Key 账号不在此处展示。
+  const grokMemberCandidates = useMemo(
+    () => grokMemberAccounts.filter((account) => !isGrokApiKeyAccount(account)),
+    [grokMemberAccounts],
+  );
+  // grok account id -> 绑定它的 Codex 供应商账号 ID（已加入集合时用于勾选反查）。
+  const grokMemberBindingByAccountId = useMemo(() => {
+    const map = new Map<string, string>();
+    accounts.forEach((account) => {
+      const grokAccountId = account.upstream_grok_account_id?.trim();
+      if (grokAccountId && !map.has(grokAccountId)) {
+        map.set(grokAccountId, account.id);
+      }
+    });
+    return map;
+  }, [accounts]);
+
+  /**
+   * Grok 平台账号在成员列表里的行数据（与 Codex 账号同一列表、同一套交互）。
+   *
+   * 行 ID 使用 `grok:` 前缀与真实 Codex 账号区分；勾选后由宿主创建绑定的
+   * 供应商账号，选中的始终是真实账号 ID。
+   */
+  const grokMemberRowAccounts = useMemo(() => {
+    if (!onAddGrokMember || !showGrokPlatform) {
+      return [] as CodexAccount[];
+    }
+    const { requireValidAccounts, selectedTypes } =
+      splitValidityFilterValues(memberFilterTypes);
+    return buildGrokMemberRowAccounts({
+      accounts: grokMemberCandidates,
+      searchQuery: memberSearchQuery,
+      tagFilterActive: memberTagFilter.length > 0,
+      groupFilterActive: memberGroupFilter.length > 0,
+      requireValidAccounts,
+      selectedTypes,
+    });
+  }, [
+    grokMemberCandidates,
+    memberFilterTypes,
+    memberGroupFilter,
+    memberSearchQuery,
+    memberTagFilter,
+    onAddGrokMember,
+    showGrokPlatform,
+  ]);
+
+  /** 行 ID -> Grok 平台账号（成员列表里 Grok 行与 Codex 行共用同一张表）。 */
+  const grokMemberRowAccountById = useMemo(() => {
+    const map = new Map<string, GrokAccount>();
+    grokMemberRowAccounts.forEach((row) => {
+      const grokAccountId = row.upstream_grok_account_id?.trim();
+      if (!grokAccountId) {
+        return;
+      }
+      const source = grokMemberCandidates.find(
+        (candidate) => candidate.id === grokAccountId,
+      );
+      if (source) {
+        map.set(row.id, source);
+      }
+    });
+    return map;
+  }, [grokMemberCandidates, grokMemberRowAccounts]);
+
   const visibleAccounts = useMemo(() => {
     if (memberView) {
-      return memberView.accounts;
+      return [...memberView.accounts, ...grokMemberRowAccounts];
     }
 
     const queryText = query.trim().toLowerCase();
@@ -948,7 +1044,7 @@ export function CodexLocalAccessModal({
     const { requireValidAccounts, selectedTypes } =
       splitValidityFilterValues(filterTypes);
 
-    return sorted.filter((account) => {
+    return [...sorted.filter((account) => {
       const presentation = buildCodexAccountPresentation(account, t);
       const displayName = presentation.displayName.toLowerCase();
       const groupNames = (groupNameByAccountId.get(account.id) ?? [])
@@ -998,7 +1094,7 @@ export function CodexLocalAccessModal({
       }
 
       return true;
-    });
+    }), ...grokMemberRowAccounts];
   }, [
     filterTypes,
     groupFilter,
@@ -1013,15 +1109,22 @@ export function CodexLocalAccessModal({
 
   const visibleSelectableAccounts = useMemo(
     () =>
-      visibleAccounts.filter((account) => {
+      (showCodexPlatform ? visibleAccounts : []).filter((account) => {
+        // 已绑定的供应商账号由同名的 Grok 平台行展示，避免同一账号出现两行；
+        // Grok 平台行本身（grok: 前缀）必须保留。
+        if (
+          onAddGrokMember &&
+          !isGrokMemberRowId(account.id) &&
+          account.upstream_grok_account_id?.trim()
+        ) {
+          return false;
+        }
         const ineligibleReason = getCodexLocalAccessAccountIneligibleReason(
           account,
           restrictFreeAccounts,
         );
-        // Keep unsupported accounts visible so users know why they cannot join.
+        // Keep unavailable accounts visible so users know why they cannot join.
         if (
-          ineligibleReason === "chat_completions_api_key" ||
-          ineligibleReason === "deepseek_unsupported" ||
           ineligibleReason === "pending_oauth" ||
           ineligibleReason === "web_session_quota_only"
         ) {
@@ -1032,7 +1135,13 @@ export function CodexLocalAccessModal({
         }
         return selected.has(account.id);
       }),
-    [restrictFreeAccounts, selected, visibleAccounts],
+    [
+      onAddGrokMember,
+      restrictFreeAccounts,
+      selected,
+      showCodexPlatform,
+      visibleAccounts,
+    ],
   );
   const memberPagination = usePagination({
     items: visibleSelectableAccounts,
@@ -1061,13 +1170,26 @@ export function CodexLocalAccessModal({
     [restrictFreeAccounts, visibleSelectableAccounts],
   );
 
+  /** 行是否已被选中：Grok 行按绑定的供应商账号 ID 判断。 */
+  const isMemberRowSelected = useCallback(
+    (account: CodexAccount) => {
+      const grokRowAccount = grokMemberRowAccountById.get(account.id);
+      if (!grokRowAccount) {
+        return selected.has(account.id);
+      }
+      const boundAccountId = grokMemberBindingByAccountId.get(grokRowAccount.id);
+      return Boolean(boundAccountId && selected.has(boundAccountId));
+    },
+    [grokMemberBindingByAccountId, grokMemberRowAccountById, selected],
+  );
+
   const selectedVisibleCount = useMemo(
     () =>
       visibleEnabledAccounts.reduce(
-        (count, account) => count + (selected.has(account.id) ? 1 : 0),
+        (count, account) => count + (isMemberRowSelected(account) ? 1 : 0),
         0,
       ),
-    [selected, visibleEnabledAccounts],
+    [isMemberRowSelected, visibleEnabledAccounts],
   );
 
   const allVisibleSelected =
@@ -1368,6 +1490,74 @@ export function CodexLocalAccessModal({
     [localAccessAccounts],
   );
 
+  useEffect(() => {
+    if (!isOpen || mode !== "members" || !onAddGrokMember) {
+      return;
+    }
+    let cancelled = false;
+    setGrokMemberLoading(true);
+    setGrokMemberError("");
+    void listGrokAccounts()
+      .then((list) => {
+        if (!cancelled) {
+          setGrokMemberAccounts(list);
+        }
+      })
+      .catch((loadError) => {
+        if (!cancelled) {
+          setGrokMemberError(String(loadError).replace(/^Error:\s*/, ""));
+          setGrokMemberAccounts([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setGrokMemberLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, mode, onAddGrokMember]);
+
+  const handleToggleGrokMember = async (
+    grokAccount: GrokAccount,
+    nextChecked: boolean,
+  ) => {
+    const boundAccountId = grokMemberBindingByAccountId.get(grokAccount.id);
+    if (!nextChecked) {
+      if (boundAccountId) {
+        setSelected((previous) => {
+          const next = new Set(previous);
+          next.delete(boundAccountId);
+          return next;
+        });
+      }
+      setMembersDraftDirty(true);
+      return;
+    }
+    if (boundAccountId) {
+      setSelected((previous) => new Set(previous).add(boundAccountId));
+      setMembersDraftDirty(true);
+      return;
+    }
+    if (!onAddGrokMember) {
+      return;
+    }
+    setGrokMemberBusyId(grokAccount.id);
+    setGrokMemberError("");
+    try {
+      const bound = await onAddGrokMember(grokAccount.id);
+      if (bound) {
+        setSelected((previous) => new Set(previous).add(bound.id));
+        setMembersDraftDirty(true);
+      }
+    } catch (addError) {
+      setGrokMemberError(String(addError).replace(/^Error:\s*/, ""));
+    } finally {
+      setGrokMemberBusyId("");
+    }
+  };
+
   const customRoutingRuleByAccountId = useMemo(() => {
     const next = new Map<string, CustomRoutingDraftRule>();
     collection?.customRoutingRules?.forEach((rule) => {
@@ -1567,19 +1757,50 @@ export function CodexLocalAccessModal({
       return;
     }
     setMembersDraftDirty(true);
+    const codexRows: CodexAccount[] = [];
+    const grokRows: GrokAccount[] = [];
+    for (const account of visibleEnabledAccounts) {
+      const grokRowAccount = grokMemberRowAccountById.get(account.id);
+      if (grokRowAccount) {
+        grokRows.push(grokRowAccount);
+      } else {
+        codexRows.push(account);
+      }
+    }
+    if (allVisibleSelected) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        codexRows.forEach((account) => next.delete(account.id));
+        grokRows.forEach((grokAccount) => {
+          const boundAccountId =
+            grokMemberBindingByAccountId.get(grokAccount.id);
+          if (boundAccountId) {
+            next.delete(boundAccountId);
+          }
+        });
+        return next;
+      });
+      return;
+    }
     setSelected((prev) => {
       const next = new Set(prev);
-      if (allVisibleSelected) {
-        for (const account of visibleEnabledAccounts) {
-          next.delete(account.id);
-        }
-      } else {
-        for (const account of visibleEnabledAccounts) {
-          next.add(account.id);
-        }
-      }
+      codexRows.forEach((account) => next.add(account.id));
       return next;
     });
+    // Grok 账号需要先接入（创建绑定账号）才能加入集合，逐个串行执行。
+    void (async () => {
+      for (const grokAccount of grokRows) {
+        if (membersInteractionDisabled) {
+          return;
+        }
+        const boundAccountId = grokMemberBindingByAccountId.get(grokAccount.id);
+        if (boundAccountId) {
+          setSelected((prev) => new Set(prev).add(boundAccountId));
+          continue;
+        }
+        await handleToggleGrokMember(grokAccount, true);
+      }
+    })();
   };
 
   const handleToggleRestrictFreeAccounts = async () => {
@@ -2223,7 +2444,7 @@ export function CodexLocalAccessModal({
         <div
           className={`modal codex-local-access-modal${
             isMembersMode
-              ? " codex-local-access-modal-members group-account-picker-modal"
+              ? " codex-local-access-modal-members"
               : " codex-local-access-modal-panel"
           }`}
           onClick={(event) => event.stopPropagation()}
@@ -2243,7 +2464,7 @@ export function CodexLocalAccessModal({
                   <div className="codex-local-access-header-badges">
                     <span
                       className={`codex-local-access-status ${
-                        state?.running ? "running" : "stopped"
+                        collection?.enabled && state?.running ? "running" : "stopped"
                       }`}
                     >
                       {collection?.enabled
@@ -2946,6 +3167,14 @@ export function CodexLocalAccessModal({
                           </div>
                         </div>
                       ) : null}
+
+                      {collection ? (
+                        <CodexImageModelConfig
+                          model={collection.imageGenerationModel}
+                          disabled={saving || testing || starting}
+                          onSave={onUpdateImageGenerationModel}
+                        />
+                      ) : null}
                     </div>
                   ) : null}
                 </section>
@@ -3215,6 +3444,37 @@ export function CodexLocalAccessModal({
                     />
                   </div>
                   <div className="group-account-picker-filters">
+                    {onAddGrokMember && (
+                      <MultiSelectFilterDropdown
+                        options={[
+                          { value: "codex", label: "Codex" },
+                          { value: "grok", label: "Grok" },
+                        ]}
+                        selectedValues={platformFilter}
+                        allLabel={t(
+                          "codex.localAccess.memberPlatformAll",
+                          "全部平台",
+                        )}
+                        filterLabel={t(
+                          "codex.localAccess.memberPlatformLabel",
+                          "平台",
+                        )}
+                        clearLabel={t("accounts.clearFilter", "清空筛选")}
+                        emptyLabel={t("common.none", "暂无")}
+                        ariaLabel={t(
+                          "codex.localAccess.memberPlatformLabel",
+                          "平台",
+                        )}
+                        onToggleValue={(value) =>
+                          setPlatformFilter((prev) =>
+                            prev.includes(value)
+                              ? prev.filter((item) => item !== value)
+                              : [...prev, value],
+                          )
+                        }
+                        onClear={() => setPlatformFilter([])}
+                      />
+                    )}
                     <MultiSelectFilterDropdown
                       options={memberTierFilterOptions}
                       selectedValues={memberFilterTypes}
@@ -3313,14 +3573,18 @@ export function CodexLocalAccessModal({
                     <div className="group-account-empty">
                       {t("common.loading", "加载中...")}
                     </div>
-                  ) : localAccessAccounts.length === 0 ? (
+                  ) : localAccessAccounts.length === 0 &&
+                    grokMemberRowAccounts.length === 0 &&
+                    !grokMemberLoading ? (
                     <div className="group-account-empty">
                       {t(
                         "codex.localAccess.modal.empty",
                         "暂无可加入的 Codex 账号",
                       )}
                     </div>
-                  ) : visibleSelectableAccounts.length === 0 ? (
+                  ) : visibleSelectableAccounts.length === 0 &&
+                    grokMemberRowAccounts.length === 0 &&
+                    !grokMemberLoading ? (
                     <div className="group-account-empty">
                       {t("common.shared.noMatch.title", "没有匹配的账号")}
                     </div>
@@ -3335,28 +3599,34 @@ export function CodexLocalAccessModal({
                           account,
                           restrictFreeAccounts,
                         );
-                      const isChatCompletionsApiKeyUnsupported =
-                        ineligibleReason === "chat_completions_api_key";
-                      const isDeepSeekUnsupported =
-                        ineligibleReason === "deepseek_unsupported";
                       const isPendingOauthUnsupported =
                         ineligibleReason === "pending_oauth";
                       const isWebSessionUnsupported =
                         ineligibleReason === "web_session_quota_only";
                       const isJoinUnsupported =
-                        isChatCompletionsApiKeyUnsupported ||
-                        isDeepSeekUnsupported ||
-                        isPendingOauthUnsupported ||
-                        isWebSessionUnsupported;
+                        isPendingOauthUnsupported || isWebSessionUnsupported;
+                      const grokRowAccount = grokMemberRowAccountById.get(
+                        account.id,
+                      );
+                      const grokBoundAccountId = grokRowAccount
+                        ? grokMemberBindingByAccountId.get(grokRowAccount.id)
+                        : undefined;
+                      const rowAccountId = grokBoundAccountId ?? account.id;
                       const isChecked =
-                        !isJoinUnsupported && selected.has(account.id);
+                        !isJoinUnsupported && selected.has(rowAccountId);
+                      const grokRowBusy =
+                        Boolean(grokRowAccount) &&
+                        grokMemberBusyId === grokRowAccount?.id;
                       const usagePriority = resolveAccountUsagePriority(
-                        customRoutingDraft[account.id] ??
-                          customRoutingRuleByAccountId.get(account.id),
+                        customRoutingDraft[rowAccountId] ??
+                          customRoutingRuleByAccountId.get(rowAccountId),
                       );
                       const accountStats = allStatsByAccountId.get(
-                        account.id,
+                        rowAccountId,
                       )?.usage;
+                      const grokQuotaChip = grokRowAccount ? (
+                        <CodexGrokBuildQuotaChip t={t} account={grokRowAccount} />
+                      ) : null;
 
                       return (
                         <div
@@ -3368,9 +3638,18 @@ export function CodexLocalAccessModal({
                             className="codex-local-access-member-select"
                             checked={isChecked}
                             disabled={
-                              membersInteractionDisabled || isJoinUnsupported
+                              membersInteractionDisabled ||
+                              isJoinUnsupported ||
+                              grokRowBusy
                             }
-                            onChange={() => toggleSelect(account.id)}
+                            onChange={() =>
+                              grokRowAccount
+                                ? void handleToggleGrokMember(
+                                    grokRowAccount,
+                                    !isChecked,
+                                  )
+                                : toggleSelect(account.id)
+                            }
                             aria-label={maskAccountText(
                               presentation.displayName,
                             )}
@@ -3384,9 +3663,18 @@ export function CodexLocalAccessModal({
                                   presentation.displayName,
                                 )}
                                 disabled={
-                                  membersInteractionDisabled || isJoinUnsupported
+                                  membersInteractionDisabled ||
+                                  isJoinUnsupported ||
+                                  grokRowBusy
                                 }
-                                onClick={() => toggleSelect(account.id)}
+                                onClick={() =>
+                                  grokRowAccount
+                                    ? void handleToggleGrokMember(
+                                        grokRowAccount,
+                                        !isChecked,
+                                      )
+                                    : toggleSelect(account.id)
+                                }
                               >
                                 {maskAccountText(presentation.displayName)}
                               </button>
@@ -3416,10 +3704,15 @@ export function CodexLocalAccessModal({
                                         "codex.localAccess.memberPriorityLabel",
                                         "优先级",
                                       )}
-                                      disabled={membersInteractionDisabled}
+                                      disabled={
+                                        membersInteractionDisabled ||
+                                        grokRowBusy ||
+                                        (Boolean(grokRowAccount) &&
+                                          !grokBoundAccountId)
+                                      }
                                       onChange={(value) =>
                                         updateMemberUsagePriority(
-                                          account.id,
+                                          rowAccountId,
                                           value as AccountUsagePriority,
                                         )
                                       }
@@ -3431,7 +3724,7 @@ export function CodexLocalAccessModal({
                                 {!isJoinUnsupported && (
                                   <SingleSelectDropdown
                                     value={
-                                      imageGenerationPolicies[account.id] ??
+                                      imageGenerationPolicies[rowAccountId] ??
                                       (isCodexApiKeyAccount(account)
                                         ? "disabled"
                                         : "inherit")
@@ -3444,11 +3737,16 @@ export function CodexLocalAccessModal({
                                       "codex.localAccess.imagePolicy.label",
                                       "生图策略",
                                     )}
-                                    disabled={membersInteractionDisabled}
+                                    disabled={
+                                      membersInteractionDisabled ||
+                                      grokRowBusy ||
+                                      (Boolean(grokRowAccount) && !grokBoundAccountId)
+                                    }
                                     onChange={(value) =>
                                       setImageGenerationPolicies((prev) => ({
                                         ...prev,
-                                        [account.id]: value as CodexLocalAccessImageGenerationPolicy,
+                                        [rowAccountId]:
+                                          value as CodexLocalAccessImageGenerationPolicy,
                                       }))
                                     }
                                   />
@@ -3456,7 +3754,9 @@ export function CodexLocalAccessModal({
                                 <span
                                   className={`tier-badge ${presentation.planClass}`}
                                 >
-                                  {presentation.planLabel}
+                                  {grokRowAccount
+                                    ? t("codex.grokAdd.tab", "Grok 账号")
+                                    : presentation.planLabel}
                                 </span>
                               </span>
                               <span className="codex-local-access-member-metric">
@@ -3466,22 +3766,6 @@ export function CodexLocalAccessModal({
                                 })}
                               </span>
                               <span className="codex-local-access-member-trailing">
-                                {isChatCompletionsApiKeyUnsupported && (
-                                  <span className="codex-local-access-member-unsupported">
-                                    {t(
-                                      "codex.localAccess.modal.chatApiKeyUnsupported",
-                                      "Chat Completions 协议不支持加入 API 服务",
-                                    )}
-                                  </span>
-                                )}
-                                {isDeepSeekUnsupported && (
-                                  <span className="codex-local-access-member-unsupported">
-                                    {t(
-                                      "codex.localAccess.modal.deepseekUnsupported",
-                                      "DeepSeek 暂不支持加入",
-                                    )}
-                                  </span>
-                                )}
                                 {isPendingOauthUnsupported && (
                                   <span className="codex-local-access-member-unsupported">
                                     {t(
@@ -3498,7 +3782,8 @@ export function CodexLocalAccessModal({
                                     )}
                                   </span>
                                 )}
-                                {renderQuotaPreview(presentation, 2)}
+                                {grokQuotaChip ??
+                                  renderQuotaPreview(presentation, 2)}
                               </span>
                             </div>
                           </div>
@@ -3507,6 +3792,11 @@ export function CodexLocalAccessModal({
                     })
                   )}
                 </div>
+                {grokMemberError && (
+                  <div className="group-account-empty codex-local-access-grok-member-error">
+                    {grokMemberError}
+                  </div>
+                )}
                 {visibleSelectableAccounts.length > 0 && (
                   <PaginationControls
                     totalItems={memberPagination.totalItems}

@@ -6,6 +6,8 @@ const REASONING_ENCRYPTED_CONTENT_INCLUDE: &str = "reasoning.encrypted_content";
 const CODEX_AUTO_REVIEW_MODEL_ID: &str = "codex-auto-review";
 const CODEX_RESERVE_MODEL_ID: &str = "gpt-reserve";
 const CODEX_RESERVE_TEMPLATE_MODEL_ID: &str = "gpt-5.6-luna";
+/// 额度兜底模型对客户端展示的名称（跟随官方 5.6 命名）。
+pub(crate) const CODEX_RESERVE_DISPLAY_NAME: &str = "GPT-5.6 Reserve";
 const CODEX_MODEL_CATALOG_TEMPLATE_SLUG: &str = "gpt-5.5";
 const CODEX_CLIENT_MODEL_TEMPLATES_JSON: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -429,6 +431,7 @@ fn build_codex_client_model(model_id: &str, index: usize) -> Value {
         model_id,
         CODEX_AUTO_REVIEW_MODEL_ID
             | "gpt-image-2"
+            | "gpt-image-2.5"
             | "grok-imagine-image"
             | "grok-imagine-video"
             | "grok-imagine-image-quality"
@@ -444,7 +447,10 @@ fn build_codex_client_model(model_id: &str, index: usize) -> Value {
         .expect("Codex client model template should be a JSON object");
     object.insert("slug".to_string(), Value::String(model_id.to_string()));
     if model_id.trim().eq_ignore_ascii_case(CODEX_RESERVE_MODEL_ID) {
-        object.insert("display_name".to_string(), json!("Luna Reserve"));
+        object.insert(
+            "display_name".to_string(),
+            json!(CODEX_RESERVE_DISPLAY_NAME),
+        );
         object.insert("visibility".to_string(), json!("list"));
     }
     if !is_catalog_model {
@@ -465,6 +471,7 @@ fn build_codex_client_model(model_id: &str, index: usize) -> Value {
             Value::Array(Vec::new()),
         );
         object.insert("service_tiers".to_string(), Value::Array(Vec::new()));
+        inherit_routed_gpt_capabilities(object, model_id);
     }
     if visibility == "hide" || !object.contains_key("visibility") {
         object.insert(
@@ -484,6 +491,31 @@ fn codex_client_model_catalog() -> &'static Value {
         serde_json::from_str(CODEX_CLIENT_MODEL_TEMPLATES_JSON)
             .expect("Codex client model templates JSON should be valid")
     })
+}
+
+fn inherit_routed_gpt_capabilities(object: &mut Map<String, Value>, model_id: &str) {
+    let Some((namespace, upstream)) = model_id.split_once('/') else {
+        return;
+    };
+    if namespace.is_empty() || !upstream.starts_with("gpt-") || upstream.contains('/') {
+        return;
+    }
+    let (template, known) = codex_client_model_template(upstream);
+    if !known {
+        return;
+    }
+    for field in [
+        "supported_reasoning_levels",
+        "default_reasoning_level",
+        "service_tiers",
+        "additional_speed_tiers",
+        "context_window",
+        "max_context_window",
+    ] {
+        if let Some(value) = template.get(field) {
+            object.insert(field.to_string(), value.clone());
+        }
+    }
 }
 
 fn codex_client_model_template(model_id: &str) -> (Value, bool) {
@@ -559,6 +591,7 @@ fn display_name_for_model(model_id: &str) -> String {
         "gpt-5.1-codex-max" => "GPT-5.1 Codex Max".to_string(),
         "gpt-5.1-codex-mini" => "GPT-5.1 Codex Mini".to_string(),
         "gpt-image-2" => "GPT Image 2".to_string(),
+        "gpt-image-2.5" => "GPT Image 2.5".to_string(),
         CODEX_AUTO_REVIEW_MODEL_ID => "Codex Auto Review".to_string(),
         other => other.to_string(),
     }
@@ -623,9 +656,10 @@ fn normalize_responses_input(obj: &mut Map<String, Value>) -> bool {
         }
         Value::Array(items) => {
             let mut changed = false;
-            for item in items {
+            for item in items.iter_mut() {
                 changed |= normalize_responses_input_item(item);
             }
+            changed |= ensure_responses_call_ids(items);
             changed
         }
         Value::Object(_) => {
@@ -643,17 +677,9 @@ fn normalize_responses_input_item(item: &mut Value) -> bool {
         return false;
     };
 
-    // Keep call namespaces for the sidecar's provider-specific compatibility
-    // handling, while dropping unsupported namespaces from other replayed items.
-    let preserves_namespace = matches!(
-        obj.get("type").and_then(Value::as_str),
-        Some("function_call" | "custom_tool_call" | "tool_call" | "mcp_tool_call")
-    );
-    let mut changed = if preserves_namespace {
-        false
-    } else {
-        obj.remove("namespace").is_some()
-    };
+    // Leave namespace semantics to the upstream-compatible protocol layer.
+    // The host must not discard replay metadata before provider selection.
+    let mut changed = false;
     let role = obj
         .get("role")
         .and_then(Value::as_str)
@@ -679,6 +705,122 @@ fn normalize_responses_input_item(item: &mut Value) -> bool {
         changed |= normalize_message_content(content, &normalized_role);
     }
 
+    changed
+}
+
+fn responses_call_item_requires_id(item_type: &str) -> bool {
+    matches!(
+        item_type,
+        "function_call" | "custom_tool_call" | "tool_call" | "mcp_tool_call"
+    )
+}
+
+fn responses_call_output_requires_id(item_type: &str) -> bool {
+    matches!(
+        item_type,
+        "function_call_output"
+            | "custom_tool_call_output"
+            | "tool_call_output"
+            | "mcp_tool_call_output"
+    )
+}
+
+fn next_generated_call_id(prefix: &str, index: usize, used: &mut HashSet<String>) -> String {
+    let base = format!("{}_{}", prefix, index);
+    if used.insert(base.clone()) {
+        return base;
+    }
+    for suffix in 1.. {
+        let candidate = format!("{}_{}", base, suffix);
+        if used.insert(candidate.clone()) {
+            return candidate;
+        }
+    }
+    unreachable!("call id suffix space is unbounded")
+}
+
+fn response_item_non_empty_string<'a>(obj: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
+    obj.get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+fn responses_call_output_can_stand_alone(item_type: &str, obj: &Map<String, Value>) -> bool {
+    item_type == "function_call_output" && response_item_non_empty_string(obj, "name").is_some()
+}
+
+fn ensure_responses_call_ids(items: &mut Vec<Value>) -> bool {
+    let mut used = HashSet::new();
+    for item in items.iter() {
+        if let Some(call_id) = item
+            .as_object()
+            .and_then(|obj| response_item_non_empty_string(obj, "call_id"))
+        {
+            used.insert(call_id.to_string());
+        }
+    }
+
+    let mut pending: Vec<(String, Option<String>)> = Vec::new();
+    let mut drop_indices = Vec::new();
+    let mut changed = false;
+    for (index, item) in items.iter_mut().enumerate() {
+        let Some(obj) = item.as_object_mut() else {
+            continue;
+        };
+        let item_type = obj
+            .get("type")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let is_call = responses_call_item_requires_id(&item_type);
+        let is_output = responses_call_output_requires_id(&item_type);
+        if !is_call && !is_output {
+            continue;
+        }
+        let name = response_item_non_empty_string(obj, "name").map(ToOwned::to_owned);
+        let call_id = match response_item_non_empty_string(obj, "call_id") {
+            Some(call_id) => call_id.to_string(),
+            None => {
+                let generated = if is_call {
+                    next_generated_call_id("call_missing", index, &mut used)
+                } else {
+                    let matched = name
+                        .as_deref()
+                        .and_then(|name| {
+                            pending
+                                .iter()
+                                .position(|(_, pending_name)| pending_name.as_deref() == Some(name))
+                        })
+                        .or_else(|| (!pending.is_empty()).then_some(0));
+                    match matched {
+                        Some(position) => pending.remove(position).0,
+                        None if responses_call_output_can_stand_alone(&item_type, obj) => {
+                            continue;
+                        }
+                        None => {
+                            drop_indices.push(index);
+                            continue;
+                        }
+                    }
+                };
+                obj.insert("call_id".to_string(), Value::String(generated.clone()));
+                changed = true;
+                generated
+            }
+        };
+
+        if is_call {
+            pending.push((call_id, name));
+        } else if let Some(position) = pending.iter().position(|(id, _)| id == &call_id) {
+            pending.remove(position);
+        }
+    }
+    for index in drop_indices.into_iter().rev() {
+        items.remove(index);
+        changed = true;
+    }
     changed
 }
 
@@ -831,6 +973,52 @@ mod tests {
     use super::*;
 
     #[test]
+    fn routed_gpt_models_preserve_capabilities_and_dispatch_identity() {
+        for upstream in ["gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-luna"] {
+            let routed = format!("cpa/{upstream}");
+            let catalog = build_codex_client_models_response(&[upstream.into(), routed.clone()]);
+            for field in ["service_tiers", "additional_speed_tiers", "supported_reasoning_levels", "context_window"] {
+                assert_eq!(catalog["models"][0][field], catalog["models"][1][field], "{upstream}: {field}");
+            }
+            assert_eq!(catalog["models"][1]["slug"], routed);
+            assert_eq!(catalog["models"][1]["priority"], json!(1001));
+            assert_ne!(catalog["models"][0]["priority"], catalog["models"][1]["priority"]);
+        }
+        let catalog = build_codex_client_models_response(&["cpa/unknown-model".into()]);
+        assert_eq!(catalog["models"][0]["service_tiers"], json!([]));
+        assert_eq!(catalog["models"][0]["priority"], json!(1000));
+    }
+
+    #[test]
+    fn routed_gpt_models_keep_catalog_order_instead_of_official_priority() {
+        let catalog = build_codex_client_models_response(&[
+            "cpa/gpt-5.6-sol".into(),
+            "cpa/gpt-5.6-terra".into(),
+            "1024/gpt-5.6-sol".into(),
+            "weilong/gpt-6-astra".into(),
+        ]);
+        let priorities = catalog["models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|model| model["priority"].as_i64())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            priorities,
+            vec![Some(1000), Some(1001), Some(1002), Some(1003)]
+        );
+    }
+
+    #[test]
+    fn routed_gpt_models_keep_explicit_reasoning_selection() {
+        let catalog = build_codex_client_models_response_with_model_definitions_and_reasoning(&[
+            ("cpa/gpt-6-astra".into(), "CPA Astra".into(), Some(vec!["ultra".into()])),
+        ]);
+        assert_eq!(catalog["models"][0]["supported_reasoning_levels"][0]["effort"], "ultra");
+        assert_eq!(catalog["models"][0]["display_name"], "CPA Astra");
+    }
+
+    #[test]
     fn reserve_is_selectable_without_changing_other_models_or_request_id() {
         let mut catalog = build_codex_client_models_response(&[
             "gpt-6-astra".to_string(),
@@ -845,7 +1033,7 @@ mod tests {
         let mut expected = before[1].clone();
         expected["slug"] = json!(CODEX_RESERVE_MODEL_ID);
         expected["visibility"] = json!("list");
-        expected["display_name"] = json!("Luna Reserve");
+        expected["display_name"] = json!(CODEX_RESERVE_DISPLAY_NAME);
         assert_eq!(models.last(), Some(&expected));
         assert!(expected["auto_compact_token_limit"].is_null());
 
@@ -1149,6 +1337,125 @@ mod tests {
     }
 
     #[test]
+    fn synthesizes_missing_call_ids_for_replayed_tool_items() {
+        let mut body = json!({
+            "model": "deepseek-v4-flash",
+            "input": [
+                {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "arguments": "{\"cmd\":\"pwd\"}"
+                },
+                {
+                    "type": "function_call_output",
+                    "output": "/workspace"
+                },
+                {
+                    "type": "custom_tool_call",
+                    "name": "apply_patch",
+                    "input": "*** Begin Patch"
+                },
+                {
+                    "type": "custom_tool_call_output",
+                    "output": "Done!"
+                },
+                {
+                    "type": "function_call",
+                    "call_id": "call_existing",
+                    "name": "lookup",
+                    "arguments": "{}"
+                },
+                {
+                    "type": "function_call_output",
+                    "call_id": "call_existing",
+                    "output": "ok"
+                }
+            ]
+        });
+
+        assert!(normalize_responses_body_for_codex(&mut body));
+        let input = body.get("input").and_then(Value::as_array).unwrap();
+        let first_call_id = input[0]
+            .get("call_id")
+            .and_then(Value::as_str)
+            .expect("function call id");
+        assert!(first_call_id.starts_with("call_missing"));
+        assert_eq!(
+            input[1].get("call_id").and_then(Value::as_str),
+            Some(first_call_id)
+        );
+        let custom_call_id = input[2]
+            .get("call_id")
+            .and_then(Value::as_str)
+            .expect("custom tool call id");
+        assert!(custom_call_id.starts_with("call_missing"));
+        assert_eq!(
+            input[3].get("call_id").and_then(Value::as_str),
+            Some(custom_call_id)
+        );
+        assert_eq!(
+            input[4].get("call_id").and_then(Value::as_str),
+            Some("call_existing")
+        );
+        assert_eq!(
+            input[5].get("call_id").and_then(Value::as_str),
+            Some("call_existing")
+        );
+    }
+
+    #[test]
+    fn drops_anonymous_orphan_outputs_while_preserving_paired_history() {
+        let mut body = json!({
+            "model": "deepseek-v4-flash",
+            "input": [
+                {"type": "message", "role": "user", "content": "continue"},
+                {"type": "function_call_output", "output": "orphan result"},
+                {"type": "function_call", "name": "exec_command", "arguments": "{}"},
+                {"type": "function_call_output", "output": "paired result"},
+                {"type": "function_call_output", "name": "heartbeat", "output": "keep standalone"}
+            ]
+        });
+
+        assert!(normalize_responses_body_for_codex(&mut body));
+        let input = body.get("input").and_then(Value::as_array).unwrap();
+        assert_eq!(input.len(), 4);
+        assert_eq!(
+            input[1].get("type").and_then(Value::as_str),
+            Some("function_call")
+        );
+        let call_id = input[1]
+            .get("call_id")
+            .and_then(Value::as_str)
+            .expect("synthesized call id");
+        assert_eq!(
+            input[2].get("call_id").and_then(Value::as_str),
+            Some(call_id)
+        );
+        assert_eq!(
+            input[3].get("name").and_then(Value::as_str),
+            Some("heartbeat")
+        );
+        assert!(input[3].get("call_id").is_none());
+    }
+
+    #[test]
+    fn preserves_existing_replay_input_items() {
+        let mut body = json!({
+            "model": "gpt-5.6-sol",
+            "input": [
+                {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "continue"}]},
+                {"type": "function_call", "call_id": "old_unanswered", "name": "exec_command", "arguments": "{}"},
+                {"type": "function_call", "call_id": "old_answered", "name": "lookup", "arguments": "{}"},
+                {"type": "function_call_output", "call_id": "old_answered", "output": "ok"}
+            ]
+        });
+        let expected_input = body["input"].clone();
+
+        normalize_responses_body_for_codex(&mut body);
+        assert_eq!(body["input"], expected_input);
+    }
+
+    #[test]
     fn preserving_supported_call_namespaces_does_not_report_change() {
         for item_type in [
             "function_call",
@@ -1171,7 +1478,7 @@ mod tests {
     }
 
     #[test]
-    fn removes_namespace_from_non_call_replayed_input_items() {
+    fn preserves_namespace_from_non_call_replayed_input_items() {
         let mut body = json!({
             "model": "gpt-5.4",
             "input": [
@@ -1185,7 +1492,10 @@ mod tests {
         });
 
         assert!(normalize_responses_body_for_codex(&mut body));
-        assert!(body.pointer("/input/0/namespace").is_none());
+        assert_eq!(
+            body.pointer("/input/0/namespace").and_then(Value::as_str),
+            Some("mcp__example")
+        );
     }
 
     #[test]
@@ -1335,7 +1645,7 @@ mod tests {
             .expect("Astra model should be present");
         assert_eq!(
             model.get("display_name").and_then(Value::as_str),
-            Some("6 Astra")
+            Some("GPT-6 Astra")
         );
         assert_eq!(
             model.get("context_window").and_then(Value::as_i64),

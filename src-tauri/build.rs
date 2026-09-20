@@ -49,6 +49,9 @@ fn emit_sidecar_rerun_inputs(path: &Path) {
     };
 
     if metadata.is_dir() {
+        // 目录本身也纳入追踪：只追踪已有文件时，新增 .go 文件不会触发重建，
+        // dev 启动会继续使用旧的 sidecar 二进制。
+        println!("cargo:rerun-if-changed={}", path.display());
         let Ok(entries) = std::fs::read_dir(path) else {
             return;
         };
@@ -166,6 +169,13 @@ fn build_cockpit_cliproxy_sidecar() {
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    // Build-script cfg describes the host, not the binary being linked. Reserve
+    // 8 MiB for the Windows MSVC host application even when cross-compiling.
+    // Scope the flag to the application binary, not the library or sidecars.
+    let target = std::env::var("TARGET").expect("TARGET is required");
+    if target.ends_with("-windows-msvc") {
+        println!("cargo:rustc-link-arg-bin=cockpit-tools=/STACK:8388608");
+    }
     build_cockpit_cliproxy_sidecar();
 
     #[cfg(target_os = "macos")]

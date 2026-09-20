@@ -8,7 +8,11 @@ import { summarizeCodexQuotaErrorMessage } from "../utils/codexQuotaError";
 import { buildCodexAccountPresentation } from "../presentation/platformAccountPresentation";
 import { buildCodexAccountWindowStatQueries, formatCodexWindowStatsText, type CodexWindowStats } from "../utils/codexWindowStats";
 import { type CodexLaunchPreviewAction, type CodexLaunchPreviewSummary } from "../components/codex/CodexLaunchPreviewModal";
-import { CodexSpeedSelect } from "../components/codex/CodexSpeedSelect";
+import {
+  CODEX_SPEED_DESCRIPTION,
+  CodexSpeedSelect,
+} from "../components/codex/CodexSpeedSelect";
+import { CodexImageModelConfig } from "../components/CodexImageModelConfig";
 import { useEscClose } from "../hooks/useEscClose";
 import { useEnterConfirm } from "../hooks/useEnterConfirm";
 import type { CodexAccount } from "../types/codex";
@@ -77,6 +81,7 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
   | "localAccessLaunchCurrent"
   | "localAccessRefreshing"
   | "localAccessState"
+  | "setLocalAccessState"
   | "maskAccountText"
   | "normalizeTag"
   | "openAccountNoteModal"
@@ -196,6 +201,7 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
     localAccessLaunchCurrent,
     localAccessRefreshing,
     localAccessState,
+    setLocalAccessState,
     maskAccountText,
     normalizeTag,
     openAccountNoteModal,
@@ -705,15 +711,15 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
           },
         });
       }
-  
+
+      const speedDescription = CODEX_SPEED_DESCRIPTION[account.app_speed ?? "standard"] ??
+        CODEX_SPEED_DESCRIPTION.standard;
+
       actions.push(
         {
           id: "speed",
           label: t("codex.speed.title", "速度"),
-          description:
-            account.app_speed === "fast"
-              ? t("codex.speed.fastDesc", "1.5 倍速，用量增加")
-              : t("codex.speed.standardDesc", "默认速度，常规用量"),
+          description: t(speedDescription.key, speedDescription.fallback),
           control: renderAccountSpeedSelect(account),
         },
         {
@@ -910,7 +916,24 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
       (): CodexLaunchPreviewAction[] => {
         if (!localAccessCollection) return [];
         const baseUrl = resolveLocalAccessBaseUrl() || "-";
+        const apiServiceSpeedDescription = CODEX_SPEED_DESCRIPTION[apiServiceAppSpeed] ??
+          CODEX_SPEED_DESCRIPTION.standard;
         const actions: CodexLaunchPreviewAction[] = [
+          {
+            id: "image-model",
+            label: t("codex.localAccess.imageGenerationModel.label"),
+            description: localAccessCollection.imageGenerationModel || "gpt-image-2.5",
+            control: (
+              <CodexImageModelConfig
+                model={localAccessCollection.imageGenerationModel}
+                disabled={localAccessRefreshing}
+                onSave={async (model) => {
+                  const nextState = await codexLocalAccessService.updateCodexLocalAccessImageGenerationModel(model);
+                  setLocalAccessState(nextState);
+                }}
+              />
+            ),
+          },
           {
             id: "members",
             label: t("common.shared.addAccount", "添加账号"),
@@ -967,10 +990,10 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
           {
             id: "speed",
             label: t("codex.speed.title", "速度"),
-            description:
-              apiServiceAppSpeed === "fast"
-                ? t("codex.speed.fastDesc", "1.5 倍速，用量增加")
-                : t("codex.speed.standardDesc", "默认速度，常规用量"),
+            description: t(
+              apiServiceSpeedDescription.key,
+              apiServiceSpeedDescription.fallback,
+            ),
             control: (
               <CodexSpeedSelect
                 value={apiServiceAppSpeed}

@@ -127,7 +127,7 @@ interface CodexAccountState {
   refreshSubscriptionInfo: (accountId: string) => Promise<CodexAccount>;
   refreshAllQuotas: () => Promise<number>;
   hydrateAccountProfilesIfNeeded: (accountIds?: string[]) => Promise<void>;
-  importFromLocal: () => Promise<CodexAccount>;
+  importFromLocal: (instanceId?: string | null) => Promise<CodexAccount>;
   importFromJson: (jsonContent: string) => Promise<CodexAccount[]>;
   updateAccountName: (accountId: string, name: string) => Promise<CodexAccount>;
   updateApiKeyCredentials: (
@@ -161,6 +161,7 @@ interface CodexAccountState {
     accountId: string,
     accessMode?: string | null,
     startupModel?: string | null,
+    imageGenerationAccountIds?: string[] | null,
   ) => Promise<CodexAccount>;
 }
 
@@ -451,8 +452,8 @@ export const useCodexAccountStore = create<CodexAccountState>((set, get) => ({
     }
   },
 
-  importFromLocal: async () => {
-    const account = await codexService.importCodexFromLocal();
+  importFromLocal: async (instanceId?: string | null) => {
+    const account = await codexService.importCodexFromLocal(instanceId);
     await get().fetchAccounts();
     await emitAccountsChanged({
       platformId: 'codex',
@@ -551,11 +552,13 @@ export const useCodexAccountStore = create<CodexAccountState>((set, get) => ({
     accountId: string,
     accessMode?: string | null,
     startupModel?: string | null,
+    imageGenerationAccountIds?: string[] | null,
   ) => {
     const account = await codexService.updateCodexAccountInstanceAccess(
       accountId,
       accessMode,
       startupModel,
+      imageGenerationAccountIds,
     );
     await get().fetchAccounts();
     await get().fetchCurrentAccount();

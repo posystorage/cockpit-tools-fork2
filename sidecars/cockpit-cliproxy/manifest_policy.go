@@ -28,6 +28,7 @@ import (
 
 	codexmodels "github.com/router-for-me/CLIProxyAPI/v7/internal/client/codex/models"
 	internallogging "github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
 
 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 	coreusage "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/usage"
@@ -42,7 +43,9 @@ const (
 	requestKindContextKey      contextKey = "cockpitRequestKind"
 	requestModelContextKey     contextKey = "cockpitRequestModel"
 	clientInstanceIDContextKey contextKey = "cockpitClientInstanceId"
+	targetAccountIDContextKey  contextKey = "cockpitTargetAccountId"
 	clientInstanceIDHeaderName            = "X-Cockpit-Instance-Id"
+	targetAccountIDHeaderName             = "X-Cockpit-Target-Account-Id"
 )
 
 const ginUserAPIKeyKey = "userApiKey"
@@ -53,8 +56,9 @@ const codexAutoReviewModel = "codex-auto-review"
 const codexReserveModel = "gpt-reserve"
 const codexSparkModel = "gpt-5.3-codex-spark"
 const codexSparkCatalogTemplateModel = "gpt-5.3-codex"
-const defaultImagesMainModel = "gpt-5.4-mini"
-const defaultImagesToolModel = "gpt-image-2"
+const defaultImagesMainModel = "gpt-5.5"
+const defaultImagesToolModel = "gpt-image-2.5"
+const legacyImagesToolModel = "gpt-image-2"
 const imagesGenerationsPath = "/v1/images/generations"
 const imagesEditsPath = "/v1/images/edits"
 const anthropicMessagesPath = "/v1/messages"
@@ -91,6 +95,7 @@ type manifest struct {
 	APIKeys                    []apiKeySpec        `json:"apiKeys"`
 	Accounts                   []accountSpec       `json:"accounts"`
 	ModelIDs                   []string            `json:"modelIds"`
+	ImageGenerationModel       string              `json:"imageGenerationModel"`
 	ModelAliases               []modelAliasSpec    `json:"modelAliases"`
 	ExcludedModels             []string            `json:"excludedModels"`
 	AccountModelRules          []accountModelRule  `json:"accountModelRules"`
@@ -98,7 +103,11 @@ type manifest struct {
 	CustomRoutingRules         []customRoutingRule `json:"customRoutingRules"`
 	ImmediateSSEResponse       bool                `json:"immediateSseResponse"`
 	MaxConcurrentImageRequests int                 `json:"maxConcurrentImageRequests"`
-	DebugLogs                  *bool               `json:"debugLogs,omitempty"`
+	// MaxAccountConcurrency 限制单个账号同时处理的会话数；0 表示不限制。
+	MaxAccountConcurrency int `json:"maxAccountConcurrency"`
+	// AccountConcurrencyWaitMs 账号并发达到上限后的等待时长（毫秒）；0 表示不等待，直接拒绝。
+	AccountConcurrencyWaitMs int   `json:"accountConcurrencyWaitMs"`
+	DebugLogs                *bool `json:"debugLogs,omitempty"`
 
 	apiKeyByValue     map[string]*apiKeySpec
 	accountByID       map[string]*accountSpec
@@ -113,33 +122,52 @@ type manifest struct {
 }
 
 type apiKeySpec struct {
-	ID                  string               `json:"id"`
-	Label               string               `json:"label"`
-	Key                 string               `json:"key"`
-	ProviderGateway     *providerGatewaySpec `json:"providerGateway,omitempty"`
-	ModelRouting        *modelRoutingSpec    `json:"modelRouting,omitempty"`
-	BoundOAuth          bool                 `json:"boundOAuth,omitempty"`
-	AccountIDs          []string             `json:"accountIds"`
-	ModelPrefix         string               `json:"modelPrefix,omitempty"`
-	ResponsesWebsockets bool                 `json:"responsesWebsockets,omitempty"`
-	AllowedModels       []string             `json:"allowedModels"`
-	ExcludedModels      []string             `json:"excludedModels"`
-	TokenLimit          uint64               `json:"tokenLimit,omitempty"`
-	TokenUsed           uint64               `json:"tokenUsed,omitempty"`
-	Enabled             bool                 `json:"enabled"`
+	ID              string               `json:"id"`
+	Label           string               `json:"label"`
+	Key             string               `json:"key"`
+	ProviderGateway *providerGatewaySpec `json:"providerGateway,omitempty"`
+	ModelRouting    *modelRoutingSpec    `json:"modelRouting,omitempty"`
+	BoundOAuth      bool                 `json:"boundOAuth,omitempty"`
+	// 生图转发账号池：生图请求只允许落到这些 OAuth 账号。
+	ImageGenerationAccountIDs []string `json:"imageGenerationAccountIds,omitempty"`
+	AccountIDs                []string `json:"accountIds"`
+	ModelPrefix               string   `json:"modelPrefix,omitempty"`
+	ResponsesWebsockets       bool     `json:"responsesWebsockets,omitempty"`
+	AllowedModels             []string `json:"allowedModels"`
+	ExcludedModels            []string `json:"excludedModels"`
+	TokenLimit                uint64   `json:"tokenLimit,omitempty"`
+	TokenUsed                 uint64   `json:"tokenUsed,omitempty"`
+	Enabled                   bool     `json:"enabled"`
+	Internal                  bool     `json:"internal,omitempty"`
 }
 
 type modelRoutingSpec struct {
 	DefaultRoute  string           `json:"defaultRoute"`
 	FailurePolicy string           `json:"failurePolicy"`
 	Routes        []modelRouteSpec `json:"routes"`
+	Automatic     bool             `json:"automatic,omitempty"`
+	NativeModels  []string         `json:"nativeModels,omitempty"`
+	// RoutableModels 只参与路由与校验，不出现在客户端模型列表里（唤醒预设、历史兼容模型）。
+	RoutableModels []string `json:"routableModels,omitempty"`
 }
 
 type modelRouteSpec struct {
 	ID                string               `json:"id"`
 	Namespace         string               `json:"namespace"`
 	ProviderAccountID string               `json:"providerAccountId"`
-	ProviderGateway   *providerGatewaySpec `json:"providerGateway"`
+	ProviderGateway   *providerGatewaySpec `json:"providerGateway,omitempty"`
+	// NativeProvider 是「原生 provider 路由」：命名空间下的模型直接交给该 provider
+	// 的执行器（例如 xai/Grok），而不是走 Provider Gateway 直连上游 Base URL。
+	NativeProvider string                `json:"nativeProvider,omitempty"`
+	Models         []modelRouteModelSpec `json:"models,omitempty"`
+}
+
+type modelRouteModelSpec struct {
+	ClientModel           string `json:"clientModel"`
+	UpstreamModel         string `json:"upstreamModel"`
+	DisplayName           string `json:"displayName,omitempty"`
+	ReasoningLevels       []any  `json:"reasoningLevels,omitempty"`
+	DefaultReasoningLevel string `json:"defaultReasoningLevel,omitempty"`
 }
 
 type apiKeyTokenState struct {
@@ -329,10 +357,15 @@ type providerGatewayModelCapability struct {
 }
 
 type accountSpec struct {
-	ID                    string              `json:"id"`
-	Email                 string              `json:"email"`
-	AuthID                string              `json:"authId,omitempty"`
-	AuthKind              string              `json:"authKind,omitempty"`
+	ID       string `json:"id"`
+	Email    string `json:"email"`
+	AuthID   string `json:"authId,omitempty"`
+	AuthKind string `json:"authKind,omitempty"`
+	// Provider 是该 OAuth 账号的上游 provider（缺省 codex）。非 codex 时只允许
+	// sidecar 已支持并注册执行器的 provider（目前为 xai/Grok）。
+	Provider string `json:"provider,omitempty"`
+	// ModelIDs 是该账号可承接的客户端模型；仅第三方 provider 使用。
+	ModelIDs              []string            `json:"modelIds,omitempty"`
 	PlanType              string              `json:"planType,omitempty"`
 	AccessTokenOnly       bool                `json:"accessTokenOnly,omitempty"`
 	ChatGPTAccountID      string              `json:"chatgptAccountId,omitempty"`
@@ -532,6 +565,12 @@ type requestUsageTracker struct {
 	imageJobs        map[string]map[string]struct{}
 	imageInFlight    map[string]int
 	imageJobsChanged chan struct{}
+
+	// 账号并发槽位：按 requestID 记录其占用的账号，用于请求结束时统一释放。
+	accountSlots        map[string]map[string]struct{}
+	accountInFlight     map[string]int
+	accountWaiters      int
+	accountSlotsChanged chan struct{}
 }
 
 func newRequestUsageTracker() *requestUsageTracker {
@@ -541,6 +580,11 @@ func newRequestUsageTracker() *requestUsageTracker {
 		imageJobs:        make(map[string]map[string]struct{}),
 		imageInFlight:    make(map[string]int),
 		imageJobsChanged: make(chan struct{}),
+
+		accountSlots:        make(map[string]map[string]struct{}),
+		accountInFlight:     make(map[string]int),
+		accountWaiters:      0,
+		accountSlotsChanged: make(chan struct{}),
 	}
 }
 
@@ -622,6 +666,119 @@ func (t *requestUsageTracker) releaseImageJobs(requestID string) {
 	t.notifyImageJobChangeLocked()
 }
 
+// accountConcurrencyChangeSignal 返回账号并发变化通知通道，等待中的请求据此唤醒。
+func (t *requestUsageTracker) accountConcurrencyChangeSignal() <-chan struct{} {
+	if t == nil {
+		return nil
+	}
+	t.mu.Lock()
+	changed := t.accountSlotsChanged
+	t.mu.Unlock()
+	return changed
+}
+
+func (t *requestUsageTracker) notifyAccountConcurrencyChangeLocked() {
+	if t == nil || t.accountSlotsChanged == nil {
+		return
+	}
+	close(t.accountSlotsChanged)
+	t.accountSlotsChanged = make(chan struct{})
+}
+
+// tryReserveAccountSlot 在 authID 上为 requestID 保留一个账号并发槽位。
+// 同一 requestID 重复保留同一账号是幂等的（重试场景），不会重复计数。
+// requestID/authID 缺失或 maxConcurrent 非正数时视为「不限制」，直接放行。
+func (t *requestUsageTracker) tryReserveAccountSlot(requestID, authID string, maxConcurrent int) bool {
+	if t == nil {
+		return true
+	}
+	requestID = strings.TrimSpace(requestID)
+	authID = strings.TrimSpace(authID)
+	if requestID == "" || authID == "" || maxConcurrent < 1 {
+		return true
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	slots := t.accountSlots[requestID]
+	if slots == nil {
+		slots = make(map[string]struct{})
+		t.accountSlots[requestID] = slots
+	}
+	if _, reserved := slots[authID]; reserved {
+		return true
+	}
+	if t.accountInFlight[authID] >= maxConcurrent {
+		return false
+	}
+	slots[authID] = struct{}{}
+	t.accountInFlight[authID]++
+	return true
+}
+
+// releaseAccountSlots 释放 requestID 持有的全部账号并发槽位。
+func (t *requestUsageTracker) releaseAccountSlots(requestID string) {
+	if t == nil {
+		return
+	}
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	slots := t.accountSlots[requestID]
+	if len(slots) == 0 {
+		delete(t.accountSlots, requestID)
+		return
+	}
+	for authID := range slots {
+		if t.accountInFlight[authID] <= 1 {
+			delete(t.accountInFlight, authID)
+		} else {
+			t.accountInFlight[authID]--
+		}
+	}
+	delete(t.accountSlots, requestID)
+	t.notifyAccountConcurrencyChangeLocked()
+}
+
+func (t *requestUsageTracker) accountInFlightCount(authID string) int {
+	if t == nil {
+		return 0
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.accountInFlight[strings.TrimSpace(authID)]
+}
+
+// tryBeginAccountWait 登记一个等待账号并发槽位的请求；超过排队上限时返回 false。
+func (t *requestUsageTracker) tryBeginAccountWait(maxWaiting int) bool {
+	if t == nil {
+		return true
+	}
+	if maxWaiting <= 0 {
+		return false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.accountWaiters >= maxWaiting {
+		return false
+	}
+	t.accountWaiters++
+	return true
+}
+
+func (t *requestUsageTracker) endAccountWait() {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.accountWaiters > 0 {
+		t.accountWaiters--
+	}
+}
+
 func (t *requestUsageTracker) record(payload usagePayload) {
 	if t == nil {
 		return
@@ -655,10 +812,14 @@ func (t *requestUsageTracker) recordSelectedAccount(requestID string, account *a
 
 func normalizedUsageServiceTier(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "priority":
+	case "priority", "fast":
 		return "priority"
-	case "", "default", "standard":
-		return ""
+	case "ultrafast":
+		return "ultrafast"
+	case "flex":
+		return "flex"
+	case "standard", "default":
+		return "standard"
 	default:
 		return ""
 	}
@@ -795,12 +956,15 @@ func loadManifest(path string) (*manifest, error) {
 			continue
 		}
 		m.APIKeys[i].Key = key
+		m.APIKeys[i].ImageGenerationAccountIDs = normalizeStringList(m.APIKeys[i].ImageGenerationAccountIDs)
 		if gateway := m.APIKeys[i].ProviderGateway; gateway != nil {
 			if !normalizeProviderGatewaySpec(gateway) {
 				m.APIKeys[i].ProviderGateway = nil
 			}
 		}
 		if routing := m.APIKeys[i].ModelRouting; routing != nil {
+			routing.NativeModels = normalizeStringList(routing.NativeModels)
+			routing.RoutableModels = normalizeStringList(routing.RoutableModels)
 			routing.DefaultRoute = strings.ToLower(strings.TrimSpace(routing.DefaultRoute))
 			routing.FailurePolicy = strings.ToLower(strings.TrimSpace(routing.FailurePolicy))
 			seenNamespaces := make(map[string]struct{}, len(routing.Routes))
@@ -815,14 +979,34 @@ func loadManifest(path string) (*manifest, error) {
 				if _, exists := seenNamespaces[route.Namespace]; exists {
 					continue
 				}
-				if route.ProviderGateway == nil || !normalizeProviderGatewaySpec(route.ProviderGateway) {
+				route.NativeProvider = strings.ToLower(strings.TrimSpace(route.NativeProvider))
+				if route.ProviderGateway != nil && !normalizeProviderGatewaySpec(route.ProviderGateway) {
+					route.ProviderGateway = nil
+				}
+				if route.ProviderGateway == nil && route.NativeProvider == "" {
 					continue
 				}
+				seenModels := make(map[string]struct{}, len(route.Models))
+				models := make([]modelRouteModelSpec, 0, len(route.Models))
+				for _, model := range route.Models {
+					model.ClientModel = strings.TrimSpace(model.ClientModel)
+					model.UpstreamModel = strings.TrimSpace(model.UpstreamModel)
+					key := strings.ToLower(model.ClientModel)
+					if key == "" || model.UpstreamModel == "" {
+						continue
+					}
+					if _, exists := seenModels[key]; exists {
+						continue
+					}
+					seenModels[key] = struct{}{}
+					models = append(models, model)
+				}
+				route.Models = models
 				seenNamespaces[route.Namespace] = struct{}{}
 				routes = append(routes, route)
 			}
 			routing.Routes = routes
-			if routing.DefaultRoute != "oauth" || routing.FailurePolicy != "strict" || len(routes) == 0 {
+			if routing.DefaultRoute != "oauth" || routing.FailurePolicy != "strict" || (len(routes) == 0 && !routing.Automatic) {
 				m.APIKeys[i].ModelRouting = nil
 			}
 		}
@@ -842,6 +1026,8 @@ func loadManifest(path string) (*manifest, error) {
 		}
 		account.Email = strings.TrimSpace(account.Email)
 		account.AuthKind = strings.ToLower(strings.TrimSpace(account.AuthKind))
+		account.Provider = strings.ToLower(strings.TrimSpace(account.Provider))
+		account.ModelIDs = normalizeStringList(account.ModelIDs)
 		account.ChatGPTAccountID = strings.TrimSpace(account.ChatGPTAccountID)
 		m.accountByID[account.ID] = account
 		m.originalIndexByID[account.ID] = i
@@ -878,12 +1064,52 @@ func loadManifest(path string) (*manifest, error) {
 		m.aliasToSource[strings.ToLower(name)] = source
 	}
 	m.ModelIDs = normalizeStringList(m.ModelIDs)
+	m.ImageGenerationModel = strings.TrimSpace(m.ImageGenerationModel)
+	if m.ImageGenerationModel == "" {
+		m.ImageGenerationModel = defaultImagesToolModel
+	}
 	m.ExcludedModels = normalizeStringList(m.ExcludedModels)
 	for index := range m.AccountModelRules {
 		m.AccountModelRules[index].AccountID = strings.TrimSpace(m.AccountModelRules[index].AccountID)
 		m.AccountModelRules[index].ExcludedModels = normalizeStringList(m.AccountModelRules[index].ExcludedModels)
 	}
 	return &m, nil
+}
+
+func configuredImagesToolModel(m *manifest) string {
+	if m == nil {
+		return defaultImagesToolModel
+	}
+	if model := strings.TrimSpace(m.ImageGenerationModel); model != "" {
+		return model
+	}
+	return defaultImagesToolModel
+}
+
+// imageGenerationAccountIDsForSpec 返回该 API Key 配置的生图转发账号池。
+func imageGenerationAccountIDsForSpec(spec *apiKeySpec) []string {
+	if spec == nil || len(spec.ImageGenerationAccountIDs) == 0 {
+		return nil
+	}
+	return normalizeStringList(spec.ImageGenerationAccountIDs)
+}
+
+// isConfiguredImagesToolModel 判断模型名是否是生图工具模型（含历史名称）。
+func isConfiguredImagesToolModel(m *manifest, model string) bool {
+	trimmed := strings.TrimSpace(model)
+	if trimmed == "" {
+		return false
+	}
+	for _, candidate := range []string{
+		configuredImagesToolModel(m),
+		defaultImagesToolModel,
+		legacyImagesToolModel,
+	} {
+		if candidate != "" && strings.EqualFold(trimmed, candidate) {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeProviderGatewaySpec(gateway *providerGatewaySpec) bool {
@@ -1042,11 +1268,19 @@ func (p *requestPolicy) middleware() gin.HandlerFunc {
 		startedAt := time.Now()
 		requestID := ensureRequestID(c)
 		spec := p.lookupAPIKey(c.Request)
+		if diagnosticTransport(c.Request) == "websocket" && p.emitter != nil {
+			sink := newWebsocketUsageSink(requestID, func(payload usagePayload) {
+				p.tokenLimiter.addUsage(spec, effectiveUsageTotalTokens(payload.Usage))
+				p.emitter.emit(payload)
+			})
+			c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), websocketUsageContextKey, sink))
+		}
 		requestKind := requestKindFromPath(c.Request.URL.Path)
 		clientInstanceID := extractClientInstanceID(c.Request)
 		if clientInstanceID != "" {
 			c.Request = c.Request.WithContext(withClientInstanceID(c.Request.Context(), clientInstanceID))
 		}
+		targetAccountID := strings.TrimSpace(c.Request.Header.Get(targetAccountIDHeaderName))
 		model := ""
 		startLogged := false
 		emitStart := func() {
@@ -1057,6 +1291,11 @@ func (p *requestPolicy) middleware() gin.HandlerFunc {
 			p.emitRequestStarted(c, requestID, spec, requestKind, model, startedAt)
 		}
 		defer func() {
+			// 账号并发槽位在请求结束（含失败、取消、断流）时无条件归还，
+			// 避免账号被永久占满；诊断事件的发送开关不影响这里。
+			if p.tracker != nil {
+				p.tracker.releaseAccountSlots(requestID)
+			}
 			if startLogged {
 				p.emitRequestCompleted(c, requestID, spec, requestKind, model, startedAt)
 			}
@@ -1069,13 +1308,16 @@ func (p *requestPolicy) middleware() gin.HandlerFunc {
 			if clientInstanceID != "" {
 				ctx = withClientInstanceID(ctx, clientInstanceID)
 			}
+			if targetAccountID != "" && spec.Internal {
+				ctx = context.WithValue(ctx, targetAccountIDContextKey, targetAccountID)
+			}
 			c.Request = c.Request.WithContext(ctx)
 		}
 
 		if spec != nil && isModelsRequest(c.Request) {
 			models := clientCatalogModelsForAPIKey(p.manifest, spec)
 			if isCodexClientModelsRequest(c.Request) {
-				c.JSON(http.StatusOK, buildCodexClientModelsResponse(models, spec, contextWindowsForAPIKey(p.manifest, spec)))
+				c.JSON(http.StatusOK, buildCodexClientModelsResponse(models, spec, contextWindowsForAPIKey(p.manifest, spec), p.manifest))
 			} else {
 				c.JSON(http.StatusOK, buildModelsResponse(models))
 			}
@@ -1122,7 +1364,7 @@ func (p *requestPolicy) middleware() gin.HandlerFunc {
 			return
 		}
 
-		nextBody, model, err := rewriteBodyModel(p.manifest, spec, body)
+		nextBody, model, err := rewriteBodyModel(p.manifest, spec, requestKind, body)
 		if model != "" {
 			ctx := context.WithValue(c.Request.Context(), requestModelContextKey, model)
 			c.Request = c.Request.WithContext(ctx)
@@ -1251,6 +1493,17 @@ func (p *requestPolicy) emitRequestCompleted(c *gin.Context, requestID string, s
 		return
 	}
 	p.tracker.releaseImageJobs(requestID)
+	if _, ok := c.Request.Context().Value(websocketUsageContextKey).(*websocketUsageSink); ok && status < http.StatusBadRequest {
+		// Gorilla writes the 101 handshake after hijacking, leaving Gin's
+		// status at 200. Rejected handshakes must still reach finalization.
+		// Transport completion is diagnostic-only. Per-execution callbacks own
+		// usage and may arrive after this handler returns.
+		p.tracker.mu.Lock()
+		delete(p.tracker.records, requestID)
+		delete(p.tracker.selectedAccounts, requestID)
+		p.tracker.mu.Unlock()
+		return
+	}
 	if payload, ok := p.tracker.finalize(requestID, usageFinalizeInput{
 		spec:          spec,
 		requestKind:   requestKind,
@@ -1560,7 +1813,32 @@ func applyExplicitContextWindows(models []map[string]any, windows map[string]int
 	}
 }
 
-func buildCodexClientModelsResponse(models []string, spec *apiKeySpec, windows map[string]int64) gin.H {
+// xaiOnlyModelIDs 返回只由 Grok(xAI) 账号承接的客户端模型。
+//
+// 这些模型走的是 Grok 执行器（HTTP），不能沿用 Codex OAuth 的 Responses
+// WebSocket 传输，因此目录里必须关掉它们的 prefer_websockets。
+func xaiOnlyModelIDs(m *manifest) map[string]struct{} {
+	models := make(map[string]struct{})
+	if m == nil {
+		return models
+	}
+	for i := range m.Accounts {
+		account := &m.Accounts[i]
+		if !strings.EqualFold(strings.TrimSpace(account.Provider), "xai") {
+			continue
+		}
+		for _, model := range account.ModelIDs {
+			model = strings.TrimSpace(model)
+			if model != "" {
+				models[strings.ToLower(model)] = struct{}{}
+			}
+		}
+	}
+	return models
+}
+
+func buildCodexClientModelsResponse(models []string, spec *apiKeySpec, windows map[string]int64, m *manifest) gin.H {
+	xaiOnlyModels := xaiOnlyModelIDs(m)
 	sourceModels := make([]map[string]any, 0, len(models))
 	reserveClientModel := ""
 	for _, model := range models {
@@ -1589,11 +1867,54 @@ func buildCodexClientModelsResponse(models []string, spec *apiKeySpec, windows m
 	}, false))
 	if data, ok := response["models"].([]map[string]any); ok {
 		hydrateCodexCompatibilityModels(data)
+		// Only declared routes to a known GPT template inherit capabilities.
+		var catalog struct {
+			Models []map[string]any `json:"models"`
+		}
+		_ = json.Unmarshal(registry.GetCodexClientModelsJSON(), &catalog)
+		for _, model := range data {
+			slug, _ := model["slug"].(string)
+			_, upstream, status := resolveModelRouting(spec, slug)
+			if status != "matched" || !strings.HasPrefix(upstream, "gpt-") {
+				continue
+			}
+			for _, template := range catalog.Models {
+				if template["slug"] != upstream {
+					continue
+				}
+				for _, field := range []string{
+					"supported_reasoning_levels", "default_reasoning_level",
+					"service_tiers", "additional_speed_tiers",
+					"context_window", "max_context_window",
+				} {
+					if value, exists := template[field]; exists {
+						model[field] = value
+					}
+				}
+				break
+			}
+		}
 		preferWebsockets := spec != nil && spec.ProviderGateway == nil && spec.ResponsesWebsockets
 		for _, model := range data {
 			model["prefer_websockets"] = preferWebsockets
+			if slug, _ := model["slug"].(string); slug != "" {
+				if _, xaiOnly := xaiOnlyModels[strings.ToLower(strings.TrimSpace(slug))]; xaiOnly {
+					// Grok 模型没有 Codex OAuth 的 WS 传输，必须走本地 HTTP 网关。
+					model["prefer_websockets"] = false
+				}
+			}
 			if spec != nil && spec.ProviderGateway != nil {
 				applyProviderGatewayCodexInputModalities(model, spec.ProviderGateway)
+			}
+			// 自动混合路由：路由模型的可发送图片能力取自路由的 provider 网关，
+			// 与 DeepSeek 网关模式一致（存在识图兜底模型时即可发送图片）。
+			if spec != nil && spec.ModelRouting != nil && spec.ModelRouting.Automatic {
+				if slug, _ := model["slug"].(string); slug != "" {
+					if route, _, status := resolveModelRoutingRoute(spec, slug); status == "matched" && route != nil {
+						applyProviderGatewayCodexInputModalities(model, route.ProviderGateway)
+					}
+					applyAutomaticRouteModelMetadata(spec, model, slug)
+				}
 			}
 			slug, _ := model["slug"].(string)
 			if isHiddenCodexClientModel(slug) {
@@ -1644,6 +1965,75 @@ func applyProviderGatewayCodexInputModalities(model map[string]any, gateway *pro
 	delete(model, "supports_image_detail_original")
 }
 
+// applyAutomaticRouteModelMetadata 用路由模型自带的元数据覆盖目录条目，
+// 让客户端看到的显示名与推理档位和 DeepSeek 网关模式保持一致。
+//
+// 官方注册表会给已知 slug 填自己的显示名与档位，这里必须显式覆盖，
+// 否则带前缀的官方名称（例如 `GPT-6 Astra`）和账号模型档位都会被替换掉。
+func applyAutomaticRouteModelMetadata(spec *apiKeySpec, model map[string]any, slug string) {
+	if spec == nil || spec.ModelRouting == nil {
+		return
+	}
+	if name := officialAutomaticModelDisplayName(slug); name != "" {
+		model["display_name"] = name
+		model["description"] = name
+	}
+	for _, route := range spec.ModelRouting.Routes {
+		for _, candidate := range route.Models {
+			if !strings.EqualFold(candidate.ClientModel, slug) {
+				continue
+			}
+			if name := strings.TrimSpace(candidate.DisplayName); name != "" {
+				model["display_name"] = name
+				model["description"] = name
+			}
+			if len(candidate.ReasoningLevels) > 0 {
+				model["supported_reasoning_levels"] = cloneAnyList(candidate.ReasoningLevels)
+				if level := strings.ToLower(strings.TrimSpace(candidate.DefaultReasoningLevel)); level != "" {
+					model["default_reasoning_level"] = level
+				}
+			}
+			return
+		}
+	}
+}
+
+// officialAutomaticModelDisplayName 返回 Cockpit 对官方命名空间模型的展示名。
+func officialAutomaticModelDisplayName(slug string) string {
+	switch strings.ToLower(strings.TrimSpace(slug)) {
+	case "gpt-6-astra":
+		return "GPT-6 Astra"
+	case "gpt-5.6-sol":
+		return "GPT-5.6 Sol"
+	case "gpt-5.6-terra":
+		return "GPT-5.6 Terra"
+	case "gpt-5.6-luna":
+		return "GPT-5.6 Luna"
+	case "gpt-5.5":
+		return "GPT-5.5"
+	case codexReserveModel:
+		return "GPT-5.6 Reserve"
+	default:
+		return ""
+	}
+}
+
+func cloneAnyList(values []any) []any {
+	cloned := make([]any, 0, len(values))
+	for _, value := range values {
+		if object, ok := value.(map[string]any); ok {
+			copyObject := make(map[string]any, len(object))
+			for key, item := range object {
+				copyObject[key] = item
+			}
+			cloned = append(cloned, copyObject)
+			continue
+		}
+		cloned = append(cloned, value)
+	}
+	return cloned
+}
+
 func intModelValueAny(value any) int {
 	switch v := value.(type) {
 	case int:
@@ -1691,15 +2081,15 @@ func displayNameForModel(model string) string {
 	case "gpt-5-codex-mini":
 		return "GPT-5 Codex Mini"
 	case "gpt-5.6-sol":
-		return "GPT-5.6-Sol"
+		return "GPT-5.6 Sol"
 	case "gpt-5.6-terra":
-		return "GPT-5.6-Terra"
+		return "GPT-5.6 Terra"
 	case "gpt-5.6-luna":
-		return "GPT-5.6-Luna"
+		return "GPT-5.6 Luna"
 	case "gpt-6-astra":
-		return "6 Astra"
+		return "GPT-6 Astra"
 	case codexReserveModel:
-		return "Luna Reserve"
+		return "GPT-5.6 Reserve"
 	case "gpt-5.5":
 		return "GPT-5.5"
 	case "gpt-5.4":
@@ -1720,6 +2110,8 @@ func displayNameForModel(model string) string {
 		return "GPT-5.1 Codex Mini"
 	case "gpt-image-2":
 		return "GPT Image 2"
+	case defaultImagesToolModel:
+		return "GPT Image 2.5"
 	case codexAutoReviewModel:
 		return "Codex Auto Review"
 	default:
@@ -1729,7 +2121,7 @@ func displayNameForModel(model string) string {
 
 func isHiddenCodexClientModel(model string) bool {
 	switch model {
-	case codexAutoReviewModel, "gpt-image-2", "grok-imagine-image", "grok-imagine-video", "grok-imagine-image-quality":
+	case codexAutoReviewModel, legacyImagesToolModel, defaultImagesToolModel, "grok-imagine-image", "grok-imagine-video", "grok-imagine-image-quality":
 		return true
 	default:
 		return false
@@ -1850,7 +2242,7 @@ func decodeRelayRequestBody(
 	return body, nil
 }
 
-func rewriteBodyModel(m *manifest, spec *apiKeySpec, body []byte) ([]byte, string, error) {
+func rewriteBodyModel(m *manifest, spec *apiKeySpec, requestKind string, body []byte) ([]byte, string, error) {
 	var payload map[string]any
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, "", nil
@@ -1860,9 +2252,28 @@ func rewriteBodyModel(m *manifest, spec *apiKeySpec, body []byte) ([]byte, strin
 	if model == "" {
 		return nil, "", nil
 	}
+	// 生图请求里的 model 是图片模型（例如内置 image_gen 工具的 gpt-image-2），
+	// 不能按对话模型目录改写或校验，否则会被替换成实例的默认对话模型并被生图链路拒绝。
+	if isImageRequestKind(requestKind) {
+		return nil, model, nil
+	}
+	// 宿主内部请求（唤醒、鹈鹕测试）的模型由 Cockpit 自己选定，
+	// 必须绕过对外 API 的模型可见性与排除规则，否则关闭某个模型会连带打断唤醒任务。
+	if spec != nil && spec.Internal {
+		return nil, model, nil
+	}
+	if spec != nil && spec.ModelRouting != nil && spec.ModelRouting.Automatic {
+		if !automaticClientModelVisible(m, spec, model) {
+			return nil, model, fmt.Errorf("model %s is not available for this API key", model)
+		}
+		// Preserve client aliases for candidate lookup; canonicalization belongs
+		// to the selected native executor or provider route.
+		return nil, model, nil
+	}
 	if _, _, status := resolveModelRouting(spec, model); status != "none" {
-		// Keep the namespaced client model intact so the executor can route
-		// before OAuth catalog canonicalization strips the namespace.
+		if !routedClientModelAllowed(m, spec, model) {
+			return nil, model, fmt.Errorf("model %s is not available for this API key", model)
+		}
 		return nil, model, nil
 	}
 	canonical := canonicalModelForClientModel(m, spec, model)
@@ -1896,10 +2307,18 @@ func visibleModelsForAPIKey(m *manifest, spec *apiKeySpec) []string {
 			}
 			models = append(models, clientModel)
 		}
+		// 配置了生图转发账号时，图片模型对实例 API Key 可见（对话模型列表不受影响）。
+		if len(imageGenerationAccountIDsForSpec(spec)) > 0 {
+			models = append(models, configuredImagesToolModel(m))
+		}
 		return normalizeStringList(models)
 	}
 	baseModels := append([]string(nil), m.ModelIDs...)
-	hasReserve := false
+	automatic := spec != nil && spec.ModelRouting != nil && spec.ModelRouting.Automatic
+	if automatic {
+		baseModels = append([]string(nil), spec.ModelRouting.NativeModels...)
+	}
+	hasReserve := automatic
 	for _, model := range baseModels {
 		if isCodexReserveModel(model) {
 			hasReserve = true
@@ -1915,12 +2334,25 @@ func visibleModelsForAPIKey(m *manifest, spec *apiKeySpec) []string {
 			if route.ProviderGateway == nil {
 				continue
 			}
+			if len(route.Models) > 0 {
+				for _, model := range route.Models {
+					// 自动混合路由下，GPT / Codex 命名空间只展示官方推荐集；
+					// 账号映射里的 shell 别名仍然可以路由，但不出现在模型列表里。
+					if automatic && isGptFamilyModelName(model.ClientModel) &&
+						!automaticListedModel(spec, model.ClientModel) {
+						continue
+					}
+					models = append(models, model.ClientModel)
+				}
+				continue
+			}
 			for _, upstreamModel := range route.ProviderGateway.UpstreamModels {
 				models = append(models, route.Namespace+"/"+upstreamModel)
 			}
 		}
 		models = normalizeStringList(models)
 	}
+	models = applyModelFilters(models, nil, m.ExcludedModels)
 	if spec != nil {
 		models = applyModelFilters(models, spec.AllowedModels, spec.ExcludedModels)
 		if strings.TrimSpace(spec.ModelPrefix) != "" {
@@ -1935,6 +2367,13 @@ func visibleModelsForAPIKey(m *manifest, spec *apiKeySpec) []string {
 
 func isCodexReserveModel(model string) bool {
 	return strings.EqualFold(strings.TrimSpace(model), codexReserveModel)
+}
+
+// isGptFamilyModelName 判断模型名是否属于 GPT / Codex 官方命名空间。
+// 自动混合路由只用它收敛「展示清单」，不影响路由与请求校验。
+func isGptFamilyModelName(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(model, "gpt-") || strings.HasPrefix(model, "codex-")
 }
 
 func clientCatalogModelsForAPIKey(m *manifest, spec *apiKeySpec) []string {
@@ -1965,6 +2404,12 @@ func canonicalModelForClientModel(m *manifest, spec *apiKeySpec, model string) s
 				withoutPrefix = source
 			}
 		}
+		// 未声明的 Codex/GPT 官方模型 id 不做兜底改写：这类名字代表客户端会用内置 GPT
+		// 元数据生成请求，静默落到非 GPT 上游只能得到文本工具调用标记，工具调用无法解析。
+		if isCodexShellModelID(withoutPrefix) &&
+			!providerGatewayDeclaresModel(m, spec.ProviderGateway, withoutPrefix) {
+			return ""
+		}
 		return providerGatewayCanonicalModel(spec.ProviderGateway, withoutPrefix)
 	}
 	if m != nil {
@@ -1973,6 +2418,69 @@ func canonicalModelForClientModel(m *manifest, spec *apiKeySpec, model string) s
 		}
 	}
 	return resolveSupportedModelAlias(m, withoutPrefix)
+}
+
+// codexShellModelIDs 是 Codex/GPT 官方模型 id（含 provider 目录壳位）。
+//
+// 这些名字代表客户端会用内置 GPT 元数据生成请求（工具定义、推理档位、responses_lite 等）。
+// provider gateway 不允许把它们静默改写成别的上游模型：上游如果不是 GPT 系模型，只能把
+// 工具调用写成文本标记返回（例如 DeepSeek 的 `<||DSML||...>`），客户端无法解析成工具调用，
+// 原始标记会直接落进正文，表现为「模型不能用工具」。
+var codexShellModelIDs = []string{
+	"gpt-6-astra",
+	"gpt-5.6-sol",
+	"gpt-5.6-terra",
+	"gpt-5.6-luna",
+	"gpt-5.5",
+	"gpt-5.4",
+	"gpt-5.4-mini",
+	"gpt-5.3-codex",
+	"gpt-5.3-codex-spark",
+	"gpt-5.2",
+}
+
+func isCodexShellModelID(model string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(model))
+	if normalized == "" {
+		return false
+	}
+	for _, shell := range codexShellModelIDs {
+		if normalized == shell {
+			return true
+		}
+	}
+	return false
+}
+
+// providerGatewayDeclaresModel 判断模型名是否由该 provider gateway 声明过：
+// 上游模型清单、默认上游模型，或 manifest 里为该上游配置的别名（目录壳位）。
+//
+// 只有声明过的名字才允许改写上游模型；未声明的 Codex/GPT 官方 id 必须拒绝。
+func providerGatewayDeclaresModel(m *manifest, gateway *providerGatewaySpec, model string) bool {
+	model = strings.TrimSpace(model)
+	if model == "" || gateway == nil {
+		return false
+	}
+	// 网关没有声明任何上游模型时保持原有透传行为。
+	if len(gateway.UpstreamModels) == 0 && strings.TrimSpace(gateway.UpstreamModel) == "" {
+		return true
+	}
+	for _, upstreamModel := range gateway.UpstreamModels {
+		if strings.EqualFold(model, upstreamModel) {
+			return true
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(gateway.UpstreamModel), model) {
+		return true
+	}
+	if m != nil {
+		for _, alias := range m.ModelAliases {
+			if strings.EqualFold(strings.TrimSpace(alias.Alias), model) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func providerGatewayCanonicalModel(gateway *providerGatewaySpec, model string) string {
@@ -2218,6 +2726,10 @@ func validateClientModelVisible(m *manifest, spec *apiKeySpec, model, canonical 
 		return true
 	}
 	if spec != nil && spec.ProviderGateway != nil {
+		if (isConfiguredImagesToolModel(m, withoutPrefix) || isConfiguredImagesToolModel(m, canonical)) &&
+			len(imageGenerationAccountIDsForSpec(spec)) > 0 {
+			return true
+		}
 		if len(spec.ProviderGateway.UpstreamModels) == 0 {
 			return true
 		}
@@ -2229,7 +2741,8 @@ func validateClientModelVisible(m *manifest, spec *apiKeySpec, model, canonical 
 		return false
 	}
 	visible := visibleModelsForAPIKey(m, nil)
-	visibleMatch := false
+	visibleMatch := strings.EqualFold(withoutPrefix, configuredImagesToolModel(m)) ||
+		strings.EqualFold(canonical, configuredImagesToolModel(m))
 	for _, item := range visible {
 		if strings.EqualFold(item, withoutPrefix) || strings.EqualFold(item, canonical) || strings.EqualFold(resolveSupportedModelAlias(m, item), canonical) {
 			visibleMatch = true

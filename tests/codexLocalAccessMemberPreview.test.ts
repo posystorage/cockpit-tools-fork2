@@ -14,6 +14,18 @@ const styleSource = readFileSync(
   `${process.cwd()}/src/styles/pages/codex-accounts-overview.css`,
   "utf8",
 );
+const servicePageSource = readFileSync(
+  `${process.cwd()}/src/pages/CodexApiServicePage.tsx`,
+  "utf8",
+);
+const serviceViewSource = readFileSync(
+  `${process.cwd()}/src/pages/CodexApiServiceView.tsx`,
+  "utf8",
+);
+const serviceStyleSource = readFileSync(
+  `${process.cwd()}/src/pages/CodexApiServicePage.css`,
+  "utf8",
+);
 
 describe("Codex API service member preview", () => {
   it("renders every API service member in the ordinary Codex card", () => {
@@ -100,6 +112,21 @@ describe("Codex API service member preview", () => {
   it("keeps dispatch activity and priority visible in the member row", () => {
     assert.ok(rendererSource.includes("codex-local-access-member-activity"));
     assert.ok(rendererSource.includes("codex-local-access-member-priority"));
+  });
+
+  it("keeps the full account store for both member views, including Grok members", () => {
+    assert.match(rendererSource, /\[accounts, localAccessCollection\?\.accountIds, localAccessState\?\.accountActivity\]/);
+    assert.ok(servicePageSource.includes("const localAccessAccounts = useMemo(() => accounts, [accounts])"));
+    assert.ok(servicePageSource.includes("const memberAccounts = useMemo("));
+    const memberGrid = serviceStyleSource.match(/\.codex-api-service-account-grid\s*\{([^}]+)\}/);
+    assert.ok(memberGrid);
+    assert.match(memberGrid[1], /overflow-y:\s*auto/);
+  });
+
+  it("does not report an internal sidecar as an enabled API service", () => {
+    assert.match(rendererSource, /!localAccessCollection\.enabled\s*\? "disabled"\s*: localAccessState\?\.running/);
+    assert.match(rendererSource, /!localAccessCollection\.enabled\s*\? t\("codex\.localAccess\.statusDisabled"/);
+    assert.ok(serviceViewSource.includes('!collection?.enabled ? "disabled" : state?.running'));
   });
 
   it("shows the backup switch only for lowest-priority members", () => {

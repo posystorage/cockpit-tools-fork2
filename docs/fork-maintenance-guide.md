@@ -152,6 +152,18 @@ fork 仍必须保留：
 
 `1.3.42b1` 的 Windows、macOS Apple Silicon、macOS Intel 和 macOS Universal job 均在 Rust 编译阶段失败，未进入产物上传步骤。根因是人工清理格式化噪音时，`save_local_access_accounts` 的 `image_generation_account_policies` 参数后遗留了独立的 `>,`，导致语法错误并派生出错误的“缺少第 8 个参数”诊断。`1.3.42b2` 删除该残留行后，必须重新执行本地 Rust 检查，并等待四个平台云构建实际生成和上传安装包；不能仅以 prepare-release 成功判定发布成功。
 
+### 2.4.2 `v1.3.57` 合并边界（2026-09-20）
+
+本轮从 fork `1.3.42b2`（`012e6454`）合并上游 `v1.3.57`。Release 说明只收录本轮的 `1.3.43` 至 `1.3.57` 共十五个中英文版本章节，不回放 `1.3.42` 及以前的记录；上游部分旧 tag 已删除，但 changelog 章节仍需保留。
+
+- 接受上游 Codex API Service 的内部 sidecar 复用、并发选择、自动模型路由、Grok 成员、唤醒及 Pelican 路由、模型和账号能力更新。旧 legacy 网关退出生产路径；fork 的选中/结束活动记录必须继续覆盖 session-affinity 和自动路由。Provider Gateway 的直连与自动候选要发送 `auth_selected`；失败转移中的候选共享 request ID，使页面活动归属更新为最后选中的账号；普通账号的最外层 recording selector 不得重复发事件。
+- 内部功能可要求 sidecar 在对外 API 服务停用时继续运行。普通 Codex 卡片和独立 API 页的“运行中”必须同时满足 collection 已启用及 sidecar running；不能仅根据进程存活误报服务已开启。两处成员列表继续使用全部现存账号，滚动区域内保留活动排序、最低优先级暂停和历史统计。
+- 保留价格簿 v4、Auto-review 的 Luna 全矩阵、历史重算和本地 account_id 计费主键；Grok/自动路由的上游新增路径不能清空删除账号记录或绕过 `*` 暂停。独立页专有 24H/48H 与默认 rolling7d 不变。
+- 上游商业 Provider 的 URL/协议自动迁移不得覆盖用户自行填写的地址与 wire API；空推广默认值、赞助/远端公告关闭和运行时 updater 禁用仍是硬边界。Sub2API 余额回退及非有限值拒绝保持不变。
+- 草稿 Release 同时生成 Windows 和三种 macOS 安装包，Linux/finalize/checksum/Homebrew 仍禁用。版本说明范围以本轮上游锚点为准，不因 release tag 或历史章节而扩张。
+
+本机验证：TypeScript 严格检查、Vite 生产构建、Rust 库 `cargo check`、账号池/历史/Release 定向前端测试与 `git diff --check` 通过。`cargo fmt --check` 报出大量上游原有未格式化段落，未整仓重排；Rust 定向单测已完成编译但本机测试 EXE 未进入断言，停止悬挂进程。此机器没有 Go，新增 Provider Gateway 选中事件的 Go 回归测试必须在云构建验证。云编译尚未触发，不能把编译通过等同于 Windows/macOS 产物已生成。
+
 ### 2.5 `v1.3.16` 已验证基线（2026-08-06）
 
 本轮从已验证 fork `1.3.10b2`（`ee49a89f`）升级到上游 `v1.3.16`（release commit `e1ef55ce`），升级分支为 `codex/upgrade-upstream-v1.3.16`。合并前 release 链与锚点如下：

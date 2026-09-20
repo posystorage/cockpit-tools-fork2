@@ -6,6 +6,8 @@ const workflowSource = readFileSync(
   `${process.cwd()}/.github/workflows/release.yml`,
   "utf8",
 );
+const englishChangelog = readFileSync(`${process.cwd()}/CHANGELOG.md`, "utf8");
+const chineseChangelog = readFileSync(`${process.cwd()}/CHANGELOG.zh-CN.md`, "utf8");
 
 describe("fork draft release workflow", () => {
   it("accepts numeric beta tags and forwards the validated tag", () => {
@@ -63,6 +65,25 @@ describe("fork draft release workflow", () => {
         'RELEASE_VERSIONS=("1.3.40" "1.3.39" "1.3.38" "1.3.36" "1.3.35" "1.3.34" "1.3.33")',
       ),
     );
+  });
+
+  it("combines the exact 1.3.43-to-1.3.57 upstream release range", () => {
+    assert.ok(
+      workflowSource.includes(
+        'RELEASE_VERSIONS=("1.3.57" "1.3.56" "1.3.55" "1.3.54" "1.3.53" "1.3.52" "1.3.51" "1.3.50" "1.3.49" "1.3.48" "1.3.47" "1.3.46" "1.3.45" "1.3.44" "1.3.43")',
+      ),
+    );
+    for (let version = 43; version <= 57; version += 1) {
+      for (const [language, changelog] of [
+        ["English", englishChangelog],
+        ["Chinese", chineseChangelog],
+      ] as const) {
+        assert.ok(
+          changelog.includes(`## [1.3.${version}]`),
+          `${language} changelog must include 1.3.${version}`,
+        );
+      }
+    }
   });
 
   it("uses only the b3-to-b4 changelog section for the 1.3.21b4 draft", () => {

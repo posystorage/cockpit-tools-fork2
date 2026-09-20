@@ -120,6 +120,7 @@ export interface CodexLocalAccessCollection {
   accessScope: CodexLocalAccessScope;
   clientBaseUrlHost: CodexLocalAccessClientBaseUrlHost;
   imageGenerationMode: CodexLocalAccessImageGenerationMode;
+  imageGenerationModel: string;
   imageGenerationAccountPolicies: Record<
     string,
     CodexLocalAccessImageGenerationPolicy
@@ -135,6 +136,8 @@ export interface CodexLocalAccessCollection {
   debugLogs: boolean;
   immediateSseResponse: boolean;
   maxConcurrentImageRequests: number;
+  maxAccountConcurrency: number;
+  accountConcurrencyWaitMs: number;
   excludedModels: string[];
   sessionAffinity: boolean;
   sessionAffinityTtlMs: number;
@@ -452,8 +455,6 @@ export interface CodexLocalAccessAppendAccountSkipped {
   accountId: string;
   reason:
     | "not_found"
-    | "chat_completions_api_key"
-    | "deepseek_unsupported"
     | "free_restricted"
     | "pending_oauth"
     | "web_session_quota_only";
@@ -518,4 +519,38 @@ export type CodexLocalAccessChatStreamEvent =
 export interface CodexLocalAccessPortCleanupResult {
   killedCount: number;
   state: CodexLocalAccessState;
+}
+
+export type CodexInstanceGatewayKind =
+  | "providerGateway"
+  | "mixedModel"
+  | "boundOauth";
+
+export type CodexInstanceGatewayStatus =
+  | "running"
+  | "unreachable"
+  | "portConflict"
+  | "stopped"
+  | "notStarted";
+
+/** 实例级本地网关的运行态快照，仅用于只读展示。 */
+export interface CodexInstanceGatewayView {
+  id: string;
+  kind: CodexInstanceGatewayKind;
+  runtimeId: string;
+  profileDir: string;
+  instanceId: string;
+  instanceName: string;
+  isDefault: boolean;
+  accountId: string | null;
+  accountLabel: string | null;
+  bindHost: string;
+  port: number | null;
+  baseUrl: string | null;
+  wireApi: string | null;
+  upstreamModels: string[];
+  status: CodexInstanceGatewayStatus;
+  managed: boolean;
+  logApiKeyId: string;
+  lastError: string | null;
 }

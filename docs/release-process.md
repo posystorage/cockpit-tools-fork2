@@ -1,143 +1,56 @@
-# Release Process (Open Source, No Code Signing)
+# Fork release process
 
-> 适用于 Cockpit Tools 当前开源发布流程（未接入代码签名）。
+This document describes the current fork workflow in `.github/workflows/release.yml`.
+The workflow and `scripts/release/` are authoritative if they differ from this guide.
 
-## 1. 目标
+## Preflight
 
-- 保证每次发布可复现、可验证、可追溯。
-- 让用户可以通过哈希校验确认安装包未被篡改。
-- 单引擎误报（如 VirusTotal 1/72）时，可快速说明和处理。
+Before creating a release tag, run `npm run release:preflight`, the focused fork
+tests in `docs/fork-maintenance-guide.md`, and check the working tree. The
+preflight runs locale validation, TypeScript type checking, the frontend build,
+and Rust checks/tests. CI builds the Go sidecar for each target platform.
 
-## 2. 发布前检查（Preflight）
+## Versions and release notes
 
-在仓库根目录执行：
+`package.json.version` is the application version. Run `npm run sync-version`
+after changing it, then commit the synchronized files. The fork accepts a
+formal `v<version>` or `<version>` tag, or a draft tag such as `1.3.57b1`.
+The tag must point to the commit that is to be built.
 
-```bash
-npm run release:preflight
-```
+For an upgrade spanning multiple upstream releases, add every upstream version
+since the last merged baseline to both `CHANGELOG.md` and
+`CHANGELOG.zh-CN.md`. Update the workflow's `RELEASE_VERSIONS` list to contain
+exactly those versions in descending order. Do not repeat older upgrades.
+Include a separate fork beta section when a later build changes fork behavior.
 
-该命令会依次执行：
+## Draft builds
 
-1. `node scripts/check_locales.cjs`
-2. `npm run typecheck`
-3. `npm run build`
-4. `cargo check`（在 `src-tauri` 下）
+Pushing a valid tag creates or updates a **draft** GitHub Release. The workflow
+builds and uploads all of these targets to that same draft tag:
 
-可选跳过参数（排障用，不建议正式发布时使用）：
+- Windows x86_64: NSIS executable and MSI installer.
+- macOS Apple Silicon: aarch64 DMG and updater archive.
+- macOS Intel: x86_64 DMG and updater archive.
+- macOS Universal: Universal DMG and updater archive.
 
-```bash
-node scripts/release/preflight.cjs --skip-locales --skip-typecheck --skip-build --skip-cargo
-```
+The Windows and architecture-specific macOS jobs also upload target updater
+manifests. The workflow preserves the previous published legacy `latest.json`
+while the candidate remains a draft; it must not redirect stable users to an
+unpublished build. Tauri updater artifacts use the fork signing key and release
+endpoint. Updater signing is not Apple notarization or Windows Authenticode.
 
-## 3. 打包产物（macOS / Windows；Homebrew 推荐）
+Linux, automatic legacy manifest finalization, checksums, and Homebrew Cask
+jobs are intentionally disabled for fork draft builds. `Casks/cockpit-tools.rb`
+is not maintained here. Do not restore these jobs or publish the draft as a side
+effect of merging upstream workflow/documentation changes.
 
-官方发布目标仅包含 macOS 与 Windows，不再构建或上传 Linux/Ubuntu 安装包。macOS 当前推荐使用 `universal` 安装包（同时兼容 Apple Silicon / Intel），并在上传 GitHub Release 后同步更新 Homebrew cask。
+## Verify the result
 
-推荐一键脚本（会执行 `universal.dmg` 构建、上传 GitHub Release 资产、更新 `Casks/cockpit-tools.rb`）：
-
-```bash
-npm run release:github-and-cask
-```
-
-若你已提前手动构建过 `universal.dmg`，可跳过构建步骤：
-
-```bash
-npm run release:github-and-cask -- --skip-build
-```
-
-脚本前置条件：
-
-1. 已安装并登录 GitHub CLI（`gh auth status` 通过）
-2. 本机可执行 macOS Tauri 构建
-3. 已安装 Rust Intel target（首次需要）：
-
-```bash
-rustup target add x86_64-apple-darwin
-```
-
-## 4. 生成 SHA256 校验文件
-
-默认扫描 `src-tauri/target/release/bundle` 和 `dist`，输出到 `release-artifacts/SHA256SUMS.txt`：
-
-```bash
-npm run release:checksums
-```
-
-如果本次发布使用 `universal` 产物（Homebrew 场景，默认如此），建议显式指定 `universal` bundle 目录，确保 `*_universal.dmg` 被写入校验文件：
-
-```bash
-node scripts/release/gen_checksums.cjs \
-  --input src-tauri/target/universal-apple-darwin/release/bundle \
-  --input dist \
-  --output release-artifacts/SHA256SUMS.txt
-```
-
-也可按需指定其他输入目录和输出文件：
-
-```bash
-node scripts/release/gen_checksums.cjs \
-  --input src-tauri/target/release/bundle \
-  --output release-artifacts/SHA256SUMS.txt
-```
-
-## 5. Release 发布内容规范
-
-每次发布建议至少包含：
-
-1. 下载文件列表（macOS / Windows；macOS/Homebrew 场景建议包含 `*_universal.dmg`）
-2. `SHA256SUMS.txt`
-3. 更新日志（中英文）
-4. VirusTotal 链接（可选但推荐）
-5. 已知误报说明（如有）
-
-Release workflow 默认从中英文 `CHANGELOG` 抽取当前版本章节。若 fork 的一次正式发布跨越多个上游版本，应在 `.github/workflows/release.yml` 的 `RELEASE_VERSIONS` 映射中按新到旧列出全部版本；`1.3.2` Release 固定合并 `1.3.2` 与 `1.3.1` 两份上游升级报告，`1.3.21` 正式 Release 固定合并 `1.3.21` 至 `1.3.16` 六份上游变更日志。`1.3.21b4` 是 b3→b4 草稿验证标签，workflow 特判为只抽取 `1.3.21b4` 章节，不能把历史六版本说明再次拼入草稿。
-
-补充说明（Homebrew 自维护 Tap）：
-
-1. 先上传 GitHub Release 资产，再推送 `Casks/cockpit-tools.rb` 更新，避免 cask 链接短暂 404。
-2. `Casks/cockpit-tools.rb` 中的 `version`、`sha256` 必须与 Release 中实际 `*_universal.dmg` 一致。
-
-## 6. VirusTotal 单引擎误报处理
-
-当出现 `1/72` 这类结果时：
-
-1. 先在 Release 明确“仅单引擎命中，其他未检出”。
-2. 要求用户只从官方 Release 下载并核对 SHA256。
-3. 对命中厂商提交误报（附 hash、下载链接、仓库地址）。
-4. 误报修复后在 issue/release 回帖同步结果。
-
-## 7. Git 发版流程（远端完成）
-
-正式发版按“Git 远端完成”判定，建议顺序如下：
-
-1. 更新版本与更新日志（`package.json`、`CHANGELOG.md`、`CHANGELOG.zh-CN.md`）。
-2. 执行版本同步：
-
-```bash
-npm run sync-version
-```
-
-3. 执行发布预检（阻断）：
-
-```bash
-npm run release:preflight
-```
-
-4. 提交发布改动。
-5. 创建与版本一致的标签（例如 `v0.9.2`）。
-6. 先推送分支，再推送标签：
-
-```bash
-git push origin <branch> && git push origin v<major>.<minor>.<patch>
-```
-
-完成判定（阻断）：
-
-1. 远端分支已更新（通常 `origin/main`）。
-2. 远端版本标签已存在，且与 `package.json.version` 一致。
-3. 满足以上两项即视为发版完成。
-
-补充说明：
-
-1. GitHub Actions、GitHub Release 资产上传、`SHA256SUMS.txt`、Homebrew Cask 更新属于后置异步流程，不作为发版完成的阻断条件。
-2. 若需要，可在发版完成后继续观察 Actions 与 Release 资产状态。
+Check every enabled Actions job and the actual **draft Release assets**. A
+successful preparation job or a tagged source archive does not mean installers
+exist. In particular, verify an `.exe`, an `.msi`, and all three architecture
+variants of `.dmg`; also verify the relevant updater archives/signatures and
+manifests. Draft assets require GitHub access to the repository and are not
+visible to anonymous visitors on the public tag page. If any platform build or
+upload failed, fix the cause and create a new candidate tag rather than
+reporting the build as complete.

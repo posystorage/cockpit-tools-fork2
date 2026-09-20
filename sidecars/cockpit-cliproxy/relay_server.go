@@ -14,6 +14,7 @@ import (
 	"os"
 
 	"strings"
+	"sync"
 
 	"time"
 
@@ -29,21 +30,27 @@ import (
 )
 
 type relayServer struct {
-	runtime            executorRuntime
-	cfg                *config.Config
-	manifest           *manifest
-	authManager        *coreauth.Manager
-	emitter            *eventEmitter
-	policy             *requestPolicy
-	responsesWebsocket gin.HandlerFunc
-	codexLive          *codexlive.Handler
-	quotaPoolStatePath string
+	automaticSelector     coreauth.Selector
+	automaticSelectorOnce sync.Once
+	runtime               executorRuntime
+	cfg                   *config.Config
+	manifest              *manifest
+	authManager           *coreauth.Manager
+	emitter               *eventEmitter
+	policy                *requestPolicy
+	responsesWebsocket    gin.HandlerFunc
+	codexLive             *codexlive.Handler
+	quotaPoolStatePath    string
 }
 
 func (s *relayServer) router() *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(corsMiddleware())
+	router.Use(func(c *gin.Context) {
+		s.bindRelayContext(c)
+		c.Next()
+	})
 	router.Use(s.policy.middleware())
 	router.GET("/v1/models", s.handleModels)
 	router.GET(cockpitQuotaPath, s.handleCockpitQuota)
@@ -101,6 +108,7 @@ type quotaPoolWindowState struct {
 }
 
 type quotaPoolAccountState struct {
+	PlanType  string                `json:"planType,omitempty"`
 	Primary   *quotaPoolWindowState `json:"primary,omitempty"`
 	Secondary *quotaPoolWindowState `json:"secondary,omitempty"`
 	UpdatedAt *int64                `json:"updatedAt,omitempty"`
@@ -165,12 +173,15 @@ func quotaWindowValue(window *quotaPoolWindowState) (int, int64, bool) {
 	return *window.RemainingPercent, minutes, true
 }
 
-func quotaPlanLabel(account *accountSpec) string {
+func quotaPlanLabel(account *accountSpec, snapshot quotaPoolAccountState) string {
+	if account != nil && strings.EqualFold(strings.TrimSpace(account.AuthKind), "api_key") {
+		return "API_KEY"
+	}
+	if plan := strings.TrimSpace(snapshot.PlanType); plan != "" {
+		return strings.ToUpper(strings.ReplaceAll(strings.ReplaceAll(plan, "-", "_"), " ", "_"))
+	}
 	if account == nil {
 		return "UNKNOWN"
-	}
-	if strings.EqualFold(strings.TrimSpace(account.AuthKind), "api_key") {
-		return "API_KEY"
 	}
 	plan := strings.TrimSpace(account.PlanType)
 	if plan == "" {
@@ -217,7 +228,8 @@ func buildCockpitQuotaResponseWithAccounts(spec *apiKeySpec, state quotaPoolStat
 		if accounts != nil {
 			account = accounts[accountID]
 		}
-		plan := quotaPlanLabel(account)
+		item := state.Accounts[accountID]
+		plan := quotaPlanLabel(account, item)
 		index, exists := planIndex[plan]
 		if !exists {
 			index = len(result.Plans)
@@ -287,7 +299,7 @@ func buildCockpitQuotaResponseWithAccounts(spec *apiKeySpec, state quotaPoolStat
 		if accounts != nil {
 			account = accounts[accountID]
 		}
-		if index, exists := planIndex[quotaPlanLabel(account)]; exists {
+		if index, exists := planIndex[quotaPlanLabel(account, item)]; exists {
 			planSummary := &result.Plans[index]
 			if primaryOK && primaryMinutes >= 5*24*60 {
 				planSummary.WeeklyRemainingPercent = addQuotaPercent(planSummary.WeeklyRemainingPercent, primaryValue)
@@ -598,7 +610,7 @@ func (s *relayServer) handleModels(c *gin.Context) {
 	}
 	models := clientCatalogModelsForAPIKey(s.manifest, spec)
 	if isCodexClientModelsRequest(c.Request) {
-		c.JSON(http.StatusOK, buildCodexClientModelsResponse(models, spec, contextWindowsForAPIKey(s.manifest, spec)))
+		c.JSON(http.StatusOK, buildCodexClientModelsResponse(models, spec, contextWindowsForAPIKey(s.manifest, spec), s.manifest))
 		return
 	}
 	c.JSON(http.StatusOK, buildModelsResponse(models))
@@ -878,7 +890,8 @@ func (s *relayServer) handleGeminiAction(c *gin.Context) {
 }
 
 func (s *relayServer) handleImagesGenerations(c *gin.Context) {
-	if _, ok := s.requireAPIKey(c); !ok {
+	spec, ok := s.requireAPIKey(c)
+	if !ok {
 		return
 	}
 	rawJSON, err := c.GetRawData()
@@ -886,7 +899,11 @@ func (s *relayServer) handleImagesGenerations(c *gin.Context) {
 		writeAPIError(c, http.StatusBadRequest, "failed to read request body", "invalid_request")
 		return
 	}
-	imageReq, err := buildImageGenerationRelayRequest(rawJSON)
+	imageReq, err := buildImageGenerationRelayRequestWithModel(
+		rawJSON,
+		configuredImagesToolModel(s.manifest),
+		len(imageGenerationAccountIDsForSpec(spec)) > 0,
+	)
 	if err != nil {
 		writeAPIError(c, http.StatusBadRequest, err.Error(), "invalid_request")
 		return
@@ -895,10 +912,15 @@ func (s *relayServer) handleImagesGenerations(c *gin.Context) {
 }
 
 func (s *relayServer) handleImagesEdits(c *gin.Context) {
-	if _, ok := s.requireAPIKey(c); !ok {
+	spec, ok := s.requireAPIKey(c)
+	if !ok {
 		return
 	}
-	imageReq, err := buildImageEditRelayRequest(c)
+	imageReq, err := buildImageEditRelayRequestWithModel(
+		c,
+		configuredImagesToolModel(s.manifest),
+		len(imageGenerationAccountIDsForSpec(spec)) > 0,
+	)
 	if err != nil {
 		writeAPIError(c, http.StatusBadRequest, err.Error(), "invalid_request")
 		return

@@ -738,6 +738,9 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 	if result.AuthID == "" {
 		return
 	}
+	if result.AttemptStartedAt.IsZero() {
+		result.AttemptStartedAt = upstreamAttemptStartedAt(ctx)
+	}
 	modelKey := canonicalModelKey(result.Model)
 
 	var authSnapshot *Auth
@@ -746,6 +749,10 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 
 	m.mu.Lock()
 	if auth, ok := m.auths[result.AuthID]; ok && auth != nil {
+		if barrier := m.authRecoveryBarriers[result.AuthID]; !barrier.IsZero() && !result.AttemptStartedAt.IsZero() && result.AttemptStartedAt.Before(barrier) {
+			m.mu.Unlock()
+			return
+		}
 		if modelKey == "" && strings.TrimSpace(result.RouteModel) != "" {
 			if m != nil {
 				modelKey = m.selectionModelKeyForAuth(auth, result.RouteModel)
@@ -806,8 +813,12 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 
 					statusCode := statusCodeFromResult(result.Error)
 					if isModelSupportResultError(result.Error) {
-						next := now.Add(12 * time.Hour)
-						state.NextRetryAfter = next
+						if disableCooling {
+							state.NextRetryAfter = time.Time{}
+						} else {
+							next := now.Add(12 * time.Hour)
+							state.NextRetryAfter = next
+						}
 					} else if isCloudflareChallengeResultError(result.Error) {
 						next, backoffLevel := nextCloudflareCooldown(state.Quota.BackoffLevel, disableCooling, now)
 						state.NextRetryAfter = next
@@ -1417,9 +1428,10 @@ func resultErrorFromError(err error) *Error {
 		resultErr.HTTPStatus = statusCodeFromError(err)
 	}
 	switch {
-	case isTransientRequestScopedError(err):
-		resultErr.Code = ErrorCodeTransientRequestScoped
-		resultErr.Retryable = true
+	case isExplicitModelNotFoundError(err, ""):
+		if resultErr.Code == "" || resultErr.Code == requestScopedErrorCode {
+			resultErr.Code = "model_not_found"
+		}
 	case isRequestScopedError(err) || isRequestInvalidError(err):
 		// Prefer true request-scoped faults (including Claude OAuth cancellation)
 		// over the broader connection-lifecycle classification.
@@ -1441,13 +1453,7 @@ func shouldSkipCredentialCooldown(err *Error) bool {
 	if err != nil && err.Code == ErrorCodeForceCooldown {
 		return false
 	}
-	return (err != nil && err.Code == ErrorCodeTransientRequestScoped) ||
-		isRequestScopedResultError(err) || isConnectionLifecycleResultError(err)
-}
-
-func isTransientRequestScopedError(err error) bool {
-	var transient interface{ IsTransientRequestScoped() bool }
-	return errors.As(err, &transient) && transient.IsTransientRequestScoped()
+	return isRequestScopedResultError(err) || isConnectionLifecycleResultError(err)
 }
 
 // isConnectionLifecycleError reports transport/session lifecycle failures that must
@@ -1640,8 +1646,11 @@ func isModelSupportError(err error) bool {
 	if err == nil {
 		return false
 	}
+	if isExplicitModelNotFoundError(err, "") {
+		return true
+	}
 	status := statusCodeFromError(err)
-	if status != http.StatusBadRequest && status != http.StatusUnprocessableEntity {
+	if status != http.StatusBadRequest && status != http.StatusUnprocessableEntity && status != http.StatusNotFound {
 		return false
 	}
 	return isModelSupportErrorMessage(err.Error())
@@ -1677,8 +1686,11 @@ func isModelSupportResultError(err *Error) bool {
 	if err == nil {
 		return false
 	}
+	if isExplicitModelNotFoundError(err, "") {
+		return true
+	}
 	status := statusCodeFromResult(err)
-	if status != http.StatusBadRequest && status != http.StatusUnprocessableEntity {
+	if status != http.StatusBadRequest && status != http.StatusUnprocessableEntity && status != http.StatusNotFound {
 		return false
 	}
 	return isModelSupportErrorMessage(err.Message)
@@ -1802,8 +1814,9 @@ func isExplicitModelNotFoundError(err error, requestedModel string) bool {
 	if err == nil {
 		return false
 	}
-	if authErr, ok := err.(*Error); ok && authErr != nil {
-		if isModelNotFoundIdentifier(authErr.Code) || isStructuredModelNotFoundError(authErr.Message, requestedModel) {
+	var authErr *Error
+	if errors.As(err, &authErr) && authErr != nil {
+		if isModelNotFoundIdentifier(authErr.Code) || isStructuredModelNotFoundError(authErr.Message, requestedModel) || isStructuredModelNotFoundError(authErr.Error(), requestedModel) {
 			return true
 		}
 	} else if isStructuredModelNotFoundError(err.Error(), requestedModel) {
@@ -1909,7 +1922,10 @@ func isExplicitModelNotFoundMessage(message, requestedModel string) bool {
 	if lower == "" {
 		return false
 	}
-	normalized := strings.NewReplacer("-", "_", " ", "_").Replace(lower)
+	if strings.Contains(lower, "in request") || strings.Contains(lower, "in body") || strings.Contains(lower, "request body") {
+		return false
+	}
+	normalized := strings.NewReplacer("-", "_").Replace(lower)
 	if strings.Contains(normalized, "model_not_found") || strings.Contains(normalized, "unknown_model") {
 		return true
 	}
@@ -1976,7 +1992,7 @@ func trimRequestedModelReference(value, requestedModel string) (string, bool) {
 
 func isMissingModelPhrase(value string) bool {
 	switch strings.Trim(value, " .!;\t\r\n") {
-	case "not found", "was not found", "could not be found", "does not exist", "doesn't exist", "not exist", "is unknown":
+	case "not found", "was not found", "could not be found", "does not exist", "doesn't exist", "not exist", "is unknown", "does not exist or you do not have access to it":
 		return true
 	default:
 		return false

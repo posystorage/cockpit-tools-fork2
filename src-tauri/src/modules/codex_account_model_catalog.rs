@@ -276,6 +276,48 @@ fn read_experimental_model_catalog_config(
     serde_json::from_str::<ExperimentalModelCatalogConfig>(&content).ok()
 }
 
+fn strip_legacy_model_context_fields(base_dir: &Path) -> Result<bool, String> {
+    let path = experimental_model_config_path(base_dir);
+    let Ok(content) = fs::read_to_string(&path) else {
+        return Ok(false);
+    };
+    let mut config = serde_json::from_str::<serde_json::Value>(&content).map_err(|error| {
+        format!(
+            "解析 Codex 模型配置缓存失败: path={}, error={}",
+            path.display(),
+            error
+        )
+    })?;
+    let mut changed = false;
+    if let Some(models) = config
+        .get_mut("models")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for model in models {
+            let Some(model) = model.as_object_mut() else {
+                continue;
+            };
+            changed |= model.remove("context_window").is_some();
+            changed |= model.remove("max_context_window").is_some();
+            changed |= model.remove("auto_compact_token_limit").is_some();
+        }
+    }
+    if !changed {
+        return Ok(false);
+    }
+    let mut content = serde_json::to_string_pretty(&config)
+        .map_err(|error| format!("序列化 Codex 模型配置缓存失败: {}", error))?;
+    content.push('\n');
+    write_string_atomic(&path, &content).map_err(|error| {
+        format!(
+            "清理 Codex 模型级上下文配置失败: path={}, error={}",
+            path.display(),
+            error
+        )
+    })?;
+    Ok(true)
+}
+
 fn experimental_model_catalog_has_migration(base_dir: &Path, migration_id: &str) -> bool {
     read_experimental_model_catalog_config(base_dir)
         .is_some_and(|config| config.migrations.iter().any(|item| item == migration_id))
@@ -579,8 +621,6 @@ fn default_experimental_model_definitions(
                         model_id: model_id.to_string(),
                         display_name: model_catalog_display_name(model_id, display_name),
                         reasoning_efforts: None,
-                        context_window: None,
-                        auto_compact_token_limit: None,
                     })
                 })
                 .collect::<Vec<_>>()
@@ -593,8 +633,6 @@ fn default_experimental_model_definitions(
                 display_name: model_id.clone(),
                 model_id,
                 reasoning_efforts: None,
-                context_window: None,
-                auto_compact_token_limit: None,
             })
             .collect()
     } else {
@@ -682,7 +720,7 @@ fn normalize_reasoning_efforts(
     Ok(Some(normalized))
 }
 
-fn normalize_experimental_model_definitions(
+pub(crate) fn normalize_experimental_model_definitions(
     models: Vec<CodexExperimentalModelDefinition>,
 ) -> Result<Vec<CodexExperimentalModelDefinition>, String> {
     if models.is_empty() {
@@ -704,67 +742,24 @@ fn normalize_experimental_model_definitions(
         if !seen.insert(key) {
             return Err("EXPERIMENTAL_MODEL_CATALOG_MODEL_ID_DUPLICATE".to_string());
         }
-        let context_window = model.context_window.filter(|value| *value > 0);
-        if model.context_window.is_some() && context_window.is_none() {
-            return Err("EXPERIMENTAL_MODEL_CATALOG_CONTEXT_WINDOW_INVALID".to_string());
-        }
-        let auto_compact_token_limit = model.auto_compact_token_limit.filter(|value| *value > 0);
-        if model.auto_compact_token_limit.is_some() && auto_compact_token_limit.is_none() {
-            return Err("EXPERIMENTAL_MODEL_CATALOG_AUTO_COMPACT_INVALID".to_string());
-        }
-        if let (Some(context_window), Some(auto_compact_token_limit)) =
-            (context_window, auto_compact_token_limit)
-        {
-            if auto_compact_token_limit >= context_window {
-                return Err("EXPERIMENTAL_MODEL_CATALOG_AUTO_COMPACT_RANGE_INVALID".to_string());
-            }
-        }
         normalized.push(CodexExperimentalModelDefinition {
             model_id: model_id.to_string(),
             display_name: display_name.to_string(),
             reasoning_efforts: normalize_reasoning_efforts(model.reasoning_efforts.clone())?,
-            context_window,
-            auto_compact_token_limit,
         });
     }
     Ok(normalized)
 }
 
-fn apply_model_context_config_to_catalog(
-    catalog: &mut serde_json::Value,
-    models: &[CodexExperimentalModelDefinition],
-) {
-    let definitions = models
-        .iter()
-        .map(|model| {
-            (
-                model.model_id.clone(),
-                model.context_window,
-                model.auto_compact_token_limit,
-            )
-        })
-        .collect::<Vec<_>>();
-    crate::modules::codex_protocol::apply_model_context_overrides(catalog, &definitions);
-}
-
-pub(crate) fn decorate_managed_model_catalog_for_profile(
-    base_dir: &Path,
-    catalog_json: &str,
-) -> Result<String, String> {
-    if !experimental_model_policy_enabled(base_dir) {
-        return Ok(catalog_json.to_string());
-    }
-    let mut catalog = serde_json::from_str::<serde_json::Value>(catalog_json)
-        .map_err(|error| format!("解析 Codex 受管模型目录失败: {}", error))?;
-    let models = read_experimental_model_definitions(base_dir);
-    apply_model_context_config_to_catalog(&mut catalog, &models);
-    serde_json::to_string_pretty(&catalog)
-        .map_err(|error| format!("序列化 Codex 受管模型目录失败: {}", error))
-}
-
 pub(crate) fn read_experimental_model_definitions(
     base_dir: &Path,
 ) -> Vec<CodexExperimentalModelDefinition> {
+    if let Err(error) = strip_legacy_model_context_fields(base_dir) {
+        logger::log_warn(&format!(
+            "[Codex模型管理] 清理历史模型级上下文配置失败，已忽略该字段: {}",
+            error
+        ));
+    }
     let path = experimental_model_config_path(base_dir);
     let Ok(content) = fs::read_to_string(&path) else {
         return default_experimental_model_definitions(base_dir);
@@ -806,10 +801,8 @@ pub(crate) fn read_experimental_model_definitions(
     if !models.iter().any(|model| model.model_id.eq_ignore_ascii_case("gpt-reserve")) {
         models.push(CodexExperimentalModelDefinition {
             model_id: "gpt-reserve".to_string(),
-            display_name: "Luna Reserve".to_string(),
+            display_name: crate::modules::codex_protocol::CODEX_RESERVE_DISPLAY_NAME.to_string(),
             reasoning_efforts: None,
-            context_window: None,
-            auto_compact_token_limit: None,
         });
     }
     models
@@ -914,7 +907,6 @@ fn build_experimental_model_catalog(base_dir: &Path) -> Result<String, String> {
         .collect::<Vec<_>>();
     let mut catalog =
         crate::modules::codex_protocol::build_codex_client_models_response_with_model_definitions_and_reasoning(&definitions);
-    apply_model_context_config_to_catalog(&mut catalog, &model_definitions);
     crate::modules::codex_protocol::ensure_codex_reserve_fallback(&mut catalog);
     serde_json::to_string_pretty(&catalog)
         .map(|mut content| {
@@ -1043,41 +1035,10 @@ fn read_catalog_model_definitions(
                 .map(str::trim)
                 .filter(|value| !value.is_empty() && value.chars().count() <= 100)
                 .unwrap_or(model_id);
-            let official_model =
-                crate::modules::codex_protocol::build_codex_client_models_response(&[
-                    model_id.to_string()
-                ])
-                .get("models")
-                .and_then(serde_json::Value::as_array)
-                .and_then(|models| models.first())
-                .cloned();
-            let official_context_window = official_model
-                .as_ref()
-                .and_then(|model| model.get("context_window"))
-                .and_then(serde_json::Value::as_i64);
-            let official_auto_compact_token_limit = official_model
-                .as_ref()
-                .and_then(|model| model.get("auto_compact_token_limit"))
-                .and_then(serde_json::Value::as_i64);
-            let context_window = model
-                .get("context_window")
-                .and_then(serde_json::Value::as_i64)
-                .filter(|value| *value > 0 && Some(*value) != official_context_window);
-            let auto_compact_token_limit = model
-                .get("auto_compact_token_limit")
-                .and_then(serde_json::Value::as_i64)
-                .filter(|value| *value > 0 && Some(*value) != official_auto_compact_token_limit)
-                .or_else(|| match context_window {
-                    Some(1_000_000) => Some(900_000),
-                    Some(516_000) => Some(460_000),
-                    _ => None,
-                });
             Some(CodexExperimentalModelDefinition {
                 model_id: model_id.to_string(),
                 display_name: model_catalog_display_name(model_id, display_name),
                 reasoning_efforts: None,
-                context_window,
-                auto_compact_token_limit,
             })
         })
         .collect()
@@ -1088,17 +1049,10 @@ fn merge_model_definitions(
     extra: Vec<CodexExperimentalModelDefinition>,
 ) -> Vec<CodexExperimentalModelDefinition> {
     for model in extra {
-        if let Some(existing) = definitions
-            .iter_mut()
-            .find(|existing| existing.model_id.eq_ignore_ascii_case(&model.model_id))
+        if !definitions
+            .iter()
+            .any(|existing| existing.model_id.eq_ignore_ascii_case(&model.model_id))
         {
-            if model.context_window.is_some() {
-                existing.context_window = model.context_window;
-            }
-            if model.auto_compact_token_limit.is_some() {
-                existing.auto_compact_token_limit = model.auto_compact_token_limit;
-            }
-        } else {
             definitions.push(model);
         }
     }
@@ -1280,6 +1234,124 @@ pub(crate) fn reapply_experimental_model_policy_if_enabled(
     Ok(true)
 }
 
+/// 一次性迁移标记：本版本把历史遗留的「模型管理」统一关闭，之后由用户自己决定。
+const CODEX_MODEL_MANAGEMENT_DEFAULT_OFF_MARKER_FILE: &str =
+    ".cockpit-model-management-default-off-v1";
+
+/// 一次性关闭历史遗留的「模型管理」，恢复跟随官方模型目录。
+///
+/// 只在首次执行时生效（成功后写入标记文件），用户之后自己再开启模型管理不再被干预；
+/// 已保存的模型清单文件会保留，用户重新开启时仍能看到自己的清单。
+pub fn migrate_model_management_default_off_once(base_dir: &Path) -> Result<bool, String> {
+    if base_dir.as_os_str().is_empty() {
+        return Ok(false);
+    }
+    let marker_path = base_dir.join(CODEX_MODEL_MANAGEMENT_DEFAULT_OFF_MARKER_FILE);
+    if marker_path.is_file() {
+        return Ok(false);
+    }
+
+    let config_path = get_config_toml_path(base_dir);
+    let existing = fs::read_to_string(&config_path).unwrap_or_default();
+    let mut doc = if existing.trim().is_empty() {
+        Document::new()
+    } else {
+        crate::modules::codex_config_format::read_codex_config_doc_from_str(&existing)
+            .map_err(|error| format!("解析 config.toml 失败: {}", error))?
+    };
+    let policy_enabled = experimental_model_policy_enabled(base_dir);
+    let managed_catalog_configured = doc
+        .get(CODEX_CONFIG_MODEL_CATALOG_JSON_KEY)
+        .and_then(|item| item.as_str())
+        .is_some_and(|catalog| catalog_ref_targets_cockpit_managed_file(catalog, base_dir));
+
+    if policy_enabled {
+        apply_experimental_model_catalog_to_doc(base_dir, &mut doc, Some(false))?;
+    } else if managed_catalog_configured {
+        let _ = doc.remove(CODEX_CONFIG_MODEL_CATALOG_JSON_KEY);
+    }
+    if policy_enabled || managed_catalog_configured {
+        if let Some(parent) = config_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("创建 config.toml 目录失败: {}", error))?;
+        }
+        let content = crate::modules::codex_config_format::codex_config_doc_to_string(&mut doc);
+        crate::modules::codex_config_format::write_codex_config_toml_atomic(&config_path, &content)
+            .map_err(|error| format!("写入 config.toml 失败: {}", error))?;
+    }
+
+    let managed_catalog_path = experimental_model_catalog_path(base_dir);
+    if managed_catalog_path.exists() {
+        crate::modules::atomic_write::remove_file_locked(&managed_catalog_path).map_err(|error| {
+            format!(
+                "清理 Codex 受管模型目录失败: path={}, error={}",
+                managed_catalog_path.display(),
+                error
+            )
+        })?;
+    }
+    cleanup_legacy_managed_model_catalogs(base_dir);
+    let _ = crate::modules::codex_local_access::invalidate_codex_model_cache(base_dir);
+    persist_experimental_model_policy(base_dir, false)?;
+    clear_previous_experimental_catalog_reference(base_dir)?;
+
+    write_string_atomic(&marker_path, "disabled\n")
+        .map_err(|error| format!("写入模型管理默认关闭标记失败: {}", error))?;
+    Ok(true)
+}
+
+/// 未运行 Codex 的 profile 目录（默认实例 + 托管实例）。
+///
+/// 正在运行的实例跳过迁移：配置在下次启动时才会生效，避免影响当前会话。
+fn idle_codex_profile_dirs_for_model_management_migration() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    if let Ok(settings) = crate::modules::codex_instance::load_default_settings() {
+        if let Ok(default_dir) = crate::modules::codex_instance::get_default_codex_home() {
+            let running =
+                crate::modules::process::resolve_codex_pid(settings.last_pid, None).is_some();
+            if !running && seen.insert(default_dir.to_string_lossy().to_string()) {
+                dirs.push(default_dir);
+            }
+        }
+    }
+    if let Ok(store) = crate::modules::codex_instance::load_instance_store() {
+        for instance in store.instances {
+            let dir = PathBuf::from(&instance.user_data_dir);
+            if dir.as_os_str().is_empty() {
+                continue;
+            }
+            let running = crate::modules::process::resolve_codex_pid(
+                instance.last_pid,
+                Some(instance.user_data_dir.as_str()),
+            )
+            .is_some();
+            if running || !seen.insert(dir.to_string_lossy().to_string()) {
+                continue;
+            }
+            dirs.push(dir);
+        }
+    }
+    dirs
+}
+
+/// 对默认实例和全部托管实例执行一次「模型管理默认关闭」迁移，返回实际迁移的 profile 数量。
+pub fn migrate_model_management_default_off_for_all_profiles() -> usize {
+    let mut migrated = 0usize;
+    for profile_dir in idle_codex_profile_dirs_for_model_management_migration() {
+        match migrate_model_management_default_off_once(&profile_dir) {
+            Ok(true) => migrated += 1,
+            Ok(false) => {}
+            Err(error) => logger::log_warn(&format!(
+                "[Codex模型目录] 关闭历史模型管理失败: profile={}, error={}",
+                profile_dir.display(),
+                error
+            )),
+        }
+    }
+    migrated
+}
+
 pub fn read_quick_config_from_config_toml(base_dir: &Path) -> Result<CodexQuickConfig, String> {
     let config_path = get_config_toml_path(base_dir);
     let content = fs::read_to_string(config_path).unwrap_or_default();
@@ -1335,6 +1407,8 @@ pub fn read_quick_config_from_config_toml(base_dir: &Path) -> Result<CodexQuickC
         experimental_model_catalog_conflict: experimental.conflict,
         experimental_model_catalog_models: experimental_models,
         experimental_model_catalog_default_model_id: experimental_default_model_id,
+        experimental_model_catalog_reset_models: default_experimental_model_definitions(base_dir),
+        experimental_model_catalog_reset_default_model_id: Some(DEFAULT_CODEX_MODEL_ID.to_string()),
         context_management_experimental_mode,
     })
 }
@@ -1679,6 +1753,56 @@ fn write_api_provider_to_config_toml(
     write_api_provider_to_config_toml_with_options(base_dir, provider_config, true)
 }
 
+/// 本次账号投影应写的官方登录方式。以写入 auth.json 的凭据归属为准：
+/// API Key 账号写 `api`，OAuth（含 API Key 账号绑定 OAuth）写 `chatgpt`。
+fn forced_login_method_for_account(account: &CodexAccount) -> &'static str {
+    if account.is_api_key_auth() {
+        CODEX_FORCED_LOGIN_METHOD_API
+    } else {
+        CODEX_FORCED_LOGIN_METHOD_CHATGPT
+    }
+}
+
+/// 按本次切号写入的凭据类型对齐官方 `forced_login_method`。
+///
+/// 官方客户端在未设置该键时按 auth.json 自动识别登录方式；但该键一旦被用户手工设置，
+/// 语义就是「限制登录方式」——键值与本次投影的凭据不一致时，客户端会把有效凭据判定为
+/// 未登录，切号结果直接不可用。
+///
+/// 因此这里只修复「用户已显式设置、且与本次凭据冲突」的情况：未设置该键时官方本来就能
+/// 自动选择登录方式，工具不为用户新增锁定，也不因此创建 config.toml；键值一致时不重复
+/// 落盘。失败原样上报，由切号整体失败处理，避免留下半同步状态。
+fn apply_forced_login_method_to_config_toml(
+    base_dir: &Path,
+    account: &CodexAccount,
+) -> Result<bool, String> {
+    let target = forced_login_method_for_account(account);
+    let config_path = get_config_toml_path(base_dir);
+    let existing = fs::read_to_string(&config_path).unwrap_or_default();
+    if existing.trim().is_empty() {
+        return Ok(false);
+    }
+    let mut doc = crate::modules::codex_config_format::read_codex_config_doc_from_str(&existing)
+        .map_err(|e| format!("解析 config.toml 失败: {}", e))?;
+
+    let current = doc
+        .get(CODEX_CONFIG_FORCED_LOGIN_METHOD_KEY)
+        .and_then(|item| item.as_str())
+        .map(|value| value.trim().to_ascii_lowercase());
+    let Some(current) = current else {
+        return Ok(false);
+    };
+    if current == target {
+        return Ok(false);
+    }
+
+    doc[CODEX_CONFIG_FORCED_LOGIN_METHOD_KEY] = value(target);
+    let content = crate::modules::codex_config_format::codex_config_doc_to_string(&mut doc);
+    crate::modules::codex_config_format::write_codex_config_toml_atomic(&config_path, &content)
+        .map_err(|e| format!("写入 config.toml 失败: {}", e))?;
+    Ok(true)
+}
+
 fn write_api_provider_to_config_toml_with_options(
     base_dir: &Path,
     provider_config: &ApiProviderConfig,
@@ -1936,7 +2060,6 @@ fn sync_api_key_model_catalog_to_dir(
         account,
         crate::modules::codex_local_access::read_toml_model_context_window(&doc),
     )?;
-    let content = decorate_managed_model_catalog_for_profile(base_dir, &content)?;
     let catalog_path = base_dir.join(CODEX_MANAGED_MODEL_CATALOG_FILE);
     write_string_atomic(&catalog_path, &content).map_err(|e| {
         format!(
@@ -2003,6 +2126,12 @@ fn sync_or_cleanup_managed_model_catalog_for_dir(
     base_dir: &Path,
     account: &CodexAccount,
 ) -> Result<(), String> {
+    // API Key / 第三方供应商账号始终使用自己的模型目录（供应商网关目录、DeepSeek 官方目录等）。
+    // 「模型管理」只服务于订阅账号：既不能覆盖这类账号写入的目录，也不能被它们清掉，
+    // 否则会出现「切到第三方账号后看不到自己的模型」以及用户模型清单被丢弃。
+    if account.is_api_key_auth() {
+        return sync_or_cleanup_account_model_catalog_for_dir(base_dir, account);
+    }
     let preserve_experimental_policy =
         read_quick_config_from_config_toml(base_dir)?.experimental_model_catalog_enabled;
     sync_or_cleanup_account_model_catalog_for_dir(base_dir, account)?;
@@ -2351,11 +2480,16 @@ fn api_key_account_requires_bearer_provider_override(
     let requires_immediate_provider_override =
         crate::modules::codex_local_access::account_requires_provider_gateway(account)
             && !account_syncs_model_catalog_to_codex(account);
+    let wire_api = account
+        .api_wire_api
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(CODEX_PROVIDER_WIRE_API);
     let requires_http_only_responses_provider = account.api_provider_mode
         == CodexApiProviderMode::Custom
-        && account.api_wire_api.as_deref() == Some(CODEX_PROVIDER_WIRE_API)
-        && !account.api_supports_websockets
-        && !account_syncs_model_catalog_to_codex(account);
+        && wire_api.eq_ignore_ascii_case(CODEX_PROVIDER_WIRE_API)
+        && !account.api_supports_websockets;
     oauth_bound
         || uses_local_runtime
         || requires_immediate_provider_override
@@ -2391,14 +2525,8 @@ fn write_deepseek_official_responses_runtime_to_dir(
 
     doc["model"] = value(selected_model.as_str());
     let _ = doc.remove(CODEX_CONFIG_MODEL_CATALOG_JSON_KEY);
-    doc["model_reasoning_effort"] = value("high");
-    if doc
-        .get("model_reasoning_summary")
-        .and_then(|item| item.as_str())
-        .is_some()
-    {
-        let _ = doc.remove("model_reasoning_summary");
-    }
+    crate::modules::codex_account::apply_deepseek_reasoning_effort(&mut doc);
+    crate::modules::codex_account::apply_deepseek_config_overrides(&mut doc, base_dir);
     doc[CODEX_CONFIG_MODEL_PROVIDER_KEY] = value(DEEPSEEK_PROVIDER_ID);
     doc[CODEX_CONFIG_MODEL_CATALOG_JSON_KEY] = value(CODEX_MANAGED_MODEL_CATALOG_FILE);
     doc["preferred_auth_method"] = value("apikey");

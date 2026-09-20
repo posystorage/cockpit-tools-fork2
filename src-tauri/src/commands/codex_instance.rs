@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 use std::process::Command;
@@ -7,7 +7,6 @@ use std::time::Instant;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
-use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::models::codex::{
@@ -17,6 +16,20 @@ use crate::models::{
     CodexInstanceModelRouting, DefaultInstanceSettings, InstanceLaunchMode, InstanceProfile,
 };
 use crate::modules;
+
+#[cfg(test)]
+use super::codex_instance_app_exit::idle_codex_profile_dirs_for_app_exit;
+pub use super::codex_instance_app_exit::restore_mixed_model_profiles_for_app_exit;
+use super::codex_instance_model_catalog::{
+    apply_pending_model_catalog, read_pending_model_catalog, restore_pending_model_catalog,
+    save_pending_model_catalog,
+};
+#[cfg(test)]
+use super::codex_instance_model_catalog::PENDING_MODEL_CATALOG_FILE;
+use super::codex_instance_routing::{
+    launch_mode_uses_desktop_runtime, model_routing_update_error,
+    validate_instance_model_routing,
+};
 
 pub(crate) const DEFAULT_INSTANCE_ID: &str = "__default__";
 const CODEX_INSTANCE_LAUNCH_PROGRESS_EVENT: &str = "codex:instance-launch-progress";
@@ -60,39 +73,6 @@ fn should_skip_launch_step(skip_failed_step: Option<&str>, step: &str) -> bool {
     skip_failed_step.is_some_and(|value| value == step || value == "all")
 }
 
-fn launch_mode_uses_desktop_runtime(launch_mode: &InstanceLaunchMode) -> bool {
-    *launch_mode == InstanceLaunchMode::App
-}
-
-fn validate_instance_model_routing(
-    bind_account_id: Option<&str>,
-    launch_mode: &InstanceLaunchMode,
-    model_routing: Option<&CodexInstanceModelRouting>,
-) -> Result<Option<CodexInstanceModelRouting>, String> {
-    let Some(model_routing) = model_routing.filter(|routing| routing.enabled) else {
-        return Ok(model_routing.cloned());
-    };
-    if !launch_mode_uses_desktop_runtime(launch_mode) {
-        return Err("混合模型路由第一版仅支持桌面版实例".to_string());
-    }
-    let normalized = modules::codex_local_access::validate_mixed_model_routing_config(
-        bind_account_id,
-        model_routing,
-    )?;
-    Ok(Some(normalized))
-}
-
-fn model_routing_update_error(error: String, rollback_errors: Vec<String>) -> String {
-    if rollback_errors.is_empty() {
-        return error;
-    }
-    format!(
-        "{}；恢复原实例配置时仍有错误: {}",
-        error,
-        rollback_errors.join("；")
-    )
-}
-
 #[derive(Debug)]
 struct CodexInstanceStartGuard {
     instance_id: String,
@@ -119,6 +99,17 @@ impl Drop for CodexInstanceStartGuard {
             .unwrap_or_else(|error| error.into_inner())
             .remove(&self.instance_id);
     }
+}
+
+/// 该实例是否正在启动流程中。
+///
+/// 启动过程内部会先停止旧网关再重新接管，后台监控不能在这段时间释放网关。
+pub(crate) fn codex_instance_start_in_progress(instance_id: &str) -> bool {
+    CODEX_INSTANCE_STARTS_IN_PROGRESS
+        .get_or_init(|| Mutex::new(HashSet::new()))
+        .lock()
+        .map(|starts| starts.contains(instance_id))
+        .unwrap_or(false)
 }
 
 #[derive(Debug, Clone)]
@@ -319,7 +310,7 @@ fn is_profile_initialized(user_data_dir: &str) -> bool {
     modules::instance::is_profile_initialized(Path::new(user_data_dir))
 }
 
-fn resolve_default_account_id(settings: &DefaultInstanceSettings) -> Option<String> {
+pub(super) fn resolve_default_account_id(settings: &DefaultInstanceSettings) -> Option<String> {
     if settings.follow_local_account {
         resolve_local_account_id()
     } else {
@@ -539,6 +530,21 @@ fn should_apply_instance_binding_immediately(
     binding_changed && defer_bind_account_application != Some(true)
 }
 
+/// 归一化后路由被自动关闭时，即使请求里没有显式更新路由，也要把关闭状态写回配置，
+/// 否则后台监控仍会按“启用”反复尝试恢复混合路由网关。
+fn merged_model_routing_update(
+    requested: Option<Option<CodexInstanceModelRouting>>,
+    effective: Option<&CodexInstanceModelRouting>,
+    normalized: Option<CodexInstanceModelRouting>,
+) -> Option<Option<CodexInstanceModelRouting>> {
+    let auto_disabled = effective.is_some_and(|routing| routing.enabled)
+        && normalized.as_ref().is_some_and(|routing| !routing.enabled);
+    if auto_disabled {
+        return Some(normalized);
+    }
+    requested.map(|_| normalized)
+}
+
 fn resolve_instance_launch_context(instance_id: &str) -> Result<CodexLaunchContext, String> {
     if instance_id == DEFAULT_INSTANCE_ID {
         let default_settings = modules::codex_instance::load_default_settings()?;
@@ -657,250 +663,7 @@ async fn apply_bound_account_to_initialized_profile(
     Ok(())
 }
 
-#[derive(Clone)]
-struct ConfiguredMixedModelGateway {
-    profile_dir: PathBuf,
-    oauth_account_id: String,
-    routing: CodexInstanceModelRouting,
-    codex_running: bool,
-}
-
-fn configured_mixed_model_gateways() -> Result<Vec<ConfiguredMixedModelGateway>, String> {
-    let mut targets = Vec::new();
-    let default_settings = modules::codex_instance::load_default_settings()?;
-    if let (Some(routing), Some(oauth_account_id)) = (
-        default_settings
-            .model_routing
-            .clone()
-            .filter(|routing| routing.enabled),
-        resolve_default_account_id(&default_settings),
-    ) {
-        let profile_dir = modules::codex_instance::get_default_codex_home()?;
-        if is_profile_initialized(&profile_dir.to_string_lossy()) {
-            targets.push(ConfiguredMixedModelGateway {
-                profile_dir,
-                oauth_account_id,
-                routing,
-                codex_running: modules::process::resolve_codex_pid(default_settings.last_pid, None)
-                    .is_some(),
-            });
-        }
-    }
-
-    for instance in modules::codex_instance::load_instance_store()?.instances {
-        let Some(routing) = instance.model_routing.filter(|routing| routing.enabled) else {
-            continue;
-        };
-        let Some(oauth_account_id) = instance.bind_account_id else {
-            continue;
-        };
-        if !is_profile_initialized(&instance.user_data_dir) {
-            continue;
-        }
-        let codex_running =
-            modules::process::resolve_codex_pid(instance.last_pid, Some(&instance.user_data_dir))
-                .is_some();
-        targets.push(ConfiguredMixedModelGateway {
-            profile_dir: PathBuf::from(instance.user_data_dir),
-            oauth_account_id,
-            routing,
-            codex_running,
-        });
-    }
-    Ok(targets)
-}
-
-fn configured_codex_profile_dirs() -> Result<Vec<PathBuf>, String> {
-    let mut profiles = vec![modules::codex_instance::get_default_codex_home()?];
-    profiles.extend(
-        modules::codex_instance::load_instance_store()?
-            .instances
-            .into_iter()
-            .map(|instance| PathBuf::from(instance.user_data_dir)),
-    );
-    Ok(profiles)
-}
-
-pub fn restore_mixed_model_profiles_for_app_exit() {
-    let profiles = match configured_codex_profile_dirs() {
-        Ok(profiles) => profiles,
-        Err(error) => {
-            modules::logger::log_warn(&format!(
-                "[MixedModelRouting] 应用退出前读取实例失败: {}",
-                error
-            ));
-            return;
-        }
-    };
-    for profile_dir in profiles {
-        match modules::codex_local_access::restore_mixed_model_gateway_profile(&profile_dir) {
-            Ok(true) => {
-                if let Err(error) =
-                    modules::codex_local_access::cleanup_provider_gateway_profile_model_overrides(
-                        &profile_dir,
-                    )
-                {
-                    modules::logger::log_warn(&format!(
-                        "[MixedModelRouting] 应用退出恢复模型目录失败: profile={} error={}",
-                        profile_dir.display(),
-                        error
-                    ));
-                }
-            }
-            Ok(false) => {}
-            Err(error) => modules::logger::log_warn(&format!(
-                "[MixedModelRouting] 应用退出恢复官方配置失败: profile={} error={}",
-                profile_dir.display(),
-                error
-            )),
-        }
-    }
-}
-
-pub fn start_mixed_model_gateway_watchdog(app: AppHandle) {
-    tauri::async_runtime::spawn(async move {
-        let mut consecutive_failures: HashMap<String, (String, u8)> = HashMap::new();
-        let mut suppressed_profiles: HashMap<String, String> = HashMap::new();
-        loop {
-            if modules::app_lifecycle::is_shutdown_started() {
-                break;
-            }
-            match configured_mixed_model_gateways() {
-                Ok(targets) => {
-                    for target in targets {
-                        let profile_key = target.profile_dir.to_string_lossy().to_string();
-                        let routing_signature =
-                            serde_json::to_string(&(&target.oauth_account_id, &target.routing))
-                                .unwrap_or_default();
-                        if suppressed_profiles
-                            .get(&profile_key)
-                            .is_some_and(|signature| signature == &routing_signature)
-                        {
-                            if modules::codex_local_access::mixed_model_gateway_runtime_is_healthy(
-                                &target.profile_dir,
-                            )
-                            .await
-                            {
-                                suppressed_profiles.remove(&profile_key);
-                                consecutive_failures.remove(&profile_key);
-                            } else {
-                                continue;
-                            }
-                        } else {
-                            if suppressed_profiles.remove(&profile_key).is_some() {
-                                consecutive_failures.remove(&profile_key);
-                            }
-                        }
-                        let profile_is_active =
-                            modules::codex_local_access::profile_uses_mixed_model_gateway(
-                                &target.profile_dir,
-                            )
-                            .unwrap_or(false);
-                        if target.codex_running && !profile_is_active {
-                            continue;
-                        }
-                        let runtime_healthy =
-                            modules::codex_local_access::mixed_model_gateway_runtime_is_healthy(
-                                &target.profile_dir,
-                            )
-                            .await;
-                        let runtime_managed = target.codex_running
-                            || modules::codex_local_access::mixed_model_gateway_runtime_is_managed(
-                                &target.profile_dir,
-                            )
-                            .await;
-                        if runtime_healthy && runtime_managed {
-                            consecutive_failures.remove(&profile_key);
-                            continue;
-                        }
-
-                        let result =
-                            modules::codex_local_access::ensure_mixed_model_gateway_for_dir(
-                                &target.profile_dir,
-                                &target.oauth_account_id,
-                                &target.routing,
-                            )
-                            .await;
-                        match result {
-                            Ok(()) => {
-                                consecutive_failures.remove(&profile_key);
-                                modules::logger::log_info(&format!(
-                                    "[MixedModelRouting] 本地服务已恢复: profile={}",
-                                    target.profile_dir.display()
-                                ));
-                            }
-                            Err(error) => {
-                                let failure_state = consecutive_failures
-                                    .entry(profile_key.clone())
-                                    .or_insert_with(|| (routing_signature.clone(), 0));
-                                if failure_state.0 != routing_signature {
-                                    *failure_state = (routing_signature.clone(), 0);
-                                }
-                                failure_state.1 = failure_state.1.saturating_add(1);
-                                let failures = failure_state.1;
-                                modules::logger::log_warn(&format!(
-                                    "[MixedModelRouting] 本地服务恢复失败: profile={} attempt={} error={}",
-                                    target.profile_dir.display(),
-                                    failures,
-                                    error
-                                ));
-                                if failures >= 3 {
-                                    modules::codex_local_access::stop_provider_gateways_for_profile(
-                                        &target.profile_dir,
-                                    )
-                                    .await;
-                                    let rollback_error = modules::codex_local_access::restore_mixed_model_gateway_profile(
-                                        &target.profile_dir,
-                                    )
-                                    .and_then(|_| {
-                                        modules::codex_local_access::cleanup_provider_gateway_profile_model_overrides(
-                                            &target.profile_dir,
-                                        )
-                                    })
-                                    .err();
-                                    let rollback_failed = rollback_error.is_some();
-                                    suppressed_profiles
-                                        .insert(profile_key.clone(), routing_signature);
-                                    let _ = app.emit(
-                                        "codex:mixed-model-routing-unavailable",
-                                        serde_json::json!({
-                                            "profileDir": profile_key,
-                                            "error": error,
-                                            "rollbackError": rollback_error,
-                                            "fallback": "official",
-                                        }),
-                                    );
-                                    let body = if rollback_failed {
-                                        "本地分流服务连续恢复失败，且自动恢复官方配置未完全成功。请打开 Cockpit Tools 检查。"
-                                    } else {
-                                        "本地分流服务连续恢复失败，已回退官方配置。请重新启动 Codex 后继续使用。"
-                                    };
-                                    if let Err(notification_error) = app
-                                        .notification()
-                                        .builder()
-                                        .title("Codex 本地分流服务不可用")
-                                        .body(body)
-                                        .show()
-                                    {
-                                        modules::logger::log_warn(&format!(
-                                            "[MixedModelRouting] 系统通知发送失败: {}",
-                                            notification_error
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(error) => modules::logger::log_warn(&format!(
-                    "[MixedModelRouting] 读取待恢复实例失败: {}",
-                    error
-                )),
-            }
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-        }
-    });
-}
+pub use super::codex_instance_gateway_watchdog::start_mixed_model_gateway_watchdog;
 
 async fn created_instance_view_after_binding<F, Fut>(
     instance: InstanceProfile,
@@ -1370,13 +1133,245 @@ mod tests {
             model_id: "gpt-5".to_string(),
             display_name: "GPT-5".to_string(),
             reasoning_efforts: None,
-            context_window: None,
-            auto_compact_token_limit: None,
         }]
     }
 
+    #[test]
+    fn app_exit_preserves_running_profiles_even_when_routing_was_disabled_for_later() {
+        let profile = |id: &str, enabled: bool, pid: u32| InstanceProfile {
+            id: id.to_string(),
+            name: id.to_string(),
+            user_data_dir: format!("/test/{id}"),
+            working_dir: None,
+            extra_args: String::new(),
+            bind_account_id: None,
+            model_routing: Some(CodexInstanceModelRouting {
+                enabled,
+                ..Default::default()
+            }),
+            launch_mode: InstanceLaunchMode::App,
+            app_speed: CodexAppSpeed::Standard,
+            created_at: 1,
+            last_launched_at: None,
+            last_pid: Some(pid),
+        };
+        let profiles = vec![
+            profile("active", true, 11),
+            profile("disabled-for-later", false, 12),
+            profile("stopped", true, 13),
+        ];
+        let idle = idle_codex_profile_dirs_for_app_exit(
+            Some(PathBuf::from("/test/default")),
+            Some(10),
+            profiles.clone(),
+            |pid, _| matches!(pid, Some(10 | 11 | 12)),
+        );
+        assert_eq!(idle, vec![PathBuf::from("/test/stopped")]);
+        let all_idle = idle_codex_profile_dirs_for_app_exit(
+            Some(PathBuf::from("/test/default")),
+            Some(10),
+            profiles,
+            |_, _| false,
+        );
+        assert_eq!(all_idle.len(), 4);
+        assert_eq!(all_idle[0], PathBuf::from("/test/default"));
+    }
+
     #[tokio::test]
-    async fn instance_configuration_save_preserves_context_window_settings() {
+    async fn instance_configuration_disable_routing_survives_reload_and_binding_update() {
+        let _lock = crate::modules::test_support::env_lock()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let env = TestDataDirGuard::new("cockpit-codex-disable-routing");
+        let instance_id = "disable-routing-instance";
+        let profile_dir =
+            save_instance_with_quick_config(&env, instance_id, Some(1_000_000), Some(900_000));
+        let before_config = std::fs::read(profile_dir.join("config.toml")).unwrap();
+        let mut store = modules::codex_instance::load_instance_store().expect("load store");
+        store.instances[0].model_routing = Some(CodexInstanceModelRouting {
+            enabled: true,
+            ..Default::default()
+        });
+        modules::codex_instance::save_instance_store(&store).expect("seed enabled routing");
+
+        // Match command argument decoding: null is not an explicit disable.
+        let omitted: Option<Option<CodexInstanceModelRouting>> =
+            serde_json::from_value(serde_json::Value::Null).expect("decode null");
+        assert!(omitted.is_none());
+        let disabled: Option<Option<CodexInstanceModelRouting>> =
+            serde_json::from_value(serde_json::json!({
+                "enabled": false, "version": 1, "routes": []
+            }))
+            .expect("decode explicit disable");
+        let saved = codex_save_instance_configuration(
+            instance_id.to_string(),
+            None, None, None, None,
+            disabled,
+            None, None, None, None,
+            Some(true),
+            None, None, None,
+            false,
+            test_experimental_models(),
+            None,
+        )
+        .await
+        .expect("disable routing");
+        assert!(!saved.instance.model_routing.expect("saved routing").enabled);
+        assert_eq!(std::fs::read(profile_dir.join("config.toml")).unwrap(), before_config);
+        assert!(profile_dir.join(PENDING_MODEL_CATALOG_FILE).exists());
+
+        // A later account selection must preserve the disabled state.
+        codex_update_instance(
+            instance_id.to_string(),
+            None, None, None,
+            Some(Some("another-oauth-account".to_string())),
+            None, None, None, None, None,
+            Some(true),
+        )
+        .await
+        .expect("save new binding without launching Codex");
+        let reloaded = modules::codex_instance::load_instance_store().expect("reload store");
+        let instance = &reloaded.instances[0];
+        assert!(!instance.model_routing.as_ref().expect("persisted routing").enabled);
+        assert_eq!(instance.bind_account_id.as_deref(), Some("another-oauth-account"));
+        let config = std::fs::read_to_string(profile_dir.join("config.toml")).expect("read config");
+        assert!(config.contains("model_context_window = 1000000"));
+        assert!(config.contains("model_auto_compact_token_limit = 900000"));
+        apply_pending_model_catalog(&profile_dir).expect("apply at next startup");
+        assert!(!profile_dir.join(PENDING_MODEL_CATALOG_FILE).exists());
+    }
+
+    #[test]
+    fn pending_catalog_preserves_active_files_and_handles_removed_default() {
+        let _lock = crate::modules::test_support::env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let env = TestDataDirGuard::new("pending-catalog");
+        let profile = save_instance_with_quick_config(&env, "pending", Some(1_000_000), Some(900_000));
+        let before = std::fs::read(profile.join("config.toml")).unwrap();
+        let view = save_pending_model_catalog(&profile, true, test_experimental_models(), Some("cpa/gpt-6-astra".into())).unwrap();
+        assert!(view.experimental_model_catalog_default_model_id.is_none());
+        assert_eq!(std::fs::read(profile.join("config.toml")).unwrap(), before);
+        assert!(read_pending_model_catalog(&profile).unwrap().unwrap().enabled);
+        apply_pending_model_catalog(&profile).unwrap();
+        assert!(read_pending_model_catalog(&profile).unwrap().is_none());
+        let config = std::fs::read_to_string(profile.join("config.toml")).unwrap();
+        assert!(config.contains("model_context_window = 1000000"));
+        assert!(!config.contains("cpa/gpt-6-astra"));
+        save_pending_model_catalog(&profile, false, Vec::new(), None).unwrap();
+        apply_pending_model_catalog(&profile).unwrap();
+        let config = std::fs::read_to_string(profile.join("config.toml")).unwrap();
+        assert!(!config.contains("model_catalog_json"));
+    }
+
+    #[test]
+    fn invalid_pending_catalog_does_not_replace_saved_draft() {
+        let _lock = crate::modules::test_support::env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let env = TestDataDirGuard::new("pending-invalid");
+        let profile = save_instance_with_quick_config(&env, "pending", None, None);
+        save_pending_model_catalog(&profile, true, test_experimental_models(), None).unwrap();
+        let path = profile.join(PENDING_MODEL_CATALOG_FILE);
+        let before = std::fs::read(&path).unwrap();
+        assert!(save_pending_model_catalog(&profile, true, Vec::new(), None).is_err());
+        assert_eq!(std::fs::read(path).unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn routing_without_oauth_binding_is_auto_disabled_on_save() {
+        let _lock = crate::modules::test_support::env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let env = TestDataDirGuard::new("pending-rollback");
+        let profile = save_instance_with_quick_config(&env, "pending", None, None);
+        save_pending_model_catalog(&profile, false, Vec::new(), None).unwrap();
+        let result = codex_save_instance_configuration(
+            "pending".into(), None, None, None, None,
+            Some(Some(CodexInstanceModelRouting { enabled: true, ..Default::default() })),
+            None, None, None, None, Some(true), None, None, None,
+            true, test_experimental_models(), None,
+        ).await;
+        let saved = result
+            .expect("绑定账号不是 OAuth 订阅账号时，混合模型路由必须自动关闭而不是拦住保存");
+        let routing = saved.instance.model_routing.expect("路由配置需要保留");
+        assert!(
+            !routing.enabled,
+            "绑定账号不是可直接登录的 OAuth 订阅账号时必须自动关闭路由"
+        );
+        assert!(
+            read_pending_model_catalog(&profile).unwrap().is_some(),
+            "待生效的模型配置不受影响"
+        );
+    }
+
+    #[tokio::test]
+    async fn deleted_account_disables_model_routing_referencing_it() {
+        let _lock = crate::modules::test_support::env_lock()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let env = TestDataDirGuard::new("cockpit-codex-routing-deleted-account");
+        let base_instance_id = "routing-base-account-instance";
+        let route_instance_id = "routing-route-account-instance";
+
+        let route = crate::models::CodexInstanceApiRoute {
+            id: "route-1".to_string(),
+            namespace: "cpa".to_string(),
+            provider_account_id: "deleted-route-account".to_string(),
+            enabled: true,
+            selected_models: None,
+            extra_models: None,
+        };
+        let mut store = crate::models::InstanceStore::new();
+        for (instance_id, bind_account_id) in [
+            (base_instance_id, "deleted-oauth-account"),
+            (route_instance_id, "kept-oauth-account"),
+        ] {
+            let profile_dir = env.root.join(instance_id);
+            std::fs::create_dir_all(&profile_dir).expect("create profile dir");
+            std::fs::write(profile_dir.join("config.toml"), "model = \"gpt-5\"\n")
+                .expect("write base config");
+            store.instances.push(InstanceProfile {
+                id: instance_id.to_string(),
+                name: instance_id.to_string(),
+                user_data_dir: profile_dir.to_string_lossy().to_string(),
+                working_dir: None,
+                extra_args: String::new(),
+                bind_account_id: Some(bind_account_id.to_string()),
+                model_routing: Some(CodexInstanceModelRouting {
+                    enabled: true,
+                    version: 1,
+                    routes: vec![route.clone()],
+                }),
+                launch_mode: InstanceLaunchMode::App,
+                app_speed: CodexAppSpeed::Standard,
+                created_at: 1,
+                last_launched_at: None,
+                last_pid: None,
+            });
+        }
+        modules::codex_instance::save_instance_store(&store).expect("save instance store");
+
+        let affected = modules::codex_instance::disable_model_routing_for_deleted_accounts(&[
+            "deleted-oauth-account".to_string(),
+            "deleted-route-account".to_string(),
+        ])
+        .expect("disable routing for deleted accounts");
+        assert_eq!(
+            affected.len(),
+            2,
+            "底座账号与路由账号被删除的实例都要自动关闭路由"
+        );
+
+        let store = modules::codex_instance::load_instance_store().expect("load instance store");
+        for instance_id in [base_instance_id, route_instance_id] {
+            let routing = store
+                .instances
+                .iter()
+                .find(|item| item.id == instance_id)
+                .and_then(|item| item.model_routing.clone())
+                .expect("routing must stay persisted");
+            assert!(!routing.enabled, "路由必须自动关闭");
+            assert_eq!(routing.routes.len(), 1, "渠道配置必须保留");
+        }
+    }
+
+    #[tokio::test]
+    async fn instance_configuration_save_updates_context_override_with_routing() {
         let _lock = crate::modules::test_support::env_lock()
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -1397,6 +1392,9 @@ mod tests {
             None,
             None,
             Some(true),
+            Some(true),
+            Some(700_000),
+            None,
             false,
             test_experimental_models(),
             None,
@@ -1406,16 +1404,13 @@ mod tests {
 
         let content =
             std::fs::read_to_string(profile_dir.join("config.toml")).expect("read saved config");
-        assert!(content.contains("model_context_window = 1000000"));
-        assert!(content.contains("model_auto_compact_token_limit = 900000"));
+        assert!(content.contains("model_context_window = 700000"));
+        assert!(!content.contains("model_auto_compact_token_limit"));
         assert_eq!(
             saved.quick_config.detected_model_context_window,
-            Some(1_000_000)
+            Some(700_000)
         );
-        assert_eq!(
-            saved.quick_config.detected_auto_compact_token_limit,
-            Some(900_000)
-        );
+        assert_eq!(saved.quick_config.detected_auto_compact_token_limit, None);
     }
 
     #[tokio::test]
@@ -1466,6 +1461,9 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
+            None,
             false,
             test_experimental_models(),
             None,
@@ -1490,31 +1488,30 @@ mod tests {
         let instance_id = "context-rollback-instance";
         let profile_dir =
             save_instance_with_quick_config(&env, instance_id, Some(516_000), Some(460_000));
-        let invalid_routing = CodexInstanceModelRouting {
-            enabled: true,
-            ..CodexInstanceModelRouting::default()
-        };
 
         let error = codex_save_instance_configuration(
             instance_id.to_string(),
             None,
             None,
             None,
+            // 绑定一个不存在的账号：应用绑定时失败，用于验证上下文设置回滚。
+            Some(Some("missing-bind-account".to_string())),
             None,
-            Some(Some(invalid_routing)),
+            None,
             None,
             None,
             None,
             None,
             Some(true),
+            Some(700_000),
+            None,
             true,
             test_experimental_models(),
             None,
         )
         .await
-        .expect_err("invalid routing should fail");
+        .expect_err("绑定不存在的账号应当保存失败");
 
-        assert!(error.contains("OAuth"));
         let content = std::fs::read_to_string(profile_dir.join("config.toml"))
             .expect("read rolled back config");
         assert!(content.contains("model_context_window = 516000"));
@@ -1994,7 +1991,11 @@ pub async fn codex_get_instance_quick_config(
 ) -> Result<crate::models::codex::CodexQuickConfig, String> {
     let base_dir = resolve_instance_base_dir(instance_id.as_str())?;
     tauri::async_runtime::spawn_blocking(move || {
-        modules::codex_account::read_quick_config_from_config_toml(&base_dir)
+        let mut config = modules::codex_account::read_quick_config_from_config_toml(&base_dir)?;
+        if let Some(draft) = read_pending_model_catalog(&base_dir)? {
+            draft.apply_to_view(&mut config);
+        }
+        Ok(config)
     })
     .await
     .map_err(|error| format!("读取 Codex 实例快捷配置后台任务失败: {}", error))?
@@ -2051,6 +2052,14 @@ pub async fn codex_save_instance_model_catalog(
     experimental_model_catalog_default_model_id: Option<String>,
 ) -> Result<crate::models::codex::CodexQuickConfig, String> {
     let base_dir = resolve_instance_base_dir(instance_id.as_str())?;
+    if read_pending_model_catalog(&base_dir)?.is_some() {
+        return save_pending_model_catalog(
+            &base_dir,
+            experimental_model_catalog_enabled,
+            experimental_model_catalog_models,
+            experimental_model_catalog_default_model_id,
+        );
+    }
     let saved = tauri::async_runtime::spawn_blocking(move || {
         let saved = modules::codex_account::save_model_catalog_for_base_dir_preserving_context(
             &base_dir,
@@ -2083,18 +2092,110 @@ pub async fn codex_save_instance_configuration(
     app_speed: Option<CodexAppSpeed>,
     auto_sync_threads: Option<bool>,
     defer_bind_account_application: Option<bool>,
+    update_context_override: Option<bool>,
+    model_context_window: Option<i64>,
+    auto_compact_token_limit: Option<i64>,
     experimental_model_catalog_enabled: bool,
     experimental_model_catalog_models: Vec<CodexExperimentalModelDefinition>,
     experimental_model_catalog_default_model_id: Option<String>,
 ) -> Result<CodexInstanceConfigurationSaveResult, String> {
+    let profile = resolve_instance_base_dir(&instance_id)?;
+    if defer_bind_account_application == Some(true) && model_routing.is_some() {
+        let previous_pending_catalog = read_pending_model_catalog(&profile)?;
+        let previous_quick_config = codex_get_instance_quick_config(instance_id.clone()).await?;
+        let mut quick_config = save_pending_model_catalog(
+            &profile, experimental_model_catalog_enabled,
+            experimental_model_catalog_models, experimental_model_catalog_default_model_id,
+        )?;
+        if update_context_override == Some(true) {
+            let context_profile = profile.clone();
+            let context_result = tauri::async_runtime::spawn_blocking(move || {
+                modules::codex_account::save_quick_config_for_base_dir_with_default(
+                    &context_profile,
+                    model_context_window,
+                    auto_compact_token_limit,
+                    None,
+                    None,
+                    None,
+                )
+            })
+            .await
+            .map_err(|error| format!("保存 Codex 实例上下文配置后台任务失败: {}", error))
+            .and_then(|result| result);
+            match context_result {
+                Ok(saved_context) => {
+                    quick_config.detected_model_context_window =
+                        saved_context.detected_model_context_window;
+                    quick_config.detected_auto_compact_token_limit =
+                        saved_context.detected_auto_compact_token_limit;
+                    quick_config.context_window_1m = saved_context.context_window_1m;
+                    quick_config.auto_compact_token_limit =
+                        saved_context.auto_compact_token_limit;
+                }
+                Err(error) => {
+                    restore_pending_model_catalog(
+                        &profile,
+                        previous_pending_catalog.as_ref(),
+                    )?;
+                    return Err(error);
+                }
+            }
+        }
+        let result = codex_update_instance(
+            instance_id.clone(), name, working_dir, extra_args, bind_account_id, model_routing,
+            follow_local_account, launch_mode, app_speed, auto_sync_threads, Some(true),
+        ).await;
+        return match result {
+            Ok(instance) => Ok(CodexInstanceConfigurationSaveResult { instance, quick_config }),
+            Err(error) => {
+                let context_rollback = if update_context_override == Some(true) {
+                    codex_save_instance_quick_config(
+                        instance_id,
+                        previous_quick_config.detected_model_context_window,
+                        previous_quick_config.detected_auto_compact_token_limit,
+                        None,
+                        None,
+                        None,
+                    )
+                    .await
+                    .map(|_| ())
+                } else {
+                    Ok(())
+                };
+                let pending_rollback =
+                    restore_pending_model_catalog(&profile, previous_pending_catalog.as_ref());
+                match (context_rollback, pending_rollback) {
+                    (Ok(()), Ok(())) => Err(error),
+                    (context_result, pending_result) => Err(format!(
+                        "{}; 恢复配置失败: context={:?}, pending={:?}",
+                        error,
+                        context_result.err(),
+                        pending_result.err()
+                    )),
+                }
+            }
+        };
+    }
     let previous_quick_config = codex_get_instance_quick_config(instance_id.clone()).await?;
-    let saved_quick_config = codex_save_instance_model_catalog(
-        instance_id.clone(),
-        experimental_model_catalog_enabled,
-        experimental_model_catalog_models,
-        experimental_model_catalog_default_model_id,
-    )
-    .await?;
+    let saved_quick_config = if update_context_override == Some(true) {
+        codex_save_instance_quick_config(
+            instance_id.clone(),
+            model_context_window,
+            auto_compact_token_limit,
+            Some(experimental_model_catalog_enabled),
+            Some(experimental_model_catalog_models),
+            experimental_model_catalog_default_model_id,
+        )
+        .await?
+    } else {
+        codex_save_instance_model_catalog(
+            instance_id.clone(),
+            experimental_model_catalog_enabled,
+            experimental_model_catalog_models,
+            experimental_model_catalog_default_model_id,
+        )
+        .await?
+    };
 
     let update_result = codex_update_instance(
         instance_id.clone(),
@@ -2447,7 +2548,9 @@ pub async fn codex_create_instance(
     app_speed: Option<CodexAppSpeed>,
 ) -> Result<CodexInstanceProfileView, String> {
     let effective_launch_mode = launch_mode.clone().unwrap_or_default();
-    validate_instance_model_routing(
+    // 归一化结果必须落库：绑定账号不支持混合路由时按“已关闭”保存，
+    // 否则后台监控会按启用状态反复尝试恢复一个注定失败的网关。
+    let model_routing = validate_instance_model_routing(
         bind_account_id.as_deref(),
         &effective_launch_mode,
         model_routing.as_ref(),
@@ -2519,7 +2622,11 @@ pub async fn codex_update_instance(
             &effective_launch_mode,
             effective_model_routing.as_ref(),
         )?;
-        let model_routing = model_routing.map(|_| normalized_effective_model_routing.clone());
+        let model_routing = merged_model_routing_update(
+            model_routing,
+            effective_model_routing.as_ref(),
+            normalized_effective_model_routing.clone(),
+        );
         let default_dir = modules::codex_instance::get_default_codex_home()?;
         let mut updated = modules::codex_instance::update_default_settings(
             bind_account_id,
@@ -2630,7 +2737,11 @@ pub async fn codex_update_instance(
         &effective_launch_mode,
         effective_model_routing.as_ref(),
     )?;
-    let model_routing = model_routing.map(|_| normalized_effective_model_routing.clone());
+    let model_routing = merged_model_routing_update(
+        model_routing,
+        effective_model_routing.as_ref(),
+        normalized_effective_model_routing.clone(),
+    );
 
     let wants_bind = bind_account_id
         .as_ref()
@@ -2781,7 +2892,9 @@ async fn codex_start_instance_internal(
             .map(|item| item.launch_mode)
             .ok_or("实例不存在")?
     };
-    validate_instance_model_routing(
+    // 绑定账号不再是可直接登录的 OAuth 订阅账号时，路由按关闭处理：
+    // 这里必须用归一化结果，否则启动阶段仍会尝试建立混合路由网关。
+    launch_target.model_routing = validate_instance_model_routing(
         launch_target.bind_account_id.as_deref(),
         &configured_launch_mode,
         launch_target.model_routing.as_ref(),
@@ -3016,6 +3129,7 @@ async fn codex_start_instance_internal(
             default_settings.model_routing.as_ref(),
         )
         .await?;
+        apply_pending_model_catalog(&default_dir)?;
         ensure_codex_instance_start_not_cancelled(&instance_id)?;
         modules::logger::log_info(&format!(
             "[Codex Start] default close phase finished, mode={}, elapsed_ms={}",
@@ -3327,6 +3441,7 @@ async fn codex_start_instance_internal(
     modules::codex_local_access::stop_provider_gateways_for_profile(instance_dir).await;
     restore_mixed_model_gateway_when_disabled(instance_dir, instance.model_routing.as_ref())
         .await?;
+    apply_pending_model_catalog(instance_dir)?;
     modules::logger::log_info(&format!(
         "[Codex Start] instance close/provider-stop phase finished: instance_id={}, elapsed_ms={}, total_ms={}",
         instance.id,
