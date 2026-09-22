@@ -7,7 +7,6 @@
   padding: 4px 0;
   color: var(--text-secondary, #5c656b);
   font-size: 11px;
-  container: turn-state / inline-size;
 }
 
 .codex-turn-state-label {
@@ -48,7 +47,3 @@
 .codex-turn-state-badge.is-blue { color: #0369a1; background: color-mix(in srgb, #38bdf8 13%, var(--bg-card)); }
 .codex-turn-state-badge.is-red { color: #b91c1c; background: color-mix(in srgb, #ef4444 12%, var(--bg-card)); }
 .codex-turn-state-badge.is-yellow { color: #a16207; background: color-mix(in srgb, #eab308 14%, var(--bg-card)); }
-
-@container turn-state (max-width: 310px) {
-  .codex-turn-state-value:nth-child(n+2) { display: none; }
-}
