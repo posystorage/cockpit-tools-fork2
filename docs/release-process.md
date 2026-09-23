@@ -33,6 +33,11 @@ builds and uploads all of these targets to that same draft tag:
 - macOS Intel: x86_64 DMG and updater archive.
 - macOS Universal: Universal DMG and updater archive.
 
+The three macOS jobs rebuild the Tauri DMG with
+`scripts/release/inject-dmg-readme.cjs`, preserving the application bundle and
+adding `安装与常见问题.txt` below the app and Applications icons. Keep the
+installer note synchronized with the Gatekeeper guidance in both README files.
+
 The Windows and architecture-specific macOS jobs also upload target updater
 manifests. The workflow preserves the previous published legacy `latest.json`
 while the candidate remains a draft; it must not redirect stable users to an

@@ -7,6 +7,7 @@ import {
   EyeOff,
   KeyRound,
   Network,
+  Play,
   Trash2,
   Copy,
   Pencil,
@@ -24,6 +25,7 @@ import {
   getApiKeyFunPrefillPage,
   type ApiKeyFunPrefillTarget,
 } from '../utils/apiKeyFunPrefill';
+import { ApiKeyFunKeyConfigModal } from '../components/apiKeyFun/ApiKeyFunKeyConfigModal';
 import './ApiKeyFunPage.css';
 
 type ManagedApiKey = {
@@ -170,6 +172,9 @@ export function ApiKeyFunPage() {
 
   // 复制状态
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [configKey, setConfigKey] = useState<ManagedApiKey | null>(null);
+  const [configModels, setConfigModels] = useState<string[]>([]);
+  const [configModelsLoading, setConfigModelsLoading] = useState(false);
 
   const providerBaseUrl = useMemo(
     () => normalizeProviderBaseUrlInput(providerBaseUrlInput),
@@ -424,6 +429,24 @@ export function ApiKeyFunPage() {
       }),
     });
   }, [apiKeyFunModelCatalog, providerBaseUrl, setManagedKeyAction, t]);
+
+  /** 「使用密钥」：按这把 Key 真实返回的模型渲染配置弹窗（只读 + 复制）。 */
+  const handleOpenKeyConfig = useCallback(async (item: ManagedApiKey) => {
+    setConfigKey(item);
+    setConfigModels([]);
+    setConfigModelsLoading(true);
+    try {
+      const { models } = await listModelProviderModels({
+        baseUrl: providerBaseUrl,
+        apiKey: item.key,
+      });
+      setConfigModels([...new Set(models.map((model) => model.id.trim()).filter(Boolean))]);
+    } catch {
+      setConfigModels([]);
+    } finally {
+      setConfigModelsLoading(false);
+    }
+  }, [providerBaseUrl]);
 
   // 切换密钥
   const handleUseManagedKey = useCallback((item: ManagedApiKey) => {
@@ -840,6 +863,17 @@ export function ApiKeyFunPage() {
                         <button
                           type="button"
                           className="apikey-fun-key-copy"
+                          title={t('apiKeyFun.keyManager.useKey', '使用密钥')}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleOpenKeyConfig(item);
+                          }}
+                        >
+                          <Play size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="apikey-fun-key-copy"
                           onClick={(e) => handleCopyToClipboard(item.key, item.id, e)}
                           title={t('apiKeyFun.copyKey', '复制密钥')}
                         >
@@ -870,6 +904,15 @@ export function ApiKeyFunPage() {
           </section>
         </aside>
       </div>
+      {configKey && (
+        <ApiKeyFunKeyConfigModal
+          keyName={configKey.name}
+          apiKey={configKey.key}
+          models={configModels}
+          modelsLoading={configModelsLoading}
+          onClose={() => setConfigKey(null)}
+        />
+      )}
     </div>
   );
 }

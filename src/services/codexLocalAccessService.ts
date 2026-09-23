@@ -284,6 +284,14 @@ export async function updateCodexLocalAccessImageGenerationModel(
   });
 }
 
+export async function updateCodexLocalAccessImageGenerationAccounts(
+  accountIds: string[],
+): Promise<CodexLocalAccessState> {
+  return await invoke("codex_local_access_update_image_generation_accounts", {
+    accountIds,
+  });
+}
+
 export async function updateCodexLocalAccessAccessScope(
   accessScope: CodexLocalAccessScope,
 ): Promise<CodexLocalAccessState> {

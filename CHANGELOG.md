@@ -7,6 +7,92 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [Unreleased]
+
+## [1.3.59] - 2026-09-23
+
+### Added
+
+- **Two new built-in models: GPT-6 Sol and GPT-6 Luna**: the account model catalog, the API-service model picker and wakeup model presets now include both official models, ordered like the official client (right after GPT-6 Astra and before the GPT-5.6 family). API-service cost estimates use the published per-token rates for Standard and Fast mode, with the same long-context multipliers as the other GPT-6 models. Users whose catalog still follows the official recommended set get both models added automatically, while catalogs you edited yourself are left untouched.
+
+- **Quota rows now show an estimated full-window cost**: the 5h and Weekly quota rows add an `≈$` figure right after the `A $` amount, scaling this window's cost by the usage percentage so you can judge what the quota is worth. Nothing is shown when the window has no cost or no usage yet, and the existing quota, progress bar and reset time are unchanged.
+
+- **DeepSeek models declare V2 collaboration capability in managed model catalogs**: API-service and DeepSeek catalogs retain the declaration after template overrides. Existing catalogs rebuild through the generator-version check; GPT and Grok declarations are unchanged.
+
+- **Pelican testing is back**: Codex accounts can again run one shared prompt across selected accounts in parallel, inspect the generated results, HTML previews and side-by-side comparison, retry failed accounts, and clean up test records and generated files automatically by retention days or manually. Test requests go through the local API Service internal scheduler again, sharing account concurrency, token handling and quota cooldowns with wakeups.
+
+### Changed
+
+- **Built-in model labels now always carry the `GPT-` prefix**: wakeup and Pelican model presets, the model-management list and the managed model catalog now consistently show `GPT-6 Astra`, `GPT-6 Sol`, `GPT-6 Luna`, `GPT-5.6 Sol`, `GPT-5.6 Terra`, `GPT-5.6 Luna` and `GPT-5.5`. Upgrading adds the prefix to the old short labels (`6 Astra`, `5.6 Sol`, …) automatically, while model IDs and any display name you edited yourself stay unchanged.
+
+- **Account re-authorization now opens the official login and keeps the account info visible**: the re-authorize entries on account cards, table rows and the account-issue dialog go straight to the official login tab, which now always shows the target account email and its note button, so the note can be checked or edited while re-authorizing.
+
+- **Account risk detection has been removed**: the accounts overview no longer offers the risk-check entry or its dialog, account cards and table rows no longer show status labels such as Suspected risk or Unknown, and the API Service request log no longer annotates state lengths or classes. Wakeups and gateway forwarding no longer record state observations on the side. Existing local observation data is not deleted; collection and display simply stop.
+
+- **The CodeBuddy accounts overview no longer lists local session files**: session browsing stays in the Sessions tab, so the overview no longer shows the local JSON/JSONL file list under the account list.
+- **The Codex speed switch has been removed from the accounts overview**: account cards, list rows, the account action menu and the API service card no longer show the Standard/Fast tier picker.
+- **The macOS DMG installer window now uses a two-row layout**: Cockpit Tools and the Applications link stay on the same row so the drag-to-install gesture is unchanged, while the note is renamed to `安装与常见问题.txt` and moved to a second row below them. The note covers installation first, then the "app is damaged" fix, recommending the no-password System Settings "Open Anyway" path with the Terminal command as the fallback.
+
+### Fixed
+
+- **Fixed the local gateway keeping stale credentials after re-authorization**: a completed re-authorization or local import now writes the fresh token into the API-service sidecar immediately and resets that account's scheduler and failure state in the background, instead of waiting for the next full reload, and the UI no longer keeps showing the previous failure.
+
+- **Fixed API-service account recovery doing nothing once credentials are invalid**: recovery now forces a token refresh and pushes the fresh credentials to the local gateway first, and accounts whose credentials are invalid (upstream 401 invalidated oauth token) now offer re-authorization in the account-issue dialog instead of only reporting that recovery was submitted.
+
+- **Fixed the memory peak of the one-time history cleanup on large history databases**: the third-party reasoning cleanup now scans and commits in batches, and the rollback backup is streamed to disk while scanning, so memory no longer grows with the number of matched rows. The backup file layout and coverage are unchanged and remain manually restorable.
+
+## [1.3.58] - 2026-09-22
+
+### Added
+
+- **Account risk checks**: the accounts overview gains a Risk check entry that reads the official upstream `x-codex-turn-state` length: a `state` length of 312 marks the account card as Suspected risk right away, 292/332 count as normal and clear that mark, and any other length only reports an abnormal length. Checks, wakeups and API-service forwarding all record observations, and opening an account shows the time, state length and reason. Only the length is stored, never the raw state, and API key accounts are not included.
+- **API-service request logs show the state length and suspected risk**: every request row carries the upstream state length, flags Suspected risk when `state` is 312, shows other lengths as-is, and marks No state returned when the header is missing.
+- **Relay keys are now a horizontal table and can write the official configs to your machine**: the key list shows Name / API key / Models / Usage / Status / Added / Actions using only locally stored or queried data, and each row opens a "Use API key" dialog that detects the group from the key's real model list, renders the official Codex App, Codex CLI, Claude Code and Claude Desktop configs, and can write `~/.codex/config.toml`, `~/.codex/auth.json` and `~/.claude/settings.json` directly (existing files are backed up and merged, never overwritten). The previous Add to Codex / Add to Claude / Add to Claude CLI entries remain as buttons in the same row.
+- **Codex launch preview remembers the target instance per card**: account cards, the API Service card, and model-provider cards each keep the last instance chosen in launch preview. Reopening the preview selects that instance again, and a deleted instance falls back to the default instance.
+- **API Service can hand image generation to selected GPT accounts**: the launch preview gets the same Enable GPT image generation row as DeepSeek. Once enabled with GPT accounts chosen, image generation and image editing run on those accounts and consume their quota; chat requests keep using the service account pool. Leaving it disabled keeps the previous routing.
+- **DeepSeek and Grok models now support Codex sub-agent collaboration**: dispatching, messaging and follow-ups work, and `wait_agent` can wait for results; Grok model catalog entries now declare multi-agent capability so new Grok sessions receive the collaboration tools. Official models are unchanged.
+- **API-service request details show the requested and upstream model**: each log row keeps the client-requested model on the first line and always marks the model sent upstream on a second line; only rows without a recorded upstream model stay on a single line.
+- **macOS DMG now ships the "app is damaged" troubleshooting note**: the installer window places a bilingual `"已损坏"急救说明 (README).txt` next to the app icon, explaining the Gatekeeper warning (the release pipeline does not use Apple Developer ID signing or notarization yet) and giving both the `xattr` command and the System Settings "Open Anyway" path.
+
+### Changed
+
+- **"Start minimized" is now off by default**: upgrading turns the switch off once and writes that to config; if you turn it back on later, it stays on.
+- **Model management now follows the account pool and hides official models older than 5.5**: the default list only includes models the instance or API-service pool can actually serve. Official models below `gpt-5.5` are no longer listed by default, and official GPT / `gpt-reserve` stay hidden when the pool has no GPT capability. Grok provider accounts, plus accounts that only serve non-GPT models such as DeepSeek / GLM / Kimi (including mappings that borrow GPT shell names), never count as official GPT capability; third-party GPT relay keys provide official GPT models based on their own model list. Legacy catalogs that were never explicitly saved fall back to following the pool; only a user-saved list stops automatic updates, and an explicit reset returns to following the pool.
+- **Third-party GPT relay keys now append their own model list to the available models**: GPT / Codex models fetched from the upstream (`gpt-5.5`, `gpt-5.6-*`, `gpt-6-astra`, …) are merged into that key's visible models and routing, keeping the client picker, launch preview, `/v1/models` and request validation in sync. GPT names outside the official set (such as `gpt-4o`) and DeepSeek-style shell aliases stay hidden.
+- **Grok (xAI) models now use the Codex edit-file tool**: new Grok windows edit files through the native tool instead of falling back to shell commands.
+- **Codex wakeups always run through the host-side API path**: the host sends the selected account credentials straight to the official endpoint, so no local Codex CLI is required and the API Service does not need to be running. There is no longer a CLI execution option. API key accounts cannot wake up; Agent Identity accounts use this direct path.
+- **Wakeup now defaults to GPT-5.6 Luna and hides models older than 5.5**: wakeup tasks and manual tests no longer offer pre-5.5 presets (including `gpt-5.4`, `gpt-5.4-mini` and earlier custom presets). Existing tasks that pointed at those models move to GPT-5.6 Luna with the default reasoning effort.
+- **Model catalog can set context per model**: choose model defaults, 516K / 460K, 1M / 900K, or custom context windows and compact limits. Settings are saved per model. In launch preview, Apply context writes immediately, and switching to custom opens the input fields while keeping the current values.
+- **Removed the Codex Ultrafast option**: speed controls now offer only Standard and Fast. Previously saved Ultrafast preferences fall back to Standard.
+- **Removed Pelican intelligence testing**: the testing entry and its background functionality are no longer available; existing local test history is not deleted.
+- **Models in the same catalog now share one compaction hash**: switching models is less likely to trigger compaction solely because the hash changed.
+
+### Fixed
+
+- **Fixed Windows freezing after an account switch while the tray menu rebuilt**: Cockpit now reads tray labels in the background and applies the native menu in one UI-thread pass, so switching accounts no longer waits on dozens of tray `set_menu` round-trips.
+- **Fixed official GPT models appearing with only DeepSeek / Grok accounts in the pool**: an OAuth account bound solely for GPT image-generation forwarding no longer counts as GPT capability, so the API Service launch preview and profile model catalog only list models the chat accounts can actually serve, while the image-forwarding account keeps its credentials.
+- **Fixed third-party upstreams rejecting the same thread after switching models**: DeepSeek, Grok and similar upstreams no longer fail the next turn on replayed history.
+- **Fixed strict Responses upstreams such as DeepSeek rejecting replayed tool calls**: missing tool-call IDs no longer cause the upstream to reject the request.
+- **Fixed scrolling in Codex account forms moving the dialog off screen**: adding or editing API Keys and switching providers now keep their dialogs anchored, with long forms scrolling inside and action buttons remaining reachable.
+- **Fixed unresponsive Codex launch previews when reopened**: background configuration loading no longer blocks closing the dialog or unrelated actions; slow reads offer a timeout and retry.
+- **Fixed context-limit errors through the Codex gateway being treated as disconnects**: overflow is handed to the client for normal context-limit handling instead of reconnect loops.
+- **Fixed Antigravity personal-account quotas showing 100%, incorrect window rows, and incorrect GCP ToS badges**: personal subscriptions are no longer treated as GCP accounts based solely on their plan; accounts without a real project query quotas with an empty payload, aligned with the official IDE, and stale placeholder projects or orphaned GCP tags are cleared. Account cards show only the Claude and Gemini 5h / weekly windows; missing windows render as no data instead of full, distant reset times no longer turn quotas into 100%, and model variants are no longer mistaken for hourly or weekly windows. Failed window-summary refreshes keep eligible cached windows with a stale-data indication; manual batch refresh bypasses the short-lived API cache. ([#2326](https://github.com/jlcodes99/cockpit-tools/pull/2326))
+- **Disabled update reminders now suppress automatic popups** even if remote policy requests one or an update check is already running; manual update checks remain available.
+- **Fixed ordinary Responses providers losing per-model image-input controls**, including model IDs with uppercase characters.
+- **`gpt-5.5` and later models now default to image input**: namespaced or suffixed IDs such as `openai/gpt-5.6-sol` are covered too, so the Provider Gateway no longer treats them as text-only and drops images when the per-model capability table is empty. `gpt-5.4` and earlier, `gpt-reserve`, `gpt-image-*` and non-GPT models keep their previous behaviour, and explicit switches (including a manual off) still win.
+- **Fixed legacy vision settings of custom Responses providers being lost after an upgrade**: upgrades expand the provider-level vision switch into per-model capabilities and persist them, and gateway config generation also backfills the per-model table from the account/provider switch, so images are no longer silently removed.
+- **Fixed missing quota progress tracks on stacked dashboard cards**, without changing horizontal layouts or quota values.
+- **Transient connection failures no longer masquerade as account-pool exhaustion**: TLS, EOF and connection-reset failures retry within the configured limit, while genuine authentication, quota and pool failures keep their existing handling.
+- **API-service background maintenance no longer overwrites Codex configuration you changed yourself**: it stops updating profiles whose managed connection fields were changed externally and preserves user model and context choices. Stopping the service restores credentials still owned by its takeover without replacing a later login or an externally modified profile.
+- **Fixed Grok requests failing in mixed model routing**: requests use the route's bound Grok account without falling back to another account.
+- **Fixed Grok requests failing with "no available account (1 candidate, 0 for every other reason)"**: the host and the local gateway disagreed on the Grok provider name, so Grok models were registered on Codex accounts and then filtered out by API-key scope; provider names are now normalized so Grok requests only match Grok accounts.
+- **Fixed managed model catalogs not refreshing after an app upgrade**: managed catalogs now carry a generator version stamp plus a content hash, and startup rebuilds a stale or unstamped catalog in the background instead of waiting for an account switch; the rebuild keeps the existing model list and display names.
+- **Deleting a Grok account no longer prevents other API-service members from serving requests**.
+- **Fixed missing Grok accounts and empty platform-filter results in the API-service members dialog**: asynchronously loaded accounts appear immediately, and switching platforms updates the list correctly.
+- **Fixed inconsistent Grok streaming tool names and arguments**.
+- **Fixed Codex quota refresh dropping already-refreshed credentials when a Grok query is slow or cancelled**, and the badge now updates when the refresh finishes.
+- **Fixed Grok gateway credentials keeping the wrong expiry and, after a failed sync, retaining an old token or restoring a deleted account**.
+
 ## [1.3.57b2] - 2026-09-20
 
 ### Added
@@ -277,16 +363,8 @@ Thanks [@we1jia](https://github.com/we1jia) for the contribution ([#2259](https:
 
 ## [1.3.42] - 2026-09-07
 
-### Fork synchronization notes
-
-- Merged all upstream changes from `1.3.41` and `1.3.42`; this release does not repeat `1.3.40` or earlier history.
-- Accepted upstream `rolling7d` as the default last-seven-days range while retaining 24H and 48H on the standalone API Service page; legacy `last7d` preferences migrate to `rolling7d`, and shared dialogs do not expose 24H/48H.
-- Preserved API Service dispatch observability, the complete account list, dispatch-first ordering, and an internal scroll area for large pools; `recordingSelector` remains outside the full upstream selector chain and records affinity cache hits.
-- Preserved deleted-account historical billing, the GPT-5.6 Luna pricing policy, Sub2API usage compatibility, ad/remote-config disabling, and the Windows + macOS draft build boundary.
-
 ### Fixed
 
-- **Fix cross-platform Rust compilation for fork draft packages**: remove a merge-leftover generic terminator from the API Service account-save function signature. This syntax error stopped the `1.3.42b1` Windows and three macOS jobs before artifacts were produced; `1.3.42b2` reruns the complete platform build.
 - **Recover Codex API Service capacity failures before output starts**: HTTP and WebSocket requests retain their initial handshake events while retrying temporary model-capacity failures within the existing retry budget. Failures after output starts are reported without replaying generated content.
 - **Keep capacity failures separate from account quota exhaustion**: temporary capacity failures no longer cool down healthy accounts and are returned as retryable server errors; quota, authentication, and policy failures retain their existing handling.
 - **Keep Codex API Service OAuth identity headers consistent**: the outgoing `Version` header now matches the `User-Agent` version. API Key passthrough and instance-specific provider gateways remain unchanged.
@@ -318,14 +396,6 @@ Thanks [@we1jia](https://github.com/we1jia) for the contribution ([#2259](https:
 - **Align injected quota badges with API Service effective windows**: when the weekly quota is exhausted, the CDP-injected 5-hour badge now follows the API Service and reports 0 instead of summing raw account values above 100%.
 
 ## [1.3.40] - 2026-09-05
-
-### Fork synchronization notes
-
-- Merged all upstream changes from 1.3.33, 1.3.34, 1.3.35, 1.3.36, 1.3.38, 1.3.39, and 1.3.40; this release does not repeat 1.3.32 or earlier history.
-- Restored API Service dispatch observability in the upstream-split Gateway/Sidecar modules: running/recent activity for every account, one `auth_selected` event, request completion, dispatch ordering, and an internal scroll area for large account pools.
-- Raised the pricing book to v4; `codex-auto-review` remains on the full GPT-5.6 Luna matrix. Old Sol defaults are removed and historical requests are repriced in the background; `gpt-reserve` is billed from the final response model.
-- Preserved deleted-account historical billing, local account IDs as the primary key, 24H/48H/7Day ranges on the standalone API Service page, ad/remote-config disabling, and Windows + macOS draft releases; Linux builds remain disabled.
-- `1.3.40b2` fixes the TypeScript build error caused by omitting the official account ID/email from Codex overview window-stat queries; the Release workflow now builds Apple Silicon, Intel, and Universal macOS draft assets and uploads them using the real beta tag.
 
 ### Added
 
@@ -531,18 +601,6 @@ Thanks [@enenH](https://github.com/enenH) ([#2159](https://github.com/jlcodes99/
 
 - **Official release builds now use more parallel execution**: macOS Universal builds alongside the platform packages, checksum and Homebrew finalization run in parallel, and Cask PRs that are already mergeable no longer fail during auto-merge, reducing wait times for later releases.
 
-## [1.3.21b4] - 2026-08-20
-
-### Added
-
-- **Restored window usage for every existing Codex account on the ordinary Codex page**: the query no longer depends on API Service pool membership. Accounts removed from the API Service still show real request, token, and `A $` usage; deleted accounts remain visible only in the API Service history section.
-- **Added rolling ranges to the standalone Codex API Service statistics**: last 24 hours, last 48 hours, and last 7 days follow the current instant and refresh continuously, while the shared management modal keeps its day/week/month ranges.
-
-### Changed
-
-- **Moved Codex auto-review billing to the full GPT-5.6 Luna matrix**: Standard, Fast/Priority, and above-272K long-context rates all use Luna pricing. The price-book migration removes only identified Sol or Terra/Luna mixed overrides, preserves other user customizations, and reprices all related historical logs in the background.
-- **Documented the fork maintenance boundary**: ordinary-page account usage, deleted-account history, standalone rolling statistics, and the separation between price-book migrations and user overrides are now explicit for future upstream merges.
-
 ## [1.3.27] - 2026-08-23
 
 ### Fixed
@@ -629,20 +687,28 @@ Thanks [@enenH](https://github.com/enenH) ([#2159](https://github.com/jlcodes99/
 - **macOS API Service sidecars no longer inherit the Cockpit app identity**: LAN gateway access no longer fails for that reason. Thanks @Jonesxq ([#1947](https://github.com/jlcodes99/cockpit-tools/pull/1947)).
 - **Menu-bar quota keeps refreshing after close-to-tray**: when menu-bar quota is enabled, the main window is hidden instead of tearing down the WebView. Thanks @Jonesxq ([#1952](https://github.com/jlcodes99/cockpit-tools/pull/1952)).
 
+## [1.3.21b4] - 2026-08-20
+
+### Added
+
+- **Restored window usage for every existing Codex account on the ordinary Codex page**: the query no longer depends on API Service pool membership. Accounts removed from the API Service still show real request, token, and `A $` usage; deleted accounts remain visible only in the API Service history section.
+- **Added rolling ranges to the standalone Codex API Service statistics**: last 24 hours, last 48 hours, and last 7 days follow the current instant and refresh continuously, while the shared management modal keeps its day/week/month ranges.
+
+### Changed
+
+- **Moved Codex auto-review billing to the full GPT-5.6 Luna matrix**: Standard, Fast/Priority, and above-272K long-context rates all use Luna pricing. The price-book migration removes only identified Sol or Terra/Luna mixed overrides, preserves other user customizations, and reprices all related historical logs in the background.
+- **Documented the fork maintenance boundary**: ordinary-page account usage, deleted-account history, standalone rolling statistics, and the separation between price-book migrations and user overrides are now explicit for future upstream merges.
+
 ## [1.3.21] - 2026-08-15
 
 ### Added
 
 - **Codex now supports an optional experimental model catalog**: add and edit experimental model IDs and display names for the default profile and extra instances, with `gpt-5.6-sol-wm` / `GPT-5.6 Sol WM` provided initially. Custom experimental models are available in the Codex client and Cockpit API Service; the setting stays enabled across account-type switches and respects user-managed model catalogs.
 - **Delimited Antigravity account imports support auxiliary email addresses and Google refresh tokens**: a valid refresh token can restore the signed-in account directly, while missing or invalid tokens still preserve the password, auxiliary email, and 2FA details as a pending profile. Account exports preserve the auxiliary email as well.
-- **Codex API Service now reports historical accounts**: the account pool and per-account statistics distinguish current accounts, existing accounts that are not joined, and deleted accounts. Historical requests, tokens, and estimated costs remain visible while plan and history-status badges stay distinct.
-- **Lowest-priority accounts can be paused for fallback scheduling**: the standalone API Service page and the ordinary Codex summary card share one switch. A paused account remains in the pool but is skipped by both legacy and sidecar gateways, and resuming it preserves its existing model exclusions.
 
 ### Changed
 
 - **Codex settings are flatter and save immediately**: the config file, context presets, custom values, experimental models, account-switch integrations, quota display, and auto-switch controls now share the outer settings level; presets, fields, and switches persist without separate Save or Refresh buttons, and consecutive edits are saved in order.
-- **Updated the local GPT-5.6 Terra/Luna pricing baseline**: pricing schema v3 changes Terra input/cached-input/output defaults to USD `2.00 / 0.20 / 12.00` per million tokens and Luna to `0.20 / 0.02 / 1.20`. Existing long-context and Fast multipliers remain in place, and historical requests using the old price book are repriced in the background.
-- **Hardened fallback-pause state consistency**: switches now use a single-account backend mutation; moving a paused account to normal or highest priority clears only the pause wildcard; and full-table model-rule edits use optimistic version checks so stale drafts cannot overwrite a newer scheduling state.
 
 ## [1.3.20] - 2026-08-14
 
@@ -1029,7 +1095,6 @@ Thanks [@enenH](https://github.com/enenH) ([#2159](https://github.com/jlcodes99/
 
 ### Fixed
 
-- **Fixed Model & Capabilities pricing settings being impossible to save when optional preset values were empty**: cached, long-context, Priority prices, and the token threshold may stay empty when a model does not use them; numeric validation now applies only to entered values.
 - **Fixed Codex session-type filtering being inconsistent with bulk actions**: visible groups, selected sessions, and stale selections now follow the active conversation / external / subagent filter.
 - **Fixed older asynchronous account requests overwriting newer add, delete, or switch results**: account lists and current-account state now accept only the latest response, avoiding regressions to an empty list or stale account.
 - **Fixed deactivated Codex workspaces still appearing healthy**: `deactivated_workspace` now surfaces as an abnormal account state.
