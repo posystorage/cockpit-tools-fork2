@@ -796,7 +796,7 @@ GPT-5.6 Luna（美元 / 百万 token）：
 - `src/utils/codexNativeQuotaBanner.ts`
 - `tests/codexNativeQuotaBanner.test.ts`
 
-这是纯展示层能力。它只隐藏 Codex Desktop 已经渲染出来、且可由 React Fiber 语义严格确认的 `workspace_member_credits_depleted` 提示框；不得修改 OpenAI 请求、账户额度、token、模型、API Service 调度、冷却、重试或客户端内部状态，也不得伪造可用额度。
+这项能力包含两个严格分离的部分：所有桌面绑定都可以按实例选择隐藏 Codex Desktop 已经渲染出来、且可由 React Fiber 语义严格确认的 `workspace_member_credits_depleted` 提示框；只有 API Service 绑定会同时解除该原因在官方 Composer 中形成的重复发送门禁。后者只改写桌面渲染进程的 `rate-limit-status` 查询缓存，不修改 OpenAI 请求、账户真实额度、token、模型、API Service 调度、冷却或重试；请求是否可用仍由 API Service 账号池和网关决定。
 
 ### 8.1 识别与失败边界
 
@@ -804,6 +804,8 @@ GPT-5.6 Luna（美元 / 百万 token）：
 - 只接受 React Fiber 属性中的 `banner_type === "workspace_member_credits_depleted"`；不得按中文、英文或其他界面文案匹配。
 - Fiber 不存在、无法读取、存在循环、alternate 指向不明、多个语义字段冲突、共享父节点拥有其他 `aside`，或提示类型未知时都必须保持可见。
 - 其他额度、保留额度、图片、安全、沙箱、认证、网络和环境提示必须保持可见。
+- 发送门禁覆盖必须同时满足：桌面 app、绑定 `__api_service__`、隐藏开关有效、查询语义为 `workspace_member_credits_depleted`。OAuth、API Key、DeepSeek、Provider Gateway 和手工开启隐藏的非 API Service 实例仍使用官方额度门禁。
+- 覆盖只在查询的所有额度分类均精确等于 `workspace_member_credits_depleted` 时，中和 `rate_limit_reached_type` 以及 `rate_limit`、`credits`、`spend_control` 中形成重复发送门禁的状态位；存在冲突分类时必须保持官方状态。空输入、附件上传、提交中、响应中、模型不可用、安全策略、只读工作区及其他 `submitBlockReason` 必须继续由官方 Composer 拦截；禁止直接移除按钮 `disabled` 或绕过官方提交回调。
 - DOM 节点被 React 复用于其他提示时要立即恢复；composer root 被替换或移除时要断开旧 observer 并恢复原样。
 
 ### 8.2 实例策略与持久化
@@ -823,8 +825,10 @@ GPT-5.6 Luna（美元 / 百万 token）：
 - 隐藏脚本只能对当前 document 执行，绝不能注册 `Page.addScriptToEvaluateOnNewDocument`；否则旧实例选择可能跨导航残留。
 - 每个运行实例使用独立 session。旧 session 的延迟清理不能销毁新 session。
 - 记录原始 inline `display` 值及 priority；关闭开关、停止实例、应用退出、绑定变化、脚本 watchdog 超时或节点语义变化时必须准确恢复。
+- API Service 发送覆盖必须记录原查询对象；关闭开关、停止实例、绑定变化、session 替换或 watchdog 超时，只在缓存仍是本次补丁对象时恢复，不能覆盖官方刷新得到的新数据。
 - suppression 任务可单独启用 CDP，但不得因此激活 API Service 账号数/额度徽章、余额查询或其他绑定专属注入。
 - CDP `Runtime.evaluate` 返回 protocol error 或 `exceptionDetails` 时视为失败，不得当作成功隐藏。
+- Windows Store/MSIX 入口必须通过 `IApplicationActivationManager::ActivateApplication` 传递 loopback CDP 参数；`Start-Process shell:AppsFolder` 会静默丢弃参数，导致隐藏和发送覆盖均未运行。macOS 和普通可执行文件启动路径保持上游方式。
 
 ## 9. 发布与仓库身份差异
 

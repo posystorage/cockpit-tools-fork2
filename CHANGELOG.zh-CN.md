@@ -9,6 +9,13 @@
 ---
 ## [Unreleased]
 
+## [1.3.59b2] - 2026-09-23
+
+### 修复
+
+- **修复 API Service 启动的原版 Codex Desktop 在工作区额度耗尽后无法发送**：仅当实例绑定 API Service、已启用原生额度提示隐藏，且官方状态精确为 `workspace_member_credits_depleted` 时，中和桌面端重复的额度发送门禁；空输入、上传中、提交中、模型不可用、安全限制和其他官方门禁保持不变。关闭开关、切换绑定、停止实例或官方刷新状态时会恢复或重新核对原始缓存，不修改真实额度、请求或 API Service 调度。
+- **修复 Windows Store/MSIX 版 Codex Desktop 未收到 CDP 启动参数**：改用 Windows 应用激活 API 传递 loopback 调试参数，使原生额度提示隐藏和 API Service 发送门禁修复在商店版中实际生效；普通 Windows 可执行文件与 macOS 启动路径不变。
+
 ## [1.3.59b1] - 2026-09-23
 
 ### 新增

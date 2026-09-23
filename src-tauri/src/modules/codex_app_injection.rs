@@ -4,8 +4,9 @@
 //! - API 服务绑定：账号数、周额度、5h 额度；
 //! - DeepSeek 账号绑定（网关列出 / CDP 注入 / 直连官方）：该账号的余额。
 //!
-//! 该模块只连接实例自己的 loopback CDP 端口，不修改官方 app.asar，
-//! 也不修改官方额度或速度逻辑。额度以独立的小字段显示在 composer 操作栏下方。
+//! 该模块只连接实例自己的 loopback CDP 端口，不修改官方 app.asar、真实额度、速度或请求。
+//! API Service 桌面绑定可在渲染缓存中解除指定原生额度原因的重复发送门禁；
+//! 额度仍以独立的小字段显示在 composer 操作栏下方。
 
 use crate::commands::codex::{
     codex_model_provider_deepseek_balance_url, query_deepseek_balance_snapshot,
@@ -274,8 +275,14 @@ pub fn native_quota_banner_enabled(
     )
 }
 
-fn native_quota_script(enabled: bool, session: &str) -> String {
-    format!("{}({}, {})", NATIVE_QUOTA_SCRIPT.trim(), enabled, json!(session))
+fn native_quota_script(enabled: bool, api_service_send_override: bool, session: &str) -> String {
+    format!(
+        "{}({}, {}, {})",
+        NATIVE_QUOTA_SCRIPT.trim(),
+        enabled,
+        api_service_send_override,
+        json!(session)
+    )
 }
 
 // Re-read the preference so a running instance can restore its banner after an
@@ -657,7 +664,7 @@ fn stop_injection_runtime(runtime: InjectionRuntime) {
     runtime.task.abort();
     tauri::async_runtime::spawn(async move {
         let _ = runtime.task.await;
-        let script = native_quota_script(false, &runtime.session);
+        let script = native_quota_script(false, false, &runtime.session);
         for target in query_targets(&Client::new(), runtime.port).await {
             if is_codex_app_target(&target) {
                 let _ = evaluate_target(&target, &script, NATIVE_QUOTA_SCRIPT_KIND).await;
@@ -3638,7 +3645,15 @@ async fn run_injection_loop(
         }
         let hide_native_quota =
             profile_native_quota_enabled(&instance_id, bind_account_id.as_deref());
-        let suppression_script = native_quota_script(hide_native_quota, &session);
+        let api_service_send_override = hide_native_quota
+            && bind_account_id
+                .as_deref()
+                .is_some_and(crate::modules::codex_instance::is_api_service_bind_account_id);
+        let suppression_script = native_quota_script(
+            hide_native_quota,
+            api_service_send_override,
+            &session,
+        );
         for target in query_targets(&client, port).await {
             if is_codex_app_target(&target) {
                 let _ =

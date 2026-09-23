@@ -104,6 +104,17 @@ describe("fork draft release workflow", () => {
     }
   });
 
+  it("uses only the b1-to-b2 fix section for the 1.3.59b2 draft", () => {
+    assert.ok(
+      workflowSource.includes(
+        'if [[ "${GITHUB_REF_NAME}" == "1.3.59b2" || "${GITHUB_REF_NAME}" == "v1.3.59b2" ]]',
+      ),
+    );
+    assert.ok(workflowSource.includes('RELEASE_VERSIONS=("1.3.59b2")'));
+    assert.ok(englishChangelog.includes("## [1.3.59b2]"));
+    assert.ok(chineseChangelog.includes("## [1.3.59b2]"));
+  });
+
   it("uses only the b3-to-b4 changelog section for the 1.3.21b4 draft", () => {
     assert.ok(
       workflowSource.includes(

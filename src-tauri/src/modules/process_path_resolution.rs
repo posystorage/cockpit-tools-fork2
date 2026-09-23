@@ -2387,6 +2387,98 @@ fn powershell_argument_list_clause(values: &[String]) -> String {
     format!(" -ArgumentList @({})", arguments.join(", "))
 }
 
+/// Build the PowerShell bridge used to activate a packaged Codex app.
+///
+/// `Start-Process shell:AppsFolder\\...` accepts an `-ArgumentList` parameter but Windows
+/// silently drops it while activating an MSIX app. `IApplicationActivationManager` is the
+/// supported activation API that forwards the command line to the packaged application.
+#[cfg(any(test, target_os = "windows"))]
+fn build_codex_store_activation_script(
+    app_user_model_id: &str,
+    env_pairs: &[(&str, String)],
+    extra_args: &[String],
+) -> String {
+    let env_lines = env_pairs
+        .iter()
+        .map(|(key, value)| {
+            format!(
+                "$env:{}='{}'",
+                key,
+                escape_powershell_single_quoted(value)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let argument_line = extra_args
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(quote_windows_command_argument)
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    format!(
+        r#"$ErrorActionPreference='Stop'
+{env_lines}
+$appId='{app_id}'
+$arguments='{arguments}'
+$source=@'
+using System;
+using System.Runtime.InteropServices;
+
+namespace CockpitCodexStoreLauncher
+{{
+    public enum ActivateOptions
+    {{
+        None = 0
+    }}
+
+    [ComImport]
+    [Guid("2e941141-7f97-4756-ba1d-9decde894a3d")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    public interface IApplicationActivationManager
+    {{
+        [PreserveSig]
+        int ActivateApplication(
+            [In, MarshalAs(UnmanagedType.LPWStr)] string appUserModelId,
+            [In, MarshalAs(UnmanagedType.LPWStr)] string arguments,
+            [In] ActivateOptions options,
+            [Out] out uint processId);
+    }}
+
+    [ComImport]
+    [Guid("45BA127D-10A8-46EA-8AB7-56EA9078943C")]
+    public class ApplicationActivationManager
+    {{
+    }}
+
+    public static class Launcher
+    {{
+        public static uint Launch(string appId, string arguments)
+        {{
+            uint processId;
+            var manager = (IApplicationActivationManager)new ApplicationActivationManager();
+            int result = manager.ActivateApplication(
+                appId,
+                arguments,
+                ActivateOptions.None,
+                out processId);
+            if (result != 0)
+            {{
+                Marshal.ThrowExceptionForHR(result);
+            }}
+            return processId;
+        }}
+    }}
+}}
+'@
+Add-Type -TypeDefinition $source
+[CockpitCodexStoreLauncher.Launcher]::Launch($appId, $arguments) | Out-Null"#,
+        app_id = escape_powershell_single_quoted(app_user_model_id),
+        arguments = escape_powershell_single_quoted(&argument_line),
+    )
+}
+
 #[cfg(target_os = "windows")]
 fn launch_codex_via_store_app_user_model_id(
     app_user_model_id: &str,
@@ -2399,7 +2491,6 @@ fn launch_codex_via_store_app_user_model_id(
         return Err("Codex AppUserModelId 为空".to_string());
     }
 
-    let escaped = escape_powershell_single_quoted(app_user_model_id);
     let mut env_pairs = managed_proxy_env_pairs();
     if let Some(codex_home) = codex_home.map(str::trim).filter(|value| !value.is_empty()) {
         env_pairs.push(("CODEX_HOME", codex_home.to_string()));
@@ -2413,18 +2504,15 @@ fn launch_codex_via_store_app_user_model_id(
             app_user_data_dir.to_string(),
         ));
     }
-    let env_lines = env_pairs
-        .into_iter()
-        .map(|(key, value)| format!("$env:{}='{}'", key, escape_powershell_single_quoted(&value)))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let argument_list = powershell_argument_list_clause(extra_args);
-    let script = format!(
-        r#"{env_lines}
-$appId='{escaped}';
-$target='shell:AppsFolder\' + $appId
-Start-Process -FilePath $target{argument_list} -ErrorAction Stop | Out-Null"#
-    );
+    let script = build_codex_store_activation_script(app_user_model_id, &env_pairs, extra_args);
+
+    crate::modules::logger::log_info(&format!(
+        "[Codex Store] 使用 ApplicationActivationManager 启动，附加参数数量={}",
+        extra_args
+            .iter()
+            .filter(|value| !value.trim().is_empty())
+            .count()
+    ));
 
     let output = powershell_output(&["-Command", &script])
         .map_err(|e| format!("系统入口启动调用失败: {}", e))?;

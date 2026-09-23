@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ---
 ## [Unreleased]
 
+## [1.3.59b2] - 2026-09-23
+
+### Fixed
+
+- **Fixed original Codex Desktop launches through API Service being unable to send after workspace credits were depleted**: only an API Service-bound instance with native quota-banner hiding enabled and an exact `workspace_member_credits_depleted` status clears the desktop client's duplicate quota send gate. Empty input, uploads, in-flight submissions, unavailable models, safety restrictions, and every other official gate remain intact. Disabling the option, changing the binding, stopping the instance, or receiving refreshed official state restores or re-evaluates the original cache without changing real quota, requests, or API Service routing.
+- **Fixed Windows Store/MSIX Codex Desktop launches dropping CDP arguments**: packaged-app startup now uses the Windows application activation API to forward loopback debugging arguments, so native quota-banner hiding and the API Service send-gate fix actually run in the Store build. Regular Windows executable and macOS launch paths are unchanged.
+
 ## [1.3.59b1] - 2026-09-23
 
 ### Added

@@ -99,7 +99,7 @@
             };
             let result = super::evaluate_target(
                 &target,
-                &super::native_quota_script(enabled, "test-session"),
+                &super::native_quota_script(enabled, false, "test-session"),
                 super::NATIVE_QUOTA_SCRIPT_KIND,
             )
             .await;
@@ -141,7 +141,7 @@
         assert!(
             super::evaluate_target(
                 &target,
-                &super::native_quota_script(true, "test-session"),
+                &super::native_quota_script(true, false, "test-session"),
                 super::NATIVE_QUOTA_SCRIPT_KIND,
             )
             .await

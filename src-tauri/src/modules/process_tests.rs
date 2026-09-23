@@ -247,8 +247,8 @@ mod codex_macos_launch_tests {
 #[cfg(test)]
 mod codex_launch_args_tests {
     use super::{
-        build_codex_app_launch_args, codex_managed_store_launch_unsafe_error,
-        CODEX_MANAGED_STORE_LAUNCH_UNSAFE_PREFIX,
+        build_codex_app_launch_args, build_codex_store_activation_script,
+        codex_managed_store_launch_unsafe_error, CODEX_MANAGED_STORE_LAUNCH_UNSAFE_PREFIX,
     };
 
     #[test]
@@ -265,6 +265,42 @@ mod codex_launch_args_tests {
                 "--disable-gpu".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn store_activation_uses_com_api_and_forwards_cdp_arguments() {
+        let script = build_codex_store_activation_script(
+            "OpenAI.Codex_2p2nqsd0c76g0!App",
+            &[],
+            &[
+                "--remote-debugging-address=127.0.0.1".to_string(),
+                "--remote-debugging-port=23949".to_string(),
+            ],
+        );
+
+        assert!(script.contains("IApplicationActivationManager"));
+        assert!(script.contains("ActivateApplication("));
+        assert!(script.contains("--remote-debugging-address=127.0.0.1"));
+        assert!(script.contains("--remote-debugging-port=23949"));
+        assert!(!script.contains("Start-Process"));
+        assert!(!script.contains("shell:AppsFolder"));
+    }
+
+    #[test]
+    fn store_activation_quotes_windows_arguments_and_powershell_literals() {
+        let script = build_codex_store_activation_script(
+            "OpenAI.Codex_test'family!App",
+            &[("CODEX_HOME", "C:\\Users\\O'Brien\\.codex".to_string())],
+            &[
+                "--user-data-dir=C:\\Users\\Demo User\\Codex".to_string(),
+                "--label=can't stop".to_string(),
+            ],
+        );
+
+        assert!(script.contains("OpenAI.Codex_test''family!App"));
+        assert!(script.contains("C:\\Users\\O''Brien\\.codex"));
+        assert!(script.contains(r#""--user-data-dir=C:\Users\Demo User\Codex""#));
+        assert!(script.contains(r#""--label=can''t stop""#));
     }
 
     #[test]
