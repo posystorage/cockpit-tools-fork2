@@ -86,6 +86,24 @@ describe("fork draft release workflow", () => {
     }
   });
 
+  it("combines the 1.3.59 fork delta with exactly the 1.3.58-to-1.3.59 upstream range", () => {
+    assert.ok(
+      workflowSource.includes(
+        'if [[ "${GITHUB_REF_NAME}" == "1.3.59b1" || "${GITHUB_REF_NAME}" == "v1.3.59b1" ]]',
+      ),
+    );
+    assert.ok(
+      workflowSource.includes(
+        'RELEASE_VERSIONS=("1.3.59b1" "1.3.59" "1.3.58")',
+      ),
+    );
+    for (const changelog of [englishChangelog, chineseChangelog]) {
+      for (const version of ["1.3.59b1", "1.3.59", "1.3.58"]) {
+        assert.ok(changelog.includes(`## [${version}]`));
+      }
+    }
+  });
+
   it("uses only the b3-to-b4 changelog section for the 1.3.21b4 draft", () => {
     assert.ok(
       workflowSource.includes(
