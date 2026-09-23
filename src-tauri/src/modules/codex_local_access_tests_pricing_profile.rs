@@ -762,37 +762,6 @@
     }
 
     #[test]
-    fn request_log_db_adds_turn_state_metadata_without_changing_existing_logs() {
-        let dir = make_temp_dir("codex-turn-state-migration");
-        let db_path = dir.join("request_logs.sqlite");
-        let conn = Connection::open(&db_path).expect("open old logs db");
-        conn.execute_batch("CREATE TABLE request_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, event_key TEXT NOT NULL DEFAULT '', timestamp INTEGER NOT NULL DEFAULT 0)")
-            .expect("create old request logs schema");
-        conn.execute(
-            "INSERT INTO request_logs (event_key, timestamp) VALUES (?1, ?2)",
-            rusqlite::params!["existing-event", 1_700_000_000_000_i64],
-        ).expect("insert existing request");
-        drop(conn);
-
-        let conn = open_local_access_logs_db_once(&db_path, true).expect("migrate logs db");
-        conn.execute(
-            "INSERT INTO codex_turn_state_observations (account_id, length, observed_at, model) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params!["member", 312, 1_800_000_000_000_i64, "gpt-test"],
-        ).expect("insert metadata only");
-        let (count, event_key): (i64, String) = conn.query_row(
-            "SELECT COUNT(*), MIN(event_key) FROM request_logs", [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        ).expect("read existing request");
-        assert_eq!((count, event_key.as_str()), (1, "existing-event"));
-        assert_eq!(conn.query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('codex_turn_state_observations')",
-            [], |row| row.get::<_, i64>(0),
-        ).expect("inspect metadata schema"), 4);
-        drop(conn);
-        let _ = fs::remove_dir_all(dir);
-    }
-
-    #[test]
     fn request_log_db_adds_service_tier_to_existing_schema() {
         let dir = make_temp_dir("codex-local-access-service-tier-migration");
         let db_path = dir.join("request_logs.sqlite");

@@ -1261,8 +1261,6 @@ fn build_state_snapshot_inner(
         .is_some_and(|collection| collection.enabled);
 
     let (running_requests, account_activity) = build_account_activity_snapshot(runtime, now_ms());
-    let mut turn_state_observations = runtime.turn_state_observations.values().cloned().collect::<Vec<_>>();
-    turn_state_observations.sort_by(|a, b| a.account_id.cmp(&b.account_id).then(a.length.cmp(&b.length)));
     CodexLocalAccessState {
         collection,
         running: runtime.running,
@@ -1287,7 +1285,6 @@ fn build_state_snapshot_inner(
         quota_reserve_status,
         running_requests,
         account_activity,
-        turn_state_observations,
     }
 }
 

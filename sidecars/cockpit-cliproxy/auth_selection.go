@@ -1683,17 +1683,6 @@ func (h *authHook) OnResult(ctx context.Context, result coreauth.Result) {
 		model = strings.TrimSpace(requestModel)
 	}
 	account := h.accountForAuthID(result.AuthID)
-	if strings.EqualFold(result.Provider, "codex") && account != nil && spec != nil && !spec.Internal {
-		if state := internallogging.GetResponseHeaders(ctx).Get("X-Codex-Turn-State"); state != "" {
-			if len(state) <= 4096 {
-				h.emitter.emit(map[string]any{
-					"type": "codex_turn_state_observed", "accountId": stringFromAccount(account, "id"),
-					"apiKeyId": stringFromAPIKey(spec, "id"), "length": len(state),
-					"observedAt": time.Now().UnixMilli(), "model": model,
-				})
-			}
-		}
-	}
 	status := 0
 	errorCode := ""
 	errorMessage := ""

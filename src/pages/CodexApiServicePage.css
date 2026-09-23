@@ -1873,7 +1873,7 @@ html[data-reduced-motion="true"] .codex-api-service-key-advanced-toggle[aria-exp
   line-height: 1;
 }
 
-.codex-api-service-account-meta > span {
+.codex-api-service-account-meta span {
   max-width: 100%;
   padding: 3px 6px;
   border: 1px solid var(--codex-api-border-soft);
@@ -1883,10 +1883,6 @@ html[data-reduced-motion="true"] .codex-api-service-key-advanced-toggle[aria-exp
   font-size: 11px;
   line-height: 1.35;
   overflow-wrap: anywhere;
-}
-
-.codex-api-service-account-card > .codex-turn-state {
-  grid-column: 1 / -1;
 }
 
 .codex-api-service-account-meta .codex-api-service-account-meta-token {

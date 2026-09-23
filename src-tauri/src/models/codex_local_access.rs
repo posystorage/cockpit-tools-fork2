@@ -997,16 +997,6 @@ pub struct CodexLocalAccessState {
     pub quota_reserve_status: Option<CodexLocalAccessQuotaReserveStatus>,
     pub running_requests: Vec<CodexLocalAccessRunningRequest>,
     pub account_activity: Vec<CodexLocalAccessAccountActivity>,
-    pub turn_state_observations: Vec<CodexTurnStateObservation>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CodexTurnStateObservation {
-    pub account_id: String,
-    pub length: u16,
-    pub observed_at: i64,
-    pub model: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

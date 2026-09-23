@@ -179,13 +179,6 @@ fn create_request_logs_table(
             output_usd_per_million REAL NOT NULL DEFAULT 0,
             cached_input_usd_per_million REAL
         );
-        CREATE TABLE IF NOT EXISTS codex_turn_state_observations (
-            account_id TEXT NOT NULL,
-            length INTEGER NOT NULL,
-            observed_at INTEGER NOT NULL,
-            model TEXT NOT NULL DEFAULT '',
-            PRIMARY KEY (account_id, length)
-        );
         "#
     );
     conn.execute_batch(create_table_sql.as_str())?;
@@ -471,65 +464,6 @@ fn open_local_access_logs_db_with_schema_for_write(
 fn open_local_access_logs_db_for_write(
 ) -> Result<(std::sync::MutexGuard<'static, ()>, Connection), String> {
     open_local_access_logs_db_with_schema_for_write(true)
-}
-
-fn prune_unknown_turn_state_observations(
-    observations: &mut HashMap<(String, u16), CodexTurnStateObservation>, account_id: &str,
-) {
-    let mut unknown = observations.values()
-        .filter(|entry| entry.account_id == account_id && !matches!(entry.length, 292 | 312 | 332 | 356))
-        .collect::<Vec<_>>();
-    unknown.sort_by(|a, b| b.observed_at.cmp(&a.observed_at).then(a.length.cmp(&b.length)));
-    let keep = unknown.iter().take(4).map(|entry| entry.length).collect::<Vec<_>>();
-    observations.retain(|(id, length), _| id != account_id || matches!(length, 292 | 312 | 332 | 356) || keep.contains(length));
-}
-
-fn load_turn_state_observations() -> Result<HashMap<(String, u16), CodexTurnStateObservation>, String> {
-    let conn = open_local_access_logs_db()?;
-    let mut stmt = conn.prepare("SELECT account_id, length, observed_at, model FROM codex_turn_state_observations")
-        .map_err(|error| error.to_string())?;
-    let rows = stmt.query_map([], |row| {
-        let account_id: String = row.get(0)?;
-        let length: u16 = row.get(1)?;
-        Ok(CodexTurnStateObservation {
-            account_id, length, observed_at: row.get(2)?, model: row.get(3)?,
-        })
-    }).map_err(|error| error.to_string())?;
-    let mut observations = HashMap::new();
-    for row in rows {
-        let observation = row.map_err(|error| error.to_string())?;
-        if (1..=4096).contains(&observation.length) && observation.observed_at > 0 {
-            observations.insert((observation.account_id.clone(), observation.length), observation);
-        }
-    }
-    let accounts = observations.keys().map(|(account_id, _)| account_id.clone()).collect::<std::collections::HashSet<_>>();
-    for account_id in accounts {
-        prune_unknown_turn_state_observations(&mut observations, &account_id);
-    }
-    Ok(observations)
-}
-
-fn persist_turn_state_observation(observation: &CodexTurnStateObservation) -> Result<(), String> {
-    let (_write_guard, conn) = open_local_access_logs_db_for_write()?;
-    conn.execute(
-        "INSERT INTO codex_turn_state_observations (account_id, length, observed_at, model)
-         VALUES (?1, ?2, ?3, ?4)
-         ON CONFLICT(account_id, length) DO UPDATE SET
-           observed_at = excluded.observed_at, model = excluded.model
-         WHERE excluded.observed_at > codex_turn_state_observations.observed_at",
-        params![observation.account_id, observation.length, observation.observed_at, observation.model],
-    ).map_err(|error| error.to_string())?;
-    conn.execute(
-        "DELETE FROM codex_turn_state_observations
-         WHERE account_id = ?1 AND length NOT IN (292, 312, 332, 356)
-           AND length NOT IN (
-               SELECT length FROM codex_turn_state_observations
-               WHERE account_id = ?1 AND length NOT IN (292, 312, 332, 356)
-               ORDER BY observed_at DESC, length ASC LIMIT 4
-           )",
-        params![observation.account_id],
-    ).map_err(|error| error.to_string())?;
-    Ok(())
 }
 
 fn serialize_token_breakdown_for_db(breakdown: Option<&CodexTokenBreakdown>) -> String {

@@ -4,23 +4,12 @@
 
 ## 1. 文档目标与事实来源
 
-本 fork 长期维护以下五组产品行为：
+本 fork 只长期维护四组产品行为：
 
 1. 禁用广告、赞助推广、远端公告、远端开关和运行时自动更新。
 2. 为 Codex API 服务提供只读的当前/最近账号调度观测；普通 Codex 页对所有仍存在账号显示窗口内 API 用量，独立 API 页提供可滚动的时间范围统计。
 3. 保留并增强自定义 API Provider 的上游计费、用量和余额查询，重点兼容 Sub2API。
 4. 维护 Codex API 服务的官方价格基线、历史账号统计，以及用户显式控制的最低优先级兜底暂停能力。
-5. 在 API 服务启用期间被动观察 Codex OAuth 上游响应的 `X-Codex-Turn-State` 头，只记录头值长度、最近观察时间和模型，并在普通 Codex 账号卡及独立 API 服务账号池卡片中展示。
-
-### Turn-State 只读观测边界
-
-- 292、312、332、356 是头值**字符长度**，不是 HTTP 状态码，也不表示令牌有效、限流原因或模型能力。两处卡片以 `Turn` 单行显示最近两种实际观测长度及时间，最新在前；观测种类超过两种时舍弃较早票的显示，但不能根据卡片固定像素宽度隐藏第二张票。292 为绿色、332 为蓝色、312/356 为红色、其他长度为黄色，无记录不显示空票。停用 API 服务时历史记录保留、悬停提示“监听已关闭”，不产生新观测。普通卡位于订阅有效期与导入日期之间，独立服务账号池卡位于图片状态/调度元数据下方和操作按钮上方。
-- 账号移出 API 服务也停止新增观测；普通 Codex 卡在该账号仍存在时保留历史时间并标示监听已关闭，独立 API 服务页只列当前成员。删除账号后的记录不参与请求计费或路由；目前不提供单独的观测历史管理页面。
-- 唯一数据来源是 sidecar 经实际 Codex OAuth 上游请求取得的**响应头**，不可把客户端请求头当成新取得的数据。侧车在逐次请求结果钩子读取隔离的上游响应头容器，按实际 `AuthID` 映射本地 `account_id`，只输出 `{accountId, apiKeyId, length, observedAt, model}`。Rust 还必须确认服务启用、账号属于当前集合、API Key 对该账号有权限；排除 `__cockpit_internal__` 的唤醒和内部调用。重试不能从前一次尝试继承响应头。
-- 仅保存长度为 1–4096 的响应头最近元数据到独立 SQLite 表 `codex_turn_state_observations`：四种已知长度全部保留，每账号额外最多保留最近四种未知长度。不得持久化、打印或传给 UI 原始头值，不得修改客户端或上游的请求头、响应头、token、路由、调度、重试、计费和响应正文。记录时间表示 sidecar 的结果钩子观察时刻；流式长请求可能晚于响应头到达时刻。
-- Rust 的 stdout 事件处理只验证并更新内存状态，SQLite 写入在后台执行；按时间戳有条件 upsert，防止多个后台写任务乱序覆盖较新记录。历史表同样在基本运行状态发布后后台加载，再按时间戳合并，不阻塞服务启动。
-- 上游通用调试日志的 `writeHeaders` 原本可能输出该头原值；`third_party/CLIProxyAPI/internal/util/provider.go` 的 `MaskSensitiveHeaderValue` 对 `X-Codex-Turn-State` 精确匹配并完全遮盖，只改变日志文本，不改变透传响应。
-- WebSocket 仅在确认上游握手响应头能进入相同的观测路径后才可显示记录；不能因该模式暂未可观察而改写握手、主动探测、注入回合头、替换令牌或伪造值。上游升级时检查响应头采集、结果钩子上下文、内部 Key 过滤、状态快照和双卡展示，保持纯只读行为。
 
 除此以外，原则上跟随上游。发布工作流、fork 下载地址、签名密钥和免责声明属于交付差异，不应扩张成新的产品分叉。
 
@@ -385,7 +374,7 @@ Windows 本地运行 Rust 测试前必须为每个测试进程设置独立的 `C
 - 不因为某服务曾是赞助商就删除其可工作的 `baseUrls`。
 - 不把调度观测数据持久化为新的业务状态，也不让它参与路由决策。
 - 不把普通 502、代理、sidecar 或额度刷新故障归因于去广告代码。
-- 不为降低冲突而删除上游新增功能；若不触及五组 fork 行为，应接受上游实现。
+- 不为降低冲突而删除上游新增功能；若不触及四组 fork 行为，应接受上游实现。
 
 ## 4. 修改集 A：去广告与远端行为隔离
 
@@ -584,8 +573,6 @@ Sidecar 选择事件所有权：
 - 隐私：不记录 API Key secret；UI 继续使用现有账号脱敏函数。
 - 性能：不新增独立高频 command；复用已有 state snapshot 和条件轮询。
 - 兼容：运行时以 sidecar 为唯一路径；legacy 只保留迁移、历史日志筛选和旧数据读取兼容，不能重新作为启动分支。
-
-Turn-State 长度观测不是本节易失的“当前调度”状态：它独立持久化最近观察时间，且绝不参与上述调度决策。后续升级的交叉热点为 `sidecars/cockpit-cliproxy/auth_selection.go`（上游响应头与实际 AuthID）、`src-tauri/src/modules/codex_local_access_sidecar_runtime.rs`（事件过滤）、`codex_local_access_request_logs.rs`（独立表）、`codex_local_access_gateway_runtime.rs`（状态快照）、`src/pages/useCodexAccountsRenderers.tsx` 和 `CodexApiServiceView.tsx`（双卡展示）。不得用客户端传入的头、计费日志或完整令牌替代这条数据流。
 
 ### 5.5 OAuth 保留额度窗口语义
 
@@ -786,7 +773,7 @@ GPT-5.6 Luna（美元 / 百万 token）：
 
 ## 8. 发布与仓库身份差异
 
-这些差异通常保留，但与五组核心产品行为分开审查：
+这些差异通常保留，但与四组核心产品行为分开审查：
 
 - `.github/workflows/release.yml`：fork 的 draft/tag、Windows + macOS 构建和 release notes 策略；Linux、自动 finalize、checksum 和 Homebrew 等非目标 job 当前被禁用。历史章节中出现的“仅构建 Windows”只描述当时的旧策略，不得作为当前发布配置依据。
 - `src-tauri/tauri.conf.json`：fork updater 公钥和 fork release endpoint。即使 runtime updater 已禁用，也不能指回上游签名/制品。
@@ -841,7 +828,7 @@ git diff <old-upstream-tag>..<new-upstream-tag> -- <本文列出的热点文件>
 
 1. 合并上游 release tag，保留真实双亲历史。
 2. 不对热点文件使用整文件 `ours/theirs`。
-3. 先恢复上游数据结构与新调用路径，再逐项重放五组行为。
+3. 先恢复上游数据结构与新调用路径，再逐项重放四组行为。
 4. 每解决一组冲突就运行相关格式/类型检查，避免最后集中排错。
 5. 搜索冲突标记以及重复 import、重复字段、失效 dead branch。
 
@@ -852,7 +839,7 @@ git diff <old-upstream-tag>..<new-upstream-tag> -- <本文列出的热点文件>
 - `<new-upstream-tag>..HEAD`：现在 fork 相对新上游还保留了什么。
 - `<old-fork-head>..HEAD`：本次升级实际改变了什么。
 
-如果第一种差异出现大批与五组行为无关的文件，通常表示冲突处理过度保留了旧代码。
+如果第一种差异出现大批与四组行为无关的文件，通常表示冲突处理过度保留了旧代码。
 
 ## 11. 验收矩阵
 
@@ -892,11 +879,7 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 8. 在成员、自定义路由、模型规则或 API Key 对话框中编辑未保存内容，等待至少两轮轮询，草稿不能被重置。
 9. 停止服务后确认轮询停止，无持续 command 或控制台报错。
 
-### 11.4 Turn-State 只读监听检查
-
-在 11.3 调度检查之外，还需用合成上游响应分别验证 292、312、332、356 和未知长度：只有 API 服务启用、账号属于集合且 API Key 有权限时两处卡片才更新；停用服务、内部 Key、其他账号、空值、超过 4096 字符的长度、仅客户端请求头都不得写记录。验证最近两票降序、窄卡仅显示最新一票及各颜色；每账号未知长度最多保存四种。重试的第二次尝试无头时不能沿用第一次的头；退出重启后最近记录应保留，悬停应显示模型与完整时间，原始头值不得出现在 stdout、SQLite、状态 JSON 或日志。WebSocket 需单独证实现有路径能读到上游握手头，不能为覆盖率主动探测或更改协议。
-
-### 11.5 计费查询手工检查
+### 11.4 计费查询手工检查
 
 1. 用明确标记为 Sub2API 的 Provider 分别测试根 Base URL 与 `/v1` Base URL。
 2. 确认 Bearer Key 只发往用户填写的 host。
@@ -905,7 +888,7 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 5. 未指定 integration type 时确认 New API -> Sub2API 探测顺序。
 6. 404 可触发候选回退；401/403 等鉴权错误应清晰返回，不应伪装成零余额。
 
-### 11.6 API 服务价格、历史账号与兜底暂停检查
+### 11.5 API 服务价格、历史账号与兜底暂停检查
 
 1. 打开价格设置，确认 Terra/Luna 的 Standard、长上下文和 Fast 值与 7.1 一致。
 2. 使用旧价格配置启动，确认升级到 v4 后已知错误覆盖被清除、真正自定义值保留，历史请求（含 Auto-review）在后台重算，页面不被同步阻塞。
@@ -918,7 +901,7 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 9. 打开“禁用模型”弹窗后从另一页面切换兜底开关，再尝试保存旧草稿；后端必须拒绝旧版本，重新打开弹窗后才能保存。
 10. 在独立 API 服务统计页分别选择近 24H、近 48H、近 7Day，确认起止时间按当前时刻滚动且共享管理弹窗不出现这三个选项。
 
-### 11.7 Release 平台范围与多版本变更信息检查
+### 11.6 Release 平台范围与多版本变更信息检查
 
 1. 检查 `.github/workflows/release.yml`：`build-windows`、`build-macos-aarch64`、`build-macos-x86_64`、`build-macos-universal` 必须启用并统一使用真实 `release_tag`；`build-linux`、自动 finalize、checksum 和 Homebrew job 保持 `if: ${{ false }}`。
 2. 每个编译 tag 必须在同一个草稿 Release 中看到 Windows MSI/NSIS、macOS Apple Silicon、macOS Intel 和 macOS Universal 产物；任一 macOS job 被跳过或没有上传资产都视为失败。
@@ -933,7 +916,7 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 
 - 新版本号、依赖、release notes 和上游修复已同步。
 - Release 平台范围仍符合 fork 边界（构建 Windows 与 macOS 草稿，Linux 禁用），且跨版本合并的中英文变更信息完整覆盖本轮所有上游版本和已纳入的 fork beta 变更。
-- 五组 fork 行为逐项通过本文验收。
+- 四组 fork 行为逐项通过本文验收。
 - 相对新上游的差异已收敛到本文热点和必要发布文件。
 - 没有冲突标记、重复实现、非预期 referral URL 或默认商业服务。
 - 前后端检查和目标 Rust 测试通过；不能运行或纯上游已知失败的检查已记录原因。

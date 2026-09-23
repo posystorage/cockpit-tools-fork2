@@ -211,7 +211,6 @@ func MaskAuthorizationHeader(value string) string {
 // Behavior by header key (case-insensitive):
 //   - "Authorization": Preserve the auth type prefix (e.g., "Bearer ") and mask only the credential part.
 //   - Headers containing "api-key": Mask the entire value using HideAPIKey.
-//   - "X-Codex-Turn-State": Redact the complete opaque state.
 //   - Others: Return the original value unchanged.
 //
 // Parameters:
@@ -223,8 +222,6 @@ func MaskAuthorizationHeader(value string) string {
 func MaskSensitiveHeaderValue(key, value string) string {
 	lowerKey := strings.ToLower(strings.TrimSpace(key))
 	switch {
-	case lowerKey == "x-codex-turn-state":
-		return "[REDACTED]"
 	case strings.Contains(lowerKey, "authorization"):
 		return MaskAuthorizationHeader(value)
 	case strings.Contains(lowerKey, "api-key"),

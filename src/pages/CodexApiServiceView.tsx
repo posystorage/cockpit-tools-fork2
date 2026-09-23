@@ -13,7 +13,6 @@ import { CodexLocalAccessModal } from "../components/CodexLocalAccessModal";
 import { CodexAccountPoolHealthModal } from "../components/CodexAccountPoolHealthModal";
 import { CodexStatsRangePicker } from "../components/CodexStatsRangePicker";
 import { CodexUsageTrend } from "../components/codex/CodexUsageTrend";
-import { CodexTurnStateObservations } from "../components/codex/CodexTurnStateObservations";
 import { isCodexLocalAccessBackupDispatchEnabled } from "../utils/codexLocalAccessBackupDispatch";
 import { PaginationControls } from "../components/PaginationControls";
 import type {
@@ -1819,11 +1818,6 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                             </span>
                           )}
                         </div>
-                        <CodexTurnStateObservations
-                          accountId={account.id}
-                          enabled={Boolean(collection?.enabled)}
-                          observations={state?.turnStateObservations ?? []}
-                        />
                         <div className="codex-api-service-account-card-actions">
                           {isBackupAccount && (
                             <label
