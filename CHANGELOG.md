@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ---
 ## [Unreleased]
 
+### Added
+
+- **Per-instance control for Codex Desktop's native quota-depleted banner**: API Service desktop launches hide only the semantically confirmed `workspace_member_credits_depleted` banner by default, while other bindings default off and CLI launches never inject display changes. The launch preview can persist an explicit override for default and named instances. Unknown, unreadable, conflicting, or unrelated warnings remain visible, and disabling the option or ending the session restores the original inline style. This is presentation-only and does not alter requests, routing, tokens, quota, or Codex behavior.
+
 ## [1.3.59] - 2026-09-23
 
 ### Added

@@ -25,6 +25,7 @@ export type InstanceStoreState = {
     modelRouting?: CodexInstanceModelRouting | null;
     launchMode?: InstanceLaunchMode;
     appSpeed?: CodexAppSpeed;
+    hideNativeQuotaBanner?: boolean;
     copySourceInstanceId: string;
     initMode?: InstanceInitMode;
   }) => Promise<InstanceProfile>;
@@ -38,6 +39,7 @@ export type InstanceStoreState = {
     followLocalAccount?: boolean;
     launchMode?: InstanceLaunchMode;
     appSpeed?: CodexAppSpeed;
+    hideNativeQuotaBanner?: boolean;
     autoSyncThreads?: boolean;
     deferBindAccountApplication?: boolean;
   }) => Promise<InstanceProfile>;

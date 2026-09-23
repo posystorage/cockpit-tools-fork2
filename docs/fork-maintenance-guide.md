@@ -4,12 +4,13 @@
 
 ## 1. 文档目标与事实来源
 
-本 fork 只长期维护四组产品行为：
+本 fork 只长期维护五组产品行为：
 
 1. 禁用广告、赞助推广、远端公告、远端开关和运行时自动更新。
 2. 为 Codex API 服务提供只读的当前/最近账号调度观测；普通 Codex 页对所有仍存在账号显示窗口内 API 用量，独立 API 页提供可滚动的时间范围统计。
 3. 保留并增强自定义 API Provider 的上游计费、用量和余额查询，重点兼容 Sub2API。
 4. 维护 Codex API 服务的官方价格基线、历史账号统计，以及用户显式控制的最低优先级兜底暂停能力。
+5. 按实例隐藏 Codex Desktop 的官方“工作区成员额度耗尽”提示，只改变已确认提示框的显示，不改变额度、请求、路由或客户端行为。
 
 除此以外，原则上跟随上游。发布工作流、fork 下载地址、签名密钥和免责声明属于交付差异，不应扩张成新的产品分叉。
 
@@ -163,6 +164,17 @@ fork 仍必须保留：
 - 草稿 Release 同时生成 Windows 和三种 macOS 安装包，Linux/finalize/checksum/Homebrew 仍禁用。版本说明范围以本轮上游锚点为准，不因 release tag 或历史章节而扩张。
 
 本机验证：TypeScript 严格检查、Vite 生产构建、Rust 库 `cargo check`、账号池/历史/Release 定向前端测试与 `git diff --check` 通过。`cargo fmt --check` 报出大量上游原有未格式化段落，未整仓重排；Rust 定向单测已完成编译但本机测试 EXE 未进入断言，停止悬挂进程。此机器没有 Go，新增 Provider Gateway 选中事件的 Go 回归测试必须在云构建验证。云编译尚未触发，不能把编译通过等同于 Windows/macOS 产物已生成。
+
+### 2.4.3 `v1.3.59` 合并边界（2026-09-23）
+
+本轮从 fork `v1.3.57` 基线合并上游 `v1.3.59`。先以 `600a6f39` 删除 fork 的 Turn 票据监听、持久化与展示，再以双父提交 `9ce1658d` 合入上游 release；历史 release notes 保留事实记录，但 Turn 不再是当前产品能力或升级保护项。
+
+- 接受上游 `v1.3.58`、`v1.3.59` 的模型目录、GPT-6 Sol/Luna、上游定价、授权、账号池、Grok/DeepSeek、上下文和 macOS 安装说明等变化；本轮 release 说明只聚合这两个上游版本及本轮 fork 额外功能，不回放 `v1.3.57` 以前章节。
+- 保留去广告、API 服务调度观测与全账号滚动、Sub2API 余额、删除账号历史计费、滚动统计、最低优先级暂停和 `codex-auto-review` 按 Luna 计费等长期边界。
+- 上游移除账号风控/Turn-State 后，不恢复 fork 旧的 header 长度监听。不得继续采集或展示 292/312/332/356，也不得因历史 changelog 中仍有相关说明而重新接回。
+- 新增按实例隐藏 Codex Desktop 原生额度耗尽提示的纯展示能力，具体边界见修改集 E。API Service 桌面启动默认开启；其他绑定默认关闭；CLI 不执行显示注入。
+
+本机验证：TypeScript 严格检查、18 个 locale 键一致性、Provider 隐私扫描、353 个 TypeScript 测试、11 个额度提示语义用例、Vite 生产构建、Rust `cargo check --tests` 与 `git diff --check` 通过。Rust 定向测试已完成编译，但测试 EXE 在本机默认环境以 `STATUS_ENTRYPOINT_NOT_FOUND` 退出；收窄 `PATH` 后又在测试框架列举用例前挂起，相关进程已停止，因此不得把这些 Rust 用例记为运行通过。云编译尚未触发，也不能据此声称 Windows/macOS 安装产物已生成。
 
 ### 2.5 `v1.3.16` 已验证基线（2026-08-06）
 
@@ -374,7 +386,7 @@ Windows 本地运行 Rust 测试前必须为每个测试进程设置独立的 `C
 - 不因为某服务曾是赞助商就删除其可工作的 `baseUrls`。
 - 不把调度观测数据持久化为新的业务状态，也不让它参与路由决策。
 - 不把普通 502、代理、sidecar 或额度刷新故障归因于去广告代码。
-- 不为降低冲突而删除上游新增功能；若不触及四组 fork 行为，应接受上游实现。
+- 不为降低冲突而删除上游新增功能；若不触及五组 fork 行为，应接受上游实现。
 
 ## 4. 修改集 A：去广告与远端行为隔离
 
@@ -771,9 +783,52 @@ GPT-5.6 Luna（美元 / 百万 token）：
 - 普通 Codex 页中移出 API 服务的现存账号仍显示窗口内 API 用量；独立 API 页仅把已删除账号放入历史区。
 - 独立 API 页的 24H/48H/7Day 查询使用固定时长边界并持续刷新，共享弹窗不出现这些标签。
 
-## 8. 发布与仓库身份差异
+## 8. 修改集 E：Codex Desktop 原生额度耗尽提示隐藏
 
-这些差异通常保留，但与四组核心产品行为分开审查：
+核心文件：
+
+- `src-tauri/src/modules/codex_native_quota_banner.js`
+- `src-tauri/src/modules/codex_native_quota_policy.rs`
+- `src-tauri/src/modules/codex_app_injection.rs`
+- `src-tauri/src/models/instance.rs`
+- `src-tauri/src/commands/codex_instance.rs`
+- `src/components/codex/CodexLaunchPreviewModal.tsx`
+- `src/utils/codexNativeQuotaBanner.ts`
+- `tests/codexNativeQuotaBanner.test.ts`
+
+这是纯展示层能力。它只隐藏 Codex Desktop 已经渲染出来、且可由 React Fiber 语义严格确认的 `workspace_member_credits_depleted` 提示框；不得修改 OpenAI 请求、账户额度、token、模型、API Service 调度、冷却、重试或客户端内部状态，也不得伪造可用额度。
+
+### 8.1 识别与失败边界
+
+- 只扫描 `[data-codex-composer-root][data-composer-placement]` 内的 `aside`，不得扩大到整个 document。
+- 只接受 React Fiber 属性中的 `banner_type === "workspace_member_credits_depleted"`；不得按中文、英文或其他界面文案匹配。
+- Fiber 不存在、无法读取、存在循环、alternate 指向不明、多个语义字段冲突、共享父节点拥有其他 `aside`，或提示类型未知时都必须保持可见。
+- 其他额度、保留额度、图片、安全、沙箱、认证、网络和环境提示必须保持可见。
+- DOM 节点被 React 复用于其他提示时要立即恢复；composer root 被替换或移除时要断开旧 observer 并恢复原样。
+
+### 8.2 实例策略与持久化
+
+`hideNativeQuotaBanner` 是默认实例和普通实例都支持的三态字段：
+
+- 未设置：API Service 绑定的桌面 app 启动默认开启；其他绑定默认关闭。
+- `true`：桌面 app 实例显式开启，即使绑定 OAuth、API Key、DeepSeek 或 Provider Gateway 也可使用。
+- `false`：显式关闭，并覆盖 API Service 的默认开启。
+- CLI 启动始终不执行 DOM 注入；保存的选择可以保留，但只有桌面 app 模式实际生效。
+
+前端启动预览只在用户实际切换开关后写入显式值；未触碰的默认状态保持 `null/undefined`，以便绑定和启动模式变化后继续按默认策略计算。Rust 必须在启动、恢复运行实例和每轮注入时重新读取实例记录并校验实例仍存在、绑定未变化、启动模式仍是 app、开关仍有效；配置读取失败或实例被删除时立即恢复提示。
+
+### 8.3 CDP 生命周期
+
+- 复用实例现有的 loopback CDP 端口，不开放外部监听，不修改 `app.asar`。
+- 隐藏脚本只能对当前 document 执行，绝不能注册 `Page.addScriptToEvaluateOnNewDocument`；否则旧实例选择可能跨导航残留。
+- 每个运行实例使用独立 session。旧 session 的延迟清理不能销毁新 session。
+- 记录原始 inline `display` 值及 priority；关闭开关、停止实例、应用退出、绑定变化、脚本 watchdog 超时或节点语义变化时必须准确恢复。
+- suppression 任务可单独启用 CDP，但不得因此激活 API Service 账号数/额度徽章、余额查询或其他绑定专属注入。
+- CDP `Runtime.evaluate` 返回 protocol error 或 `exceptionDetails` 时视为失败，不得当作成功隐藏。
+
+## 9. 发布与仓库身份差异
+
+这些差异通常保留，但与五组核心产品行为分开审查：
 
 - `.github/workflows/release.yml`：fork 的 draft/tag、Windows + macOS 构建和 release notes 策略；Linux、自动 finalize、checksum 和 Homebrew 等非目标 job 当前被禁用。历史章节中出现的“仅构建 Windows”只描述当时的旧策略，不得作为当前发布配置依据。
 - `src-tauri/tauri.conf.json`：fork updater 公钥和 fork release endpoint。即使 runtime updater 已禁用，也不能指回上游签名/制品。
@@ -784,7 +839,7 @@ GPT-5.6 Luna（美元 / 百万 token）：
 
 升级上游 workflow 时，先接受安全修复和 action 版本更新，再恢复 fork 的发布范围、draft 行为、签名与 release notes 规则。不要用旧 workflow 整文件覆盖上游。
 
-## 9. 文件所有权与冲突优先级
+## 10. 文件所有权与冲突优先级
 
 | 区域 | 默认裁决 | 必查内容 |
 | --- | --- | --- |
@@ -800,9 +855,9 @@ GPT-5.6 Luna（美元 / 百万 token）：
 | release workflow/config | 逐段合并 | fork signing、draft、平台范围、release notes |
 | 其他账号平台与通用组件 | 默认完全接受上游 | 仅处理编译所需适配 |
 
-## 10. 标准升级流程
+## 11. 标准升级流程
 
-### 10.1 升级前
+### 11.1 升级前
 
 1. 确认工作区干净或准确记录已有用户改动：`git status --short --branch`。
 2. 记录当前 fork HEAD、上游 tag commit 和 merge-base。
@@ -811,7 +866,7 @@ GPT-5.6 Luna（美元 / 百万 token）：
 5. 建立独立升级分支，不直接改稳定分支。
 6. 明确本轮 Release 说明范围：记录旧上游锚点之后到目标 tag 的全部上游版本，必要时加上 fork beta 增量；同步规划 `CHANGELOG.md`、`CHANGELOG.zh-CN.md` 和 workflow 的 `RELEASE_VERSIONS`，不得只记录最终版本。
 
-### 10.2 审计上游变化
+### 11.2 审计上游变化
 
 至少检查：
 
@@ -824,26 +879,26 @@ git diff <old-upstream-tag>..<new-upstream-tag> -- <本文列出的热点文件>
 
 将变更分为：不相交、结构相交但行为不冲突、直接触碰 fork 不变量、上游已等价实现四类。上游已等价实现时删除本地重复代码。
 
-### 10.3 合并与冲突处理
+### 11.3 合并与冲突处理
 
 1. 合并上游 release tag，保留真实双亲历史。
 2. 不对热点文件使用整文件 `ours/theirs`。
-3. 先恢复上游数据结构与新调用路径，再逐项重放四组行为。
+3. 先恢复上游数据结构与新调用路径，再逐项重放五组行为。
 4. 每解决一组冲突就运行相关格式/类型检查，避免最后集中排错。
 5. 搜索冲突标记以及重复 import、重复字段、失效 dead branch。
 
-### 10.4 合并后差异复核
+### 11.4 合并后差异复核
 
 最终应该同时检查两种差异：
 
 - `<new-upstream-tag>..HEAD`：现在 fork 相对新上游还保留了什么。
 - `<old-fork-head>..HEAD`：本次升级实际改变了什么。
 
-如果第一种差异出现大批与四组行为无关的文件，通常表示冲突处理过度保留了旧代码。
+如果第一种差异出现大批与五组行为无关的文件，通常表示冲突处理过度保留了旧代码。
 
-## 11. 验收矩阵
+## 12. 验收矩阵
 
-### 11.1 静态与构建检查
+### 12.1 静态与构建检查
 
 ```powershell
 npm run typecheck
@@ -858,7 +913,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 Windows 上不得在未设置 `COCKPIT_TOOLS_DATA_DIR` 时运行 Rust 账号测试。该变量必须指向 workspace 内新建的测试专用目录；`HOME`、`CODEX_HOME` 和 `COCKPIT_TOOLS_TEST_DATA_DIR` 不能替代它。若本机没有 Go，可用已忽略的目标名 sidecar 占位文件配合 `COCKPIT_SKIP_CLIPROXY_BUILD=1` 只验证 Rust，但发布构建仍必须由 CI 真实编译并测试 Go sidecar。
 
-### 11.2 去广告/外链扫描
+### 12.2 去广告/外链扫描
 
 ```powershell
 rg -n -i "apikey\.fun|chongcodex|sponsor|donate|aff=|ref=|invite|source=ccs|ytag" src src-tauri remote-config.json announcements.json
@@ -867,7 +922,7 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 
 逐条分类扫描结果：类型名、兼容迁移字段和死代码不等于运行时推广；可点击链接、默认服务、徽标或网络请求必须处理。
 
-### 11.3 调度观测手工检查
+### 12.3 调度观测手工检查
 
 1. 启动 Codex API 服务并加入至少两个账号。
 2. 发起普通、流式和 WebSocket 请求（若该模式受支持）。
@@ -879,7 +934,7 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 8. 在成员、自定义路由、模型规则或 API Key 对话框中编辑未保存内容，等待至少两轮轮询，草稿不能被重置。
 9. 停止服务后确认轮询停止，无持续 command 或控制台报错。
 
-### 11.4 计费查询手工检查
+### 12.4 计费查询手工检查
 
 1. 用明确标记为 Sub2API 的 Provider 分别测试根 Base URL 与 `/v1` Base URL。
 2. 确认 Bearer Key 只发往用户填写的 host。
@@ -888,7 +943,7 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 5. 未指定 integration type 时确认 New API -> Sub2API 探测顺序。
 6. 404 可触发候选回退；401/403 等鉴权错误应清晰返回，不应伪装成零余额。
 
-### 11.5 API 服务价格、历史账号与兜底暂停检查
+### 12.5 API 服务价格、历史账号与兜底暂停检查
 
 1. 打开价格设置，确认 Terra/Luna 的 Standard、长上下文和 Fast 值与 7.1 一致。
 2. 使用旧价格配置启动，确认升级到 v4 后已知错误覆盖被清除、真正自定义值保留，历史请求（含 Auto-review）在后台重算，页面不被同步阻塞。
@@ -901,7 +956,16 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 9. 打开“禁用模型”弹窗后从另一页面切换兜底开关，再尝试保存旧草稿；后端必须拒绝旧版本，重新打开弹窗后才能保存。
 10. 在独立 API 服务统计页分别选择近 24H、近 48H、近 7Day，确认起止时间按当前时刻滚动且共享管理弹窗不出现这三个选项。
 
-### 11.6 Release 平台范围与多版本变更信息检查
+### 12.6 原生额度耗尽提示隐藏检查
+
+1. 使用 API Service 绑定以桌面 app 模式启动默认实例和普通实例，确认官方 `workspace_member_credits_depleted` 提示隐藏；同一页面的其他 warning 保持可见。
+2. 在启动预览中关闭开关，确认无需重启即可恢复提示；重新启动后显式关闭仍保留。再次开启后确认显式值持久化。
+3. 对 OAuth、API Key、DeepSeek 和 Provider Gateway 桌面实例确认默认关闭、手动开启可用；CLI 模式始终不注入。
+4. 模拟未知 banner type、无 Fiber、冲突属性、共享父节点、React alternate、节点复用和 root 替换，确认无法严格识别时保持可见且 observer 不泄漏。
+5. 关闭实例、停止应用、删除实例、修改绑定和等待 watchdog 超时，确认原始 inline `display` 与 `!important` priority 被恢复。
+6. 检查 suppression 脚本没有走 `Page.addScriptToEvaluateOnNewDocument`，手动开启非 API Service 实例也没有出现 API Service 额度徽章或触发余额查询。
+
+### 12.7 Release 平台范围与多版本变更信息检查
 
 1. 检查 `.github/workflows/release.yml`：`build-windows`、`build-macos-aarch64`、`build-macos-x86_64`、`build-macos-universal` 必须启用并统一使用真实 `release_tag`；`build-linux`、自动 finalize、checksum 和 Homebrew job 保持 `if: ${{ false }}`。
 2. 每个编译 tag 必须在同一个草稿 Release 中看到 Windows MSI/NSIS、macOS Apple Silicon、macOS Intel 和 macOS Universal 产物；任一 macOS job 被跳过或没有上传资产都视为失败。
@@ -910,13 +974,13 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 5. 确认 workflow 中的 `RELEASE_VERSIONS` 与上述章节一一对应，不能漏版本、重复版本或只保留最新版本；变更范围测试必须覆盖该精确列表。
 6. 至少运行 `node --test tests/releaseWorkflowDraft.test.ts`、`git diff --check`，并在推送 tag 前复核工作流没有重新禁用 macOS job 或删除多版本日志聚合规则。
 
-## 12. 完成定义
+## 13. 完成定义
 
 一次上游升级只有同时满足以下条件才算完成：
 
 - 新版本号、依赖、release notes 和上游修复已同步。
 - Release 平台范围仍符合 fork 边界（构建 Windows 与 macOS 草稿，Linux 禁用），且跨版本合并的中英文变更信息完整覆盖本轮所有上游版本和已纳入的 fork beta 变更。
-- 四组 fork 行为逐项通过本文验收。
+- 五组 fork 行为逐项通过本文验收。
 - 相对新上游的差异已收敛到本文热点和必要发布文件。
 - 没有冲突标记、重复实现、非预期 referral URL 或默认商业服务。
 - 前后端检查和目标 Rust 测试通过；不能运行或纯上游已知失败的检查已记录原因。
