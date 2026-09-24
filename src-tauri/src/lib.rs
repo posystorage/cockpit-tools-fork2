@@ -774,6 +774,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::codex_pelican::codex_pelican_start,
+            modules::codex_local_access::codex_fingerprint_begin,
+            modules::codex_local_access::codex_fingerprint_probe,
+            modules::codex_local_access::codex_fingerprint_cancel,
+            modules::codex_local_access::codex_fingerprint_finish,
             commands::codex_pelican::codex_pelican_retry,
             commands::codex_pelican::codex_pelican_active,
             commands::codex_pelican::codex_pelican_get,

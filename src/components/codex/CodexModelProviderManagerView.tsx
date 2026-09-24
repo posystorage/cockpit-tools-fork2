@@ -1,5 +1,6 @@
 import { ArrowDownWideNarrow, ArrowDown, ArrowUp, Check, CircleAlert, ChevronDown, Copy, Clock, Database, ExternalLink, GripVertical, HelpCircle, KeyRound, Link2, LayoutGrid, Pencil, Plus, Rows3, Star, Trash2, X, Search, Settings, Activity, RefreshCw, RotateCw, Play } from "lucide-react";
 import { MultiSelectFilterDropdown } from "../MultiSelectFilterDropdown";
+import { useCodexFingerprintStore } from "../../stores/useCodexFingerprintStore";
 import { SingleSelectFilterDropdown } from "../SingleSelectFilterDropdown";
 import { SingleSelectDropdown } from "../SingleSelectDropdown";
 import { AccountTagFilterDropdown } from "../AccountTagFilterDropdown";
@@ -366,6 +367,9 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
             )}
           </div>
           <div className="codex-overview-selection-actions">
+            <button type="button" className="btn btn-secondary" onClick={() => useCodexFingerprintStore.getState().open()}>
+              <Play size={14} /><span>指纹测智</span>
+            </button>
             <button
               type="button"
               className="btn btn-secondary"

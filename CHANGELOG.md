@@ -9,6 +9,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ---
 ## [Unreleased]
 
+## [1.3.59b3] - 2026-09-25
+
+### Added
+
+- **Model fingerprint intelligence tests**: select OAuth accounts, standalone API-key accounts, and individual relay-provider keys together, then test every selected account/upstream × model combination. Supports GPT-5.5, GPT-5.6 Sol/Terra/Luna, and GPT-6 Astra/Sol/Luna; the initial selection contains only GPT-5.6 Sol, GPT-6 Sol, and GPT-6 Astra.
+- **Remembered selections and batch controls**: no accounts are preselected on first launch; subsequent launches restore the accounts used by the last started test. Model, concurrency, and sample preferences are remembered. Concurrency is configurable from 1–10 with a default of 3; each combination uses 1, 2, or 3 samples, defaulting to 3. Stop cancels in-flight requests and queued work, while minimizing keeps the batch running.
+- **Local attribution and per-combination results**: bundle a pinned ModelTrace engine and 16-model reference bank; display the requested model, reported model field, candidate probabilities, valid sample count, and raw replies separately. Insufficient samples are marked partial, and failed requests are not automatically retried or moved to another account/model. Analysis does not upload credentials or replies to ModelTrace, preferences do not contain API keys, and attribution probabilities are not proof of model identity.
+- **Independent request transport and cancellation**: OAuth probes use API Service's explicit-account route with a fresh session per sample; API upstreams support Responses and Chat Completions with timeouts, response validation, and redacted errors.
+
+### Changed
+
+- **Consistent fingerprint test entry points**: the “指纹测智” button is immediately left of Pelican testing on the account overview and immediately left of one-click testing on the provider page. Both open the same test panel.
+- **Fork maintenance and draft release coverage**: document the feature's merge boundaries, key files, defaults, remembered selections, bundled licenses, and acceptance checks. The `1.3.59b3` draft contains only the b2-to-b3 delta and retains Windows plus macOS Apple Silicon, Intel, and Universal builds. Native quota-banner hiding is unchanged in this version.
+
 ## [1.3.59b2] - 2026-09-23
 
 ### Fixed

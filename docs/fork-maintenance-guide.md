@@ -4,13 +4,14 @@
 
 ## 1. 文档目标与事实来源
 
-本 fork 只长期维护五组产品行为：
+本 fork 只长期维护六组产品行为：
 
 1. 禁用广告、赞助推广、远端公告、远端开关和运行时自动更新。
 2. 为 Codex API 服务提供只读的当前/最近账号调度观测；普通 Codex 页对所有仍存在账号显示窗口内 API 用量，独立 API 页提供可滚动的时间范围统计。
 3. 保留并增强自定义 API Provider 的上游计费、用量和余额查询，重点兼容 Sub2API。
 4. 维护 Codex API 服务的官方价格基线、历史账号统计，以及用户显式控制的最低优先级兜底暂停能力。
 5. 按实例隐藏 Codex Desktop 的官方“工作区成员额度耗尽”提示，只改变已确认提示框的显示，不改变额度、请求、路由或客户端行为。
+6. 提供基于 ModelTrace 的指纹测智：OAuth 与 API 上游多选、账号 × 模型矩阵、独立采样、有限并行、选择记忆和可取消结果展示。
 
 除此以外，原则上跟随上游。发布工作流、fork 下载地址、签名密钥和免责声明属于交付差异，不应扩张成新的产品分叉。
 
@@ -830,7 +831,57 @@ GPT-5.6 Luna（美元 / 百万 token）：
 - CDP `Runtime.evaluate` 返回 protocol error 或 `exceptionDetails` 时视为失败，不得当作成功隐藏。
 - Windows Store/MSIX 入口必须通过 `IApplicationActivationManager::ActivateApplication` 传递 loopback CDP 参数；`Start-Process shell:AppsFolder` 会静默丢弃参数，导致隐藏和发送覆盖均未运行。macOS 和普通可执行文件启动路径保持上游方式。
 
-## 9. 发布与仓库身份差异
+## 9. 修改集 F：模型指纹测智
+
+这是 `1.3.59b3` 相对 `1.3.59b2` 的 fork 增量，用模型输出统计进行候选归因，不是 OAuth 设备／会话身份指纹，也不修改第 8 节的额度提示隐藏逻辑。操作说明见 `docs/model-fingerprint-testing.md`。应用版本仍为 `1.3.59`，数字 tag `1.3.59b3` 触发草稿构建；该 tag 的 `RELEASE_VERSIONS` 只取 `1.3.59b3` 中英文增量章节，不重复收录此前 beta 或上游章节。Windows 与 macOS Apple Silicon、Intel、Universal 构建均须启用。
+
+### 9.1 双入口位置与名称
+
+- 两处入口按钮文案均为“指纹测智”。
+- `src/pages/CodexAccountsOverviewPanel.tsx`：在原有 `codex-overview-selection-actions` 内，紧邻“鹈鹕测智”按钮左侧；不能恢复到搜索框旁的顶部工具栏。
+- `src/components/codex/CodexModelProviderManagerView.tsx`：在原有批量操作区，紧邻“一键测试”按钮左侧；不能放回刷新配额等顶部工具按钮之间。
+- 两处仅调用 `useCodexFingerprintStore.getState().open()`，共用 `src/App.tsx` 中唯一的 `CodexFingerprintHost`。不得按页面当前勾选覆盖指纹测试的记忆，也不能在两页重复挂载 Host。
+- 保留相邻按钮所在操作区的既有显示条件；入口移位不扩大操作区显示范围，也不改动鹈鹕／一键测试自身的调用。
+
+### 9.2 配置、调度与结果不变量
+
+- 可选模型固定为 `gpt-5.5`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`、`gpt-6-astra`、`gpt-6-sol`、`gpt-6-luna`。首次仅勾选 `gpt-5.6-sol`、`gpt-6-sol`、`gpt-6-astra`；保存过的空模型选择不能被默认值覆盖。
+- 首次账号选择为空。开始测试后记录实际使用的账号／API Key；未启动测试的账号选择编辑不覆盖上次测试记录。模型、并行数和采样数的编辑立即记忆。
+- OAuth、独立 API Key 账号和供应商各 API Key 可共同选择；相同上游地址与 Key 去重。Web Session、待完成 OAuth 和缺少凭据的目标不列为可测账号。
+- 按账号／上游 × 请求模型生成组合，最大并行数 1–10、默认 3；每组采样数 1／2／3、默认 3，同组内顺序采样。OAuth 仍受原有账号级内部调度器限制。
+- 指纹测试不自动重试或补采失败样本，不更换目标账号或请求模型；有效样本不足时标为“部分完成”。请求模型、上游返回 model 字段、统计候选及有效样本数必须分别保留。
+- 停止操作取消原生 HTTP 请求和尚未启动的队列组合；关闭／最小化面板继续测试。结果仅保留在本次应用会话内。
+- 偏好仅保存目标 ID、模型和参数，不能保存 API Key 或完整账号对象。存储键为 `agtools.codex.fingerprint.preferences.v1`，非 prod profile 追加 profile 后缀；升级不得随意改键导致记忆丢失。
+
+### 9.3 文件热点与传输边界
+
+| 文件／区域 | 必须保留的职责 |
+|---|---|
+| `src/types/codexFingerprint.ts` | 七模型集合、首次默认三模型、并行上限和请求／样本／结果类型 |
+| `src/utils/codexFingerprint.ts` | 偏好校验、目标聚合去重和有界工作队列 |
+| `src/stores/useCodexFingerprintStore.ts` | 选择记忆、批次生命周期、账号 × 模型矩阵、采样、停止和部分结果 |
+| `src/components/codex/fingerprint/CodexFingerprintHost.tsx`、`fingerprint.css` | 统一弹窗、多选与参数控件、逐组结果和详情 |
+| `src/App.tsx` 和两个入口页面 | 唯一 Host，以及 9.1 指定的按钮顺序与名称 |
+| `src-tauri/src/modules/codex_fingerprint_transport.rs` | 独立采样、固定账号／模型、超时取消、上游协议与错误脱敏 |
+| `src-tauri/src/modules/codex_local_access.rs` | 在鹈鹕传输 helper 之后保留指纹传输文件的 include |
+| `src-tauri/src/lib.rs` | `codex_fingerprint_begin/probe/cancel/finish` 四个 Tauri 命令注册 |
+| `tests/codexFingerprint.test.ts`、`tests/codexFingerprintStore.test.ts` | 默认值、空选择、去重、并行、矩阵、记忆、部分失败和取消回归 |
+
+OAuth 复用现有 API Service 指定账号通道和账号准备能力；每次采样使用独立 session／turn，不能继承鹈鹕 HTML delivery instructions 或引入工具。API 上游按保存的 Responses／Chat Completions 协议直接请求；不要恢复不兼容的固定 temperature 或旧式 max_tokens 参数。不得为指纹测试改写当前账号、路由集合或 Provider 配置。
+
+### 9.4 ModelTrace 资产、许可与同步
+
+- 来源：`https://github.com/xqy2006/ModelTrace`，固定 commit `55a2e4a55170423b484d701e9a82ab62b268c811`。
+- `src/vendor/modeltrace/` 包含原版 `fingerprint-core.js`、`challenge-browser.js`、压缩排版的 `unified_bank.json`、本地类型声明、README 和 MIT LICENSE；当前参考库有 16 个候选模型。
+- `public/licenses/ModelTrace-LICENSE.txt` 必须随生产产物复制到 `dist/licenses/`，不能只保留源码许可证。
+- 算法与参考库必须匹配更新，并在 README 记录新的精确来源版本；不得单独替换题目、系数或模型标签后沿用旧校准。分析与参考库在本地，不上传用户凭据或回答到 ModelTrace。
+- 合并上游账号、Provider 或 Local Access 重构时适配这些接点；不要整文件采用 ours/theirs 覆盖页面，或把本功能误合并为 OAuth 身份指纹。
+
+### 9.5 当前验证状态
+
+代码阶段的 21 项指纹／鹈鹕 TypeScript 定向测试、前端类型检查、Vite 生产构建和 Rust 主库检查已通过。3 项 `fingerprint_transport_tests` 已编译，但本机 Windows 加载测试程序返回 `0xC0000139`，尚未计为运行通过；同步或发布时应在可运行环境重跑。没有用真实账号发起验收请求，也未以本次源码增量生成新安装包。
+
+## 10. 发布与仓库身份差异
 
 这些差异通常保留，但与五组核心产品行为分开审查：
 
@@ -843,7 +894,7 @@ GPT-5.6 Luna（美元 / 百万 token）：
 
 升级上游 workflow 时，先接受安全修复和 action 版本更新，再恢复 fork 的发布范围、draft 行为、签名与 release notes 规则。不要用旧 workflow 整文件覆盖上游。
 
-## 10. 文件所有权与冲突优先级
+## 11. 文件所有权与冲突优先级
 
 | 区域 | 默认裁决 | 必查内容 |
 | --- | --- | --- |
@@ -858,10 +909,11 @@ GPT-5.6 Luna（美元 / 百万 token）：
 | `commands/codex.rs` usage 区域 | 以上游 Provider 支持为主，保留 Sub2API 回退/安全解析 | URL 拼接、错误类型、summary 字段 |
 | release workflow/config | 逐段合并 | fork signing、draft、平台范围、release notes |
 | 其他账号平台与通用组件 | 默认完全接受上游 | 仅处理编译所需适配 |
+| 指纹测智、双入口与 ModelTrace 资产 | 保留第 9 节不变量，适配上游账号／Provider 接口 | 左侧相邻按钮顺序、默认与空选择记忆、并行／取消、指定账号路由、参考库与许可 |
 
-## 11. 标准升级流程
+## 12. 标准升级流程
 
-### 11.1 升级前
+### 12.1 升级前
 
 1. 确认工作区干净或准确记录已有用户改动：`git status --short --branch`。
 2. 记录当前 fork HEAD、上游 tag commit 和 merge-base。
@@ -870,7 +922,7 @@ GPT-5.6 Luna（美元 / 百万 token）：
 5. 建立独立升级分支，不直接改稳定分支。
 6. 明确本轮 Release 说明范围：记录旧上游锚点之后到目标 tag 的全部上游版本，必要时加上 fork beta 增量；同步规划 `CHANGELOG.md`、`CHANGELOG.zh-CN.md` 和 workflow 的 `RELEASE_VERSIONS`，不得只记录最终版本。
 
-### 11.2 审计上游变化
+### 12.2 审计上游变化
 
 至少检查：
 
@@ -883,26 +935,26 @@ git diff <old-upstream-tag>..<new-upstream-tag> -- <本文列出的热点文件>
 
 将变更分为：不相交、结构相交但行为不冲突、直接触碰 fork 不变量、上游已等价实现四类。上游已等价实现时删除本地重复代码。
 
-### 11.3 合并与冲突处理
+### 12.3 合并与冲突处理
 
 1. 合并上游 release tag，保留真实双亲历史。
 2. 不对热点文件使用整文件 `ours/theirs`。
-3. 先恢复上游数据结构与新调用路径，再逐项重放五组行为。
+3. 先恢复上游数据结构与新调用路径，再逐项重放六组行为。
 4. 每解决一组冲突就运行相关格式/类型检查，避免最后集中排错。
 5. 搜索冲突标记以及重复 import、重复字段、失效 dead branch。
 
-### 11.4 合并后差异复核
+### 12.4 合并后差异复核
 
 最终应该同时检查两种差异：
 
 - `<new-upstream-tag>..HEAD`：现在 fork 相对新上游还保留了什么。
 - `<old-fork-head>..HEAD`：本次升级实际改变了什么。
 
-如果第一种差异出现大批与五组行为无关的文件，通常表示冲突处理过度保留了旧代码。
+如果第一种差异出现大批与六组行为无关的文件，通常表示冲突处理过度保留了旧代码。
 
-## 12. 验收矩阵
+## 13. 验收矩阵
 
-### 12.1 静态与构建检查
+### 13.1 静态与构建检查
 
 ```powershell
 npm run typecheck
@@ -917,7 +969,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 Windows 上不得在未设置 `COCKPIT_TOOLS_DATA_DIR` 时运行 Rust 账号测试。该变量必须指向 workspace 内新建的测试专用目录；`HOME`、`CODEX_HOME` 和 `COCKPIT_TOOLS_TEST_DATA_DIR` 不能替代它。若本机没有 Go，可用已忽略的目标名 sidecar 占位文件配合 `COCKPIT_SKIP_CLIPROXY_BUILD=1` 只验证 Rust，但发布构建仍必须由 CI 真实编译并测试 Go sidecar。
 
-### 12.2 去广告/外链扫描
+### 13.2 去广告/外链扫描
 
 ```powershell
 rg -n -i "apikey\.fun|chongcodex|sponsor|donate|aff=|ref=|invite|source=ccs|ytag" src src-tauri remote-config.json announcements.json
@@ -926,7 +978,7 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 
 逐条分类扫描结果：类型名、兼容迁移字段和死代码不等于运行时推广；可点击链接、默认服务、徽标或网络请求必须处理。
 
-### 12.3 调度观测手工检查
+### 13.3 调度观测手工检查
 
 1. 启动 Codex API 服务并加入至少两个账号。
 2. 发起普通、流式和 WebSocket 请求（若该模式受支持）。
@@ -938,7 +990,7 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 8. 在成员、自定义路由、模型规则或 API Key 对话框中编辑未保存内容，等待至少两轮轮询，草稿不能被重置。
 9. 停止服务后确认轮询停止，无持续 command 或控制台报错。
 
-### 12.4 计费查询手工检查
+### 13.4 计费查询手工检查
 
 1. 用明确标记为 Sub2API 的 Provider 分别测试根 Base URL 与 `/v1` Base URL。
 2. 确认 Bearer Key 只发往用户填写的 host。
@@ -947,7 +999,7 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 5. 未指定 integration type 时确认 New API -> Sub2API 探测顺序。
 6. 404 可触发候选回退；401/403 等鉴权错误应清晰返回，不应伪装成零余额。
 
-### 12.5 API 服务价格、历史账号与兜底暂停检查
+### 13.5 API 服务价格、历史账号与兜底暂停检查
 
 1. 打开价格设置，确认 Terra/Luna 的 Standard、长上下文和 Fast 值与 7.1 一致。
 2. 使用旧价格配置启动，确认升级到 v4 后已知错误覆盖被清除、真正自定义值保留，历史请求（含 Auto-review）在后台重算，页面不被同步阻塞。
@@ -960,7 +1012,7 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 9. 打开“禁用模型”弹窗后从另一页面切换兜底开关，再尝试保存旧草稿；后端必须拒绝旧版本，重新打开弹窗后才能保存。
 10. 在独立 API 服务统计页分别选择近 24H、近 48H、近 7Day，确认起止时间按当前时刻滚动且共享管理弹窗不出现这三个选项。
 
-### 12.6 原生额度耗尽提示隐藏检查
+### 13.6 原生额度耗尽提示隐藏检查
 
 1. 使用 API Service 绑定以桌面 app 模式启动默认实例和普通实例，确认官方 `workspace_member_credits_depleted` 提示隐藏；同一页面的其他 warning 保持可见。
 2. 在启动预览中关闭开关，确认无需重启即可恢复提示；重新启动后显式关闭仍保留。再次开启后确认显式值持久化。
@@ -969,7 +1021,7 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 5. 关闭实例、停止应用、删除实例、修改绑定和等待 watchdog 超时，确认原始 inline `display` 与 `!important` priority 被恢复。
 6. 检查 suppression 脚本没有走 `Page.addScriptToEvaluateOnNewDocument`，手动开启非 API Service 实例也没有出现 API Service 额度徽章或触发余额查询。
 
-### 12.7 Release 平台范围与多版本变更信息检查
+### 13.7 Release 平台范围与多版本变更信息检查
 
 1. 检查 `.github/workflows/release.yml`：`build-windows`、`build-macos-aarch64`、`build-macos-x86_64`、`build-macos-universal` 必须启用并统一使用真实 `release_tag`；`build-linux`、自动 finalize、checksum 和 Homebrew job 保持 `if: ${{ false }}`。
 2. 每个编译 tag 必须在同一个草稿 Release 中看到 Windows MSI/NSIS、macOS Apple Silicon、macOS Intel 和 macOS Universal 产物；任一 macOS job 被跳过或没有上传资产都视为失败。
@@ -978,13 +1030,23 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 5. 确认 workflow 中的 `RELEASE_VERSIONS` 与上述章节一一对应，不能漏版本、重复版本或只保留最新版本；变更范围测试必须覆盖该精确列表。
 6. 至少运行 `node --test tests/releaseWorkflowDraft.test.ts`、`git diff --check`，并在推送 tag 前复核工作流没有重新禁用 macOS job 或删除多版本日志聚合规则。
 
-## 13. 完成定义
+### 13.8 指纹测智检查
+
+1. 账号概览按钮顺序为“指纹测智 → 鹈鹕测智”；供应商页为“指纹测智 → 一键测试”。两处位于原批量操作区，顶部工具栏无重复入口，按钮文案一致。
+2. 用独立测试 profile 验证首次只勾选默认三模型、账号全不选、并行 3、采样 3；不要清空用户真实 profile。
+3. 同时选择 OAuth 与两个上游 Key、多种模型，确认矩阵、去重、并行上限及每组 1／2／3 次采样。开始测试后重启，账号选择恢复为上次测试；模型空选择也应保持。
+4. 用受控失败验证 401／429／超时不会伪装成完成，不由功能自动重试；只有部分回答有效时显示“部分完成”。停止后在途请求与剩余队列均结束，最小化仍继续。
+5. 检查凭据未进入偏好或结果，指纹分析不访问第三方服务；API 返回 model 字段与统计候选分别展示，不把概率当作确定身份。
+6. 运行 `npx tsx --test tests/codexFingerprint.test.ts tests/codexFingerprintStore.test.ts`、前端类型／构建检查及 `cargo test -p cockpit-tools --lib fingerprint_transport_tests`；Rust 测试按 13.1 使用隔离数据目录。无法执行的检查须记录原因，不能仅凭编译成功标为测试通过。
+7. 复核指纹 JS、参考库和 MIT 许可已进入产物；原有鹈鹕／一键测试及第 8 节隐藏提示功能保持各自独立。
+
+## 14. 完成定义
 
 一次上游升级只有同时满足以下条件才算完成：
 
 - 新版本号、依赖、release notes 和上游修复已同步。
 - Release 平台范围仍符合 fork 边界（构建 Windows 与 macOS 草稿，Linux 禁用），且跨版本合并的中英文变更信息完整覆盖本轮所有上游版本和已纳入的 fork beta 变更。
-- 五组 fork 行为逐项通过本文验收。
+- 六组 fork 行为逐项通过本文验收。
 - 相对新上游的差异已收敛到本文热点和必要发布文件。
 - 没有冲突标记、重复实现、非预期 referral URL 或默认商业服务。
 - 前后端检查和目标 Rust 测试通过；不能运行或纯上游已知失败的检查已记录原因。

@@ -17,6 +17,7 @@ include!("codex_local_access_provider_gateway.rs");
 include!("codex_local_access_instance_gateways.rs");
 include!("codex_local_access_probe_chat.rs");
 include!("codex_pelican_transport.rs");
+include!("codex_fingerprint_transport.rs");
 include!("codex_local_access_commands.rs");
 include!("codex_local_access_http.rs");
 // The retired in-process WebSocket gateway is retained only as a test oracle.

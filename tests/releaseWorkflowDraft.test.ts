@@ -115,6 +115,18 @@ describe("fork draft release workflow", () => {
     assert.ok(chineseChangelog.includes("## [1.3.59b2]"));
   });
 
+  it("uses only the fingerprint delta for the 1.3.59b3 draft", () => {
+    const start = workflowSource.indexOf('if [[ "${GITHUB_REF_NAME}" == "1.3.59b3"');
+    const end = workflowSource.indexOf('elif [[ "${GITHUB_REF_NAME}" == "1.3.59b2"', start);
+    assert.ok(start >= 0 && end > start);
+    const betaMapping = workflowSource.slice(start, end);
+    assert.ok(betaMapping.includes('RELEASE_VERSIONS=("1.3.59b3")'));
+    assert.equal(betaMapping.includes('RELEASE_VERSIONS=("1.3.59b2")'), false);
+    for (const changelog of [englishChangelog, chineseChangelog]) {
+      assert.ok(changelog.includes("## [1.3.59b3]"));
+    }
+  });
+
   it("uses only the b3-to-b4 changelog section for the 1.3.21b4 draft", () => {
     assert.ok(
       workflowSource.includes(

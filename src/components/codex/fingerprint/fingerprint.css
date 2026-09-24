@@ -1,0 +1,16 @@
+.fingerprint-dialog { width: min(1180px, 95vw); max-height: 92vh; }
+.fingerprint-dialog .pelican-body { display: flex; flex-direction: column; gap: 16px; }
+.fingerprint-models { display: flex; flex-wrap: wrap; gap: 12px 20px; border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; }
+.fingerprint-models legend { padding: 0 6px; font-weight: 600; }
+.fingerprint-models label { flex-direction: row; align-items: center; }
+.fingerprint-settings { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.fingerprint-settings select { padding: 9px 11px; border-radius: 8px; color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border-color); font: inherit; }
+.fingerprint-empty { padding: 16px; }
+.fingerprint-table-wrap { overflow-x: auto; }
+.fingerprint-results table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.fingerprint-results td, .fingerprint-results th { padding: 10px; border-bottom: 1px solid var(--border-color); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.fingerprint-results th { background: var(--bg-secondary); }
+.fingerprint-results summary { cursor: pointer; color: var(--text-secondary); margin-top: 6px; }
+.fingerprint-results pre { max-height: 180px; max-width: 420px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg-secondary); padding: 8px; }
+.fingerprint-floating { bottom: 78px !important; }
+@media (max-width: 650px) { .fingerprint-settings { grid-template-columns: 1fr; } .fingerprint-results table { min-width: 640px; } }

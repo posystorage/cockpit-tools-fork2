@@ -26,6 +26,7 @@ import type { CodexExportFormat } from "../utils/codexExportFormats";
 import type { CodexAccountsViewProps } from "./CodexAccountsView";
 import { CodexAddAccountDialog } from "./CodexAddAccountDialog";
 import { useCodexPelicanStore } from "../stores/useCodexPelicanStore";
+import { useCodexFingerprintStore } from "../stores/useCodexFingerprintStore";
 import { PELICAN_GROUPS_CHANGED } from "../components/codex/pelican/PelicanResults";
 
 
@@ -784,6 +785,9 @@ export function CodexAccountsOverviewPanel(props: CodexAccountsViewProps) {
                     authFailedExportAccountIds.length > 0 ||
                     hasDetectableFullQuotaWakeupAccounts) && (
                     <div className="codex-overview-selection-actions">
+                      <button type="button" className="btn btn-secondary" onClick={() => useCodexFingerprintStore.getState().open()}>
+                        <Play size={14} /><span>指纹测智</span>
+                      </button>
                       <button type="button" className="btn btn-secondary" onClick={() => useCodexPelicanStore.getState().open([...selected])}>
                         <Play size={14} /><span>{t('pelican.title')}</span>
                       </button>
