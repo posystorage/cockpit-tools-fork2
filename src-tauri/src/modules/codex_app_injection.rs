@@ -5,7 +5,8 @@
 //! - DeepSeek 账号绑定（网关列出 / CDP 注入 / 直连官方）：该账号的余额。
 //!
 //! 该模块只连接实例自己的 loopback CDP 端口，不修改官方 app.asar、真实额度、速度或请求。
-//! API Service 桌面绑定可在渲染缓存中解除指定原生额度原因的重复发送门禁；
+//! API Service 桌面绑定通过持久 CDP 条件断点解除本地 Composer 的额度门禁；
+//! 不修改共享额度缓存；隐藏提示独立使用 DOM 注入。
 //! 额度仍以独立的小字段显示在 composer 操作栏下方。
 
 use crate::commands::codex::{
@@ -72,6 +73,7 @@ pub struct CodexAppInjectionLaunch {
 
 struct InjectionRuntime {
     task: tauri::async_runtime::JoinHandle<()>,
+    unlock_cancel: tokio::sync::watch::Sender<bool>,
     port: u16,
     session: String,
 }
@@ -192,7 +194,10 @@ fn auth_observation_enabled(bind_account_id: Option<&str>) -> bool {
 }
 
 pub fn supports_bind_account(bind_account_id: Option<&str>) -> bool {
-    bind_account_id.is_some_and(crate::modules::codex_instance::is_api_service_bind_account_id)
+    bind_account_id.is_some_and(|id| {
+        crate::modules::codex_instance::is_api_service_bind_account_id(id)
+            || codex_local_access::is_local_access_runtime_account_id(id)
+    })
 }
 
 /// 绑定账号是否选择了「CDP 注入」（官方 DeepSeek 与第三方供应商同一语义）。
@@ -259,6 +264,7 @@ pub fn should_enable_cdp(
     hide_native_quota_banner: bool,
 ) -> bool {
     hide_native_quota_banner
+        || supports_bind_account(bind_account_id)
         || auth_observation_enabled(bind_account_id)
         || should_enable_injection(bind_account_id)
 }
@@ -275,31 +281,36 @@ pub fn native_quota_banner_enabled(
     )
 }
 
-fn native_quota_script(enabled: bool, api_service_send_override: bool, session: &str) -> String {
+fn native_quota_script(enabled: bool, _legacy_send_override: bool, session: &str) -> String {
     format!(
         "{}({}, {}, {})",
         NATIVE_QUOTA_SCRIPT.trim(),
         enabled,
-        api_service_send_override,
+        false,
         json!(session)
     )
 }
 
 // Re-read the preference so a running instance can restore its banner after an
 // update. Missing/deleted/unreadable configuration always leaves warnings visible.
-fn profile_native_quota_enabled(instance_id: &str, launch_bind: Option<&str>) -> bool {
+fn profile_native_quota_enabled(instance_id: &str, launch_bind: Option<&str>, dir: &Path) -> bool {
     let Ok(store) = crate::modules::codex_instance::load_instance_store() else {
         return false;
     };
     if instance_id == "__default__" {
         let settings = store.default_settings;
-        if !settings.follow_local_account && settings.bind_account_id.as_deref() != launch_bind {
+        let effective_bind = if settings.follow_local_account {
+            codex_account::get_current_account().map(|account| account.id)
+        } else {
+            settings.bind_account_id.clone()
+        };
+        if effective_bind.as_deref() != launch_bind {
             return false;
         }
-        return native_quota_banner_enabled(
+        return native_quota_policy::enabled(
             settings.hide_native_quota_banner,
-            settings.bind_account_id.as_deref(),
-            &settings.launch_mode,
+            supports_bind_account(effective_bind.as_deref()) || profile_has_managed_api_service(dir),
+            settings.launch_mode == crate::models::InstanceLaunchMode::App,
         );
     }
     store
@@ -308,10 +319,10 @@ fn profile_native_quota_enabled(instance_id: &str, launch_bind: Option<&str>) ->
         .find(|profile| profile.id == instance_id)
         .is_some_and(|profile| {
             profile.bind_account_id.as_deref() == launch_bind
-                && native_quota_banner_enabled(
+                && native_quota_policy::enabled(
                     profile.hide_native_quota_banner,
-                    profile.bind_account_id.as_deref(),
-                    &profile.launch_mode,
+                    supports_bind_account(profile.bind_account_id.as_deref()) || profile_has_managed_api_service(dir),
+                    profile.launch_mode == crate::models::InstanceLaunchMode::App,
                 )
         })
 }
@@ -535,17 +546,23 @@ pub fn restore_running_profiles(app: AppHandle) -> Result<usize, String> {
     let store = crate::modules::codex_instance::load_instance_store()?;
     let default_dir = crate::modules::codex_instance::get_default_codex_home()?;
     let process_entries = crate::modules::process::collect_codex_process_entries();
+    let default_bind = if store.default_settings.follow_local_account {
+        codex_account::get_current_account().map(|account| account.id)
+    } else {
+        store.default_settings.bind_account_id.clone()
+    };
     let mut candidates = Vec::new();
     let default_hide_native_quota = native_quota_banner_enabled(
         store.default_settings.hide_native_quota_banner,
-        store.default_settings.bind_account_id.as_deref(),
+        default_bind.as_deref(),
         &store.default_settings.launch_mode,
     );
 
     if store.default_settings.launch_mode == crate::models::InstanceLaunchMode::App
-        && should_enable_cdp(
-            store.default_settings.bind_account_id.as_deref(),
+        && should_enable_cdp_for_profile(
+            default_bind.as_deref(),
             default_hide_native_quota,
+            &default_dir,
         )
     {
         if let Some(pid) = crate::modules::process::resolve_codex_pid_from_entries(
@@ -557,7 +574,7 @@ pub fn restore_running_profiles(app: AppHandle) -> Result<usize, String> {
                 "__default__".to_string(),
                 default_dir,
                 pid,
-                store.default_settings.bind_account_id.clone(),
+                default_bind.clone(),
                 default_hide_native_quota,
             ));
         }
@@ -570,7 +587,7 @@ pub fn restore_running_profiles(app: AppHandle) -> Result<usize, String> {
             &instance.launch_mode,
         );
         if instance.launch_mode != crate::models::InstanceLaunchMode::App
-            || !should_enable_cdp(instance.bind_account_id.as_deref(), hide_native_quota)
+            || !should_enable_cdp_for_profile(instance.bind_account_id.as_deref(), hide_native_quota, Path::new(&instance.user_data_dir))
         {
             continue;
         }
@@ -661,6 +678,7 @@ pub fn stop_all() {
 }
 
 fn stop_injection_runtime(runtime: InjectionRuntime) {
+    runtime.unlock_cancel.send_replace(true);
     runtime.task.abort();
     tauri::async_runtime::spawn(async move {
         let _ = runtime.task.await;
@@ -728,7 +746,11 @@ pub fn start_for_profile(
             bind_account_id.as_deref(),
         );
     }
-    if !should_enable_injection(bind_account_id.as_deref()) && !hide_native_quota_banner {
+    if !should_enable_injection(bind_account_id.as_deref())
+        && !hide_native_quota_banner
+        && !supports_bind_account(bind_account_id.as_deref())
+        && !profile_input_unlock_enabled(&instance_id, bind_account_id.as_deref(), &profile_dir)
+    {
         return;
     }
     let key = profile_key(&profile_dir);
@@ -736,11 +758,15 @@ pub fn start_for_profile(
     let task_bind = bind_account_id.clone();
     let session = uuid::Uuid::new_v4().to_string();
     let task_session = session.clone();
+    let (unlock_cancel, unlock_rx) = tokio::sync::watch::channel(false);
+    tauri::async_runtime::spawn(run_input_unlock_supervisor(
+        instance_id.clone(), profile_dir.clone(), port, bind_account_id.clone(), unlock_rx,
+    ));
     let task = tauri::async_runtime::spawn(async move {
         run_injection_loop(app, instance_id, task_profile, port, task_bind, task_session).await;
     });
     if let Ok(mut items) = runtimes().lock() {
-        items.insert(key, InjectionRuntime { task, port, session });
+        items.insert(key, InjectionRuntime { task, unlock_cancel, port, session });
     }
 }
 
@@ -2285,6 +2311,7 @@ fn selected_model_from_cdp_response(value: &Value) -> Option<String> {
 struct InjectionEvalResult {
     refresh_request_token: Option<String>,
     selected_model: Option<String>,
+    quota_diagnostics: Option<Value>,
 }
 
 async fn evaluate_target(
@@ -2370,6 +2397,7 @@ async fn evaluate_target(
                     return None;
                 }
                 return Some(InjectionEvalResult {
+                    quota_diagnostics: value.pointer("/result/result/value").cloned(),
                     refresh_request_token: refresh_request_token_from_cdp_response(&value),
                     selected_model: selected_model_from_cdp_response(&value),
                 });
@@ -3609,6 +3637,7 @@ async fn run_auth_diagnostic_loop(
 }
 
 include!("codex_app_injection_quota.rs");
+include!("codex_input_unlock.rs");
 
 async fn run_injection_loop(
     app: AppHandle,
@@ -3638,27 +3667,49 @@ async fn run_injection_loop(
     let mut observed_model = read_profile_selected_model(&profile_dir);
     let mut last_model_resync_at = Instant::now() - MODEL_RESYNC_INTERVAL;
     let mut refresh_tasks = JoinSet::new();
+    let mut banner_diagnostics: HashMap<String, String> = HashMap::new();
+    let mut banner_log_at = Instant::now() - Duration::from_secs(60);
     loop {
         if app_lifecycle::is_shutdown_started() {
             tokio::time::sleep(Duration::from_millis(50)).await;
             continue;
         }
         let hide_native_quota =
-            profile_native_quota_enabled(&instance_id, bind_account_id.as_deref());
-        let api_service_send_override = hide_native_quota
-            && bind_account_id
-                .as_deref()
-                .is_some_and(crate::modules::codex_instance::is_api_service_bind_account_id);
+            profile_native_quota_enabled(&instance_id, bind_account_id.as_deref(), &profile_dir);
         let suppression_script = native_quota_script(
             hide_native_quota,
-            api_service_send_override,
+            false,
             &session,
         );
-        for target in query_targets(&client, port).await {
+        let targets = query_targets(&client, port).await;
+        let log_heartbeat = banner_log_at.elapsed() >= Duration::from_secs(60);
+        let mut matched_targets = 0;
+        for target in targets {
             if is_codex_app_target(&target) {
-                let _ =
-                    evaluate_target(&target, &suppression_script, NATIVE_QUOTA_SCRIPT_KIND).await;
+                matched_targets += 1;
+                let evaluated = evaluate_target(&target, &suppression_script, NATIVE_QUOTA_SCRIPT_KIND).await;
+                let status = match evaluated {
+                    Some(result) if hide_native_quota => {
+                        let value = result.quota_diagnostics.unwrap_or_default();
+                        format!("enabled=true roots={} candidates={} semantic={} text={} unmatched={}",
+                            value["roots"].as_u64().unwrap_or(0), value["candidates"].as_u64().unwrap_or(0),
+                            value["semantic"].as_u64().unwrap_or(0), value["textFallback"].as_u64().unwrap_or(0),
+                            value["unmatched"].as_u64().unwrap_or(0))
+                    }
+                    Some(_) => "enabled=false cleanup=ok".to_string(),
+                    None => format!("enabled={hide_native_quota} evaluation=failed"),
+                };
+                if log_heartbeat || banner_diagnostics.get(&target.target_id) != Some(&status) {
+                    logger::log_codex_quota_diagnostic(&format!("[Quota Banner] instance={} {}", instance_id, status));
+                    banner_diagnostics.insert(target.target_id.clone(), status);
+                }
             }
+        }
+        if log_heartbeat {
+            if matched_targets == 0 {
+                logger::log_codex_quota_diagnostic(&format!("[Quota Banner] instance={} state=no-renderer port={}", instance_id, port));
+            }
+            banner_log_at = Instant::now();
         }
         // A manual opt-in on OAuth/API Key must not activate API Service badges
         // or quota/balance requests when the global display injection is off.

@@ -3451,9 +3451,10 @@ async fn codex_start_instance_internal(
             default_bind_account_id.as_deref(),
             &default_settings.launch_mode,
         );
-        let cdp_enabled = modules::codex_app_injection::should_enable_cdp(
+        let cdp_enabled = modules::codex_app_injection::should_enable_cdp_for_profile(
             default_bind_account_id.as_deref(),
             hide_native_quota,
+            &default_dir,
         );
         let injection_plan =
             modules::codex_app_injection::build_launch_args(&extra_args, cdp_enabled)?;
@@ -3761,9 +3762,10 @@ async fn codex_start_instance_internal(
         instance.bind_account_id.as_deref(),
         &instance.launch_mode,
     );
-    let cdp_enabled = modules::codex_app_injection::should_enable_cdp(
+    let cdp_enabled = modules::codex_app_injection::should_enable_cdp_for_profile(
         instance.bind_account_id.as_deref(),
         hide_native_quota,
+        instance_dir,
     );
     let injection_plan = modules::codex_app_injection::build_launch_args(&extra_args, cdp_enabled)?;
     emit_codex_instance_launch_step(

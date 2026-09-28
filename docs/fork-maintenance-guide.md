@@ -10,7 +10,7 @@
 2. 为 Codex API 服务提供只读的当前/最近账号调度观测；普通 Codex 页对所有仍存在账号显示窗口内 API 用量，独立 API 页提供可滚动的时间范围统计。
 3. 保留并增强自定义 API Provider 的上游计费、用量和余额查询，重点兼容 Sub2API。
 4. 维护 Codex API 服务的官方价格基线、历史账号统计，以及用户显式控制的最低优先级兜底暂停能力。
-5. 按实例隐藏 Codex Desktop 的官方“工作区成员额度耗尽”提示，只改变已确认提示框的显示，不改变额度、请求、路由或客户端行为。
+5. 按实例隐藏 Codex Desktop 官方额度提示，并独立解除 API Service 本地 Composer 的重复额度门禁；保留真实额度、请求路由和上游错误。
 6. 提供基于 ModelTrace 的指纹测智：OAuth 与 API 上游多选、账号 × 模型矩阵、独立采样、有限并行、选择记忆和可取消结果展示。
 
 除此以外，原则上跟随上游。发布工作流、fork 下载地址、签名密钥和免责声明属于交付差异，不应扩张成新的产品分叉。
@@ -784,52 +784,45 @@ GPT-5.6 Luna（美元 / 百万 token）：
 - 普通 Codex 页中移出 API 服务的现存账号仍显示窗口内 API 用量；独立 API 页仅把已删除账号放入历史区。
 - 独立 API 页的 24H/48H/7Day 查询使用固定时长边界并持续刷新，共享弹窗不出现这些标签。
 
-## 8. 修改集 E：Codex Desktop 原生额度耗尽提示隐藏
+## 8. 修改集 E：额度提示隐藏与 API Service 本地发送解锁
 
-核心文件：
+本次草稿标签为 `1.3.59b4`，应用版本继续保持 `1.3.59`。发布说明仅聚合 b3 到 b4 的额度 UI 与发送解锁增量；Windows、macOS Apple Silicon、Intel 和 Universal 继续构建到同一草稿，禁止自动发布。
 
-- `src-tauri/src/modules/codex_native_quota_banner.js`
-- `src-tauri/src/modules/codex_native_quota_policy.rs`
-- `src-tauri/src/modules/codex_app_injection.rs`
-- `src-tauri/src/models/instance.rs`
-- `src-tauri/src/commands/codex_instance.rs`
-- `src/components/codex/CodexLaunchPreviewModal.tsx`
-- `src/utils/codexNativeQuotaBanner.ts`
-- `tests/codexNativeQuotaBanner.test.ts`
+2026-09-28 起两项功能独立：显示偏好只控制提示隐藏；API Service 桌面发送解锁不依赖显示开关，也不再要求精确命中 workspace_member_credits_depleted。请求是否可用由 API Service 与上游决定，原始 429／鉴权／账号池错误继续返回。
 
-这项能力包含两个严格分离的部分：所有桌面绑定都可以按实例选择隐藏 Codex Desktop 已经渲染出来、且可由 React Fiber 语义严格确认的 `workspace_member_credits_depleted` 提示框；只有 API Service 绑定会同时解除该原因在官方 Composer 中形成的重复发送门禁。后者只改写桌面渲染进程的 `rate-limit-status` 查询缓存，不修改 OpenAI 请求、账户真实额度、token、模型、API Service 调度、冷却或重试；请求是否可用仍由 API Service 账号池和网关决定。
+### 8.1 提示识别
 
-### 8.1 识别与失败边界
+- 扫描 Composer 内的 aside，读取 banner、rate_limit_reached_type、rate_limit_upsell 和 usageBannerProps 的业务字段。
+- 支持已列举的个人和工作区额度／用量耗尽类型；允许跨越仅包含该提示的包装容器，不从共享通知父节点借用语义。
+- 按用户明确要求，在语义不可读时使用明确中英文额度标题兜底；不按任意正文或泛词 limit 匹配，显式非额度类型优先。
+- 图片、Reserve、安全、沙箱及其他环境提示不批量隐藏。节点复用、关闭开关、旧 root 消失时恢复原 display 与 priority。
+- hideNativeQuotaBanner 保留三态偏好：API Service 桌面默认开，其余默认关，显式值优先；CLI 不注入。
 
-- 只扫描 `[data-codex-composer-root][data-composer-placement]` 内的 `aside`，不得扩大到整个 document。
-- 只接受 React Fiber 属性中的 `banner_type === "workspace_member_credits_depleted"`；不得按中文、英文或其他界面文案匹配。
-- Fiber 不存在、无法读取、存在循环、alternate 指向不明、多个语义字段冲突、共享父节点拥有其他 `aside`，或提示类型未知时都必须保持可见。
-- 其他额度、保留额度、图片、安全、沙箱、认证、网络和环境提示必须保持可见。
-- 发送门禁覆盖必须同时满足：桌面 app、绑定 `__api_service__`、隐藏开关有效、查询语义为 `workspace_member_credits_depleted`。OAuth、API Key、DeepSeek、Provider Gateway 和手工开启隐藏的非 API Service 实例仍使用官方额度门禁。
-- 覆盖只在查询的所有额度分类均精确等于 `workspace_member_credits_depleted` 时，中和 `rate_limit_reached_type` 以及 `rate_limit`、`credits`、`spend_control` 中形成重复发送门禁的状态位；存在冲突分类时必须保持官方状态。空输入、附件上传、提交中、响应中、模型不可用、安全策略、只读工作区及其他 `submitBlockReason` 必须继续由官方 Composer 拦截；禁止直接移除按钮 `disabled` 或绕过官方提交回调。
-- DOM 节点被 React 复用于其他提示时要立即恢复；composer root 被替换或移除时要断开旧 observer 并恢复原样。
+### 8.2 本地发送解锁
 
-### 8.2 实例策略与持久化
+- 固定复用 1zero224/codex-input-unlock commit fbc04a3032766918556168d9b27e74da8d863bb1 的纯 JS 定位器。
+- 支持 codex-local-quota、legacy-local-host、third-party-composer-dual；使用实际脚本的结构匹配、唯一候选与可执行断点位置，不硬编码压缩变量或行号。
+- 条件断点只把局部额度阻塞变量设为 false，并返回 false 避免挂起。保留空输入、上传中、提交中等其他禁用项；不得直接覆盖最终 submitDisabled 或移除按钮 disabled。
+- 旧的 rate-limit-status 共享缓存改写已删除，不再伪造 credits、rate_limit 或 spend_control 状态，不改变真实额度和路由。
+- 发送策略识别显式 __api_service__、codex_local_access_runtime 及具有受管 Provider、受管 Key 与 loopback 地址的 profile 接管；同时校验实例仍存在、绑定未改变、启动模式为 app。
+- 默认实例跟随本地账号时，启动、恢复及运行时读取必须使用相同的解析后绑定，不能混用存储绑定。
 
-`hideNativeQuotaBanner` 是默认实例和普通实例都支持的三态字段：
+### 8.3 CDP 生命周期与日志
 
-- 未设置：API Service 绑定的桌面 app 启动默认开启；其他绑定默认关闭。
-- `true`：桌面 app 实例显式开启，即使绑定 OAuth、API Key、DeepSeek 或 Provider Gateway 也可使用。
-- `false`：显式关闭，并覆盖 API Service 的默认开启。
-- CLI 启动始终不执行 DOM 注入；保存的选择可以保留，但只有桌面 app 模式实际生效。
+- 复用实例已有动态 loopback CDP。隐藏脚本维持短连接扫描；发送断点在同一实例 runtime 下维护持久会话，每个 Renderer 独立管理。
+- 页面刷新、execution context 重建和断线后重新定位；停止、改绑或应用退出时移除断点并断开连接。不额外启动 Node 守护进程，不生成独立快捷方式或修改 Computer Use 环境变量。
+- 不修改 app.asar、WindowsApps ACL 或官方安装文件；Windows Store 仍通过 ApplicationActivationManager 传递启动参数。
+- 提示隐藏不注册新文档脚本；保留 session 隔离和 30 秒失联恢复。发送断点由 CDP 连接持有，断线后不留下安装文件修改。
+- 诊断只进入独立 logs/codex-quota-ui.log.YYYY-MM-DD，正式版与开发版可用，沿用三天清理；不在页面增加状态、徽章或诊断弹窗。
+- 日志区分未连接、未匹配、armed、重连、停止及提示命中计数。只记录元数据，不记录凭据、页面正文、对话或原始 JS；armed 不代表请求成功。
 
-前端启动预览只在用户实际切换开关后写入显式值；未触碰的默认状态保持 `null/undefined`，以便绑定和启动模式变化后继续按默认策略计算。Rust 必须在启动、恢复运行实例和每轮注入时重新读取实例记录并校验实例仍存在、绑定未变化、启动模式仍是 app、开关仍有效；配置读取失败或实例被删除时立即恢复提示。
+### 8.4 合并热点与验收
 
-### 8.3 CDP 生命周期
+核心文件：src-tauri/src/modules/codex_app_injection.rs、codex_input_unlock.rs、codex_input_unlock_gate.cjs、codex_native_quota_banner.js、codex_native_quota_policy.rs、logger.rs；实例 launch/config 接口与原开关保持兼容。
 
-- 复用实例现有的 loopback CDP 端口，不开放外部监听，不修改 `app.asar`。
-- 隐藏脚本只能对当前 document 执行，绝不能注册 `Page.addScriptToEvaluateOnNewDocument`；否则旧实例选择可能跨导航残留。
-- 每个运行实例使用独立 session。旧 session 的延迟清理不能销毁新 session。
-- 记录原始 inline `display` 值及 priority；关闭开关、停止实例、应用退出、绑定变化、脚本 watchdog 超时或节点语义变化时必须准确恢复。
-- API Service 发送覆盖必须记录原查询对象；关闭开关、停止实例、绑定变化、session 替换或 watchdog 超时，只在缓存仍是本次补丁对象时恢复，不能覆盖官方刷新得到的新数据。
-- suppression 任务可单独启用 CDP，但不得因此激活 API Service 账号数/额度徽章、余额查询或其他绑定专属注入。
-- CDP `Runtime.evaluate` 返回 protocol error 或 `exceptionDetails` 时视为失败，不得当作成功隐藏。
-- Windows Store/MSIX 入口必须通过 `IApplicationActivationManager::ActivateApplication` 传递 loopback CDP 参数；`Start-Process shell:AppsFolder` 会静默丢弃参数，导致隐藏和发送覆盖均未运行。macOS 和普通可执行文件启动路径保持上游方式。
+MIT 许可随 public/licenses/CodexInputUnlock-LICENSE.txt 打包。不得重新引入旧缓存改写、单 banner 类型发送限制或显示开关耦合。
+
+详细使用、诊断和验证见 [codex-quota-ui-runtime.md](codex-quota-ui-runtime.md)。自动测试：tests/codexNativeQuotaBanner.test.ts、tests/codexInputUnlock.test.ts 以及 Rust input_unlock_tests。真实验收需证明已耗尽登录账号下，API Service 接到预期请求，并分别验证可用上游成功、不可用上游正常报错。不能用断点安装成功替代端到端验收。
 
 ## 9. 修改集 F：模型指纹测智
 
@@ -1012,14 +1005,14 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 9. 打开“禁用模型”弹窗后从另一页面切换兜底开关，再尝试保存旧草稿；后端必须拒绝旧版本，重新打开弹窗后才能保存。
 10. 在独立 API 服务统计页分别选择近 24H、近 48H、近 7Day，确认起止时间按当前时刻滚动且共享管理弹窗不出现这三个选项。
 
-### 13.6 原生额度耗尽提示隐藏检查
+### 13.6 额度提示隐藏与本地发送检查
 
-1. 使用 API Service 绑定以桌面 app 模式启动默认实例和普通实例，确认官方 `workspace_member_credits_depleted` 提示隐藏；同一页面的其他 warning 保持可见。
-2. 在启动预览中关闭开关，确认无需重启即可恢复提示；重新启动后显式关闭仍保留。再次开启后确认显式值持久化。
-3. 对 OAuth、API Key、DeepSeek 和 Provider Gateway 桌面实例确认默认关闭、手动开启可用；CLI 模式始终不注入。
-4. 模拟未知 banner type、无 Fiber、冲突属性、共享父节点、React alternate、节点复用和 root 替换，确认无法严格识别时保持可见且 observer 不泄漏。
-5. 关闭实例、停止应用、删除实例、修改绑定和等待 watchdog 超时，确认原始 inline `display` 与 `!important` priority 被恢复。
-6. 检查 suppression 脚本没有走 `Page.addScriptToEvaluateOnNewDocument`，手动开启非 API Service 实例也没有出现 API Service 额度徽章或触发余额查询。
+1. API Service 桌面实例关闭隐藏开关时，额度提示可见但本地发送解锁仍启用；CLI 不注入。
+2. 验证个人／工作区额度语义、原因字段缺失的明确标题兜底、多语言语义匹配；图片、Reserve、安全和环境提示仍可见。
+3. 发送断点需唯一定位当前实际 JS；验证仅额度条件被清除，空输入、上传中和其他禁用项保留。
+4. 刷新页面、替换 Renderer、多窗口、停止与重启、改绑、删除实例时，验证断点和 Observer 的清理与重建。
+5. 检查官方额度缓存未被修改。可用 API 上游完成真实请求，不可用上游保留 429／鉴权／账号池错误。
+6. 检查正式版独立 codex-quota-ui 日志，页面无新增诊断 UI，日志无凭据或对话内容。
 
 ### 13.7 Release 平台范围与多版本变更信息检查
 

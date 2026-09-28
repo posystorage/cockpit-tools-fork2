@@ -6,7 +6,7 @@ import { resolveNativeQuotaBannerPreference } from '../src/utils/codexNativeQuot
 
 const source = readFileSync(new URL('../src-tauri/src/modules/codex_native_quota_banner.js', import.meta.url), 'utf8');
 const TYPE = 'workspace_member_credits_depleted';
-const ROOT = '[data-codex-composer-root][data-composer-placement]';
+const ROOT = '[data-codex-composer-root]';
 const MARK = 'data-cockpit-native-banner-hidden';
 
 class Element {
@@ -32,9 +32,10 @@ class Element {
   append(child: Element) { child.parent = this; this.children.push(child); return child; }
   contains(child: Element): boolean { return child === this || this.children.some(c => c.contains(child)); }
   querySelectorAll(selector: string): Element[] {
-    assert.equal(selector, 'aside');
-    return this.children.flatMap(c => [...(c.tagName === 'ASIDE' ? [c] : []), ...c.querySelectorAll(selector)]);
+    const matches = (c: Element) => selector === 'aside' ? c.tagName === 'ASIDE' : /^H[1-6]$/.test(c.tagName);
+    return this.children.flatMap(c => [...(matches(c) ? [c] : []), ...c.querySelectorAll(selector)]);
   }
+  matches(selector: string) { assert.equal(selector, ROOT); return this.composer; }
   closest(selector: string): Element | null {
     assert.equal(selector, ROOT);
     return this.composer ? this : this.parent?.closest(selector) ?? null;
@@ -83,14 +84,6 @@ function queryClient(
   return {client, provider, query, writes: () => writes};
 }
 
-// Mirrors the independent quota signals used by the current official Composer.
-function officialQuotaSignalReached(data: Record<string, any>) {
-  return data.rate_limit_reached_type != null
-    || data.rate_limit?.allowed === false
-    || data.rate_limit?.limit_reached === true
-    || (data.credits?.unlimited === false && data.credits?.has_credits === false)
-    || data.spend_control?.reached === true;
-}
 function fixture() {
   let now = 0;
   let sequence = 0;
@@ -164,154 +157,54 @@ test('all supported semantic paths hide independently of language', () => {
   }
 });
 
-test('API Service clears only the exact workspace-member credit gate in the official query', () => {
+test('banner hiding never rewrites official quota caches, even for API Service', () => {
   const f = fixture(), root = f.root();
-  const original = {
-    rate_limit_reached_type: {type: TYPE},
-    rate_limit_upsell: {banner_type: TYPE},
-    rate_limit: {allowed: false, limit_reached: true, used_percent: 100},
-    credits: {unlimited: false, has_credits: false, overage_limit_reached: true},
-    spend_control: {reached: true, individual_limit: {limit: 0}},
-    submit_block_reason: 'file-uploads',
-    is_submitting: true,
-  };
+  const original = {rate_limit_reached_type: {type: TYPE}, rate_limit: {allowed: false, limit_reached: true}, credits: {has_credits: false}};
   const cache = queryClient(original);
   const aside = root.append(new Element('aside'));
   attach(aside, {banner: {banner_type: TYPE}}, cache.provider);
-
   f.inject(true, true);
-
   assert.ok(hidden(aside));
-  assert.equal(officialQuotaSignalReached(original), true);
-  assert.notEqual(cache.query.state.data, original);
-  assert.equal(cache.query.state.data.rate_limit_reached_type, null);
-  assert.equal(cache.query.state.data.rate_limit_upsell, null);
-  assert.equal(cache.query.state.data.rate_limit.allowed, true);
-  assert.equal(cache.query.state.data.rate_limit.limit_reached, false);
-  assert.equal(cache.query.state.data.rate_limit.used_percent, 100);
-  assert.equal(cache.query.state.data.credits.has_credits, true);
-  assert.equal(cache.query.state.data.credits.overage_limit_reached, false);
-  assert.equal(cache.query.state.data.spend_control.reached, false);
-  assert.equal(cache.query.state.data.spend_control.individual_limit.limit, 0);
-  assert.equal(officialQuotaSignalReached(cache.query.state.data), false);
-  assert.equal(cache.query.state.data.submit_block_reason, 'file-uploads');
-  assert.equal(cache.query.state.data.is_submitting, true);
-  assert.equal(cache.writes(), 1);
-
+  assert.equal(cache.query.state.data, original);
+  assert.equal(cache.writes(), 0);
   f.inject(false, false);
-  assert.equal(cache.query.state.data, original);
-  assert.equal(cache.writes(), 2);
-});
-
-test('manual banner hiding outside API Service never changes send eligibility', () => {
-  const f = fixture(), root = f.root();
-  const original = {
-    rate_limit_reached_type: {type: TYPE},
-    rate_limit: {allowed: false, limit_reached: true},
-  };
-  const cache = queryClient(original);
-  const aside = root.append(new Element('aside'));
-  attach(aside, {banner: {banner_type: TYPE}}, cache.provider);
-
-  f.inject(true, false);
-
-  assert.ok(hidden(aside));
-  assert.equal(cache.query.state.data, original);
   assert.equal(cache.writes(), 0);
 });
 
-test('binding change in the same session restores the official quota gate immediately', () => {
+test('reason-only and personal/workspace quota banners are covered', () => {
   const f = fixture(), root = f.root();
-  const original = {
-    rate_limit_reached_type: {type: TYPE},
-    rate_limit: {allowed: false, limit_reached: true},
-  };
-  const cache = queryClient(original);
-  const aside = root.append(new Element('aside'));
-  attach(aside, {banner: {banner_type: TYPE}}, cache.provider);
-
-  f.inject(true, true, 'binding');
-  assert.equal(cache.query.state.data.rate_limit.allowed, true);
-  f.inject(true, false, 'binding');
-  assert.equal(cache.query.state.data, original);
-  assert.ok(hidden(aside), 'manual hide preference may remain active after binding changes');
-});
-
-test('API Service does not clear any non-target quota or safety reason', () => {
-  for (const reason of ['workspace_owner_credits_depleted', 'rate_limit_reached', 'safety']) {
-    const f = fixture(), root = f.root();
-    const original = {
-      rate_limit_reached_type: {type: reason},
-      rate_limit_upsell: {banner_type: reason},
-      rate_limit: {allowed: false, limit_reached: true},
-    };
-    const cache = queryClient(original);
-    const aside = root.append(new Element('aside'));
-    attach(aside, {banner: {banner_type: reason}}, cache.provider);
-    f.inject(true, true);
-    assert.equal(cache.query.state.data, original);
-    assert.equal(cache.writes(), 0);
+  for (const type of [TYPE, 'workspace_owner_credits_depleted', 'workspace_member_usage_limit_reached', 'pro_rate_limit_reached', 'rate_limit_reached']) {
+    attach(root.append(new Element('aside')), {rateLimitStatus: {rate_limit_reached_type: {type}}});
   }
+  const result = f.inject();
+  assert.ok(root.children.every(hidden));
+  assert.equal(result.semantic, 5);
 });
 
-test('API Service leaves conflicting quota classifications untouched', () => {
+test('explicit quota headline fallback works without Fiber and does not read ordinary body text', () => {
   const f = fixture(), root = f.root();
-  const original = {
-    rate_limit_reached_type: {type: TYPE},
-    rate_limit_upsell: {banner_type: 'workspace_owner_credits_depleted'},
-    rate_limit: {allowed: false, limit_reached: true},
-  };
-  const cache = queryClient(original);
-  const aside = root.append(new Element('aside'));
-  attach(aside, {banner: {banner_type: TYPE}}, cache.provider);
-
-  f.inject(true, true);
-
-  assert.equal(cache.query.state.data, original);
-  assert.equal(cache.writes(), 0);
+  for (const title of ['Codex 和工作使用额度已用完', "You’re out of Codex and Work usage", 'Your workspace is out of credits']) {
+    root.append(new Element('aside')).append(new Element('h3', false, title));
+  }
+  const normal = root.append(new Element('aside', false, 'Usage limit reached'));
+  const safety = root.append(new Element('aside'));
+  safety.append(new Element('h3', false, 'Usage limit reached'));
+  attach(safety, {banner: {banner_type: 'safety'}});
+  const result = f.inject();
+  assert.equal(result.textFallback, 3);
+  assert.ok(!hidden(normal)); assert.ok(!hidden(safety));
 });
 
-test('query refresh is patched independently and cleanup restores the newest official value', () => {
+test('single-banner wrapper can be crossed to find owner props', () => {
   const f = fixture(), root = f.root();
-  const first = {
-    rate_limit_reached_type: {type: TYPE},
-    rate_limit: {allowed: false, limit_reached: true, reset_at: 1},
-  };
-  const cache = queryClient(first);
-  const aside = root.append(new Element('aside'));
-  attach(aside, {banner: {banner_type: TYPE}}, cache.provider);
-  f.inject(true, true, 'api');
-
-  const refreshed = {
-    rate_limit_reached_type: {type: TYPE},
-    rate_limit: {allowed: false, limit_reached: true, reset_at: 2},
-  };
-  cache.query.state.data = refreshed;
-  f.inject(true, true, 'api');
-  assert.equal(cache.query.state.data.rate_limit.reset_at, 2);
-  assert.equal(cache.query.state.data.rate_limit.allowed, true);
-
-  f.inject(false, false, 'api');
-  assert.equal(cache.query.state.data, refreshed);
-});
-
-test('tracks and restores the object actually stored after query structural sharing', () => {
-  const f = fixture(), root = f.root();
-  const original = {
-    rate_limit_reached_type: {type: TYPE},
-    rate_limit: {allowed: false, limit_reached: true},
-  };
-  const cache = queryClient(original, ['rate-limit-status'], true);
-  const aside = root.append(new Element('aside'));
-  attach(aside, {banner: {banner_type: TYPE}}, cache.provider);
-
-  f.inject(true, true, 'shared');
-  assert.equal(cache.query.state.data.rate_limit.allowed, true);
-  assert.equal(cache.writes(), 1);
-
-  f.inject(false, false, 'shared');
-  assert.deepEqual(cache.query.state.data, original);
-  assert.equal(cache.writes(), 2);
+  const wrapper = root.append(new Element('div'));
+  const aside = wrapper.append(new Element('aside'));
+  const {owner} = attach(aside, {});
+  const host: Fiber = {stateNode: wrapper, memoizedProps: {}, child: owner};
+  owner.return = host;
+  host.return = {memoizedProps: {rateLimitStatus: {rate_limit_reached_type: {type: TYPE}}}, child: host};
+  f.inject(); assert.ok(hidden(aside));
+  assert.ok(!hidden(wrapper), 'only hide the confirmed banner, not the container');
 });
 
 test('unknown, reserve, image, safety and no-Fiber banners remain visible', () => {

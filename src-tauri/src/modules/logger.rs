@@ -15,6 +15,8 @@ const APP_LOG_FILE_PREFIX: &str = "app.log";
 const CODEX_API_LOG_FILE_PREFIX: &str = "codex-api.log";
 const CODEX_AUTH_DIAGNOSTIC_LOG_FILE_PREFIX: &str = "codex-auth-diagnostic.log";
 const CODEX_CDP_DIAGNOSTIC_LOG_FILE_PREFIX: &str = "codex-cdp-diagnostic.log";
+const CODEX_QUOTA_UI_LOG_FILE_PREFIX: &str = "codex-quota-ui.log";
+const CODEX_QUOTA_UI_LOG_TARGET: &str = "codex_quota_ui";
 const CODEX_API_LOG_TARGET: &str = "codex_api";
 const CODEX_AUTH_DIAGNOSTIC_LOG_TARGET: &str = "codex_auth_diagnostic";
 const CODEX_CDP_DIAGNOSTIC_LOG_TARGET: &str = "codex_cdp_diagnostic";
@@ -23,6 +25,7 @@ const MANAGED_LOG_FILE_PREFIXES: &[&str] = &[
     CODEX_API_LOG_FILE_PREFIX,
     CODEX_AUTH_DIAGNOSTIC_LOG_FILE_PREFIX,
     CODEX_CDP_DIAGNOSTIC_LOG_FILE_PREFIX,
+    CODEX_QUOTA_UI_LOG_FILE_PREFIX,
 ];
 const LOG_RETENTION_DAYS: i64 = 3;
 const DEFAULT_LOG_TAIL_LINES: usize = 200;
@@ -308,11 +311,26 @@ pub fn init_logger() {
                 CODEX_API_LOG_TARGET
                     | CODEX_AUTH_DIAGNOSTIC_LOG_TARGET
                     | CODEX_CDP_DIAGNOSTIC_LOG_TARGET
+                    | CODEX_QUOTA_UI_LOG_TARGET
             )
         })))
         .with(codex_api_file_layer.with_filter(filter_fn(|metadata| {
             metadata.target() == CODEX_API_LOG_TARGET
         })));
+
+    // Quota UI diagnostics are metadata-only and available in production.
+    let (quota_writer, quota_guard) = tracing_appender::non_blocking(
+        tracing_appender::rolling::daily(log_dir.clone(), CODEX_QUOTA_UI_LOG_FILE_PREFIX),
+    );
+    let registry = registry.with(
+        fmt::Layer::new()
+            .with_writer(quota_writer)
+            .with_ansi(false)
+            .with_target(false)
+            .with_timer(LocalTimer)
+            .with_filter(filter_fn(|metadata| metadata.target() == CODEX_QUOTA_UI_LOG_TARGET)),
+    );
+    std::mem::forget(quota_guard);
 
     // 授权诊断日志只在本地 dev profile 创建和写入，生产环境不打开对应文件。
     let codex_auth_diagnostic_guard = if is_dev_profile {
@@ -403,6 +421,12 @@ pub fn log_codex_api_warn(message: &str) {
 
 pub fn log_codex_api_error(message: &str) {
     error!(target: CODEX_API_LOG_TARGET, "{}", sanitize_message(message));
+}
+
+/// Production-safe quota UI diagnostics: identifiers/counts only, never page text,
+/// credentials, profile contents, or raw CDP errors. Uses codex-quota-ui.log.
+pub fn log_codex_quota_diagnostic(message: &str) {
+    info!(target: CODEX_QUOTA_UI_LOG_TARGET, "{}", sanitize_message(message));
 }
 
 /// Codex 授权诊断日志。只接受已经去除 bearer 凭据的诊断摘要，禁止写入原始 token。

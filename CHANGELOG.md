@@ -9,6 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ---
 ## [Unreleased]
 
+## [1.3.59b4] - 2026-09-28
+
+### Fixed
+
+- **API Service local sending is independent of banner hiding**: adapt codex-input-unlock with persistent per-instance CDP conditional breakpoints that clear only the Composer quota gate, without requiring one specific banner reason. Remove shared quota-cache mutations; real quota and upstream errors remain authoritative.
+- **Broader native quota-banner detection**: include reason-only, personal, and workspace quota signals, allow private single-banner wrappers, and use explicit Chinese/English quota headlines when semantics are unavailable, while preserving restoration and instance isolation.
+- **Dedicated runtime diagnostics**: production and development builds write banner matches, breakpoint installation, reload/reconnect, failures, and cleanup to codex-quota-ui.log without adding diagnostic UI.
+
 ## [1.3.59b3] - 2026-09-25
 
 ### Added

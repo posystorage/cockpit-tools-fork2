@@ -10,6 +10,15 @@ const englishChangelog = readFileSync(`${process.cwd()}/CHANGELOG.md`, "utf8");
 const chineseChangelog = readFileSync(`${process.cwd()}/CHANGELOG.zh-CN.md`, "utf8");
 
 describe("fork draft release workflow", () => {
+  it("uses only the quota UI and local sending delta for the 1.3.59b4 draft", () => {
+    const start = workflowSource.indexOf('if [[ "${GITHUB_REF_NAME}" == "1.3.59b4"');
+    const end = workflowSource.indexOf('elif [[ "${GITHUB_REF_NAME}" == "1.3.59b3"', start);
+    assert.ok(start >= 0 && end > start);
+    assert.ok(workflowSource.slice(start, end).includes('RELEASE_VERSIONS=("1.3.59b4")'));
+    for (const changelog of [englishChangelog, chineseChangelog]) {
+      assert.ok(changelog.includes("## [1.3.59b4]"));
+    }
+  });
   it("accepts numeric beta tags and forwards the validated tag", () => {
     assert.ok(workflowSource.includes('- "[0-9]*"'));
     assert.ok(
