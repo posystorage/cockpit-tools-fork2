@@ -39,6 +39,10 @@ Release workflow 中 `build-windows`、`build-macos-aarch64`、`build-macos-x86_
 
 ### 2.0 v1.3.63 升级施工边界（2026-09-30）
 
+首个升级草稿编译 tag 为 `1.3.63b1`，应用版本保持 `1.3.63`。该 tag 明确映射到
+`1.3.63 → 1.3.62 → 1.3.61 → 1.3.60` 四段中英文说明；fork 合并适配记录位于
+1.3.63 章节，不重复插入旧 beta 说明。源代码合并提交为 `27c04ba0`。
+
 从 fork 1.3.59b4（2abd318c）合入上游 v1.3.63（ee816002），merge-base 为
 v1.3.59（763d8173），升级分支 codex/upgrade-upstream-v1.3.63。
 预演共 13 个冲突路径：发布 workflow、已删除的 Cask、账号／实例命令、
