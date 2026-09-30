@@ -3,7 +3,21 @@ import { isCodexApiKeyAccount, isCodexPendingOAuthAccount, isCodexWebSessionAcco
 import type { FingerprintTarget } from '../types/codexFingerprint.ts';
 import type { CodexModelProvider } from '../services/codexModelProviderService';
 
-export function buildFingerprintTargets(accounts: CodexAccount[], providers: CodexModelProvider[]): FingerprintTarget[] {
+export async function fingerprintExcludedAccountIds(accounts: CodexAccount[], providers: CodexModelProvider[]): Promise<string[]> {
+  const excluded: string[] = [];
+  for (const account of accounts) {
+    if (!isCodexApiKeyAccount(account) || !account.openai_api_key?.trim()) continue;
+    const related = providers.filter((provider) => provider.id === account.api_provider_id
+      || provider.baseUrl.trim().replace(/\/$/, '') === account.api_base_url?.trim().replace(/\/$/, ''));
+    if (!related.some((provider) => provider.excludedApiKeyHashes?.length)) continue;
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(account.openai_api_key.trim()));
+    const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+    if (related.some((provider) => provider.excludedApiKeyHashes?.includes(hash))) excluded.push(account.id);
+  }
+  return excluded;
+}
+
+export function buildFingerprintTargets(accounts: CodexAccount[], providers: CodexModelProvider[], excludedAccountIds: string[] = []): FingerprintTarget[] {
   const targets: FingerprintTarget[] = [];
   const seen = new Set<string>();
   const identity = (url: string, key: string) => JSON.stringify([url.trim().replace(/\/$/, ''), key.trim()]);
@@ -17,6 +31,7 @@ export function buildFingerprintTargets(accounts: CodexAccount[], providers: Cod
       baseUrl: provider.baseUrl, apiKey: key.apiKey, wireApi: provider.wireApi || 'responses' });
   }
   for (const account of accounts) {
+    if (excludedAccountIds.includes(account.id)) continue;
     if (isCodexWebSessionAccount(account) || isCodexPendingOAuthAccount(account)) continue;
     if (isCodexApiKeyAccount(account)) {
       if (!account.openai_api_key?.trim()) continue;

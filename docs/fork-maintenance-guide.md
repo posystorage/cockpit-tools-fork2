@@ -37,6 +37,45 @@ Release workflow 中 `build-windows`、`build-macos-aarch64`、`build-macos-x86_
 
 ## 2. 当前基线与历史锚点
 
+### 2.0 v1.3.63 升级施工边界（2026-09-30）
+
+从 fork 1.3.59b4（2abd318c）合入上游 v1.3.63（ee816002），merge-base 为
+v1.3.59（763d8173），升级分支 codex/upgrade-upstream-v1.3.63。
+预演共 13 个冲突路径：发布 workflow、已删除的 Cask、账号／实例命令、
+Local Access 入口／集合／基础模块、Windows 路径启动模块、两处测智入口、
+API 服务视图、账号渲染器及 apikeyFunLinks。
+
+接受上游 1.3.60–1.3.63 的代理、回收站、凭据原子更新、Windows 包身份与实例隔离、
+鹈鹕 OAuth 直连／供应商临时网关／错误详情／批次状态修复、GPT-6.1 Sol 与历史计价、
+macOS Swift 链接修复及 Windows 便携包。保留六组 fork 行为，不恢复广告、远端公告
+或自动升级。新增 publish-release job 必须禁用，所有上传使用真实 RELEASE_TAG，
+发布说明仅聚合 1.3.63、1.3.62、1.3.61、1.3.60 及本轮 fork 适配说明。
+
+指纹测试保留七模型与默认三模型，不因一般目录新增 6.1 而扩展指纹参考库；适配
+prepare_direct_codex_account 和新版错误脱敏。账号入口顺序为“指纹测智、鹈鹕测智、
+回收站”；供应商入口为“鹈鹕测智、指纹测智、一键测试”。Windows 以新版启动链为主，
+保留动态 CDP、发送解锁及提示隐藏生命周期，不能整段还原旧启动实现。
+
+实际合并已解决全部 13 个冲突路径。额外适配包括：供应商删除 Key 的 SHA-256 排除记录
+同步过滤指纹账号目标；启动预览保存隐藏偏好后的 session 检查；fork 价格簿独立版本升至
+5，用户已递增的计价修订号不阻碍历史预设计价迁移；Windows 便携包测试归一化路径分隔符。
+
+本轮验证：
+
+- 147 个 TypeScript 测试文件，共 896 项通过；TypeScript 全量检查与 Vite 生产构建通过。
+- 发布／打包脚本 23 项通过；Provider 去推广检查通过（155 个预设）。
+- Rust 主库及测试目标 cargo check 通过。沿用隔离 target/test-data-v1363；本机历史上
+  原生 Rust 测试程序受 0xC0000139 加载限制，此轮没有将编译检查记为测试运行成功。
+- 临时 Go 1.26.0 工具链经 go.dev 官方 SHA-256 校验，位于忽略的 target/toolchains，
+  模块和编译缓存亦只位于 target。cockpit-cliproxy 根模块全部测试通过。
+- CLIProxyAPI 的 Codex Chat/Responses 转换、sdk/api/handlers、internal/misc、
+  internal/registry 测试通过；sdk/cliproxy/auth 的
+  TestResetAuthStateIgnoresResultsFromOlderAttempts 失败，表现为恢复前请求的错误
+  重新写入已清除状态。该目录与上游 v1.3.63 完全一致；实现以 Before 严格比较时间戳，
+  存在本机时钟粒度导致同刻无法区分的可能，不能将此包标为通过。保留上游实现并记录，
+  后续独立处理恢复屏障的精确顺序语义，不在升级中扩大修改。
+- 未向真实模型账号发送请求，未重新验证额度耗尽客户端的端到端行为。
+
 ### 2.1 `v1.3.21` 已验证基线（2026-08-16）
 
 本轮计划从已验证 fork `1.3.16b1`（`96b0a61e`）升级到上游 `v1.3.21`（annotated tag 指向 release commit `971c283e`），merge-base 为已合并的上游 `v1.3.16` release commit `e1ef55ce`，升级分支为 `codex/upgrade-upstream-v1.3.21`。合并前工作区干净；`v1.3.16..v1.3.21` 共 50 个提交、184 个文件，净变化为 31498 行新增、3430 行删除。release 链重点如下：
@@ -860,7 +899,7 @@ MIT 许可随 public/licenses/CodexInputUnlock-LICENSE.txt 打包。不得重新
 | `src-tauri/src/lib.rs` | `codex_fingerprint_begin/probe/cancel/finish` 四个 Tauri 命令注册 |
 | `tests/codexFingerprint.test.ts`、`tests/codexFingerprintStore.test.ts` | 默认值、空选择、去重、并行、矩阵、记忆、部分失败和取消回归 |
 
-OAuth 复用现有 API Service 指定账号通道和账号准备能力；每次采样使用独立 session／turn，不能继承鹈鹕 HTML delivery instructions 或引入工具。API 上游按保存的 Responses／Chat Completions 协议直接请求；不要恢复不兼容的固定 temperature 或旧式 max_tokens 参数。不得为指纹测试改写当前账号、路由集合或 Provider 配置。
+v1.3.63 起 OAuth 使用 prepare_direct_codex_account 与上游账号直连／代理传输，不启动 API Service；每次采样使用独立 session／turn，不能继承鹈鹕 HTML delivery instructions 或引入工具。新版 SSE 详细错误必须在指纹出口再次脱敏。API 上游按保存的 Responses／Chat Completions 协议直接请求；不要恢复不兼容的固定 temperature 或旧式 max_tokens 参数。不得为指纹测试改写当前账号、路由集合或 Provider 配置；供应商 Key 排除记录必须过滤关联账号，避免删除后回流。
 
 ### 9.4 ModelTrace 资产、许可与同步
 
@@ -876,7 +915,7 @@ OAuth 复用现有 API Service 指定账号通道和账号准备能力；每次�
 
 ## 10. 发布与仓库身份差异
 
-这些差异通常保留，但与五组核心产品行为分开审查：
+这些差异通常保留，但与六组核心产品行为分开审查：
 
 - `.github/workflows/release.yml`：fork 的 draft/tag、Windows + macOS 构建和 release notes 策略；Linux、自动 finalize、checksum 和 Homebrew 等非目标 job 当前被禁用。历史章节中出现的“仅构建 Windows”只描述当时的旧策略，不得作为当前发布配置依据。
 - `src-tauri/tauri.conf.json`：fork updater 公钥和 fork release endpoint。即使 runtime updater 已禁用，也不能指回上游签名/制品。

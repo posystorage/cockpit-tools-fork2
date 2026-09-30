@@ -24,7 +24,11 @@ import {
   insertModelsBySource,
   moveModel,
 } from "../../utils/codexExperimentalModelOrder";
-import { validateModelContext } from "../../utils/codexModelContext";
+import {
+  deriveAutoCompactTokenLimit,
+  deriveAutoCompactTokenLimitInput,
+  validateModelContext,
+} from "../../utils/codexModelContext";
 import "./CodexExperimentalModelEditor.css";
 
 export interface CodexExperimentalModelSource {
@@ -66,10 +70,26 @@ const REASONING_EFFORT_OPTIONS: CodexReasoningEffort[] = [
   "ultra",
 ];
 const CONTEXT_PRESETS = {
-  preset_516k: { context_window: 516000, auto_compact_token_limit: 460000 },
+  preset_516k: { context_window: 516000, auto_compact_token_limit: 464400 },
   preset_1m: { context_window: 1000000, auto_compact_token_limit: 900000 },
 } as const;
+/** 自定义上下文弹框的兜底值：官方基准档 272K（不是 1M）。 */
+const DEFAULT_CONTEXT_DRAFT = {
+  context_window: 272000,
+  auto_compact_token_limit: 244800,
+} as const;
 type ContextPresetId = "default" | keyof typeof CONTEXT_PRESETS | "custom";
+
+/** 压缩阈值留空时按上下文窗口的 90% 派生；上下文非法时回落 NaN 交给校验报错。 */
+function resolveDraftAutoCompactTokenLimit(
+  contextWindow: number,
+  compactInput: string,
+): number {
+  const rawCompact = compactInput.trim();
+  if (rawCompact !== "") return Number(rawCompact);
+  if (!Number.isInteger(contextWindow) || contextWindow <= 0) return Number.NaN;
+  return deriveAutoCompactTokenLimit(contextWindow);
+}
 
 interface CustomContextDraft {
   index: number;
@@ -314,13 +334,41 @@ export function CodexExperimentalModelEditor({
   mode = "summary",
   availableChannels,
   resolveModelSource,
-  onChange,
+  onChange: onModelsChange,
   onDefaultModelChange,
   onValidationChange,
   onModelRemoved,
   onModelAdded,
 }: CodexExperimentalModelEditorProps) {
   const { t } = useTranslation();
+  // Editor identity is independent of editable IDs and list positions.
+  const rowKeys = useRef(new WeakMap<CodexExperimentalModelDefinition, number>());
+  const nextRowKey = useRef(0);
+  const rowKey = (model: CodexExperimentalModelDefinition) => {
+    let key = rowKeys.current.get(model);
+    if (key === undefined) {
+      key = nextRowKey.current++;
+      rowKeys.current.set(model, key);
+    }
+    return key;
+  };
+  const onChange = (nextModels: CodexExperimentalModelDefinition[]) => {
+    const assignedKeys = new Set(
+      nextModels.map((model) => rowKeys.current.get(model)).filter((key) => key !== undefined),
+    );
+    for (const model of nextModels) {
+      if (rowKeys.current.has(model)) continue;
+      const previous = models.find(
+        (item) => item.model_id === model.model_id && !assignedKeys.has(rowKey(item)),
+      );
+      if (previous) {
+        const key = rowKey(previous);
+        rowKeys.current.set(model, key);
+        assignedKeys.add(key);
+      }
+    }
+    onModelsChange(nextModels);
+  };
   const [managerOpen, setManagerOpen] = useState(false);
   const [openReasoningIndex, setOpenReasoningIndex] = useState<number | null>(
     null,
@@ -582,9 +630,12 @@ export function CodexExperimentalModelEditor({
   ) => {
     const previous = models[index];
     onChange(
-      models.map((model, modelIndex) =>
-        modelIndex === index ? { ...model, [field]: value } : model,
-      ),
+      models.map((model, modelIndex) => {
+        if (modelIndex !== index) return model;
+        const updated = { ...model, [field]: value };
+        rowKeys.current.set(updated, rowKey(model));
+        return updated;
+      }),
     );
     if (field === "model_id" && defaultModelId === previous?.model_id) {
       onDefaultModelChange?.(value.trim() || null);
@@ -642,14 +693,16 @@ export function CodexExperimentalModelEditor({
   const openCustomContextEditor = (index: number) => {
     const model = models[index];
     setOpenContextIndex(null);
+    const contextWindow =
+      model.context_window ?? DEFAULT_CONTEXT_DRAFT.context_window;
     setCustomContextDraft({
       index,
-      contextWindow: String(
-        model.context_window ?? CONTEXT_PRESETS.preset_1m.context_window,
-      ),
+      contextWindow: String(contextWindow),
+      // 不再用 1M 兜底：压缩阈值缺失时按上下文窗口的 90% 派生。
       autoCompactTokenLimit: String(
         model.auto_compact_token_limit ??
-          CONTEXT_PRESETS.preset_1m.auto_compact_token_limit,
+          (deriveAutoCompactTokenLimitInput(String(contextWindow)) ||
+            DEFAULT_CONTEXT_DRAFT.auto_compact_token_limit),
       ),
     });
   };
@@ -658,16 +711,15 @@ export function CodexExperimentalModelEditor({
     ? Number(customContextDraft.contextWindow.trim())
     : Number.NaN;
   const customAutoCompactTokenLimit = customContextDraft
-    ? Number(customContextDraft.autoCompactTokenLimit.trim())
+    ? resolveDraftAutoCompactTokenLimit(
+        customContextWindow,
+        customContextDraft.autoCompactTokenLimit,
+      )
     : Number.NaN;
   const customContextError = customContextDraft
     ? validateModelContext({
-        context_window: Number.isInteger(customContextWindow)
-          ? customContextWindow
-          : Number.NaN,
-        auto_compact_token_limit: Number.isInteger(customAutoCompactTokenLimit)
-          ? customAutoCompactTokenLimit
-          : Number.NaN,
+        context_window: customContextWindow,
+        auto_compact_token_limit: customAutoCompactTokenLimit,
       })
     : null;
   const customContextErrorText = customContextError
@@ -690,6 +742,38 @@ export function CodexExperimentalModelEditor({
     setCustomContextDraft(null);
   };
 
+  /** 只改上下文时联动派生压缩阈值，用户显式填过的值保持不变。 */
+  const handleCustomContextWindowChange = (value: string) => {
+    setCustomContextDraft((current) => {
+      if (!current) return current;
+      const nextCompactLimit =
+        current.autoCompactTokenLimit.trim() === "" ||
+        current.autoCompactTokenLimit ===
+          deriveAutoCompactTokenLimitInput(current.contextWindow)
+          ? deriveAutoCompactTokenLimitInput(value)
+          : current.autoCompactTokenLimit;
+      return {
+        ...current,
+        contextWindow: value,
+        autoCompactTokenLimit: nextCompactLimit,
+      };
+    });
+  };
+
+  /** 不允许压缩阈值留空：清空后回落为按 90% 派生的值。 */
+  const handleCustomAutoCompactTokenLimitChange = (value: string) => {
+    setCustomContextDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        autoCompactTokenLimit:
+          value.trim() === ""
+            ? deriveAutoCompactTokenLimitInput(current.contextWindow)
+            : value,
+      };
+    });
+  };
+
   const formatTokenSize = (value?: number) => {
     if (value === undefined) {
       return t(
@@ -710,7 +794,7 @@ export function CodexExperimentalModelEditor({
         "跟随模型",
       );
     }
-    if (preset === "preset_516k") return "516K/460K";
+    if (preset === "preset_516k") return "516K/464K";
     if (preset === "preset_1m") return "1M/900K";
     return `${formatTokenSize(model.context_window)}/${formatTokenSize(
       model.auto_compact_token_limit,
@@ -915,7 +999,7 @@ export function CodexExperimentalModelEditor({
             className={`codex-experimental-model-editor__row${
               draggingModelId === model.model_id ? " is-dragging" : ""
             }`}
-            key={`${index}:${model.model_id}`}
+            key={rowKey(model)}
             onMouseEnter={() => handleReorderDragMove(index)}
           >
             <div
@@ -1146,7 +1230,7 @@ export function CodexExperimentalModelEditor({
                               "默认",
                             ),
                           ],
-                          ["preset_516k", "516K/460K"],
+                          ["preset_516k", "516K/464K"],
                           ["preset_1m", "1M/900K"],
                           [
                             "custom",
@@ -1317,7 +1401,7 @@ export function CodexExperimentalModelEditor({
                 }${
                   draggingModelId === model.model_id ? " is-dragging" : ""
                 }`}
-                key={`${model.model_id}:${model.display_name}`}
+                key={rowKey(model)}
                 onMouseEnter={() => handleReorderDragMove(index)}
               >
                 <button
@@ -1407,15 +1491,9 @@ export function CodexExperimentalModelEditor({
             contextWindow={customContextWindow}
             autoCompactTokenLimit={customAutoCompactTokenLimit}
             error={customContextErrorText}
-            onContextWindowChange={(value) =>
-              setCustomContextDraft((current) =>
-                current ? { ...current, contextWindow: value } : current,
-              )
-            }
-            onAutoCompactTokenLimitChange={(value) =>
-              setCustomContextDraft((current) =>
-                current ? { ...current, autoCompactTokenLimit: value } : current,
-              )
+            onContextWindowChange={handleCustomContextWindowChange}
+            onAutoCompactTokenLimitChange={
+              handleCustomAutoCompactTokenLimitChange
             }
             onClose={() => setCustomContextDraft(null)}
             onSave={saveCustomContext}
@@ -1434,16 +1512,8 @@ export function CodexExperimentalModelEditor({
           contextWindow={customContextWindow}
           autoCompactTokenLimit={customAutoCompactTokenLimit}
           error={customContextErrorText}
-          onContextWindowChange={(value) =>
-            setCustomContextDraft((current) =>
-              current ? { ...current, contextWindow: value } : current,
-            )
-          }
-          onAutoCompactTokenLimitChange={(value) =>
-            setCustomContextDraft((current) =>
-              current ? { ...current, autoCompactTokenLimit: value } : current,
-            )
-          }
+          onContextWindowChange={handleCustomContextWindowChange}
+          onAutoCompactTokenLimitChange={handleCustomAutoCompactTokenLimitChange}
           onClose={() => setCustomContextDraft(null)}
           onSave={saveCustomContext}
         />

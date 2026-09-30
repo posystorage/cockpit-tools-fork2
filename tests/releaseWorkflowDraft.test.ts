@@ -10,6 +10,17 @@ const englishChangelog = readFileSync(`${process.cwd()}/CHANGELOG.md`, "utf8");
 const chineseChangelog = readFileSync(`${process.cwd()}/CHANGELOG.zh-CN.md`, "utf8");
 
 describe("fork draft release workflow", () => {
+  it("includes exactly all four upstream releases in the 1.3.63 upgrade", () => {
+    assert.ok(workflowSource.includes('RELEASE_VERSIONS=("1.3.63" "1.3.62" "1.3.61" "1.3.60")'));
+    for (const changelog of [englishChangelog, chineseChangelog]) {
+      for (const version of ["1.3.63", "1.3.62", "1.3.61", "1.3.60"]) {
+        assert.ok(changelog.includes("## [" + version + "]"));
+      }
+    }
+    const publish = workflowSource.slice(workflowSource.indexOf("  publish-release:"), workflowSource.indexOf("  update-homebrew-cask:"));
+    assert.ok(publish.includes("if: ${{ false }}"));
+    assert.ok(!publish.includes("gh release edit"));
+  });
   it("uses only the quota UI and local sending delta for the 1.3.59b4 draft", () => {
     const start = workflowSource.indexOf('if [[ "${GITHUB_REF_NAME}" == "1.3.59b4"');
     const end = workflowSource.indexOf('elif [[ "${GITHUB_REF_NAME}" == "1.3.59b3"', start);

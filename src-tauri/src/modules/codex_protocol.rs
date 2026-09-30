@@ -22,9 +22,70 @@ const CODEX_CLIENT_MODEL_TEMPLATES_JSON: &str = include_str!(concat!(
     "/../sidecars/cockpit-cliproxy/third_party/CLIProxyAPI/internal/registry/models/codex_client_models.json"
 ));
 const DEFAULT_CONTEXT_WINDOW: i64 = 272_000;
-const DEFAULT_MAX_CONTEXT_WINDOW: i64 = 1_000_000;
+/// 未知 / 自定义 Codex 模型的兜底上限。
+///
+/// 兜底不再声明 1M 上限：1M 级上下文属于具体模型的真实能力值，只能来自模型目录或
+/// 用户显式覆盖；兜底一律与 `DEFAULT_CONTEXT_WINDOW` 保持一致，避免客户端按 1M
+/// 上报所有第三方模型。
+const DEFAULT_MAX_CONTEXT_WINDOW: i64 = DEFAULT_CONTEXT_WINDOW;
 const LOCAL_PROXY_BYPASS_HOSTS: [&str; 5] =
     ["127.0.0.1", "127.0.0.0/8", "localhost", "::1", "::1/128"];
+
+/// Codex 客户端「上下文 / 压缩」统一口径：压缩阈值固定取上下文窗口的 90%。
+pub(crate) const AUTO_COMPACT_RATIO_PERCENT: i64 = 90;
+
+/// 按统一口径派生自动压缩阈值：`context_window * 90 / 100`（整数除法，向下取整）。
+///
+/// 例：`516000 -> 464400`、`1000000 -> 900000`、`272000 -> 244800`、`128000 -> 115200`。
+/// 非正输入返回 0，调用方据此判断「无法派生」。
+pub(crate) fn derived_auto_compact_token_limit(context_window: i64) -> i64 {
+    if context_window <= 0 {
+        return 0;
+    }
+    context_window.saturating_mul(AUTO_COMPACT_RATIO_PERCENT) / 100
+}
+
+/// 为单个模型条目补齐压缩阈值：声明了 `context_window` 但缺少、非正或大于等于窗口的
+/// 压缩阈值时，按统一口径派生写入；合法的显式阈值保持原样。
+fn ensure_model_auto_compact_limit(object: &mut Map<String, Value>) -> bool {
+    let Some(context_window) = object
+        .get("context_window")
+        .and_then(Value::as_i64)
+        .filter(|value| *value > 0)
+    else {
+        return false;
+    };
+    let existing = object
+        .get("auto_compact_token_limit")
+        .and_then(Value::as_i64)
+        .filter(|value| *value > 0);
+    // 已声明的压缩阈值必须小于上下文窗口，否则视为无效并重新派生。
+    if existing.is_some_and(|value| value < context_window) {
+        return false;
+    }
+    object.insert(
+        "auto_compact_token_limit".to_string(),
+        json!(derived_auto_compact_token_limit(context_window)),
+    );
+    true
+}
+
+/// 为整个 Codex 客户端模型目录补齐压缩阈值（统一口径的收口点）。
+///
+/// 只要条目声明了 `context_window > 0`，就必定带 `auto_compact_token_limit`；
+/// 内置模板、`gpt-reserve`、模板回落条目与外部覆盖都不再留空。
+pub(crate) fn ensure_client_model_auto_compact_limits(catalog: &mut Value) -> bool {
+    let Some(models) = catalog.get_mut("models").and_then(Value::as_array_mut) else {
+        return false;
+    };
+    let mut changed = false;
+    for model in models {
+        if let Some(object) = model.as_object_mut() {
+            changed |= ensure_model_auto_compact_limit(object);
+        }
+    }
+    changed
+}
 
 pub fn merge_local_no_proxy(raw: &str) -> String {
     let mut seen = HashSet::new();
@@ -134,17 +195,20 @@ pub fn apply_model_context_overrides(
         let Some(object) = model.as_object_mut() else {
             continue;
         };
-        if let Some(context_window) = context_window.filter(|value| *value > 0) {
-            object.insert("context_window".to_string(), json!(context_window));
-            object.insert("max_context_window".to_string(), json!(context_window));
-        }
-        if let Some(auto_compact_token_limit) = auto_compact_token_limit.filter(|value| *value > 0)
-        {
-            object.insert(
-                "auto_compact_token_limit".to_string(),
-                json!(auto_compact_token_limit),
-            );
-        }
+        // 上下文窗口与压缩阈值必须成对出现：只给了压缩阈值属于半边配置，直接忽略，
+        // 保持「跟随官方」语义（客户端继续使用官方目录值）。
+        let Some(context_window) = context_window.filter(|value| *value > 0) else {
+            continue;
+        };
+        object.insert("context_window".to_string(), json!(context_window));
+        object.insert("max_context_window".to_string(), json!(context_window));
+        let auto_compact_token_limit = auto_compact_token_limit
+            .filter(|value| *value > 0 && *value < context_window)
+            .unwrap_or_else(|| derived_auto_compact_token_limit(context_window));
+        object.insert(
+            "auto_compact_token_limit".to_string(),
+            json!(auto_compact_token_limit),
+        );
     }
 }
 
@@ -242,9 +306,9 @@ pub(crate) fn managed_codex_model_ids() -> Vec<String> {
         .map(str::to_string)
         .collect::<Vec<_>>();
 
-    // 官方推荐集把 GPT-6 家族排在最前，顺序固定为 Astra → Sol → Luna；
+    // 官方推荐集把 GPT-6 家族排在最前，顺序固定为 6.1 Sol → Astra → Sol → Luna；
     // 只移动已存在的条目，不插入目录里没有的模型。
-    for (offset, model_id) in ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]
+    for (offset, model_id) in ["gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]
         .iter()
         .enumerate()
     {
@@ -482,6 +546,10 @@ fn build_codex_client_model(model_id: &str, index: usize) -> Value {
             "max_context_window".to_string(),
             json!(DEFAULT_MAX_CONTEXT_WINDOW),
         );
+        object.insert(
+            "auto_compact_token_limit".to_string(),
+            json!(derived_auto_compact_token_limit(DEFAULT_CONTEXT_WINDOW)),
+        );
         object.insert("priority".to_string(), json!(1000 + index));
         object.insert(
             "additional_speed_tiers".to_string(),
@@ -517,6 +585,11 @@ fn build_codex_client_model(model_id: &str, index: usize) -> Value {
         Value::String(CODEX_CLIENT_COMP_HASH.to_string()),
     );
     apply_deepseek_multi_agent_capability(&mut model);
+    // 统一口径收口：任何声明了上下文窗口的条目（内置模板、模板回落、外部覆盖）都必须
+    // 带自动压缩阈值，避免目录里出现「有窗口无阈值」的空档。
+    if let Some(object) = model.as_object_mut() {
+        ensure_model_auto_compact_limit(object);
+    }
     model
 }
 
@@ -556,6 +629,7 @@ fn inherit_routed_gpt_capabilities(object: &mut Map<String, Value>, model_id: &s
         "additional_speed_tiers",
         "context_window",
         "max_context_window",
+        "auto_compact_token_limit",
     ] {
         if let Some(value) = template.get(field) {
             object.insert(field.to_string(), value.clone());
@@ -642,6 +716,7 @@ fn display_name_for_model(model_id: &str) -> String {
         "gpt-5.4-mini" => "GPT-5.4 Mini".to_string(),
         "gpt-5.3-codex" => "GPT-5.3 Codex".to_string(),
         "gpt-5.3-codex-spark" => "GPT-5.3 Codex Spark".to_string(),
+        "gpt-6.1-sol" => "GPT-6.1 Sol".to_string(),
         "gpt-6-astra" => "GPT-6 Astra".to_string(),
         "gpt-6-sol" => "GPT-6 Sol".to_string(),
         "gpt-6-luna" => "GPT-6 Luna".to_string(),
@@ -739,8 +814,19 @@ fn normalize_responses_input(obj: &mut Map<String, Value>) -> bool {
 /// the item type when replaying a conversation, so this must happen before
 /// both direct official requests and gateway requests.
 fn normalize_responses_item_ids(items: &mut [Value]) -> bool {
+    // Reasoning IDs can be bound to encrypted_content by the upstream. Keep
+    // them opaque, including when the encrypted payload is absent. Reserve
+    // them before repairing other items so neither collision handling nor the
+    // replacement pass can change a reasoning ID or a reference to it.
+    let reasoning_ids: HashSet<String> = items
+        .iter()
+        .filter(|item| item.get("type").and_then(Value::as_str) == Some("reasoning"))
+        .filter_map(|item| item.get("id").and_then(Value::as_str))
+        .filter(|id| !id.is_empty())
+        .map(str::to_owned)
+        .collect();
     let mut replacements = HashMap::new();
-    let mut used = HashSet::new();
+    let mut used = reasoning_ids.clone();
     for item in items.iter() {
         let Some(obj) = item.as_object() else {
             continue;
@@ -748,7 +834,9 @@ fn normalize_responses_item_ids(items: &mut [Value]) -> bool {
         let Some(id) = obj.get("id").and_then(Value::as_str) else {
             continue;
         };
-        if id.is_empty() {
+        // If another item shares a reasoning ID, a global replacement would
+        // also corrupt that reasoning item. Leave ambiguous IDs untouched.
+        if id.is_empty() || reasoning_ids.contains(id) {
             continue;
         }
         let Some(item_type) = obj.get("type").and_then(Value::as_str) else {
@@ -759,7 +847,6 @@ fn normalize_responses_item_ids(items: &mut [Value]) -> bool {
             "custom_tool_call" => "ctc",
             "custom_tool_call_output" => "ctco",
             "message" => "msg",
-            "reasoning" => "rs",
             _ => continue,
         };
         let mut candidate = if id.starts_with(&format!("{prefix}_")) {
@@ -1233,7 +1320,12 @@ mod tests {
         expected["visibility"] = json!("list");
         expected["display_name"] = json!(CODEX_RESERVE_DISPLAY_NAME);
         assert_eq!(models.last(), Some(&expected));
-        assert!(expected["auto_compact_token_limit"].is_null());
+        // 统一口径：Reserve 沿用 Luna 模板的上下文窗口，压缩阈值必须同时存在且为 90%。
+        let reserve_context = expected["context_window"].as_i64().expect("context window");
+        assert_eq!(
+            expected["auto_compact_token_limit"].as_i64(),
+            Some(derived_auto_compact_token_limit(reserve_context))
+        );
 
         let explicit = build_codex_client_models_response(&[CODEX_RESERVE_MODEL_ID.to_string()]);
         assert_eq!(explicit["models"][0], expected);
@@ -1563,6 +1655,80 @@ mod tests {
     }
 
     #[test]
+    fn preserves_reasoning_identity_when_replaying_responses() {
+        for id in [
+            format!("rs_{}", "x".repeat(80)),
+            "opaque-upstream-id".into(),
+        ] {
+            for encrypted in [true, false] {
+                let mut reasoning = json!({
+                    "type": "reasoning",
+                    "id": id,
+                    "summary": []
+                });
+                if encrypted {
+                    reasoning["encrypted_content"] = json!("opaque-encrypted-payload");
+                }
+                for input in [
+                    reasoning.clone(),
+                    json!([reasoning.clone(), reasoning.clone()]),
+                ] {
+                    let mut body = json!({"model": "gpt-5.4", "input": input});
+                    normalize_responses_body_for_codex(&mut body);
+                    for item in body["input"].as_array().unwrap() {
+                        assert_eq!(item, &reasoning);
+                    }
+                    let normalized = body.clone();
+                    normalize_responses_body_for_codex(&mut body);
+                    assert_eq!(body, normalized);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn protects_reasoning_ids_from_tool_replacements() {
+        // A tool ID repair must not rewrite a reasoning ID or a reference to it,
+        // even when an upstream has reused the same raw ID for both item types.
+        for reasoning_first in [true, false] {
+            let reasoning = json!({
+                "type": "reasoning",
+                "id": "fc_legacy",
+                "encrypted_content": "opaque-encrypted-payload",
+                "summary": []
+            });
+            let tool = json!({"type": "custom_tool_call", "id": "fc_legacy"});
+            let mut items = if reasoning_first {
+                vec![reasoning.clone(), tool]
+            } else {
+                vec![tool, reasoning.clone()]
+            };
+            items
+                .push(json!({"type": "item_reference", "id": "fc_legacy", "item_id": "fc_legacy"}));
+            items.push(json!({"type": "custom_tool_call", "id": "fc_other"}));
+
+            assert!(normalize_responses_item_ids(&mut items));
+            assert_eq!(items[if reasoning_first { 0 } else { 1 }], reasoning);
+            assert_eq!(items[2]["id"], "fc_legacy");
+            assert_eq!(items[2]["item_id"], "fc_legacy");
+            assert_eq!(items[3]["id"], "ctc_fc_other");
+        }
+    }
+
+    #[test]
+    fn reserves_reasoning_ids_before_repairing_tool_ids() {
+        let mut items = vec![
+            json!({"type": "custom_tool_call", "id": "fc_legacy"}),
+            json!({"type": "reasoning", "id": "ctc_fc_legacy", "encrypted_content": "opaque"}),
+            json!({"type": "custom_tool_call_output", "item_id": "fc_legacy"}),
+        ];
+        assert!(normalize_responses_item_ids(&mut items));
+        assert_eq!(items[1]["id"], "ctc_fc_legacy");
+        assert_ne!(items[0]["id"], items[1]["id"]);
+        assert_eq!(items[2]["item_id"], items[0]["id"]);
+    }
+
+    #[test]
     fn shortens_long_and_colliding_response_item_ids() {
         let long_id = format!("fc_{}", "x".repeat(80));
         let mut body = json!({
@@ -1806,32 +1972,14 @@ mod tests {
     }
 
     #[test]
-    fn codex_spark_compatibility_model_is_visible_with_a_safe_catalog_fallback() {
-        let response = build_codex_client_models_response(&[
-            "gpt-5.3-codex".to_string(),
-            "gpt-5.3-codex-spark".to_string(),
-        ]);
-        let models = response
-            .get("models")
-            .and_then(Value::as_array)
-            .expect("models should be an array");
-        let spark = models
-            .iter()
-            .find(|model| model.get("slug").and_then(Value::as_str) == Some("gpt-5.3-codex-spark"))
-            .expect("Spark should be visible to Codex clients");
-
-        assert_eq!(
-            spark.get("display_name").and_then(Value::as_str),
-            Some("GPT-5.3-Codex-Spark")
-        );
-        assert_eq!(
-            spark.get("visibility").and_then(Value::as_str),
-            Some("list")
-        );
-        assert_eq!(
-            spark.get("supported_in_api").and_then(Value::as_bool),
-            Some(true)
-        );
+    fn codex_builtin_catalog_does_not_include_retired_templates() {
+        let catalog = codex_client_model_catalog();
+        let models = catalog["models"].as_array().unwrap();
+        assert!(models.iter().any(|model| model["slug"] == "gpt-6.1-sol"));
+        for model in models {
+            let slug = model["slug"].as_str().unwrap();
+            assert!(!crate::modules::codex_wakeup::is_codex_model_before_5_5(slug), "retired template {slug}");
+        }
     }
 
     #[test]
@@ -1839,6 +1987,7 @@ mod tests {
         assert_eq!(
             managed_codex_model_ids(),
             vec![
+                "gpt-6.1-sol",
                 "gpt-6-astra",
                 "gpt-6-sol",
                 "gpt-6-luna",
@@ -1924,11 +2073,16 @@ mod tests {
         );
         assert_eq!(
             model.get("context_window").and_then(Value::as_i64),
-            Some(1_050_000)
+            Some(256_000)
         );
         assert_eq!(
             model.get("max_context_window").and_then(Value::as_i64),
-            Some(1_050_000)
+            Some(256_000)
+        );
+        // 统一口径：上下文窗口必须带 90% 的压缩阈值。
+        assert_eq!(
+            model.get("auto_compact_token_limit").and_then(Value::as_i64),
+            Some(230_400)
         );
         assert_eq!(
             model.get("max_completion_tokens").and_then(Value::as_i64),
@@ -1964,6 +2118,24 @@ mod tests {
     }
 
     #[test]
+    fn gpt_6_1_sol_preserves_catalog_capabilities() {
+        let catalog = build_codex_client_models_response(&["gpt-6.1-sol".into()]);
+        let model = &catalog["models"][0];
+        assert_eq!(model["slug"], "gpt-6.1-sol");
+        assert_eq!(model["display_name"], "GPT-6.1 Sol");
+        assert_eq!(model["context_window"], 272000);
+        assert_eq!(model["max_context_window"], 872000);
+        assert_eq!(model["auto_compact_token_limit"], 244800);
+        assert_eq!(model["default_reasoning_level"], "low");
+        assert_eq!(model["input_modalities"], json!(["text", "image"]));
+        assert!(model["supported_reasoning_levels"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|level| level["effort"] == "ultra"));
+    }
+
+    #[test]
     fn gpt_6_sol_and_luna_preserve_official_catalog_limits_and_reasoning_levels() {
         for (slug, official_name, fallback_name, priority, supports_ultra) in [
             ("gpt-6-sol", "GPT-6 Sol", "GPT-6 Sol", 2, true),
@@ -1981,11 +2153,17 @@ mod tests {
             assert_eq!(model.get("priority").and_then(Value::as_i64), Some(priority));
             assert_eq!(
                 model.get("context_window").and_then(Value::as_i64),
-                Some(1_050_000)
+                Some(256_000)
             );
             assert_eq!(
                 model.get("max_context_window").and_then(Value::as_i64),
-                Some(1_050_000)
+                Some(256_000)
+            );
+            // 统一口径：上下文窗口必须带 90% 的压缩阈值。
+            assert_eq!(
+                model.get("auto_compact_token_limit").and_then(Value::as_i64),
+                Some(230_400),
+                "{slug}"
             );
             let efforts = model
                 .get("supported_reasoning_levels")
@@ -2059,6 +2237,9 @@ mod tests {
         assert_eq!(custom["description"], "Custom Model");
         assert_eq!(custom["context_window"], DEFAULT_CONTEXT_WINDOW);
         assert_eq!(custom["max_context_window"], DEFAULT_MAX_CONTEXT_WINDOW);
+        // 兜底不再声明 1M 上限；压缩阈值按统一口径派生为窗口的 90%。
+        assert_eq!(custom["max_context_window"], 272_000);
+        assert_eq!(custom["auto_compact_token_limit"], 244_800);
         assert_eq!(
             custom["supported_reasoning_levels"],
             base["supported_reasoning_levels"]
@@ -2074,8 +2255,8 @@ mod tests {
             "gpt-5.6-terra",
             "gpt-5.6-luna",
             "gpt-5.5",
-            "gpt-5.4",
-            "gpt-5.4-mini",
+            "gpt-6.1-sol",
+            "gpt-6-astra",
         ]
         .map(str::to_string);
         let response = build_codex_client_models_response(&model_ids);
@@ -2089,8 +2270,46 @@ mod tests {
 
         assert_eq!(
             priorities,
-            vec![Some(4), Some(7), Some(8), Some(12), Some(16), Some(23)]
+            vec![Some(4), Some(7), Some(8), Some(12), Some(0), Some(1)]
         );
+    }
+
+    #[test]
+    fn derived_auto_compact_limits_follow_ninety_percent_rule() {
+        for (window, expected) in [
+            (516_000, 464_400),
+            (1_000_000, 900_000),
+            (272_000, 244_800),
+            (128_000, 115_200),
+            (256_000, 230_400),
+            (1_048_576, 943_718),
+        ] {
+            assert_eq!(
+                derived_auto_compact_token_limit(window),
+                expected,
+                "window={window}"
+            );
+        }
+        assert_eq!(derived_auto_compact_token_limit(0), 0);
+        assert_eq!(derived_auto_compact_token_limit(-1), 0);
+        assert_eq!(AUTO_COMPACT_RATIO_PERCENT, 90);
+    }
+
+    #[test]
+    fn catalog_models_without_compact_limit_derive_ninety_percent() {
+        let mut catalog = json!({"models": [
+            {"slug": "windowless-model"},
+            {"slug": "official-model", "context_window": 272_000},
+            {"slug": "explicit-model", "context_window": 516_000, "auto_compact_token_limit": 460_000},
+            {"slug": "stale-model", "context_window": 100_000, "auto_compact_token_limit": 100_000},
+        ]});
+        assert!(ensure_client_model_auto_compact_limits(&mut catalog));
+        assert!(catalog["models"][0].get("auto_compact_token_limit").is_none());
+        assert_eq!(catalog["models"][1]["auto_compact_token_limit"], 244_800);
+        // 显式给出的（小于窗口的）阈值保持原样。
+        assert_eq!(catalog["models"][2]["auto_compact_token_limit"], 460_000);
+        // 大于等于窗口的无效阈值会被 90% 派生值替换。
+        assert_eq!(catalog["models"][3]["auto_compact_token_limit"], 90_000);
     }
 
     #[test]

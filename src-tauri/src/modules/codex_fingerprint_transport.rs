@@ -157,10 +157,10 @@ async fn fingerprint_account_probe(
         .acquire_owned()
         .await
         .map_err(|_| "账号准备已停止")?;
-    let account = tokio::task::spawn_blocking(move || {
+    let mut account = tokio::task::spawn_blocking(move || {
         let _permit = preparation;
         runtime.block_on(async {
-            timeout(Duration::from_secs(85), get_prepared_account(&id))
+            timeout(Duration::from_secs(85), prepare_direct_codex_account(&id))
                 .await
                 .map_err(|_| "账号准备超时".to_string())?
         })
@@ -194,17 +194,67 @@ async fn fingerprint_account_probe(
     {
         headers.insert("x-openai-fedramp".into(), "true".into());
     }
-    let response = send_internal_api_service_request(
-        account_id,
-        RESPONSES_PATH,
-        &headers,
-        &bytes,
-        FINGERPRINT_TIMEOUT,
-    )
-    .await?;
+    // Like upstream Pelican/wakeup, use this account's direct proxy route without
+    // starting or borrowing API Service state. Never retry a generation.
+    let mut timeouts = CodexLocalAccessTimeouts::default();
+    timeouts.upstream_send_retry_attempts = 0;
+    let connect_timeout = duration_from_millis(
+        timeouts.legacy_upstream_connect_timeout_ms,
+        DEFAULT_UPSTREAM_CONNECT_TIMEOUT,
+    );
+    let target = resolve_upstream_target(RESPONSES_PATH)?;
+    let response = if account.is_agent_identity_auth() {
+        let (updated, auth, _) = codex_agent_identity::build_authentication_headers_with_base_url(
+            &account,
+            None,
+            codex_agent_identity::AGENT_IDENTITY_AUTH_API_BASE_URL,
+        )
+        .await?;
+        account = updated;
+        let authorization = auth
+            .get(AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .ok_or("指纹账号鉴权信息不可用")?;
+        send_upstream_request_with_authorization_url(
+            "POST",
+            &format!(
+                "{}{}",
+                UPSTREAM_CODEX_BASE_URL.trim_end_matches('/'),
+                target
+            ),
+            &target,
+            &headers,
+            &bytes,
+            &account,
+            authorization,
+            None,
+            connect_timeout,
+            &timeouts,
+            CodexLocalAccessImageGenerationMode::Disabled,
+            CodexLocalAccessRequestKind::Text,
+        )
+        .await
+    } else {
+        send_upstream_request(
+            "POST",
+            &target,
+            &headers,
+            &bytes,
+            &account,
+            None,
+            connect_timeout,
+            &timeouts,
+            CodexLocalAccessImageGenerationMode::Disabled,
+            CodexLocalAccessRequestKind::Text,
+        )
+        .await
+    }
+    .map_err(|error| pelican_safe_error(&account, &error))?;
     if !response.status().is_success() {
         let status = response.status();
-        let raw = pelican_read_error_body(response).await?;
+        let raw = pelican_read_error_body(response)
+            .await
+            .map_err(|error| pelican_safe_error(&account, &error))?;
         let safe = pelican_redact_error(&account, &raw);
         let message = extract_upstream_error_message(&safe).unwrap_or_else(|| status.to_string());
         return Err(format!(
@@ -213,7 +263,9 @@ async fn fingerprint_account_probe(
             truncate_diagnostic_text(&message, 1200)
         ));
     }
-    let output = pelican_consume_response(response, PELICAN_IDLE_TIMEOUT, &|_| {}).await?;
+    let output = pelican_consume_response(response, PELICAN_IDLE_TIMEOUT, &|_| {})
+        .await
+        .map_err(|error| pelican_safe_error(&account, &error))?;
     Ok(FingerprintProbe {
         reply: output.reply,
         response_model: output.response_model,
@@ -294,7 +346,11 @@ async fn fingerprint_provider_probe(
         .and_then(|v| v.to_str().ok())
         .is_some_and(|v| v.contains("text/event-stream"));
     if is_sse && wire_api == "responses" {
-        let output = pelican_consume_response(response, PELICAN_IDLE_TIMEOUT, &|_| {}).await?;
+        let output = pelican_consume_response(response, PELICAN_IDLE_TIMEOUT, &|_| {})
+            .await
+            .map_err(|error| {
+                truncate_diagnostic_text(&error.replace(api_key.trim(), "[redacted]"), 1200)
+            })?;
         return Ok(FingerprintProbe {
             reply: output.reply,
             response_model: output.response_model,

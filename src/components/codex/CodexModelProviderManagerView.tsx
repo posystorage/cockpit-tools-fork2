@@ -1,4 +1,5 @@
-import { ArrowDownWideNarrow, ArrowDown, ArrowUp, Check, CircleAlert, ChevronDown, Copy, Clock, Database, ExternalLink, GripVertical, HelpCircle, KeyRound, Link2, LayoutGrid, Pencil, Plus, Rows3, Star, Trash2, X, Search, Settings, Activity, RefreshCw, RotateCw, Play } from "lucide-react";
+import { ModalErrorMessage } from "../ModalErrorMessage";
+import { Bird, ArrowDownWideNarrow, ArrowDown, ArrowUp, Check, CircleAlert, ChevronDown, Copy, Clock, Database, ExternalLink, GripVertical, HelpCircle, KeyRound, Link2, LayoutGrid, Pencil, Plus, Rows3, Star, Trash2, X, Search, Settings, Activity, RefreshCw, RotateCw, Play } from "lucide-react";
 import { MultiSelectFilterDropdown } from "../MultiSelectFilterDropdown";
 import { useCodexFingerprintStore } from "../../stores/useCodexFingerprintStore";
 import { SingleSelectFilterDropdown } from "../SingleSelectFilterDropdown";
@@ -10,7 +11,7 @@ import { resolveNewApiQuotaSnapshot } from "../../services/modelProviderUsageSer
 import { CODEX_API_PROVIDER_CUSTOM_ID, CODEX_API_PROVIDER_PRESETS, DEEPSEEK_API_PROVIDER_ID, resolveCodexApiProviderPresetId } from "../../utils/codexProviderPresets";
 import { normalizeApiKeyFunOfficialUrl } from "../../utils/apikeyFunLinks";
 import { getCodexSubscriptionPresentation } from "../../types/codex";
-import { resolveCodexProviderCapabilityProfile } from "../../utils/codexProviderGateway";
+import { canConfigureCodexProviderVision, resolveCodexProviderCapabilityProfile } from "../../utils/codexProviderGateway";
 import { CodexQuickConfigCard } from "./CodexQuickConfigCard";
 import {
   CodexServicePanelModal,
@@ -28,6 +29,7 @@ export type CodexModelProviderManagerViewProps = ReturnType<typeof useCodexModel
 export function CodexModelProviderManagerView(props: CodexModelProviderManagerViewProps) {
   const {
     apiKeyPickerProviderId,
+    openProviderPelican,
     batchTestCancelling,
     batchTestDeleting,
     batchTestError,
@@ -367,6 +369,10 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
             )}
           </div>
           <div className="codex-overview-selection-actions">
+            <button type="button" className="btn btn-secondary" onClick={openProviderPelican}
+              disabled={filteredProviders.every((provider) => !getSelectedProviderApiKey(provider))}>
+              <Bird size={14} />{t("pelican.title")}
+            </button>
             <button type="button" className="btn btn-secondary" onClick={() => useCodexFingerprintStore.getState().open()}>
               <Play size={14} /><span>指纹测智</span>
             </button>
@@ -930,7 +936,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                         }
                         placeholder={t(
                           "codex.modelProviders.batchTest.modelCustomPlaceholder",
-                          "输入模型 ID，例如 gpt-4.1-mini",
+                          "输入模型 ID，例如 gpt-6.1-sol",
                         )}
                         style={{ marginTop: 8 }}
                       />
@@ -1876,7 +1882,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                   </label>
                 </div>
               )}
-              {(form.wireApi === "chat_completions" ||
+              {(canConfigureCodexProviderVision({ presetId: selectedPresetId, wireApi: form.wireApi }) ||
                 selectedPresetId === DEEPSEEK_API_PROVIDER_ID) && (
                 <>
                   <div className="form-group">
@@ -1906,6 +1912,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                         })
                       }
                       visionStates={form.visionModelStates}
+                      visionDefault={form.supportsVision}
                       onVisionChange={(model, value) =>
                         mutateForm({
                           visionModelStates: {
@@ -1917,9 +1924,8 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                       disabled={saving}
                     />
                   </div>
-                  {/* Responses 只用逐模型能力位：供应商级默认与兜底模型在
-                      DeepSeek Responses 下会被规范化清空/归零，不再展示。 */}
-                  {form.wireApi === "chat_completions" && (
+                  {/* DeepSeek Responses 只保留逐模型能力；其他第三方协议均可配置默认值。 */}
+                  {canConfigureCodexProviderVision({ presetId: selectedPresetId, wireApi: form.wireApi }) && (
                     <>
                   <div className="form-group">
                     <label>
@@ -1939,7 +1945,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                         <span className="provider-vision-toggle-desc">
                           {t(
                             "codex.modelProviders.vision.providerDefaultHint",
-                            "关闭时，只有下方列出的模型会允许图片输入；其他模型会在本地网关直接提示不支持。",
+                            "未单独设置的模型使用此默认值，GPT-5.5 及更新模型默认支持图片。可在模型列表中单独关闭。网关无法匹配视觉模型时会省略图片并继续处理文本。",
                           )}
                         </span>
                       </span>
@@ -1972,7 +1978,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                           onChange={(event) =>
                             mutateForm({ visionModelText: event.target.value })
                           }
-                          placeholder={"qwen-vl-plus\ngpt-4o"}
+                          placeholder={"qwen-vl-plus\ngpt-6.1-sol"}
                           disabled={saving}
                         />
                         <p className="api-provider-hint">
@@ -2003,7 +2009,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                   <p className="api-provider-hint">
                     {t(
                       "codex.modelProviders.vision.routingModelHint",
-                      "当前模型不支持图片时，带图片的请求会改用该模型；留空则直接提示不支持。",
+                      "当前模型不支持图片时，网关会改用该模型；留空时自动使用唯一视觉模型，否则省略图片并继续处理文本。",
                     )}
                   </p>
                 </div>
@@ -2349,12 +2355,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                 </div>
               </div>
 
-              {formError && (
-                <div className="add-status error">
-                  <CircleAlert size={16} />
-                  <span>{formError}</span>
-                </div>
-              )}
+              <ModalErrorMessage message={formError} position="bottom" />
             </div>
 
             <div className="modal-footer">

@@ -4,7 +4,7 @@ import { Fingerprint, Minus, RefreshCw, Square, X } from 'lucide-react';
 import { useCodexAccountStore } from '../../../stores/useCodexAccountStore';
 import { useCodexFingerprintStore } from '../../../stores/useCodexFingerprintStore';
 import { listCodexModelProviders, type CodexModelProvider } from '../../../services/codexModelProviderService';
-import { buildFingerprintTargets } from '../../../utils/codexFingerprint';
+import { buildFingerprintTargets, fingerprintExcludedAccountIds } from '../../../utils/codexFingerprint';
 import { FINGERPRINT_MAX_CONCURRENCY, FINGERPRINT_MODELS } from '../../../types/codexFingerprint';
 import { isPrivacyModeEnabledByDefault, maskSensitiveValue, PRIVACY_MODE_CHANGED_EVENT } from '../../../utils/privacy';
 import { useModalScrollLock } from '../../../hooks/useModalScrollLock';
@@ -16,6 +16,7 @@ export function CodexFingerprintHost() {
   const state = useCodexFingerprintStore();
   const accounts = useCodexAccountStore((value) => value.accounts);
   const [providers, setProviders] = useState<CodexModelProvider[]>([]);
+  const [excludedIds, setExcludedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
@@ -36,12 +37,15 @@ export function CodexFingerprintHost() {
     heading.current?.focus();
     setLoading(true); setLoadError(null);
     void Promise.all([useCodexAccountStore.getState().fetchAccounts(), listCodexModelProviders()])
-      .then(([, values]) => { if (!disposed) setProviders(values); })
+      .then(async ([, values]) => {
+        const excluded = await fingerprintExcludedAccountIds(useCodexAccountStore.getState().accounts, values);
+        if (!disposed) { setProviders(values); setExcludedIds(excluded); }
+      })
       .catch((error) => { if (!disposed) setLoadError(String(error)); })
       .finally(() => { if (!disposed) setLoading(false); });
     return () => { disposed = true; previous?.focus(); };
   }, [state.visible, reload]);
-  const targets = useMemo(() => buildFingerprintTargets(accounts, providers), [accounts, providers]);
+  const targets = useMemo(() => buildFingerprintTargets(accounts, providers, excludedIds), [accounts, providers, excludedIds]);
   const filtered = targets.filter((target) => target.label.toLowerCase().includes(search.toLowerCase()));
   const selected = targets.filter((target) => state.preferences.targetIds.includes(target.id));
   const done = state.results.filter((item) => !['queued', 'running'].includes(item.status)).length;

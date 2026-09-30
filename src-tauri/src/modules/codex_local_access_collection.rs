@@ -582,6 +582,9 @@ fn prune_runtime_routing_state(runtime: &mut GatewayRuntime, now: i64) {
     runtime
         .model_cooldowns
         .retain(|_, cooldown| cooldown.next_retry_at_ms > now);
+    runtime
+        .recovery_suppressed_accounts
+        .retain(|_, suppressed_until_ms| *suppressed_until_ms > now);
 
     if runtime.response_affinity.len() <= MAX_RESPONSE_AFFINITY_BINDINGS {
         return;
@@ -1575,20 +1578,30 @@ fn sanitize_collection_structure(
     if normalized_model_pricings != original_model_pricings {
         changed = true;
     }
-    collection.model_pricings =
-        drop_superseded_default_56_model_pricings(normalized_model_pricings);
+    collection.model_pricings = if collection.model_pricing_version < DEFAULT_MODEL_PRICING_VERSION {
+        drop_superseded_default_56_model_pricings(normalized_model_pricings)
+    } else {
+        normalized_model_pricings
+    };
     if collection.model_pricings != original_model_pricings {
         changed = true;
     }
-    if collection.model_pricing_version < LEGACY_MODEL_PRICING_VERSION_BEFORE_V3 {
-        collection.model_pricings = Vec::new();
+    if collection.model_pricing_version < DEFAULT_MODEL_PRICING_VERSION {
+        // Versions before 3 require a full reseed; subsequent price updates
+        // discard only recognized old defaults above and preserve user rates.
+        if collection.model_pricing_version < LEGACY_MODEL_PRICING_VERSION_BEFORE_V3 {
+            collection.model_pricings = Vec::new();
+        }
         collection.model_pricing_version = DEFAULT_MODEL_PRICING_VERSION;
         changed = true;
     }
     if collection.model_pricing_book_version < DEFAULT_MODEL_PRICING_BOOK_VERSION {
-        let before = collection.model_pricings.len();
-        collection.model_pricings.retain(|pricing| !is_superseded_default_56_pricing(pricing));
-        if collection.model_pricings.len() != before { changed = true; }
+        // Fork request-log revisions can exceed the upstream book version.
+        // Book migration must still remove historical presets without deleting
+        // real custom prices when upgrading a previously edited v4 collection.
+        collection.model_pricings = drop_superseded_default_56_model_pricings(
+            std::mem::take(&mut collection.model_pricings),
+        );
         collection.model_pricing_book_version = DEFAULT_MODEL_PRICING_BOOK_VERSION;
         collection.model_pricing_version = collection.model_pricing_version.max(DEFAULT_MODEL_PRICING_VERSION).saturating_add(1);
         changed = true;

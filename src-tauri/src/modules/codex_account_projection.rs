@@ -110,12 +110,23 @@ fn merge_existing_auth_file_value(
 fn build_merged_auth_file_value(
     base_dir: &Path,
     account: &CodexAccount,
-) -> Result<serde_json::Value, String> {
+) -> Result<(serde_json::Value, bool), String> {
     let next = build_auth_file_value(account)?;
-    Ok(merge_existing_auth_file_value(
-        read_existing_auth_file_object(base_dir),
-        next,
-    ))
+    let existing = read_existing_auth_file_object(base_dir);
+    // A normal launch rewrites last_refresh even when the actual credentials are
+    // unchanged. It must not repeatedly ask users to restart the same daemon.
+    let changed = existing.as_ref().is_none_or(|previous| {
+        [
+            "auth_mode",
+            "OPENAI_API_KEY",
+            "tokens",
+            "agent_identity",
+            "personal_access_token",
+        ]
+        .iter()
+        .any(|key| previous.get(*key) != next.get(*key))
+    });
+    Ok((merge_existing_auth_file_value(existing, next), changed))
 }
 
 fn build_auth_file_value(account: &CodexAccount) -> Result<serde_json::Value, String> {
@@ -725,6 +736,16 @@ fn write_auth_value_to_configured_store(
 }
 
 pub fn write_auth_file_to_dir(base_dir: &Path, account: &CodexAccount) -> Result<(), String> {
+    write_auth_file_to_dir_with_after_commit(base_dir, account, || {
+        crate::modules::codex_cli_daemon::after_auth_commit(base_dir);
+    })
+}
+
+fn write_auth_file_to_dir_with_after_commit(
+    base_dir: &Path,
+    account: &CodexAccount,
+    after_commit: impl FnOnce(),
+) -> Result<(), String> {
     let auth_path = base_dir.join("auth.json");
     logger::log_info(&format!(
         "[Codex切号] 准备写入登录信息: account_id={}, email={}, target_dir={}, target_file={}",
@@ -736,8 +757,11 @@ pub fn write_auth_file_to_dir(base_dir: &Path, account: &CodexAccount) -> Result
 
     crate::modules::codex_local_access::cleanup_provider_gateway_profile_model_overrides(base_dir)?;
 
-    let auth_file = build_merged_auth_file_value(base_dir, account)?;
+    let (auth_file, credentials_changed) = build_merged_auth_file_value(base_dir, account)?;
     let auth_store = write_auth_value_to_configured_store(base_dir, &auth_path, &auth_file)?;
+    if credentials_changed {
+        after_commit();
+    }
 
     let provider_config = if account.is_api_key_auth() {
         let provider_config = infer_api_provider_config(
@@ -1373,8 +1397,17 @@ pub async fn sync_bound_oauth_consumers_after_reauth(account_id: &str) -> Result
     if account_id.is_empty() {
         return Err("OAuth 账号 ID 为空".to_string());
     }
-    let account = load_account(account_id)
-        .ok_or_else(|| format!("重新授权后找不到 OAuth 账号: {}", account_id))?;
-
-    sync_managed_account_sidecar_checked(&account)
+    let account_id = account_id.to_string();
+    let account = tauri::async_runtime::spawn_blocking(move || {
+        load_account(&account_id)
+            .ok_or_else(|| format!("重新授权后找不到 OAuth 账号: {}", account_id))
+    })
+    .await
+    .map_err(|_| "PROXY_RUNTIME_FAILED".to_string())??;
+    // The authorization callback only loads shared proxy state. Runtime startup
+    // belongs to the background writer for an already-running profile gateway.
+    crate::modules::codex_proxy_runtime::ensure_account_proxy_state(&account).await?;
+    tauri::async_runtime::spawn_blocking(move || sync_managed_account_sidecar_checked(&account))
+        .await
+        .map_err(|_| "PROXY_RUNTIME_FAILED".to_string())?
 }

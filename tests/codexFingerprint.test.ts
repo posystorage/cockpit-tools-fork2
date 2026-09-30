@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildFingerprintTargets, normalizeFingerprintPreferences, runFingerprintQueue } from '../src/utils/codexFingerprint.ts';
+import { buildFingerprintTargets, fingerprintExcludedAccountIds, normalizeFingerprintPreferences, runFingerprintQueue } from '../src/utils/codexFingerprint.ts';
 import { generateChallenges } from '../src/vendor/modeltrace/challenge-browser.js';
 import { analyzeGlobalOutputs } from '../src/vendor/modeltrace/fingerprint-core.js';
 import bank from '../src/vendor/modeltrace/unified_bank.json';
@@ -9,6 +9,17 @@ import type { CodexModelProvider } from '../src/services/codexModelProviderServi
 
 test('first launch selects exactly the requested models and no accounts', () => {
   assert.deepEqual(normalizeFingerprintPreferences(), { targetIds: [], models: ['gpt-5.6-sol', 'gpt-6-sol', 'gpt-6-astra'], concurrency: 3, samples: 3 });
+});
+
+test('deleted provider keys are not resurrected by standalone account targets', async () => {
+  const key = 'deleted-key';
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
+  const hash = Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, '0')).join('');
+  const providers = [{ id: 'relay', name: 'Relay', baseUrl: 'https://relay.test/v1', apiKeys: [], excludedApiKeyHashes: [hash] }] as CodexModelProvider[];
+  const accounts = [{ id: 'deleted', auth_mode: 'apikey', api_provider_id: 'relay', openai_api_key: key }] as CodexAccount[];
+  const excluded = await fingerprintExcludedAccountIds(accounts, providers);
+  assert.deepEqual(excluded, ['deleted']);
+  assert.deepEqual(buildFingerprintTargets(accounts, providers, excluded), []);
 });
 test('saved empty model selection stays empty and invalid settings are repaired', () => {
   assert.deepEqual(normalizeFingerprintPreferences({ models: [], targetIds: ['oauth:1', 'oauth:1'], concurrency: 0, samples: 4 }), { models: [], targetIds: ['oauth:1'], concurrency: 3, samples: 3 });

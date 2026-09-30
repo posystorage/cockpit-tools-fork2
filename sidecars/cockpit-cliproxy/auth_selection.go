@@ -1539,6 +1539,7 @@ func (p *usagePlugin) HandleUsage(ctx context.Context, record coreusage.Record) 
 	status := record.Fail.StatusCode
 	success := !record.Failed
 	payload := usagePayload{
+		ProxyRoute:       record.ProxyRoute,
 		Type:             "usage",
 		RequestID:        internallogging.GetRequestID(ctx),
 		Provider:         record.Provider,
