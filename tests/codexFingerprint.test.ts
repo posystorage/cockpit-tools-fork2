@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { buildFingerprintTargets, fingerprintExcludedAccountIds, normalizeFingerprintPreferences, runFingerprintQueue } from '../src/utils/codexFingerprint.ts';
 import { generateChallenges } from '../src/vendor/modeltrace/challenge-browser.js';
@@ -6,6 +7,16 @@ import { analyzeGlobalOutputs } from '../src/vendor/modeltrace/fingerprint-core.
 import bank from '../src/vendor/modeltrace/unified_bank.json';
 import type { CodexAccount } from '../src/types/codex.ts';
 import type { CodexModelProvider } from '../src/services/codexModelProviderService.ts';
+import { FINGERPRINT_MODELS } from '../src/types/codexFingerprint.ts';
+
+test('GPT-6.1 Sol selection survives preference restoration and matches the backend allowlist', () => {
+  assert.ok(FINGERPRINT_MODELS.includes('gpt-6.1-sol'));
+  assert.deepEqual(normalizeFingerprintPreferences({ models: ['gpt-6.1-sol'] }).models, ['gpt-6.1-sol']);
+  const source = readFileSync(new URL('../src-tauri/src/modules/codex_fingerprint_transport.rs', import.meta.url), 'utf8');
+  const allowlist = source.match(/const FINGERPRINT_MODELS: &[\s\S]*?= &\[([\s\S]*?)\];/)?.[1];
+  assert.ok(allowlist);
+  assert.deepEqual([...allowlist.matchAll(/"([^"]+)"/g)].map((match) => match[1]), [...FINGERPRINT_MODELS]);
+});
 
 test('first launch selects exactly the requested models and no accounts', () => {
   assert.deepEqual(normalizeFingerprintPreferences(), { targetIds: [], models: ['gpt-5.6-sol', 'gpt-6-sol', 'gpt-6-astra'], concurrency: 3, samples: 3 });

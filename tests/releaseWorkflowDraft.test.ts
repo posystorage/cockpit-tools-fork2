@@ -10,6 +10,17 @@ const englishChangelog = readFileSync(`${process.cwd()}/CHANGELOG.md`, "utf8");
 const chineseChangelog = readFileSync(`${process.cwd()}/CHANGELOG.zh-CN.md`, "utf8");
 
 describe("fork draft release workflow", () => {
+  it("includes exactly both upstream releases in the 1.3.65 upgrade", () => {
+    const start = workflowSource.indexOf('"1.3.65")');
+    const end = workflowSource.indexOf(';;', start);
+    assert.ok(start >= 0 && end > start);
+    assert.ok(workflowSource.slice(start, end).includes('RELEASE_VERSIONS=("1.3.65" "1.3.64")'));
+    for (const changelog of [englishChangelog, chineseChangelog]) {
+      for (const version of ["1.3.65", "1.3.64"]) {
+        assert.ok(changelog.includes("## [" + version + "]"));
+      }
+    }
+  });
   it("maps 1.3.63b1 to the complete upgrade notes including fork integration", () => {
     const start = workflowSource.indexOf('if [[ "${GITHUB_REF_NAME}" == "1.3.63b1"');
     const end = workflowSource.indexOf('elif [[ "${GITHUB_REF_NAME}" == "1.3.59b4"', start);

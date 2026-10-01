@@ -37,7 +37,45 @@ Release workflow 中 `build-windows`、`build-macos-aarch64`、`build-macos-x86_
 
 ## 2. 当前基线与历史锚点
 
-### 2.0 v1.3.63 升级施工边界（2026-09-30）
+### 2.0 v1.3.65 升级施工边界（2026-10-02）
+
+从 fork `1.3.63b1`（`1d29dea8`）合入上游 `v1.3.65`（`0b6514b4`），
+merge-base 为 `v1.3.63`（`ee816002`），升级分支 `codex/upgrade-upstream-v1.3.65`。
+两版合计 124 个文件，49 个与 fork 差异重叠；预演显式冲突为 Cask、API Service
+激活命令和 Windows 路径启动模块。保持 Cask 删除，接受上游绑定保存验证与新的
+无窗口 package launcher，保留动态 CDP、profile 隔离及额度注入生命周期。
+
+接受共享数据目录兼容链接、Responses SSE 即时刷新、官方凭据安全存储与导入重试、
+批量导入刷新防覆盖、PRO 100/200/500 展示及启动优化。保留六组 fork 行为和已删除
+Turn 票据功能的边界。发布范围仍为 Windows/macOS 草稿，升级说明仅聚合
+`1.3.65 → 1.3.64` 与本轮 fork 适配。按用户要求，指纹请求选项新增
+`gpt-6.1-sol`，共八模型，默认三模型保持既有配置；前后端白名单同步，参考库不新增
+未经校准的 6.1 指纹。恢复偏好、实际请求及请求模型展示均保留完整模型 ID。
+
+实际合并与预演一致，三处冲突已按上述边界解决。旧 COM 激活辅助代码及两项
+实现细节测试已删除，启动链与上游一致；采用上游参数、代理及 profile 隔离测试。
+补强 API Service 激活测试，验证从旧账号／Provider／未绑定状态切换时保留用户
+关闭额度隐藏的显式偏好。升级说明和 workflow 精确包含 1.3.65、1.3.64。
+
+验证记录：
+
+- 150 个 TypeScript 测试文件，910 项通过（包含新增 6.1 模型选择恢复／实际请求回归）；
+  前端类型检查和 Vite 生产构建通过。
+- Provider 去推广检查（155 个预设）、18 份 locale key 一致性检查通过；ModelTrace
+  与 CodexInputUnlock 许可均已进入 dist/licenses。
+- 发布／打包脚本 23 项通过；cockpit-cliproxy 根模块 Go 测试通过。
+- 本机依赖缺少 Node 类型入口，已仅在忽略的 node_modules 恢复到已安装类型包的
+  junction，未改变 package.json 依赖。Cargo 镜像 TLS 与缓存问题通过临时 rsproxy
+  源覆盖处理，未改全局配置。Rust 主库及测试目标 cargo check 通过；新增指纹选项后，
+  Rust 原生测试程序也已成功编译。API Service 绑定测试加载时仍返回本机既有
+  `0xC0000139 / STATUS_ENTRYPOINT_NOT_FOUND`，未进入断言，不能标为运行通过。
+- 整仓 cargo fmt --check 未通过，输出包括升级前已存在的 account.rs、protobuf.rs
+  等格式差异，以及上游／既有 fork 格式问题；未执行整仓格式重写。git diff --check
+  通过，所有冲突已解决。未以编译结果代替运行验收。
+- 未向真实模型账号发请求，未实际启动／切换官方 Codex Desktop，Windows/macOS
+  安装包及真实额度耗尽行为仍需后续验收；历史 Go auth 包失败记录保留，未宣称修复。
+
+### 2.0.1 v1.3.63 升级施工边界（2026-09-30）
 
 首个升级草稿编译 tag 为 `1.3.63b1`，应用版本保持 `1.3.63`。该 tag 明确映射到
 `1.3.63 → 1.3.62 → 1.3.61 → 1.3.60` 四段中英文说明；fork 合并适配记录位于
@@ -893,7 +931,7 @@ MIT 许可随 public/licenses/CodexInputUnlock-LICENSE.txt 打包。不得重新
 
 | 文件／区域 | 必须保留的职责 |
 |---|---|
-| `src/types/codexFingerprint.ts` | 七模型集合、首次默认三模型、并行上限和请求／样本／结果类型 |
+| `src/types/codexFingerprint.ts` | 八模型集合（含 gpt-6.1-sol）、首次默认三模型、并行上限和请求／样本／结果类型 |
 | `src/utils/codexFingerprint.ts` | 偏好校验、目标聚合去重和有界工作队列 |
 | `src/stores/useCodexFingerprintStore.ts` | 选择记忆、批次生命周期、账号 × 模型矩阵、采样、停止和部分结果 |
 | `src/components/codex/fingerprint/CodexFingerprintHost.tsx`、`fingerprint.css` | 统一弹窗、多选与参数控件、逐组结果和详情 |

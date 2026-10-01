@@ -26,6 +26,21 @@ function loadStore(storage: Map<string, string>, invoke: (command: string, args:
 const target = { id: 'provider:test:key', kind: 'provider', label: 'Test upstream', baseUrl: 'https://example.test/v1', apiKey: 'secret-test-key', wireApi: 'responses' };
 const reply = Array.from({ length: 312 }, (_, i) => (i * 37) % 355 + 1).join(' ');
 
+test('GPT-6.1 Sol is sent unchanged and restored after a completed test', async () => {
+  const storage = new Map<string, string>();
+  const models: string[] = [];
+  const store = loadStore(storage, async (command, args) => {
+    if (!command.endsWith('_probe')) return;
+    models.push(args.model);
+    return { reply, responseModel: 'reported-model' };
+  });
+  store.getState().configure({ targetIds: [target.id], models: ['gpt-6.1-sol'], samples: 1 });
+  await store.getState().start([target]);
+  assert.deepEqual(models, ['gpt-6.1-sol']);
+  assert.equal(store.getState().results[0].model, 'gpt-6.1-sol');
+  assert.equal(loadStore(storage, async () => undefined).getState().preferences.models[0], 'gpt-6.1-sol');
+});
+
 test('test matrix sends every selected model and exactly the configured probes', async () => {
   const storage = new Map<string, string>(); const calls: { command: string; args: any }[] = [];
   const store = loadStore(storage, async (command, args) => { calls.push({ command, args }); return command.endsWith('_probe') ? { reply, responseModel: args.model } : undefined; });
