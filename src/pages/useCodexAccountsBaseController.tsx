@@ -1,3 +1,4 @@
+import { resolveCodexAccountDisplayName } from "../utils/codexAccountDisplayName";
 import { listenSafely as listen } from "../utils/tauriEventListener";
 import { refreshCodexQuotaWithFeedback } from "../utils/codexQuotaRefreshFeedback";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
@@ -37,7 +38,6 @@ import { readCodexCustomSortActive } from "../utils/codexAccountOverview";
 import { useSponsorStore } from "../stores/useSponsorStore";
 import { buildCodexExportContent, buildCodexExportFileNameBase, hasCodexExportAgentIdentity, hasCodexExportSensitiveNotes, type CodexExportFormat } from "../utils/codexExportFormats";
 import { readAccountsOverviewFilterField, readAccountsOverviewFilterPersistenceEnabled, readAccountsOverviewFilterStringArray, removeAccountsOverviewFilterField, writeAccountsOverviewFilterField } from "../utils/accountsOverviewFilterPersistence";
-import { isCodexLocalAccessRiskNoticeDismissed, setCodexLocalAccessRiskNoticeDismissed, type CodexLocalAccessRiskNoticeAction } from "../utils/codexLocalAccessRiskNotice";
 import { getMfaOtpToken, loadSavedMfaRecords, parseMfaCredentialInput, upsertSavedMfaRecord, type MfaRecord } from "../utils/mfaVault";
 import { findFirstMailVerificationCode } from "../utils/mailVerificationCode";
 import { ACTIVE_GROUP_ID_FIELD, buildCodexAccountNoteForm, buildExportFileName, CODEX_BATCH_IMPORT_SESSION_STORAGE_KEY, CODEX_FILTER_PERSISTENCE_SCOPE, CODEX_HIDE_RELAY_QUOTA_LEGACY_KEY, CODEX_LOCAL_ACCESS_EXPANDED_KEY, CODEX_OVERVIEW_LAYOUT_MODE_KEY, EMPTY_CODEX_ACCOUNT_NOTE_FORM, EXPIRY_FILTER_FIELD, FILTER_TYPES_FIELD, getCodexAccountNoteTitle, getDirectoryPath, GROUP_FILTER_FIELD, hasCodexAccountNoteDetails, hasCodexAccountNoteFormDetails, isHttpLikeUrl, joinFilePath, normalizeCodexOverviewLayoutMode, normalizeHttpBaseUrl, readStoredLocalAccessAddressKind, SEARCH_QUERY_FIELD, shouldAutoHideBatchDeleteJob, type CodexAccountNoteFieldErrors, type CodexAccountNoteFormState, type CodexAccountNoteMailPreviewSnapshot, type CodexAccountNoteMailPreviewState, type CodexBatchImportFilter, type CodexCliLaunchModalState, type CodexOverviewGeneralConfig, type CodexOverviewLayoutMode } from "./codexAccountsControllerModel";
@@ -196,10 +196,6 @@ export function useCodexAccountsBaseController() {
       useState(false);
     const [localAccessHideSubmitting, setLocalAccessHideSubmitting] =
       useState(false);
-    const [localAccessRiskNoticeAction, setLocalAccessRiskNoticeAction] =
-      useState<CodexLocalAccessRiskNoticeAction | null>(null);
-    const [localAccessRiskNoticeRemember, setLocalAccessRiskNoticeRemember] =
-      useState(false);
     const [localAccessCopiedField, setLocalAccessCopiedField] = useState<
       "baseUrl" | "apiKey" | null
     >(null);
@@ -213,9 +209,6 @@ export function useCodexAccountsBaseController() {
       useState(false);
     const [showLocalAccessQuotaStatsModal, setShowLocalAccessQuotaStatsModal] =
       useState(false);
-    const localAccessRiskNoticeResolverRef = useRef<
-      ((accepted: boolean) => void) | null
-    >(null);
     const [localAccessDetailsExpanded, setLocalAccessDetailsExpanded] =
       useState<boolean>(() => {
         try {
@@ -319,44 +312,6 @@ export function useCodexAccountsBaseController() {
     useEffect(() => {
       reloadCodexGroups();
     }, [reloadCodexGroups]);
-  
-    useEffect(
-      () => () => {
-        if (localAccessRiskNoticeResolverRef.current) {
-          localAccessRiskNoticeResolverRef.current(false);
-          localAccessRiskNoticeResolverRef.current = null;
-        }
-      },
-      [],
-    );
-  
-    const closeLocalAccessRiskNotice = useCallback(
-      (accepted: boolean) => {
-        if (accepted && localAccessRiskNoticeRemember) {
-          setCodexLocalAccessRiskNoticeDismissed(true);
-        }
-        const resolver = localAccessRiskNoticeResolverRef.current;
-        localAccessRiskNoticeResolverRef.current = null;
-        setLocalAccessRiskNoticeAction(null);
-        setLocalAccessRiskNoticeRemember(false);
-        resolver?.(accepted);
-      },
-      [localAccessRiskNoticeRemember],
-    );
-  
-    const requestLocalAccessRiskNotice = useCallback(
-      (action: CodexLocalAccessRiskNoticeAction): Promise<boolean> => {
-        if (isCodexLocalAccessRiskNoticeDismissed()) {
-          return Promise.resolve(true);
-        }
-        setLocalAccessRiskNoticeRemember(false);
-        setLocalAccessRiskNoticeAction(action);
-        return new Promise<boolean>((resolve) => {
-          localAccessRiskNoticeResolverRef.current = resolve;
-        });
-      },
-      [],
-    );
   
     const toggleGroupFilterValue = useCallback((groupId: string) => {
       setGroupFilter((prev) => {
@@ -520,7 +475,7 @@ export function useCodexAccountsBaseController() {
         },
         exportAccounts: codexService.exportCodexAccounts,
       },
-      getDisplayEmail: (account) => account.email ?? account.id,
+      getDisplayEmail: (account): string => resolveCodexAccountDisplayName(account, page.t("common.apiKeyAccount")),
       initialSearchQuery: readAccountsOverviewFilterPersistenceEnabled(
         CODEX_FILTER_PERSISTENCE_SCOPE,
       )
@@ -2722,7 +2677,6 @@ export function useCodexAccountsBaseController() {
     closeCliLaunchModal,
     closeCodexAddModal,
     closeExternalImportProgressModal,
-    closeLocalAccessRiskNotice,
     closeResetCreditConfirmModal,
     cockpitApiPanelAccountId,
     codexAccountsRef,
@@ -2816,8 +2770,6 @@ export function useCodexAccountsBaseController() {
     localAccessModalMode,
     localAccessPortKilling,
     localAccessRefreshing,
-    localAccessRiskNoticeAction,
-    localAccessRiskNoticeRemember,
     localAccessSaving,
     localAccessSidecarRestarting,
     localAccessStarting,
@@ -2861,7 +2813,6 @@ export function useCodexAccountsBaseController() {
     renderAccountNoteButton,
     reportExportModalError,
     requestDeleteTag,
-    requestLocalAccessRiskNotice,
     resetBatchImportState,
     resetCreditConfirmAccount,
     resetCreditConfirmActionLocked,
@@ -2881,6 +2832,7 @@ export function useCodexAccountsBaseController() {
     selectedTerminal,
     sessionWindowStats,
     setAccountNoteError,
+    setAccountNoteFieldErrors,
     setAccountNoteMfaPickerOpen,
     setAccountNotePasswordVisible,
     setAccountNoteSecretVisible,
@@ -2932,7 +2884,6 @@ export function useCodexAccountsBaseController() {
     setLocalAccessModalMode,
     setLocalAccessPortKilling,
     setLocalAccessRefreshing,
-    setLocalAccessRiskNoticeRemember,
     setLocalAccessSaving,
     setLocalAccessSidecarRestarting,
     setLocalAccessStarting,

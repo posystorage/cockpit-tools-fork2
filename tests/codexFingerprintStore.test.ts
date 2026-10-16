@@ -44,10 +44,10 @@ test('GPT-6.1 Sol is sent unchanged and restored after a completed test', async 
 test('test matrix sends every selected model and exactly the configured probes', async () => {
   const storage = new Map<string, string>(); const calls: { command: string; args: any }[] = [];
   const store = loadStore(storage, async (command, args) => { calls.push({ command, args }); return command.endsWith('_probe') ? { reply, responseModel: args.model } : undefined; });
-  store.getState().configure({ targetIds: [target.id], models: ['gpt-5.5', 'gpt-6-sol'], samples: 2 });
+  store.getState().configure({ targetIds: [target.id], models: ['gpt-5.6-sol', 'gpt-6-sol'], samples: 2 });
   await store.getState().start([target]);
   assert.equal(calls.filter((call) => call.command.endsWith('_probe')).length, 4);
-  assert.deepEqual(calls.filter((call) => call.command.endsWith('_probe')).map((call) => call.args.model).sort(), ['gpt-5.5', 'gpt-5.5', 'gpt-6-sol', 'gpt-6-sol']);
+  assert.deepEqual(calls.filter((call) => call.command.endsWith('_probe')).map((call) => call.args.model).sort(), ['gpt-5.6-sol', 'gpt-5.6-sol', 'gpt-6-sol', 'gpt-6-sol']);
   assert.equal(store.getState().running, false);
   assert.ok(store.getState().results.every((item: any) => item.status === 'completed' && item.analysis.used_outputs === 2), JSON.stringify(store.getState().results.map((item: any) => ({ status: item.status, error: item.error }))));
   const serialized = [...storage.values()].join('');

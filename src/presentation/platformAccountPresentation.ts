@@ -1,3 +1,4 @@
+import { resolveCodexAccountDisplayName } from "../utils/codexAccountDisplayName";
 import type { Account } from "../types/account";
 import type {
   CodebuddyAccount,
@@ -784,13 +785,9 @@ export function buildCodexAccountPresentation(
   account: CodexAccount,
   t: Translate,
 ): UnifiedAccountPresentation {
-  const apiKeyDisplayName = account.account_name?.trim();
-  const displayName =
-    isCodexApiKeyAccount(account) && apiKeyDisplayName
-      ? apiKeyDisplayName
-      : isCodexNewApiAccount(account)
-        ? "Codex API"
-      : account.email;
+  const displayName = isCodexApiKeyAccount(account)
+    ? resolveCodexAccountDisplayName(account, t("common.apiKeyAccount"))
+    : account.email;
   const effectiveQuota = getCodexEffectiveQuotaPercentages(account.quota);
   const weeklyBlocksHourlyHint = effectiveQuota.weeklyBlocksHourly
     ? t("codex.quota.weeklyBlocksHourly", "周额度为 0，5小时额度已不可用")
@@ -1838,7 +1835,7 @@ export function buildCursorAccountPresentation(
     id: account.id,
     displayName: getCursorAccountDisplayEmail(account),
     planLabel,
-    planClass: getCursorPlanBadgeClass(account.membership_type, account),
+    planClass: getCursorPlanBadgeClass(account.membership_type?.trim() || account.plan_type, account),
     isBanned: isCursorAccountBanned(account),
     quotaItems,
   };
@@ -1852,7 +1849,7 @@ export function buildGrokAccountPresentation(
   const quotaItems: UnifiedQuotaMetric[] = getGrokQuotaSummaryItems(account, t).map(
     (item) => {
       const usedPercent = clampPercent(item.percentage);
-      const remaining = clampPercent(100 - usedPercent);
+      const remaining = clampPercent(100 - Math.floor(usedPercent));
       const amountText = formatGrokQuotaUsedTotal(item.used, item.total);
       const left =
         item.used != null && item.total != null

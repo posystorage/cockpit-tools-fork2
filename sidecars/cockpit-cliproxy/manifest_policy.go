@@ -32,6 +32,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
 
 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
 	coreusage "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/usage"
 
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v7/sdk/translator"
@@ -50,12 +51,13 @@ const (
 )
 
 const ginUserAPIKeyKey = "userApiKey"
+const ginResponsesWebsocketDisabledKey = "cockpitResponsesWebsocketDisabled"
 
 const defaultStreamKeepAliveSeconds = 15
 const quotaReserveMaxSnapshotAge = 3 * time.Minute
 const codexAutoReviewModel = "codex-auto-review"
 const codexReserveModel = "gpt-reserve"
-const defaultImagesMainModel = "gpt-5.5"
+const defaultImagesMainModel = "gpt-5.6-luna"
 const defaultImagesToolModel = "gpt-image-2.5"
 
 // codexClientCompactionHash 是下发给 Codex 客户端的统一压缩格式哈希（comp_hash）。
@@ -96,35 +98,43 @@ type accountModelRule struct {
 }
 
 type manifest struct {
-	ProxyRouteObservers        []proxyRouteObserverSpec `json:"proxyRouteObservers,omitempty"`
-	Locale                     string                   `json:"locale"`
-	APIKeys                    []apiKeySpec             `json:"apiKeys"`
-	Accounts                   []accountSpec            `json:"accounts"`
-	ModelIDs                   []string                 `json:"modelIds"`
-	ImageGenerationModel       string                   `json:"imageGenerationModel"`
-	ModelAliases               []modelAliasSpec         `json:"modelAliases"`
-	ExcludedModels             []string                 `json:"excludedModels"`
-	AccountModelRules          []accountModelRule       `json:"accountModelRules"`
-	RoutingStrategy            string                   `json:"routingStrategy"`
-	CustomRoutingRules         []customRoutingRule      `json:"customRoutingRules"`
-	ImmediateSSEResponse       bool                     `json:"immediateSseResponse"`
-	MaxConcurrentImageRequests int                      `json:"maxConcurrentImageRequests"`
+	Continuity                 *continuityServiceSpec       `json:"continuity,omitempty"`
+	GatewayErrorMessages       map[string]map[string]string `json:"gatewayErrorMessages,omitempty"`
+	ProxyRouteObservers        []proxyRouteObserverSpec     `json:"proxyRouteObservers,omitempty"`
+	Locale                     string                       `json:"locale"`
+	APIKeys                    []apiKeySpec                 `json:"apiKeys"`
+	Accounts                   []accountSpec                `json:"accounts"`
+	ModelIDs                   []string                     `json:"modelIds"`
+	ImageGenerationModel       string                       `json:"imageGenerationModel"`
+	ImageGenerationMainModel   string                       `json:"imageGenerationMainModel,omitempty"`
+	ModelAliases               []modelAliasSpec             `json:"modelAliases"`
+	ExcludedModels             []string                     `json:"excludedModels"`
+	AccountModelRules          []accountModelRule           `json:"accountModelRules"`
+	RoutingStrategy            string                       `json:"routingStrategy"`
+	CustomRoutingRules         []customRoutingRule          `json:"customRoutingRules"`
+	ImmediateSSEResponse       bool                         `json:"immediateSseResponse"`
+	MaxConcurrentImageRequests int                          `json:"maxConcurrentImageRequests"`
 	// MaxAccountConcurrency 限制单个账号同时处理的会话数；0 表示不限制。
 	MaxAccountConcurrency int `json:"maxAccountConcurrency"`
 	// AccountConcurrencyWaitMs 账号并发达到上限后的等待时长（毫秒）；0 表示不等待，直接拒绝。
-	AccountConcurrencyWaitMs int   `json:"accountConcurrencyWaitMs"`
-	DebugLogs                *bool `json:"debugLogs,omitempty"`
+	AccountConcurrencyWaitMs  int    `json:"accountConcurrencyWaitMs"`
+	DebugLogs                 *bool  `json:"debugLogs,omitempty"`
+	RequestPayloadLogging     bool   `json:"requestPayloadLogging"`
+	DiagnosticsControlKey     string `json:"diagnosticsControlKey,omitempty"`
+	ServiceTierControlEnabled bool   `json:"serviceTierControlEnabled,omitempty"`
 
-	apiKeyByValue     map[string]*apiKeySpec
-	accountByID       map[string]*accountSpec
-	accountByAuthID   map[string]*accountSpec
-	accountByAPIKey   map[string]*accountSpec
-	accountByChatGPT  map[string]*accountSpec
-	accountByEmail    map[string]*accountSpec
-	aliasToSource     map[string]string
-	originalIndexByID map[string]int
-	quotaCooldowns    *quotaCooldownStateStore
-	authManager       *coreauth.Manager
+	apiKeyByValue                 map[string]*apiKeySpec
+	accountByID                   map[string]*accountSpec
+	accountByAuthID               map[string]*accountSpec
+	accountByAPIKey               map[string]*accountSpec
+	accountByChatGPT              map[string]*accountSpec
+	accountByEmail                map[string]*accountSpec
+	aliasToSource                 map[string]string
+	originalIndexByID             map[string]int
+	quotaCooldowns                *quotaCooldownStateStore
+	authManager                   *coreauth.Manager
+	continuityClient              *continuityClient
+	requestPayloadLoggingOverride atomic.Pointer[bool]
 }
 
 type apiKeySpec struct {
@@ -134,7 +144,7 @@ type apiKeySpec struct {
 	ProviderGateway *providerGatewaySpec `json:"providerGateway,omitempty"`
 	ModelRouting    *modelRoutingSpec    `json:"modelRouting,omitempty"`
 	BoundOAuth      bool                 `json:"boundOAuth,omitempty"`
-	// 生图转发账号池：生图请求只允许落到这些 OAuth 账号。
+	// 生图转发账号池：生图请求只允许落到这些 OAuth 或图片 API 账号。
 	ImageGenerationAccountIDs []string `json:"imageGenerationAccountIds,omitempty"`
 	AccountIDs                []string `json:"accountIds"`
 	ModelPrefix               string   `json:"modelPrefix,omitempty"`
@@ -363,27 +373,33 @@ type providerGatewayModelCapability struct {
 }
 
 type accountSpec struct {
-	ID       string `json:"id"`
-	Email    string `json:"email"`
-	AuthID   string `json:"authId,omitempty"`
-	AuthKind string `json:"authKind,omitempty"`
+	ID                string          `json:"id"`
+	ContinuityOwnerID string          `json:"continuityOwnerId,omitempty"`
+	GatewayIdentity   json.RawMessage `json:"gatewayIdentity,omitempty"`
+	Email             string          `json:"email"`
+	AuthID            string          `json:"authId,omitempty"`
+	AuthKind          string          `json:"authKind,omitempty"`
 	// Provider 是该 OAuth 账号的上游 provider（缺省 codex）。非 codex 时只允许
 	// sidecar 已支持并注册执行器的 provider（目前为 xai/Grok）。
 	Provider string `json:"provider,omitempty"`
 	// ModelIDs 是该账号可承接的客户端模型；仅第三方 provider 使用。
-	ModelIDs              []string            `json:"modelIds,omitempty"`
-	PlanType              string              `json:"planType,omitempty"`
-	AccessTokenOnly       bool                `json:"accessTokenOnly,omitempty"`
-	ChatGPTAccountID      string              `json:"chatgptAccountId,omitempty"`
-	UpstreamAPIKey        string              `json:"upstreamApiKey,omitempty"`
-	PlanRank              *int                `json:"planRank,omitempty"`
-	RemainingQuota        *int                `json:"remainingQuota,omitempty"`
-	QuotaCooldown         *quotaCooldownState `json:"quotaCooldown,omitempty"`
-	SubscriptionExpiryMS  *int64              `json:"subscriptionExpiryMs,omitempty"`
-	GPTReserveAllowed     bool                `json:"gptReserveAllowed,omitempty"`
-	ImageGenerationPolicy string              `json:"imageGenerationPolicy,omitempty"`
-	QuotaReserve          *quotaReserveSpec   `json:"quotaReserve,omitempty"`
-	ModelContextWindows   map[string]int64    `json:"modelContextWindows,omitempty"`
+	ModelIDs                []string              `json:"modelIds,omitempty"`
+	PlanType                string                `json:"planType,omitempty"`
+	AccessTokenOnly         bool                  `json:"accessTokenOnly,omitempty"`
+	ChatGPTUserID           string                `json:"chatgptUserId,omitempty"`
+	ChatGPTAccountID        string                `json:"chatgptAccountId,omitempty"`
+	UpstreamAPIKey          string                `json:"upstreamApiKey,omitempty"`
+	UpstreamBaseURL         string                `json:"upstreamBaseUrl,omitempty"`
+	UpstreamProxyURL        string                `json:"upstreamProxyUrl,omitempty"`
+	ImageGenerationUpstream *imageAPIUpstreamSpec `json:"imageGenerationUpstream,omitempty"`
+	PlanRank                *int                  `json:"planRank,omitempty"`
+	RemainingQuota          *int                  `json:"remainingQuota,omitempty"`
+	QuotaCooldown           *quotaCooldownState   `json:"quotaCooldown,omitempty"`
+	SubscriptionExpiryMS    *int64                `json:"subscriptionExpiryMs,omitempty"`
+	GPTReserveAllowed       bool                  `json:"gptReserveAllowed,omitempty"`
+	ImageGenerationPolicy   string                `json:"imageGenerationPolicy,omitempty"`
+	QuotaReserve            *quotaReserveSpec     `json:"quotaReserve,omitempty"`
+	ModelContextWindows     map[string]int64      `json:"modelContextWindows,omitempty"`
 }
 
 type quotaReserveSpec struct {
@@ -431,30 +447,34 @@ type customRoutingRule struct {
 }
 
 type usagePayload struct {
-	ProxyRoute *coreusage.ProxyRoute `json:"proxyRoute,omitempty"`
-	Type       string                `json:"type"`
-	RequestID  string                `json:"requestId,omitempty"`
-	Provider   string                `json:"provider,omitempty"`
-	Model      string                `json:"model,omitempty"`
-	Alias      string                `json:"alias,omitempty"`
+	outputComplete bool
+	ProxyRoute     *coreusage.ProxyRoute `json:"proxyRoute,omitempty"`
+	Type           string                `json:"type"`
+	RequestID      string                `json:"requestId,omitempty"`
+	Provider       string                `json:"provider,omitempty"`
+	Model          string                `json:"model,omitempty"`
+	Alias          string                `json:"alias,omitempty"`
 	// RequestedModel keeps the client-requested model (route namespace intact)
 	// while Model/UpstreamModel carry the model that actually reached upstream.
-	RequestedModel   string `json:"requestedModel,omitempty"`
-	UpstreamModel    string `json:"upstreamModel,omitempty"`
-	AccountID        string `json:"accountId,omitempty"`
-	AccountEmail     string `json:"accountEmail,omitempty"`
-	AuthID           string `json:"authId,omitempty"`
-	APIKeyID         string `json:"apiKeyId,omitempty"`
-	APIKeyLabel      string `json:"apiKeyLabel,omitempty"`
-	ClientInstanceID string `json:"clientInstanceId,omitempty"`
-	RequestKind      string `json:"requestKind,omitempty"`
-	ServiceTier      string `json:"serviceTier,omitempty"`
-	ReasoningEffort  string `json:"reasoningEffort,omitempty"`
-	Success          bool   `json:"success"`
-	Status           int    `json:"status,omitempty"`
-	ErrorCategory    string `json:"errorCategory,omitempty"`
-	ErrorMessage     string `json:"errorMessage,omitempty"`
-	LatencyMS        int64  `json:"latencyMs,omitempty"`
+	RequestedModel       string `json:"requestedModel,omitempty"`
+	UpstreamModel        string `json:"upstreamModel,omitempty"`
+	AccountID            string `json:"accountId,omitempty"`
+	AccountEmail         string `json:"accountEmail,omitempty"`
+	AuthID               string `json:"authId,omitempty"`
+	APIKeyID             string `json:"apiKeyId,omitempty"`
+	APIKeyLabel          string `json:"apiKeyLabel,omitempty"`
+	ClientInstanceID     string `json:"clientInstanceId,omitempty"`
+	RequestKind          string `json:"requestKind,omitempty"`
+	ServiceTier          string `json:"serviceTier,omitempty"`
+	RequestedServiceTier string `json:"requestedServiceTier,omitempty"`
+	ResponseServiceTier  string `json:"responseServiceTier,omitempty"`
+	ReasoningEffort      string `json:"reasoningEffort,omitempty"`
+	Success              bool   `json:"success"`
+	Status               int    `json:"status,omitempty"`
+	ErrorCategory        string `json:"errorCategory,omitempty"`
+	ErrorMessage         string `json:"errorMessage,omitempty"`
+	LatencyMS            int64  `json:"latencyMs,omitempty"`
+	OutputGenerationMS   *int64 `json:"outputGenerationMs,omitempty"`
 	// TurnStateLength/TurnStateClass 来自上游响应头的旁路观测；state 原文不保存。
 	TurnStateLength *int         `json:"turnStateLength,omitempty"`
 	TurnStateClass  string       `json:"turnStateClass,omitempty"`
@@ -499,6 +519,7 @@ type requestDiagnosticPayload struct {
 	NextRetryAtMS           int64                      `json:"nextRetryAtMs,omitempty"`
 	AuthStateReason         string                     `json:"authStateReason,omitempty"`
 	AccountStatuses         []authPoolMemberDiagnostic `json:"accountStatuses,omitempty"`
+	ScopeDiagnostics        []authPoolScopeDiagnostic  `json:"scopeDiagnostics,omitempty"`
 }
 
 const executorWaitLogInterval = 30 * time.Second
@@ -557,13 +578,14 @@ func effectiveUsageTotalTokens(usage usageDetails) int64 {
 }
 
 type usageFinalizeInput struct {
-	spec          *apiKeySpec
-	requestKind   string
-	model         string
-	status        int
-	latencyMS     int64
-	completedAtMS int64
-	errorMessage  string
+	spec                *apiKeySpec
+	requestKind         string
+	model               string
+	status              int
+	latencyMS           int64
+	completedAtMS       int64
+	errorMessage        string
+	suppressOutputSpeed bool
 }
 
 type selectedAccountRecord struct {
@@ -924,9 +946,16 @@ func (t *requestUsageTracker) finalize(requestID string, input usageFinalizeInpu
 	}
 
 	finalHTTPFailed := input.status >= http.StatusBadRequest
+	if finalHTTPFailed || (input.suppressOutputSpeed && !payload.outputComplete) || !payload.Success {
+		payload.OutputGenerationMS = nil
+	}
 	if finalHTTPFailed {
 		payload.Success = false
-		if strings.TrimSpace(payload.ErrorCategory) == "" {
+		if input.status == clientClosedRequestStatus {
+			// Earlier failed attempts do not change the final downstream cause.
+			payload.ErrorCategory = "client_canceled"
+			payload.ErrorMessage = strings.TrimSpace(input.errorMessage)
+		} else if strings.TrimSpace(payload.ErrorCategory) == "" {
 			payload.ErrorCategory = errorCategory(input.status, input.errorMessage, false)
 		}
 		if strings.TrimSpace(payload.ErrorMessage) == "" {
@@ -973,6 +1002,9 @@ func loadManifest(path string) (*manifest, error) {
 	}
 	var m manifest
 	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, err
+	}
+	if err := validateGatewayIdentityManifest(&m); err != nil {
 		return nil, err
 	}
 	m.apiKeyByValue = make(map[string]*apiKeySpec)
@@ -1094,6 +1126,10 @@ func loadManifest(path string) (*manifest, error) {
 	if m.ImageGenerationModel == "" {
 		m.ImageGenerationModel = defaultImagesToolModel
 	}
+	m.ImageGenerationMainModel = strings.TrimSpace(m.ImageGenerationMainModel)
+	if m.ImageGenerationMainModel != "" {
+		m.ImageGenerationMainModel = configuredImagesMainModel(&m)
+	}
 	m.ExcludedModels = normalizeStringList(m.ExcludedModels)
 	for index := range m.AccountModelRules {
 		m.AccountModelRules[index].AccountID = strings.TrimSpace(m.AccountModelRules[index].AccountID)
@@ -1110,6 +1146,15 @@ func configuredImagesToolModel(m *manifest) string {
 		return model
 	}
 	return defaultImagesToolModel
+}
+
+func configuredImagesMainModel(m *manifest) string {
+	if m != nil {
+		if model := strings.TrimSpace(m.ImageGenerationMainModel); model != "" && !strings.EqualFold(model, "gpt-5.5") {
+			return model
+		}
+	}
+	return defaultImagesMainModel
 }
 
 // imageGenerationAccountIDsForSpec 返回该 API Key 配置的生图转发账号池。
@@ -1278,23 +1323,35 @@ func withClientInstanceID(ctx context.Context, instanceID string) context.Contex
 }
 
 type requestPolicy struct {
-	manifest     *manifest
-	cfg          *config.Config
-	emitter      *eventEmitter
-	tracker      *requestUsageTracker
-	tokenLimiter *apiKeyTokenLimiter
+	serviceTierDefault *apiServiceTierDefault
+	diagnosticsOnce    sync.Once
+	diagnosticsQueue   *requestDiagnosticsQueue
+	manifest           *manifest
+	cfg                *config.Config
+	emitter            *eventEmitter
+	tracker            *requestUsageTracker
+	tokenLimiter       *apiKeyTokenLimiter
 }
 
 func (p *requestPolicy) middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.Request == nil || c.Request.Method == http.MethodOptions {
+		if c.Request == nil || c.Request.Method == http.MethodOptions || isRequestDiagnosticsControlPath(c.Request.URL.Path) {
 			c.Next()
 			return
 		}
 
 		startedAt := time.Now()
+		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), requestStartedAtContextKey, startedAt.UnixMilli()))
 		requestID := ensureRequestID(c)
+		diagnostics := p.beginRequestDiagnostics(c, requestID, startedAt)
 		spec := p.lookupAPIKey(c.Request)
+		if p.serviceTierDefault != nil && spec != nil && spec.ProviderGateway == nil {
+			ctx := cliproxyexecutor.WithServiceTierDefaultProvider(c.Request.Context(), p.serviceTierDefault.tier)
+			if diagnosticTransport(c.Request) != "websocket" {
+				ctx = cliproxyexecutor.SnapshotServiceTierDefault(ctx)
+			}
+			c.Request = c.Request.WithContext(ctx)
+		}
 		if diagnosticTransport(c.Request) == "websocket" && p.emitter != nil {
 			sink := newWebsocketUsageSink(requestID, func(payload usagePayload) {
 				p.tokenLimiter.addUsage(spec, effectiveUsageTotalTokens(payload.Usage))
@@ -1326,12 +1383,14 @@ func (p *requestPolicy) middleware() gin.HandlerFunc {
 			if startLogged {
 				p.emitRequestCompleted(c, requestID, spec, requestKind, model, startedAt)
 			}
+			diagnostics.finish(c.Request.Context(), c.Writer.Status())
 		}()
 
 		if spec != nil {
 			c.Set(ginUserAPIKeyKey, spec.Key)
 			ctx := context.WithValue(c.Request.Context(), clientAPIKeyContextKey, spec)
 			ctx = context.WithValue(ctx, requestKindContextKey, requestKind)
+			ctx = withRequestContinuity(ctx, p.manifest, c.Request.Header, diagnosticTransport(c.Request) == "websocket")
 			if clientInstanceID != "" {
 				ctx = withClientInstanceID(ctx, clientInstanceID)
 			}
@@ -1380,7 +1439,7 @@ func (p *requestPolicy) middleware() gin.HandlerFunc {
 			return
 		}
 
-		if spec == nil || isCodexLiveRequest(c.Request) || !shouldInspectJSONBody(c.Request) {
+		if spec == nil || isCodexLiveRequest(c.Request) || isAudioPath(c.Request.URL.Path) || !shouldInspectJSONBody(c.Request) {
 			emitStart()
 			c.Next()
 			return
@@ -1499,7 +1558,7 @@ func (p *requestPolicy) emitRequestCompleted(c *gin.Context, requestID string, s
 	if p == nil || p.emitter == nil || c == nil || c.Request == nil {
 		return
 	}
-	status := c.Writer.Status()
+	status, completionError := requestCompletionStatus(c, requestID, p.tracker)
 	latencyMS := time.Since(startedAt).Milliseconds()
 	completedAtMS := time.Now().UnixMilli()
 	p.emitter.emit(requestDiagnosticPayload{
@@ -1516,15 +1575,19 @@ func (p *requestPolicy) emitRequestCompleted(c *gin.Context, requestID string, s
 		LatencyMS:     latencyMS,
 		CompletedAtMS: completedAtMS,
 		Aborted:       c.IsAborted(),
-		ErrorMessage:  strings.TrimSpace(c.Errors.String()),
+		ErrorMessage:  strings.TrimSpace(completionError),
 	})
 	if p.tracker == nil || !shouldEmitRequestDiagnostic(c.Request) {
 		return
 	}
 	p.tracker.releaseImageJobs(requestID)
-	if _, ok := c.Request.Context().Value(websocketUsageContextKey).(*websocketUsageSink); ok && status < http.StatusBadRequest {
+	_, websocketUsage := c.Request.Context().Value(websocketUsageContextKey).(*websocketUsageSink)
+	if (websocketUsage && status < http.StatusBadRequest) ||
+		(status == http.StatusUpgradeRequired && c.GetBool(ginResponsesWebsocketDisabledKey)) {
 		// Gorilla writes the 101 handshake after hijacking, leaving Gin's
-		// status at 200. Rejected handshakes must still reach finalization.
+		// status at 200. A deliberately disabled WebSocket handshake is also
+		// transport-only: HTTP fallback can happen before any execution.
+		// Other rejected handshakes must still reach usage finalization.
 		// Transport completion is diagnostic-only. Per-execution callbacks own
 		// usage and may arrive after this handler returns.
 		p.tracker.mu.Lock()
@@ -1534,13 +1597,14 @@ func (p *requestPolicy) emitRequestCompleted(c *gin.Context, requestID string, s
 		return
 	}
 	if payload, ok := p.tracker.finalize(requestID, usageFinalizeInput{
-		spec:          spec,
-		requestKind:   requestKind,
-		model:         model,
-		status:        status,
-		latencyMS:     latencyMS,
-		completedAtMS: completedAtMS,
-		errorMessage:  strings.TrimSpace(c.Errors.String()),
+		spec:                spec,
+		requestKind:         requestKind,
+		model:               model,
+		status:              status,
+		latencyMS:           latencyMS,
+		completedAtMS:       completedAtMS,
+		errorMessage:        strings.TrimSpace(completionError),
+		suppressOutputSpeed: c.Request.Context().Err() != nil,
 	}); ok {
 		p.tokenLimiter.addUsage(spec, effectiveUsageTotalTokens(payload.Usage))
 		p.emitter.emit(payload)
@@ -2265,6 +2329,9 @@ func isCodexLiveRequest(r *http.Request) bool {
 		return false
 	}
 	path := strings.TrimRight(strings.TrimSpace(r.URL.Path), "/")
+	if path == "/backend-api/codex/realtime/calls" || strings.HasPrefix(path, "/backend-api/codex/realtime/calls/") {
+		return true
+	}
 	return path == "/v1/live" ||
 		strings.HasPrefix(path, "/v1/live/") ||
 		path == "/v1/realtime" ||
@@ -2385,7 +2452,7 @@ func rewriteBodyModel(m *manifest, spec *apiKeySpec, requestKind string, body []
 	}
 	if spec != nil && spec.ModelRouting != nil && spec.ModelRouting.Automatic {
 		if !automaticClientModelVisible(m, spec, model) {
-			return nil, model, fmt.Errorf("model %s is not available for this API key", model)
+			return nil, model, fmt.Errorf("%s", m.modelUnavailableMessage(model))
 		}
 		// Preserve client aliases for candidate lookup; canonicalization belongs
 		// to the selected native executor or provider route.
@@ -2393,13 +2460,13 @@ func rewriteBodyModel(m *manifest, spec *apiKeySpec, requestKind string, body []
 	}
 	if _, _, status := resolveModelRouting(spec, model); status != "none" {
 		if !routedClientModelAllowed(m, spec, model) {
-			return nil, model, fmt.Errorf("model %s is not available for this API key", model)
+			return nil, model, fmt.Errorf("%s", m.modelUnavailableMessage(model))
 		}
 		return nil, model, nil
 	}
 	canonical := canonicalModelForClientModel(m, spec, model)
 	if !validateClientModelVisible(m, spec, model, canonical) {
-		return nil, model, fmt.Errorf("模型 %s 不在当前 API Key 的可用模型范围内", model)
+		return nil, model, fmt.Errorf("%s", m.modelUnavailableMessage(model))
 	}
 	if canonical == model {
 		return nil, model, nil
@@ -2439,6 +2506,7 @@ func visibleModelsForAPIKey(m *manifest, spec *apiKeySpec) []string {
 	if automatic {
 		baseModels = append([]string(nil), spec.ModelRouting.NativeModels...)
 	}
+	baseModels = activeChatGPTModels(m, baseModels)
 	hasReserve := automatic
 	for _, model := range baseModels {
 		if isCodexReserveModel(model) {
@@ -2950,6 +3018,8 @@ func wildcardModelMatches(pattern, model string) bool {
 func requestKindFromPath(path string) string {
 	path = strings.ToLower(strings.TrimSpace(path))
 	switch {
+	case isAudioPath(path):
+		return "audio"
 	case strings.Contains(path, "/images/generations"):
 		return "image_generation"
 	case strings.Contains(path, "/images/edits"):

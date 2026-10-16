@@ -1,4 +1,5 @@
 import { getCodexAccountQuotaError } from "../utils/codexProxyRuntimeError";
+import { summarizeCodexInstanceGateways } from "../utils/codexInstanceGatewaySummary";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { RefreshCw, X, CircleAlert, Info, Link2 } from "lucide-react";
@@ -75,7 +76,6 @@ export function useCodexAccountsLocalAccessController(context: Pick<ReturnType<t
   | "quotaErrorDetail"
   | "reloadCodexGroups"
   | "reloadLocalAccessState"
-  | "requestLocalAccessRiskNotice"
   | "searchQuery"
   | "selected"
   | "setActiveGroupId"
@@ -152,7 +152,6 @@ export function useCodexAccountsLocalAccessController(context: Pick<ReturnType<t
     quotaErrorDetail,
     reloadCodexGroups,
     reloadLocalAccessState,
-    requestLocalAccessRiskNotice,
     searchQuery,
     selected,
     setActiveGroupId,
@@ -1003,7 +1002,7 @@ export function useCodexAccountsLocalAccessController(context: Pick<ReturnType<t
     }, [refreshInstanceGateways]);
 
     const instanceGatewaySummary = useMemo(
-      () => ({ total: instanceGateways.length, running: instanceGateways.filter(gateway => gateway.status === 'running').length, issues: instanceGateways.filter(gateway => gateway.status !== 'running').length }),
+      () => summarizeCodexInstanceGateways(instanceGateways),
       [instanceGateways],
     );
   
@@ -1832,11 +1831,7 @@ export function useCodexAccountsLocalAccessController(context: Pick<ReturnType<t
     );
   
     const handleToggleLocalAccessEnabled = useCallback(async () => {
-      if (!localAccessCollection) return;
-      if (!localAccessCollection.enabled) {
-        const confirmed = await requestLocalAccessRiskNotice("service");
-        if (!confirmed) return;
-      }
+      if (!localAccessCollection) return false;
       setLocalAccessSaving(true);
       try {
         const nextState =
@@ -1856,7 +1851,7 @@ export function useCodexAccountsLocalAccessController(context: Pick<ReturnType<t
       } finally {
         setLocalAccessSaving(false);
       }
-    }, [localAccessCollection, requestLocalAccessRiskNotice, setMessage, t]);
+    }, [localAccessCollection, setMessage, t]);
   
     const handleActivateLocalAccess = useCallback(
       async (options?: {
@@ -1889,8 +1884,6 @@ export function useCodexAccountsLocalAccessController(context: Pick<ReturnType<t
           );
           if (!confirmedEnableAndSwitch) return;
         }
-        const confirmed = await requestLocalAccessRiskNotice("service");
-        if (!confirmed) return;
         const flowStartedAt = performance.now();
         console.info("[Codex API Service Switch][UI] button loading started");
         setLocalAccessStarting(true);
@@ -1920,7 +1913,6 @@ export function useCodexAccountsLocalAccessController(context: Pick<ReturnType<t
       [
         fetchCurrentAccount,
         localAccessCollection,
-        requestLocalAccessRiskNotice,
         setMessage,
         t,
       ],

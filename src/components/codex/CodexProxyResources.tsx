@@ -92,7 +92,7 @@ export function CodexProxyResources({ onAssign, onBindingsChanged }: {
       }
     });
   });
-  const hasCandidates = useMemo(() => strategyCandidates(catalog.sources).length > 0, [catalog.sources]);
+  const hasCandidates = useMemo(() => strategyCandidates(catalog.sources, true).length > 0, [catalog.sources]);
   const visibleSources = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     return ordering.orderedSources.filter((entry) => !needle || [entry.name, ...entry.nodes.map((node) => node.name)].some((value) => value.toLocaleLowerCase().includes(needle)));
@@ -176,7 +176,7 @@ export function CodexProxyResources({ onAssign, onBindingsChanged }: {
     setDeleteImpactError('');
     setDeleteImpactLoading(true);
     void getProxyCatalogDependencies(deleting.id).then((next) => {
-      if (!cancelled && mounted.current) setDeleteImpact(next);
+      if (!cancelled && mounted.current) setDeleteImpact({ ...next, accounts: [...new Map([...next.accounts, ...(next.clientTargets ?? []).map((entry) => ({ id: entry.targetId, name: entry.name, email: '' }))].map((entry) => [entry.id, entry])).values()], accountCount: new Set([...next.accounts.map((entry) => entry.id), ...(next.clientTargets ?? []).map((entry) => entry.targetId)]).size });
     }).catch(() => {
       if (!cancelled && mounted.current) setDeleteImpactError(t('codex.proxy.catalog.deleteImpactLoadFailed'));
     }).finally(() => {
@@ -186,7 +186,7 @@ export function CodexProxyResources({ onAssign, onBindingsChanged }: {
     // 语言切换不能重读账号与来源；预览只在打开弹框或来源 revision 变化时重新请求。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deleting, deletingRevision, deleteImpactRetry]);
-  useEscCloseTopmost(!!deleting && busy !== 'remove', closeDelete);
+  useEscCloseTopmost(!!deleting && busy !== 'remove', closeDelete, deleteDialog);
 
   const run = async (action: string, job: (requestId: string) => Promise<void>, cancellable = false) => {
     if (operation.current || catalogPending) return;
@@ -371,7 +371,7 @@ export function CodexProxyResources({ onAssign, onBindingsChanged }: {
       {!visibleSources.length && <div className="codex-resource-no-results">{t('codex.proxy.catalog.noResults')}</div>}
     </>}
     {strategyEditing && <StrategyEditorDialog source={catalog.sources.find((entry) => entry.id === strategyEditing) ?? null} sources={catalog.sources} busy={locked} onClose={() => setStrategyEditing('')}
-      onSaved={(next) => { apply(next); setStrategyEditing(''); setQuery(''); }} />}
+      onCatalogChange={apply} onSaved={(next) => { apply(next); setStrategyEditing(''); setQuery(''); }} />}
     {strategyDeleting && catalog.sources.some((entry) => entry.id === strategyDeleting) && <StrategyDeleteDialog source={catalog.sources.find((entry) => entry.id === strategyDeleting)!} busy={locked} onClose={() => setStrategyDeleting('')}
       onBindingsChanged={() => onBindingsChanged(strategyDeleting, true)}
       onRemoved={(next) => { apply(next); setStrategyDeleting(''); }} />}
@@ -390,7 +390,7 @@ export function CodexProxyResources({ onAssign, onBindingsChanged }: {
               <p className="codex-resource-delete-count">{t('codex.proxy.catalog.deleteImpactAccounts', { count: deleteImpact.accountCount })}</p>
               {deleteImpact.accounts.length === 0 ? <p className="codex-resource-delete-none">{t('codex.proxy.catalog.deleteImpactNone')}</p>
                 : <ul className="codex-resource-delete-accounts">{deleteImpact.accounts.map((entry) => <li key={entry.id}>
-                  <strong>{resolveName({ id: entry.id, account_name: entry.name })}</strong>{entry.email && entry.email !== entry.name ? <span>{resolveName({ id: entry.id, email: entry.email })}</span> : null}</li>)}</ul>}
+                  <strong>{entry.id === '__api_service__' ? t('codex.localAccess.title') : resolveName({ id: entry.id, account_name: entry.name })}</strong>{entry.email && entry.email !== entry.name ? <span>{resolveName({ id: entry.id, email: entry.email })}</span> : null}</li>)}</ul>}
               <p className="codex-resource-delete-unified">{deleteImpact.unifiedProxy ? t('codex.proxy.catalog.deleteImpactUnifiedClose') : t('codex.proxy.catalog.deleteImpactUnifiedKept')}</p>
               {deleteImpact.strategyCount > 0 && <>
                 <p className="codex-resource-delete-count">{t('codex.proxy.catalog.deleteImpactStrategies', { count: deleteImpact.strategyCount })}</p>

@@ -8,6 +8,200 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.3.69] - 2026-10-16
+
+### Fork integration
+
+- Share account activity, historical usage and backup-dispatch controls across Go/Rust; retain Sub2API compatibility, quota injection, promotion removal and disabled automatic updates.
+- Remove GPT-5.5 fingerprint requests, retain GPT-6.1 Sol, and keep sample session/thread/window/turn identities consistent.
+- Adopt upstream pricing completely, retire the fork price book, migrate former presets and reprice history.
+- Retain Windows/macOS draft builds with retrying uploads and combined 1.3.66–1.3.69 notes.
+
+### Added
+
+- **Rust native API service**: Added a Rust engine. This fork keeps Go as the default, preserves explicit choices, and supports switching to Rust for testing.
+- **Grok and Cursor**: Display server-provided subscription values. Grok supports 4.7 model capabilities and pricing, and both API engines support client tool discovery, follow-up conversations and sub-agents, normalize search and reasoning responses, and refresh compatible request versions in the background. Grok recognizes The X Subscription shared allowance and actual reset period while retaining legacy plans; purchased credits and product usage shares are not treated as separate allowances. New authorizations include workspace permissions supported by the official CLI.
+- **Antigravity desktop switching**: WebSocket requests can explicitly target desktop credentials without launching the client, or request a restart. Requests without a target retain the existing IDE behavior.
+
+### Changed
+
+- Platforms appear independently by default in the top navigation, except that Codex API Service remains grouped with Codex. Other untouched built-in groups are expanded while customized groups and layout choices are retained; grouping remains available in Top Layout.
+- Removed the reverse-proxy risk warning and its confirmation step from API service actions.
+
+- **Go API service**: Improved stability, account switching, conversation continuation and error handling.
+- Updated built-in Codex models and defaults, removing GPT-5.5.
+
+### Fixed
+
+- Windows default-instance launches use the same custom `CODEX_HOME` as account switching, preventing startup with another directory's account.
+- Grok device authorization uses the issuer's verification URL when no complete link is returned. Missing data-sharing preferences default to opting out, matching the official CLI, while explicit preferences remain unchanged. Usage below 100% no longer appears exhausted after rounding.
+- Codex context settings show configuration conflicts and a reload action inside the active dialog. Failures retain the draft; successful reloads update the cancellation baseline.
+- Codex launch-preview Model Management keeps the dialog and action buttons stable when menus open, with scrolling inside the model list.
+- Codex desktop proxy entries try dispersed candidates when consecutive ports are unavailable, preserve account port ownership, and explain recovery failures without silently changing a running client's port.
+
+## [1.3.68] - 2026-10-13
+
+### Added
+
+- API Key accounts with compatible Images API endpoints can now be selected as image sources in the built-in gateway. Choose a `gpt-image-2` or `gpt-image-2.5` family, then select each account's complete upstream model ID, including suffixes; other custom models match exact IDs. Synchronous single-image generation and editing use the selected provider and model; conversation routing remains unchanged.
+- Image models discovered from saved account catalogs or added manually are kept locally until deleted, and deleted models are not rediscovered automatically. Account rows use compact model selectors that fit long names and small windows; missing model selections can be located across pages and filters. Model-directory operations can be retried after a timeout. Models in use cannot be deleted, and deletion during instance-gateway preparation prompts a retry.
+- API Key image generation validates reference images, masks and returned images, and blocks downloads from local or private addresses. Public CDN redirects remain supported after destination checks. Upstream-reported usage remains recorded when image retrieval fails or is canceled.
+
+### Changed
+
+- Codex API Key accounts consistently display a custom name or the request URL's host, with a provider or localized account label as fallback. Account views, launch previews, image-source selection, request records, tray menus and quota notifications use the same naming rules.
+- Adding a Codex API Key account defaults to Custom with an empty request URL. Loading sponsor providers no longer automatically selects a provider.
+- Image main-model settings now prominently explain their role in the official image relay and distinguish them from the model that generates the image. Manual updates remain available when the official main model changes.
+- Codex reasoning levels use the same Low → Medium → High → XHigh → Max → Ultra order in the editor, saved/imported configurations and generated client catalogs, while preserving valid explicit defaults and existing implicit defaults.
+- API Service request details distinguish identifiable stream-open timeouts, stream idle timeouts and client cancellation. Recorded timeout thresholds can link to the corresponding field in Timeouts & Retries; other HTTP 504 errors retain their upstream diagnostics. Default timeout and retry policies are unchanged.
+- The API Service restart action is labeled “Restart API service only” and explains that Codex windows stay open while active API requests may be interrupted. Repeated clicks no longer queue duplicate restarts, and failures remain retryable.
+
+### Fixed
+
+- API Service standard/fast changes apply to subsequent HTTP requests and new requests on the same WebSocket connection without restarting the gateway. Requests already in progress keep their original tier, and explicit client tiers still take precedence. If the running service cannot confirm the update, a localized message explains that the preference was saved and allows retrying.
+- API Service request logs show compact Fast/Standard badges without prefixes; Fast uses an amber lightning badge. Details retain the requested tier and raw upstream report separately. Codex OAuth responses reporting `default` no longer overwrite a Fast request as Standard, and unavailable tier evidence remains unconfirmed. WebSocket handshakes rejected because the transport is disabled remain in diagnostics without counting as inference failures.
+- The API Service quick panel shows usage statistics first. Request-body recording settings are grouped at the end of the service configuration in a section that is collapsed by default, preserving the existing statistics-card layout and recording preferences.
+
+## [1.3.67] - 2026-10-11
+
+### Added
+
+- API service and API account cards use the same proxy button, preview and settings as ordinary accounts: follow the unified proxy, select an independent proxy, or connect directly. Saved settings are preserved and control the launched Codex desktop client's route while gateway upstreams keep their own settings. Proxy preparation failures stop launch with an explicit error.
+
+- Codex Responses WebSocket connections forward response interruptions and support follow-up requests on the same connection. HTTP-backed turns interrupt only the matching response; late interrupts for known finished replies, including locally interrupted HTTP turns and replies completed while interruption forwarding waits, are safely ignored without stopping a newer reply, and interrupt forwarding keeps client reads and disconnect handling responsive. Upstream interruption rejections, including hosted-tool restrictions, are preserved without interrupting the current reply or preventing follow-up requests.
+
+- API Service request logs and details show approximate output token speed for supported successful streaming requests, excluding first-response waiting. Completed replies retain valid measurements when the client disconnects afterward; interrupted or incomplete replies remain unmeasured. A weighted average covers valid samples on the current page, and unmeasured speeds explain short output, missing usage or timing, and failed or canceled requests.
+
+### Changed
+
+- Restore Standard/Fast controls in Codex account cards, lists, launch previews and the API Service page. Keep API defaults separate from account speed, carry account speed into the target instance on switching, and update the selected client profile. Fast request aliases are forwarded correctly, and an explicit Standard choice is no longer lost during protocol conversion or recorded as Fast. Standard remains the default; explicit request tiers and existing chats' own speed settings take precedence.
+
+- Codex session visibility repair applies planned rollout timestamp corrections and reports only completed changes. Timestamp rollback preserves current rollout contents, including concurrent appends.
+
+- New API Service OAuth bindings reserve 10% of both the 5-hour and weekly quotas by default. The binding dialog displays the configured percentages in a compact inline summary for direct editing; existing saved percentages and disabled reservations remain unchanged.
+
+- Codex navigation centers its tab rail within the main content area and sizes it to visible tabs in wide windows. Session management uses compact search filters and maintenance actions; bulk actions appear only when sessions are available, and disabled destructive actions use a neutral style. Top-tab ordering reports local save failures with retry and is included in configuration backups.
+
+- API Service request logs use aligned columns for request sources, accounts, token usage, estimated values and performance. Proxy and request ID columns can be toggled with saved preferences; narrow windows keep columns aligned through horizontal scrolling, with opaque fixed action columns. Refreshing preserves the current rows or empty state without a loading-message transition; refresh failures keep existing logs visible.
+
+- API Service request details use compact latency and speed cards, clearer account attempt records and a dedicated snapshot view, with responsive layouts for small windows. Page titles, speed controls and card actions remain readable without squeezing each other.
+
+- New API Service configurations default to two concurrent requests per account. Existing saved limits, including 0 (unlimited), remain unchanged.
+
+### Fixed
+
+- Disabling the application proxy restores the proxy and bypass environment inherited at startup, including when the application first starts with the proxy disabled.
+
+- Codex API Service retains confirmed upstream rate-limit cooldowns when cancellation or a connection close overlaps an upstream failure, including before the first stream event is delivered, while stopping canceled client output promptly and keeping newer credentials unaffected.
+- Codex OAuth conversations declare cached-only search tools when replaying search history during continuation or local context compaction, including Responses Lite, while preserving explicit tool choices.
+- Codex OAuth HTTP requests recover once from specifically rejected historical reasoning or compaction ciphertext, preserving messages, reasoning summaries and tool results. Explicit error targets leave unmatched ciphertext untouched, and Unicode error text is handled safely. Rejected ciphertext is isolated by account, effective authentication headers and session so later requests can avoid resending it. Successful recovery includes the retry wait in first-response timing.
+- Codex Chat compatibility shortens oversized tool-call IDs while keeping each call paired with results matching its original ID, rejecting orphan results and avoiding collisions with existing IDs.
+- Instance gateways using Chat-compatible providers accept clean EOF after a valid finish reason and retain late usage data. Unfinished alternatives, incomplete function arguments, upstream errors, read failures and canceled requests are not mistaken for completed replies; translated Responses events retain valid SSE framing and consistent empty tool arguments across completion events.
+
+- Codex compact account views retain account names and actions in narrow windows; account tables keep horizontal scrolling regardless of stylesheet loading order, and fixed account-list actions do not show underlying text. Dialog dropdowns stay above their owning dialog and fit the viewport, and backup-manager close actions remain visible while scrolling. Wakeup-task validation locates the affected field. Wakeup, OAuth binding, data-transfer, Codex launch-preview, announcement and API Service risk-notice dialogs keep keyboard focus within the topmost dialog, restore the previous control on closing; launch-preview child dialogs return to the control that opened them, Tab recovers into the topmost dialog after backdrop focus loss, and Escape follows visible dialog layering even when a lower dialog opens later; pending wakeup confirmations remain visible above other dialogs. Malformed data imports report invalid JSON instead of empty input. Status, CLI, diagnostic and backup-folder descriptions follow the selected language and actual behavior.
+
+- Backup directory changes remain available after loading failures. Unreadable old backups can be left in place while switching to a writable folder; the recovery choice survives restarts without moving account or application configuration data. Slow backup reads show a retryable timeout instead of staying in a loading state.
+
+- Codex accounts with expired, invalid or server-revoked authorization retain their reauthorization action in card, table and compact views, including when the saved error message contains no original error code. A network failure during forced Token refresh no longer reports otherwise valid authorization as expired or directs users to reauthorize without an authentication failure.
+
+
+- Existing Codex conversations fall back to HTTP when Responses WebSocket transport is disabled, preserving conversation context without requiring a new chat.
+- Codex voice calls through ordinary OAuth account pools route their control connection through the same local gateway as call creation, avoiding 404 failures while preserving explicit user voice endpoints.
+- Codex quota and provider-balance badges follow the visible conversation composer after switching chats, keeping their position and selected-model display aligned with the current conversation.
+
+- API Service preserves account-pool and Key bindings during temporary account-read failures and retries configuration recovery automatically within a bounded budget. Available accounts keep serving when some accounts cannot be read; affected Keys retain their original account scopes and recover automatically after the accounts are saved again. Running services can remain available when their unchanged configuration and credentials pass local verification. Recovery progress is visible, stale messages clear after recovery, and cases requiring manual intervention point to account and Key bindings. Disabling cancels recovery; deleted accounts, revoked Keys and tightened access scopes never fall back to the previous configuration.
+
+- Codex OAuth accounts set to “No proxy” launch the desktop client with direct networking, without depending on Cockpit’s local relay after restart. Exiting Cockpit no longer disconnects these directly launched clients.
+- Native Clash/Mihomo subscription nodes preserve their parameters without a Cockpit-maintained protocol or parameter allowlist; the installed engine determines compatibility during testing and use. Failed tests remain retryable, engine configuration errors are distinguished from connection failures, and previously rejected cached subscriptions show a refresh prompt. Local file access, system routing and persistent network integration boundaries remain enforced.
+- Subscription download errors distinguish TLS failures, denied links and blocked redirects, avoiding a misleading redirect warning for unrelated network failures.
+- Codex account proxy choices remain saved during background quota, subscription and credential updates, including switching nodes, following shared settings or disabling proxies.
+- Codex history repair and synchronization preserve original rollout bytes and pagination cursors; stopped instances can receive matching history additions without replacing existing bytes. Unsafe partial paginated transfers, conflicting history merges, running-target history updates and stale rollout restores are rejected.
+- Codex session imports reject packages whose manifest and rollout session IDs disagree. If a later session cannot save its index, earlier successful imports retain their index entries and only the failed session's staged file is removed.
+- Scheduled Codex wakeups configured to require confirmation wait before sending. Cancellation, closing the confirmation, expiry, and restarts do not send or replay the claimed request.
+- Removing an imported or legacy instance preserves its directory. Trashing the directory while removing an instance requires a matching instance owner and a record that Cockpit created the directory.
+- Grok OAuth chat forwarding now sends the current stable client version to avoid rejection of the old pinned version. Quota queries use the same updated fallback when local Grok CLI version detection fails.
+- Client-canceled API Service requests are no longer recorded as gateway errors: request logs classify them as 499 with the client-canceled category instead of mixing them with gateway faults.
+- API Service model-unavailable errors follow the selected language, with consistent explanations across request routes.
+- Retry-class errors such as account concurrency or quota cooldown now carry a safely exposed `Retry-After` time so clients can back off instead of retrying blindly.
+
+## [1.3.66] - 2026-10-07
+
+### Added
+
+- API Service request logs now include first-response timing and request details with account attempts and failure stages. Optional bounded client and upstream request snapshots are stored locally, disabled by default, and saved bodies can be cleared separately. Recording choices survive concurrent configuration saves and application restarts.
+- Codex Chat-compatible replies include web-search URL citations in streaming and non-streaming responses, using the standard Chat Completions citation format with text offsets that support multiple content parts and Unicode.
+
+- Voice proxying supports native Codex backend call and sideband routes, dictation transcription, and OpenAI-compatible audio endpoints. OAuth accounts use ChatGPT transcription with JSON/text output and matching content types; API-key providers forward transcription, translation, speech and supported streaming responses, preserving audio and language hints within the existing account scope. Mixed pools select API-key credentials for speech and translation without escaping OAuth bindings; late audio failures and retry pauses do not invalidate newer credentials.
+- Codex model management supports per-model reasoning defaults and JSON import/export of models, prices, aliases, and routing rules. Imports preview conflicts and explain missing, invalid or unsupported fields, preserving existing settings by default; account credentials and API keys are excluded, and imported prices update historical cost estimates in the background.
+
+- API Service account-pool failures show a copyable request ID and failure time for log lookup. Diagnostics remain separate for each API Key, model and request type, so unrelated successes or late results cannot hide a newer failure.
+
+- General Settings and the Codex settings dialog offer optional preservation of an already installed Codex Web GPT bridge during OAuth account switches. Only bridges verified against local integration records are kept; the option is off by default.
+- API Service account-pool diagnostics show the affected accounts and distinguish scope mismatches, unmapped credentials, bound accounts not loaded in the service, and bound accounts absent from the current request candidate pool. Clients also receive localized explanations of scope selection failures.
+- Account-pool diagnostics offer binding/configuration inspection and per-record clearing. Public API Keys open at their matching policy; image, internal and instance requests open the account page with guidance for the relevant settings. Clearing removes only the diagnostic record, preserving account authentication, quota and scheduler state; subsequent failures appear again.
+- Image forwarding offers an optional main model separate from the image tool model. Leaving it blank keeps gpt-5.5; the selected OAuth accounts must support image_generation on the chosen model.
+- Codex quota settings can select which OAuth plans receive scheduled platform and group refreshes. All plans remain selected by default; manual and current-account refreshes, token keep-alive, and other account types keep their existing behavior.
+- Logs support content search and optional regular expressions, combined with log levels and copying matched entries. Filtering runs in cancellable workers with a time limit; log reads run in the background with bounded waits, and errors stay visible in the log dialog.
+- General Settings offer an optional OLED palette with a pure-black background in dark mode and a white background in light mode; the existing default and other palettes remain available.
+- Codex session usage offers a local-calendar “Today” range and daily estimated costs using the existing built-in model prices. Days containing unpriced models are marked as unavailable; the saved range and seven-day default are preserved.
+- Floating quota windows offer a minimal quota view and adjustable background strength, shared with General Settings. Text stays clear; the existing full card and background remain the defaults.
+- Codex session imports offer optional project-path mappings for moving chats between computers. Mappings update execution directories and matching permission paths without changing message text, and assign chats to existing destination projects when supported by the client. Leaving mappings empty preserves the existing import behavior.
+- Startup page settings can select Antigravity APP and Antigravity IDE separately.
+
+### Security
+
+- Update TLS and QUIC dependencies to address published OpenSSL buffer-safety, certificate-revocation parsing and stream-reassembly memory exhaustion advisories.
+
+### Fixed
+
+- Codex API gateways preserve newer credentials when refreshes or older requests finish late, isolate rejected tokens during refresh, and retain active quota cooldowns.
+- Codex WebSocket requests report upstream disconnects during activation and start a new response chain when the client changes context windows. Chat-compatible streams distinguish complete EOF from truncated output.
+- Codex forwarding preserves compatible provider reasoning state and requested web-search sources.
+
+- Codex automatic account switching and quota alerts use actual window durations for short-cycle and weekly thresholds, including weekly-only accounts whose limit appears in the primary window. Missing windows are ignored; responses without a duration retain the existing field mapping.
+
+
+- API-key forwarding resolves all shipped model capabilities, preserving Responses Lite reasoning context for GPT-6.1 Sol.
+- OAuth credential projection falls back to the access-token account ID when identity metadata is missing, while preserving an explicit stored ID and personal-access-token authentication.
+
+- API Service recognizes explicit account-quota and deactivation errors before the first meaningful output and tries other authorized candidates. Requests that already produced meaningful output retain their existing handling to avoid repeated execution.
+- WebSocket clients disconnecting while waiting for the first upstream response now cancel the request and release account concurrency slots, preventing silent upstreams from retaining resources.
+
+- Automatically recognize HTTPS proxy subscription links with custom ports instead of rejecting them as ordinary proxy input.
+- Keep unavailable subscription nodes visible when choosing custom proxy-group members, with their reasons and explicit per-node certificate permission; approved nodes can then be added without closing the editor or losing the draft.
+- Rotate equally ranked, eligible Codex accounts evenly within each API Key scope and model, including when accounts temporarily leave or rejoin the pool. Different Keys and models no longer consume each other’s turns; existing routing priorities remain effective. Apply account scopes before quota reserves and backup selection so out-of-scope accounts do not block an authorized backup account or cause a misleading scope error.
+- Preserve newer authorization, account edits and quota data when an in-flight Codex token refresh completes. Stale refresh responses and errors no longer overwrite or invalidate newly authorized credentials, and deleted accounts remain deleted.
+- Editing a provider API key preserves its access mode, model settings and account records, and keeps default-instance, multi-instance, model-route and API-service account bindings valid. Failed reference updates retain the original account for retry.
+- Different API keys at the same provider keep separate model catalogs, context settings and image capabilities; saving one key no longer overwrites another key's model configuration.
+- Codex startup restoration settings save and reload consistently in General Settings and the Codex settings dialog; disabling restoration no longer silently returns to the enabled state.
+- Mixed-model recovery no longer treats API-service or provider-gateway bindings as OAuth accounts, avoiding spurious missing-account errors.
+- Failed provider gateway starts preserve the previous client configuration instead of leaving an unavailable local endpoint. Gateway stops record the instance, port and reason for connection troubleshooting; normally stopped gateways no longer count as failures.
+- Windows default Codex launches no longer inherit managed-instance profile directories or user-data arguments.
+- Keep declared API Key account scopes when an account is temporarily unavailable, including partially missing scopes. If no public Key can be resolved, preserve the last gateway configuration and authentication files instead of writing an unusable configuration.
+- Show consistent public API service status across account cards, launch previews and settings. Disabling confirms port release, attempts to restore client configuration even if stopping fails, and keeps failures visible and retryable in the active settings dialog.
+- Copied Codex instances use their own conversation history and local project mappings, including committed SQLite WAL data, folderless projects and legacy copies with outdated history indexes. Incomplete history is rejected before publishing the copy; copying runs in the background without blocking the instance registry, and cancelled attempts do not register an instance.
+- macOS Codex shutdown requests target the selected instance directly, avoiding keyboard-control permission errors and changes to the foreground window while preserving cleanup of its background processes.
+- CLI token refresh accepts responses that omit id_token, preserving rotated access_token and refresh_token credentials. Existing identity metadata is retained when available; desktop launch credential checks remain in place.
+- Keep existing settings readable while saves wait on disk or configuration locks; failed saves retain the last saved values and lock waits time out instead of waiting indefinitely.
+- Save account details entered before Codex OAuth completion, including passwords and 2FA secrets; local save failures keep the dialog open and can be retried without repeating authorization or clearing existing details.
+- Preserve explicit parallel-tool settings on Codex API requests in the Rust forwarding and Chat conversion paths; requests carrying the Responses Lite marker retain its serial-call requirement, and Chat requests without an explicit setting retain the Lite model's serial default.
+- Preserve the selected Antigravity client and group default across restarts instead of reverting to IDE during installation discovery or layout compatibility handling.
+- Antigravity automatic account switching follows the selected APP / IDE client; APP switching uses the same system-credential writes and launch flow as manual switching.
+- Session synchronization, restoration, and related operations on macOS recognize the updated CLI location bundled with ChatGPT / Codex while retaining compatibility with older clients.
+- Sort Codex weekly quotas and reset times by their actual quota windows, including accounts with weekly-only limits, and place missing quota data last.
+- Claude account-switch backups on Windows tolerate source-file EFS attributes when the destination cannot preserve them, keeping file content and the original file unchanged.
+- Skip Linux tray menu rebuilding when visible content is unchanged to reduce repeated GNOME AppIndicator updates; failed updates remain retryable.
+- Codex launch previews keep the title and launch actions visible when account details exceed the available window height, with scrolling inside the body. Token expiry previews distinguish request authorization from identity information instead of showing an authorization danger state solely for an expired id_token; refresh descriptions clarify that id_token updates only when returned upstream.
+- Preserve distinct Skills, rules and `AGENTS.md` instructions in Codex instances instead of replacing them with the default profile when starting the client.
+- Read Claude cookie databases with pending SQLite journals from a temporary snapshot without modifying the original profile; allow verification windows to open before login.
+- Apply configured per-account concurrency and wait limits to instance provider gateways and fixed provider routes, holding slots until responses finish. Honor upstream Retry-After pauses for the bound account and upstream model.
+- Mark explicitly revoked Codex access tokens as requiring authorization, stop reusing them for switching and quota requests, and clear that state when new credentials arrive.
+- Keep explicitly configured models from Model Management visible in the automatic gateway catalog, including models newer than the built-in list.
+- Honor explicitly edited long-context prices when estimating API Service request costs, including Standard and Flex requests on models with Priority prices. Unedited and legacy prices continue to follow the existing multipliers.
+- Show success or detailed failure feedback when refreshing a single account, and restore the refresh button after completion.
+- Localize the account-group All tab in every supported language.
+- Recognize running default Codex desktop instances during session operations without requiring managed-profile arguments.
+
 ## [1.3.65] - 2026-10-02
 
 ### Fork integration

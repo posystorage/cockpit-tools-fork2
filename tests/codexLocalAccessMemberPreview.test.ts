@@ -124,9 +124,8 @@ describe("Codex API service member preview", () => {
   });
 
   it("does not report an internal sidecar as an enabled API service", () => {
-    assert.match(rendererSource, /!localAccessCollection\.enabled\s*\? "disabled"\s*: localAccessState\?\.running/);
-    assert.match(rendererSource, /!localAccessCollection\.enabled\s*\? t\("codex\.localAccess\.statusDisabled"/);
-    assert.ok(serviceViewSource.includes('!collection?.enabled ? "disabled" : state?.running'));
+    assert.match(rendererSource, /resolveCodexLocalAccessRuntimeStatus\(/);
+    assert.match(serviceViewSource, /resolveCodexLocalAccessRuntimeStatus\(collection, state\)/);
   });
 
   it("shows the backup switch only for lowest-priority members", () => {

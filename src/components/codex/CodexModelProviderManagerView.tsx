@@ -9,6 +9,7 @@ import { PaginationControls } from "../PaginationControls";
 import { CodexModelContextWindowTable } from "./CodexModelContextWindowTable";
 import { resolveNewApiQuotaSnapshot } from "../../services/modelProviderUsageService";
 import { CODEX_API_PROVIDER_CUSTOM_ID, CODEX_API_PROVIDER_PRESETS, DEEPSEEK_API_PROVIDER_ID, resolveCodexApiProviderPresetId } from "../../utils/codexProviderPresets";
+import { resolveCodexModelProviderForApiKey } from "../../utils/codexModelProviderKeyConfig";
 import { normalizeApiKeyFunOfficialUrl } from "../../utils/apikeyFunLinks";
 import { getCodexSubscriptionPresentation } from "../../types/codex";
 import { canConfigureCodexProviderVision, resolveCodexProviderCapabilityProfile } from "../../utils/codexProviderGateway";
@@ -1945,7 +1946,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                         <span className="provider-vision-toggle-desc">
                           {t(
                             "codex.modelProviders.vision.providerDefaultHint",
-                            "未单独设置的模型使用此默认值，GPT-5.5 及更新模型默认支持图片。可在模型列表中单独关闭。网关无法匹配视觉模型时会省略图片并继续处理文本。",
+                            "未单独设置的模型使用此默认值，GPT-5.6 Sol、GPT-5.6 Luna 等模型默认支持图片。可在模型列表中单独关闭。网关无法匹配视觉模型时会省略图片并继续处理文本。",
                           )}
                         </span>
                       </span>
@@ -2803,7 +2804,8 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
       )}
 
       {providerDetailId && (() => {
-        const provider = providers.find((item) => item.id === providerDetailId);
+        const storedProvider = providers.find((item) => item.id === providerDetailId);
+        const provider = storedProvider ? resolveCodexModelProviderForApiKey(storedProvider, getSelectedProviderApiKey(storedProvider)?.apiKey) : null;
         if (!provider) return null;
         const usageState = providerUsageMap[provider.id];
         const primaryApiKey = getSelectedProviderApiKey(provider);

@@ -108,7 +108,10 @@
 - **专属支持**：专为 Codex 优化的账号管理体验
 - **配额展示**：清晰展示 Hourly 和 Weekly 配额状态
 - **计划识别**：自动识别账号 Plan 类型 (Basic, Plus, Team 等)
-- **API 服务**：本地 Codex API 服务由内置 CLIProxyAPI sidecar 驱动，Cockpit Tools 负责账号同步、配置投影、状态与用量统计；Base URL、API Key 与用户操作方式保持不变。
+- **API 服务**：新安装及首次升级默认使用「Rust 原生」，之后保留用户的选择，可在 API 服务页面或快捷面板切回内置 Go CLIProxyAPI sidecar。Rust 在宿主内实现 Responses 的 HTTP/SSE/WebSocket 与 compact，以及 Chat Completions、Claude、Gemini、Ollama 兼容接口，两引擎共用账号池、代理和配置。Go 继续负责协议转换、自动重试和上游传输，由 Go 管理的本地无界面辅助进程复用 Rust 会话内核，持久实例网关不依赖主窗口存活。对于 Codex 账号请求，Go 与 Rust 在同一网关范围内共享 Session、Thread、子 Agent 和上游状态的账号归属及历史；不同 profile 的实例网关保持隔离。切换引擎保留 Base URL 和 API Key，但会重启服务并可能中断活动请求。
+- **请求身份对照**：Go 与 Rust 的请求记录「详情」可对照客户端原始 `Session-Id`、`Thread-Id`，以及每次上游尝试使用的请求头、账号和传输方式。关闭或清除正文快照仍保留这些本地诊断信息；客户端未提供与历史未采集分别显示，不按当前配置补填旧记录。这些头值不代表上游已接收请求。
+- **自动续接上下文**：Go 的 Codex 账号请求与 Rust 默认自动尝试续接历史对话，支持切换引擎和账号，缺少本地归属记录不再单独阻断请求。调用方、账号池权限及 profile 隔离继续生效。完整 Responses 历史原样保留，包括 reasoning、compaction、工具与子 Agent 密文及 `item.id`／`call_id`；不解密、不丢弃，也不以摘要替代。完整自包含 `input` 可在授权目标账号建立新的上游 Session／Thread，保留客户端 Thread；增量请求继续使用有效上游状态、完整检查点或 WebSocket 历史，缺失上下文或上游明确拒绝时仍可能失败并保留原历史。两引擎在转发完整官方 Agent 通信工具调用前登记消息密文归属；缺少记录的历史通信密文也自动尝试续接，新的续接归属仅在有效完整响应后保存。两引擎共用本地 `codex_native_api/identity.sqlite` 明文／密文历史缓存，实例网关使用各 profile 隔离目录内的 `native-identity.sqlite`，独立于正文诊断／快照开关。缓存上限为每个检查点 8 MiB、总计 64 MiB 和 128 个检查点，淘汰不删除会话或密文归属。重放可能增加输入 token，上游对跨账号密文的接受情况仍待真实请求验证。失败不覆盖已成功代次，已成功代次在切换引擎和重启后保留；新的上游对话不改变目标账号身份。
+- **语音反代**：支持 Codex backend 实时语音路由与 `/transcribe` 转写入口，并提供 `/v1/audio/transcriptions`、`/v1/audio/translations`、`/v1/audio/speech` 及无 `/v1` 的别名。OAuth 转写使用 ChatGPT backend：兼容入口支持 `file`、`language` 和 JSON／纯文本返回，`model` 仅作为兼容字段，实际模型由 backend 决定；字幕时间戳、流式转写及其他音频操作需使用支持相应接口的 API Key 供应商。原生 `/transcribe` 请求保留原有 multipart 参数，供应商侧未指定模型时使用 `gpt-4o-mini-transcribe`。请求上限为 26 MiB，超时为 2 分钟，音频内容不写入请求快照。只处理实际发送到本地网关的请求；客户端仍直连官方转写服务或自行限制麦克风时，不会因设置模型供应商而自动改走本地网关。
 
 > ![Codex Accounts](docs/images/codex_list.png)
 
@@ -251,7 +254,7 @@ Grok CLI 默认实例通常直接沿用官方 `~/.grok` 目录，启动时不设
 - **账号导入**：支持本机导入与 JSON 导入
 - **配额视图**：展示套餐原始值、美元消耗/总额度与重置时间
 - **批量管理**：支持标签、筛选、导出与批量删除/刷新
-- **Trae 套件**：支持 Trae、TRAE SOLO、Trae CN、TRAE SOLO CN 默认客户端的本机导入与切号注入，默认归入 Trae 分组
+- **Trae 套件**：支持 Trae、TRAE SOLO、Trae CN、TRAE SOLO CN 默认客户端的本机导入与切号注入，默认独立展示，可在顶部布局中手动分组
 - **切号注入**：支持切号后按各客户端真实落盘规则写回并启动目标客户端
 
 #### 11.1 Trae 应用多开
@@ -315,6 +318,21 @@ Grok CLI 默认实例通常直接沿用官方 `~/.grok` 目录，启动时不设
   1. 不使用插件联动时，可关闭 WebSocket 服务。
   2. 不要把用户目录直接打包分享；备份前注意脱敏 token 文件。
   3. 在公共或共用电脑上，使用后删除账号并退出应用。
+
+### WebSocket 账号切换 API
+
+`request.switch_account` 支持明确选择 Antigravity 客户端。未传 `runtime_target`，或传 `"antigravity_ide"`，保持原有 IDE 切号流程及现有启动/无感双通道设置；不会读取前端选择的客户端。
+
+切换 Antigravity 桌面版及使用同一系统凭据的 `agy` CLI，可发送：
+
+```json
+{"type":"request.switch_account","payload":{"account_id":"<account-id>","request_id":"x","runtime_target":"antigravity","launch_on_switch":false}}
+```
+
+- `runtime_target: "antigravity"`：复用桌面版切号认证规则；2.0 及以上版本写入系统凭据，旧版写入本地 SQLite 登录状态。只有真实凭据写入成功后才更新当前账号、默认实例绑定并通知切号结果。
+- `launch_on_switch`：仅用于 `"antigravity"`，默认 `false`；不关闭或启动客户端，已运行桌面版可能需下次启动才使用新账号。显式传 `true` 才执行与桌面版 UI 相同的关闭、写入、重启流程。IDE 请求不要传此字段，继续使用现有设置。
+- `request_id`：可选，传入后返回对应的 `response.success` 或 `response.error`。不支持的目标、凭据写入失败或并发桌面切号会返回错误，不报告成功；凭据已切换但启动失败会明确报告启动错误。无效目标返回 `WS_SWITCH_TARGET_INVALID`，在 IDE 请求中传启动策略返回 `WS_SWITCH_LAUNCH_POLICY_INVALID`；并发桌面切号返回 `ANTIGRAVITY_SWITCH_BUSY`，账号准备超时返回 `ANTIGRAVITY_SWITCH_PREPARATION_TIMEOUT`。
+- `ANTIGRAVITY_SWITCH_STATE_SAVE_FAILED` 表示客户端凭据已切换，但 Tools 当前账号状态保存失败，请重试切号。默认实例绑定更新保留原有尽力保存行为，失败会记录日志。
 
 ## 设置项说明（小白版）
 
@@ -475,31 +493,13 @@ QQ 交流群、微信群或新建的 Telegram 畅聊群都可以加入。
 
 ## 致谢
 
-- 部分账号导入校验、网关凭据读取及稳定性改进参考了 [super-ai-tools](https://github.com/lihah111222333-cloud/super-ai-tools) 的本地保留源码快照；来源与许可见 [来源声明](docs/third-party/super-ai-tools.md)。
-
-- Codex 代理工作台的页面层级、订阅卡片、当前节点展示、分组/节点下拉、延迟徽章与排序、原生测速接口调用、快速切换交互和订阅来源命名参考 [Clash Verge Rev](https://github.com/clash-verge-rev/clash-verge-rev) 的界面及实现思路；仅为设计与实现参考，不是运行时依赖或官方合作。
-- Codex 代理首次绑定的简短操作路径与当前节点展示参考 [Hiddify](https://github.com/hiddify/hiddify-app)；仅参考交互方向，未集成其代码或服务。
-- Codex 代理节点筛选、排序、延迟测试及窄窗口布局参考 [FlClash](https://github.com/chen08209/FlClash)；仅参考交互方向，未集成其代码或服务。
+- Antigravity 账号切号逻辑参考：[Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager)
+- Codex API 服务集成 CLIProxyAPI，Codex Live WebRTC/sideband、Responses WebSocket 状态安全、canonical token accounting v2、Multi-Agent V2 兼容、Grok CLI 账号与 OAuth、Grok `apply_patch` 协议兼容，以及账号池错误分类与状态恢复边界参考其开源实现：[router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)（MIT）
+- Codex、Claude CLI 与 Claude Desktop Gateway 第三方供应商预设、模型映射，以及从会话 JSONL 汇总真实用量的方向参考：[CC Switch](https://github.com/farion1231/cc-switch)
+- Claude 可选登录 helper 运行时基于：[Electron](https://github.com/electron/electron)
 - Codex 账号代理使用 [Mihomo](https://github.com/MetaCubeX/mihomo) 独立进程处理受支持的 Clash 节点与分组，节点参数、嵌套分组与内置阻断策略的配置语义、本地连接日志接口以及健康检查与故障转移设计参考其官方源码和文档；内核由用户主动下载或导入，宿主安装包不内置，不代表官方合作关系。
 
-- 代理管理页面的侧栏层级与账号筛选交互参考 [Carbon Design System](https://carbondesignsystem.com/components/UI-shell-left-panel/usage/) 与 [Tailscale 控制台文档](https://tailscale.com/docs/features/access-control/device-management/how-to/filter)，仅参考设计方向，未集成其组件或服务。
-- [Linear](https://linear.app/now/behind-the-latest-design-refresh) 与 [Vercel Geist](https://vercel.com/geist/empty-state)：参考其界面层级、控件尺度和空状态引导思路，用于 Codex 工具页视觉设计，不涉及运行时集成。
-- Codex 独立代理的早期实现及旧配置兼容参考 [sing-box](https://github.com/SagerNet/sing-box) 官方节点配置与进程文档；后续自动测速与已有连接处理的设计也参考其源码，当前运行内核仍为 Mihomo，不代表官方合作关系。
-- Antigravity 账号切号逻辑参考：[Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager)
-- Codex API 服务集成 CLIProxyAPI，Codex Live WebRTC/sideband、Responses WebSocket 状态安全、canonical token accounting v2、Multi-Agent V2 兼容、Grok CLI 账号与 OAuth，以及 Grok `apply_patch` 协议兼容方向亦参考其开源实现：[router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)（MIT）
-- Grok 图标造型参考：[LobeHub/lobe-icons](https://github.com/lobehub/lobe-icons)（MIT）
-- Grok CLI 任务用量查询与兼容解析方向参考：[junhoyeo/tokscale](https://github.com/junhoyeo/tokscale)（MIT）
-- Grok CLI 第三方 BYOK 与 custom model 配置格式对照上游实现及文档：[xai-org/grok-build](https://github.com/xai-org/grok-build)
-- Codex API 服务协议兼容方向参考：[codex-proxy](https://github.com/icebear0828/codex-proxy)
-- Codex Agent Identity 导入、动态签名、task 失效恢复、账号备份格式兼容、官方账号窗口用量（req / token / A$）展示口径，以及代理取消与响应失败边界的实现参考：[sub2api](https://github.com/Wei-Shaw/sub2api)。API 服务的客户端兼容、指纹、容量错误与请求级重试处理以 CLIProxyAPI 为准，不再保留“仅官方客户端／允许第三方客户端”等 Sub2API 式独立策略；API Key 鉴权与账号范围控制保持不变，Agent Identity 兼容暂保留为本地扩展。
-- Codex 本地认证存储格式、登录凭据回收规则、Agent Identity runtime 注册协议、Ed25519 密钥格式、Responses 客户端 freeform 工具调用（`custom_tool_call`）事件语义，以及鹈鹕测智的响应生命周期与生成产物处理思路参考官方实现：[openai/codex](https://github.com/openai/codex)（Apache-2.0）；鹈鹕测智使用直接对话请求，不等同于官方客户端的完整编码 Agent 流程。
-- Codex、Claude CLI 与 Claude Desktop Gateway 第三方供应商预设、模型映射，以及从会话 JSONL 汇总真实用量的方向参考：[CC Switch](https://github.com/farion1231/cc-switch)
-- Codex 模型目录、前端模型显示、loopback CDP 诊断、官方 live auth 保留策略，以及历史会话 Provider、SQLite 本地目录和工作区状态修复方向参考：[CodexPlusPlus](https://github.com/BigPizzaV3/CodexPlusPlus)
-- Codex 用量统计看板、走势图和 Studio 风格界面设计方向参考：[Antigravity Studio](https://github.com/yuzhiqiang1993/antigravity-studio)
-- Codex 受管模型目录中展示实验模型的思路参考：[gptsolwm](https://github.com/yynxxxxx/gptsolwm)
-- Claude 可选登录 helper 运行时基于：[Electron](https://github.com/electron/electron)
-
-感谢项目作者的开源贡献！如果这些项目对你有帮助，也请给他们点个 ⭐ Star 支持一下！
+感谢以上项目作者的开源贡献！如果这些项目对你有帮助，也请给他们点个 ⭐ Star 支持一下！
 
 ---
 

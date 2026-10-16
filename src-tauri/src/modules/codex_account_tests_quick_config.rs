@@ -295,6 +295,7 @@
             model_id: "gpt-5".to_string(),
             display_name: "GPT-5".to_string(),
             reasoning_efforts: None,
+            default_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         }];
@@ -442,13 +443,13 @@
             "gpt-5.6-sol",
             "gpt-5.6-terra",
             "gpt-5.6-luna",
-            "gpt-5.5",
         ] {
             assert!(models.iter().any(|model| {
                 model.get("slug").and_then(serde_json::Value::as_str) == Some(expected)
             }));
         }
         for legacy in [
+            "gpt-5.5",
             "gpt-5.4",
             "gpt-5.4-mini",
             "gpt-5.3-codex",
@@ -680,6 +681,7 @@
             model_id: model_id.to_string(),
             display_name: model_id.to_string(),
             reasoning_efforts: None,
+            default_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         })
@@ -711,7 +713,7 @@
                 .expect("read repaired catalog"),
         )
         .expect("parse repaired catalog");
-        assert_eq!(catalog_config["models"][0]["model_id"], "gpt-6-astra");
+        assert_eq!(catalog_config["models"][0]["model_id"], "gpt-6.1-sol");
         assert_eq!(catalog_config["default_model_id"], "gpt-5.6-sol");
         assert!(catalog_config["migrations"]
             .as_array()
@@ -804,6 +806,7 @@
                 model_id: "custom-model-a".to_string(),
                 display_name: "Custom Model A".to_string(),
                 reasoning_efforts: None,
+                default_reasoning_effort: None,
                 context_window: None,
                 auto_compact_token_limit: None,
             },
@@ -811,6 +814,7 @@
                 model_id: "custom-model-b".to_string(),
                 display_name: "Custom Model B".to_string(),
                 reasoning_efforts: None,
+                default_reasoning_effort: None,
                 context_window: None,
                 auto_compact_token_limit: None,
             },
@@ -830,6 +834,7 @@
             model_id: "gpt-reserve".to_string(),
             display_name: "GPT-5.6 Reserve".to_string(),
             reasoning_efforts: None,
+            default_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         });
@@ -877,6 +882,7 @@
             model_id: "custom-reasoning-model".to_string(),
             display_name: "Custom Reasoning Model".to_string(),
             reasoning_efforts: Some(vec!["low".to_string(), "high".to_string()]),
+            default_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         }];
@@ -919,6 +925,7 @@
             model_id: "gpt-5.6-sol".to_string(),
             display_name: "5.6 Sol".to_string(),
             reasoning_efforts: None,
+            default_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         }];
@@ -1011,6 +1018,7 @@
             model_id: "gpt-5.6-sol".into(),
             display_name: "Sol".into(),
             reasoning_efforts: None,
+            default_reasoning_effort: None,
             context_window: Some(800_000),
             auto_compact_token_limit: Some(700_000),
         };
@@ -1054,7 +1062,7 @@
         ] {
             let definition = CodexExperimentalModelDefinition {
                 model_id: "custom-model".into(), display_name: "Custom".into(),
-                reasoning_efforts: None, context_window: window, auto_compact_token_limit: compact,
+                reasoning_efforts: None, default_reasoning_effort: None, context_window: window, auto_compact_token_limit: compact,
             };
             assert_eq!(super::normalize_experimental_model_definitions(vec![definition]).unwrap_err(), error);
         }
@@ -1063,7 +1071,7 @@
         let derived = super::normalize_experimental_model_definitions(vec![
             CodexExperimentalModelDefinition {
                 model_id: "custom-model".into(), display_name: "Custom".into(),
-                reasoning_efforts: None, context_window: Some(516_000),
+                reasoning_efforts: None, default_reasoning_effort: None, context_window: Some(516_000),
                 auto_compact_token_limit: None,
             },
         ])
@@ -1080,6 +1088,7 @@
             model_id: "custom-model".to_string(),
             display_name: "Custom Model".to_string(),
             reasoning_efforts: None,
+            default_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         }];
@@ -1099,6 +1108,7 @@
             model_id: "gpt-reserve".to_string(),
             display_name: "GPT-5.6 Reserve".to_string(),
             reasoning_efforts: None,
+            default_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         });
@@ -1130,6 +1140,7 @@
             model_id: "custom-model".to_string(),
             display_name: "Custom Model".to_string(),
             reasoning_efforts: None,
+            default_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         }];
@@ -1162,6 +1173,7 @@
             model_id: "custom-model".to_string(),
             display_name: "Custom Model".to_string(),
             reasoning_efforts: None,
+            default_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         }];
@@ -1518,6 +1530,7 @@
             model_id: "bad model id".to_string(),
             display_name: String::new(),
             reasoning_efforts: Some(vec!["not-a-real-effort".to_string()]),
+            default_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         }];

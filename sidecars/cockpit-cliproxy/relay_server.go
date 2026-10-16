@@ -41,6 +41,8 @@ type relayServer struct {
 	responsesWebsocket    gin.HandlerFunc
 	codexLive             *codexlive.Handler
 	quotaPoolStatePath    string
+	providerBackoff       providerGatewayBackoffState
+	imageDownloads        *imageDownloadPolicy
 }
 
 func (s *relayServer) router() *gin.Engine {
@@ -55,6 +57,9 @@ func (s *relayServer) router() *gin.Engine {
 	router.GET("/v1/models", s.handleModels)
 	router.GET(cockpitQuotaPath, s.handleCockpitQuota)
 	router.POST("/v1/cockpit/auth/reset", s.handleResetAuthState)
+	router.POST(requestDiagnosticsConfigPath, s.handleRequestDiagnosticsConfig)
+	router.POST(apiServiceTierDefaultPath, s.handleAPIServiceTierDefault)
+	router.GET(requestDiagnosticsEventsPath, s.handleRequestDiagnosticsEvents)
 	router.POST("/v1/cockpit/accounts/reset-scheduler", s.handleResetSchedulerState)
 	router.POST("/v1/live", s.handleCodexLive)
 	router.GET("/v1/live/:call_id", s.handleCodexLiveSideband)
@@ -72,6 +77,7 @@ func (s *relayServer) router() *gin.Engine {
 	router.POST("/v1/realtime/calls/:call_id/accept", s.handleCodexSIPControl)
 	router.POST("/v1/realtime/calls/:call_id/reject", s.handleCodexSIPControl)
 	router.POST("/v1/realtime/calls/:call_id/refer", s.handleCodexSIPControl)
+	s.registerVoiceAliases(router)
 	// Codex Responses WebSocket upgrade uses GET /v1/responses (not POST/SSE).
 	router.GET("/v1/responses", s.handleResponsesWebsocket)
 	router.POST("/v1/responses", s.handleResponses)
@@ -715,7 +721,11 @@ func (s *relayServer) handleResponsesWebsocket(c *gin.Context) {
 		return
 	}
 	if !spec.ResponsesWebsockets {
-		writeAPIError(c, http.StatusBadRequest, "responses websocket is disabled", "websocket_disabled")
+		if diagnosticTransport(c.Request) == "websocket" {
+			c.Set(ginResponsesWebsocketDisabledKey, true)
+			_ = c.Error(errors.New("responses websocket is disabled"))
+		}
+		writeAPIError(c, http.StatusUpgradeRequired, "responses websocket is disabled", "websocket_disabled")
 		return
 	}
 	if s.responsesWebsocket == nil {
@@ -776,7 +786,7 @@ func (s *relayServer) handleCodexAlphaSearch(c *gin.Context) {
 	if model != "" {
 		canonical := canonicalModelForClientModel(s.manifest, spec, model)
 		if !validateClientModelVisible(s.manifest, spec, model, canonical) {
-			writeAPIError(c, http.StatusNotFound, fmt.Sprintf("模型 %s 不在当前 API Key 的可用模型范围内", model), "model_not_available")
+			writeAPIError(c, http.StatusNotFound, s.manifest.modelUnavailableMessage(model), "model_not_available")
 			return
 		}
 		model = canonical

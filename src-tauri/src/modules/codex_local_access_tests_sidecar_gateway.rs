@@ -48,7 +48,7 @@
             slots,
             vec![
                 super::ProviderGatewayModelSlot {
-                    client_model: "gpt-5.5".to_string(),
+                    client_model: "gpt-5.6-luna".to_string(),
                     upstream_model: "deepseek-v4-flash".to_string(),
                 },
                 super::ProviderGatewayModelSlot {
@@ -127,7 +127,7 @@
         assert!(runtime.account_health.is_empty());
         let health = runtime
             .account_pool_health
-            .get("key-1")
+            .get(&super::account_pool_route_key(&event))
             .expect("pool health should be created without an account id");
         assert!(health.diagnostic_available);
         assert_eq!(health.candidate_auths, 2);
@@ -530,6 +530,22 @@
     }
 
     #[test]
+    fn model_scope_error_translations_preserve_model_placeholder_for_all_locales() {
+        let value = super::sidecar_localized_messages(
+            "codex.localAccess.gatewayErrors.modelNotAvailable",
+        );
+        let messages = value.as_object().expect("localized error messages");
+        assert_eq!(messages.len(), 18);
+        for (locale, message) in messages {
+            let message = message.as_str().expect("message text");
+            assert_eq!(message.matches("{{model}}").count(), 1, "{locale}");
+            if locale != "en" && locale != "en-us" {
+                assert_ne!(Some(message), messages["en"].as_str(), "{locale}");
+            }
+        }
+    }
+
+    #[test]
     fn calendar_stats_windows_start_at_local_day_week_and_month() {
         use chrono::{Datelike, TimeZone, Timelike};
 
@@ -719,7 +735,6 @@
         build_request_routing_hint, build_runtime_account, build_upstream_websocket_url,
         calculate_usage_cost_usd, calendar_stats_window_starts, canonical_model_for_client_model,
         account_has_gpt_reserve_entitlement,
-        DEFAULT_MODEL_PRICING_BOOK_VERSION,
         classify_upstream_error_category, cleanup_profile_takeover_without_backup,
         cleanup_provider_gateway_profile_model_overrides, codex_price,
         collect_local_access_profile_takeover_dirs_from_store, compare_routing_candidates,
@@ -844,6 +859,7 @@
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     use tokio_tungstenite::tungstenite::Message;
     use toml_edit::{value, Document};
+    include!("codex_local_access_tests_env_ordering.rs");
 
     #[tokio::test]
     async fn read_http_request_rejects_declared_request_above_limit() {
@@ -937,6 +953,36 @@
 
     #[tokio::test]
     async fn official_wakeup_agent_identity_recovers_invalid_task_once() {
+        const ISOLATED_MOCK: &str = "COCKPIT_TEST_AGENT_WAKEUP_ISOLATED";
+        if std::env::var_os(ISOLATED_MOCK).is_none() {
+            // This mock must use its loopback server even when the developer
+            // has an application, environment or system proxy configured.
+            let data_dir = make_temp_dir("agent-wakeup-isolated");
+            let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::process::CommandExt;
+                command.creation_flags(0x08000000);
+            }
+            for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"] {
+                command.env_remove(key);
+            }
+            for key in ["COCKPIT_TOOLS_TEST_DATA_DIR", "COCKPIT_TOOLS_DATA_DIR", "COCKPIT_TEST_DATA_DIR"] {
+                command.env(key, &data_dir);
+            }
+            let output = command
+                .env(ISOLATED_MOCK, "1")
+                .env("NO_PROXY", "*")
+                .env("no_proxy", "*")
+                .args(["--exact", "modules::codex_local_access::tests::official_wakeup_agent_identity_recovers_invalid_task_once", "--nocapture", "--test-threads=1"])
+                .output()
+                .expect("run wakeup mock in isolated proxy environment");
+            fs::remove_dir_all(data_dir).expect("remove wakeup mock data");
+            assert!(output.status.success(), "isolated wakeup mock failed: {}{}",
+                String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"), "wakeup assertion test must execute");
+            return;
+        }
         let account = agent_identity_wakeup_test_account();
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
@@ -1054,9 +1100,16 @@
             client_base_url_host: CodexLocalAccessClientBaseUrlHost::default(),
             image_generation_mode: CodexLocalAccessImageGenerationMode::default(),
             image_generation_model: DEFAULT_CODEX_IMAGE_GENERATION_MODEL.to_string(),
+        image_generation_models: crate::models::codex_local_access::default_image_generation_models(),
+        image_generation_deleted_models: Vec::new(),
+        image_generation_model_catalog_revision: 0,
+            image_generation_main_model: None,
             image_generation_account_policies: HashMap::new(),
             image_generation_account_ids: Vec::new(),
-            gateway_mode: CodexLocalAccessGatewayMode::default(),
+        image_generation_account_models: HashMap::new(),
+            // These fixtures exercise the explicitly selected Go engine.
+            gateway_mode: CodexLocalAccessGatewayMode::Sidecar,
+            native_gateway_default_migrated: true,
             upstream_proxy_url: None,
             routing_strategy: CodexLocalAccessRoutingStrategy::default(),
             custom_routing_rules: Vec::new(),
@@ -1064,7 +1117,7 @@
             model_aliases: Vec::new(),
             suppress_oauth_model_alias: false,
             model_pricing_version: DEFAULT_MODEL_PRICING_VERSION,
-            model_pricing_book_version: DEFAULT_MODEL_PRICING_BOOK_VERSION,
+            model_pricing_book_version: 0,
             model_pricings: Vec::new(),
             excluded_models: Vec::new(),
             session_affinity: true,
@@ -1079,9 +1132,11 @@
             disable_cooling: false,
             restrict_free_accounts: true,
             debug_logs: true,
+        request_payload_logging: false,
             immediate_sse_response: false,
             max_concurrent_image_requests: 1,
             max_account_concurrency: 0,
+            account_concurrency_default_migrated: true,
             account_concurrency_wait_ms: DEFAULT_ACCOUNT_CONCURRENCY_WAIT_MS,
             bound_oauth_account_id: None,
             bound_oauth_quota_reserve: None,
@@ -1724,7 +1779,7 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
                 .map(|slot| (slot.client_model.as_str(), slot.upstream_model.as_str()))
                 .collect::<Vec<_>>(),
             vec![
-                ("gpt-5.5", "deepseek-v4-flash"),
+                ("gpt-5.6-luna", "deepseek-v4-flash"),
                 ("gpt-5.6-sol", "deepseek-v4-pro"),
             ]
         );
@@ -1907,7 +1962,7 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
             .expect("models");
         assert_eq!(
             models[0].get("slug").and_then(Value::as_str),
-            Some("gpt-5.5")
+            Some("gpt-5.6-luna")
         );
         assert_eq!(
             models[0].get("display_name").and_then(Value::as_str),
@@ -2063,6 +2118,7 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
                 .map(|slot| (slot.client_model.as_str(), slot.upstream_model.as_str()))
                 .collect::<Vec<_>>(),
             vec![
+                // Explicit API-key models retain identity ahead of assigned shells.
                 ("gpt-5.5", "gpt-5.5"),
                 ("gpt-5.6-sol", "deepseek-v4-pro"),
                 ("gpt-5.6-terra", "deepseek-v4-flash"),
@@ -2084,7 +2140,7 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
     fn provider_gateway_model_slots_keep_identity_for_official_shells() {
         let slots = provider_gateway_model_slots(&[
             "gpt-5.6-sol".to_string(),
-            "gpt-5.5".to_string(),
+            "gpt-5.6-luna".to_string(),
             "grok-4.5".to_string(),
         ]);
         assert_eq!(
@@ -2094,7 +2150,7 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
                 .collect::<Vec<_>>(),
             vec![
                 ("gpt-5.6-sol", "gpt-5.6-sol"),
-                ("gpt-5.5", "gpt-5.5"),
+                ("gpt-5.6-luna", "gpt-5.6-luna"),
                 ("gpt-5.6-terra", "grok-4.5"),
             ]
         );
@@ -2174,7 +2230,7 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
             Some("https://api.apikey.fun/v1".to_string()),
             Some("apikey_fun".to_string()),
             Some("APIKEY.FUN".to_string()),
-            vec!["gpt-5.5".to_string(), "gpt-5.6-sol".to_string()],
+            vec!["gpt-5.6-luna".to_string(), "gpt-5.6-sol".to_string()],
         );
         account.api_wire_api = Some("responses".to_string());
         account.api_sync_model_catalog_to_codex = true;
@@ -2200,7 +2256,7 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
             .collect::<Vec<_>>();
         backup_current_profile_model_before_provider_gateway(&profile_dir, &client_models)
             .expect("track provider models");
-        write_local_access_profile_model_override(&profile_dir, "gpt-5.5")
+        write_local_access_profile_model_override(&profile_dir, "gpt-5.6-luna")
             .expect("write model override");
         write_provider_gateway_model_catalog(&profile_dir, &slots)
             .expect("write provider model catalog");
@@ -2215,7 +2271,7 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
             .and_then(Value::as_array)
             .expect("models should be an array");
         for (model_id, display_name) in [
-            ("gpt-5.5", "deepseek-v4-flash"),
+            ("gpt-5.6-luna", "deepseek-v4-flash"),
             ("gpt-5.6-sol", "deepseek-v4-pro"),
         ] {
             assert!(models.iter().any(|model| {
@@ -2230,7 +2286,7 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
             "model_catalog_json = \"{}\"",
             CODEX_PROVIDER_MODEL_CATALOG_FILE
         )));
-        assert!(config.contains("model = \"gpt-5.5\""));
+        assert!(config.contains("model = \"gpt-5.6-luna\""));
 
         cleanup_provider_gateway_profile_model_overrides(&profile_dir).expect("cleanup overrides");
 
@@ -2316,7 +2372,8 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
             fs::read_to_string(profile_dir.join(CODEX_PROFILE_CONFIG_FILE)).expect("read config");
         assert!(!config.contains("model_catalog_json"));
         assert!(!config.contains("model = \"deepseek-v4-pro\""));
-        assert!(config.contains("model = \"gpt-5.5\""));
+        assert!(config.contains("model = \"gpt-5.6-sol\""));
+        assert!(!config.contains("gpt-5.5"));
 
         let _ = fs::remove_dir_all(&profile_dir);
     }
@@ -2356,7 +2413,8 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
             fs::read_to_string(profile_dir.join(CODEX_PROFILE_CONFIG_FILE)).expect("read config");
         assert!(!config.contains("model_catalog_json"));
         assert!(!config.contains("model = \"deepseek-v4-pro\""));
-        assert!(config.contains("model = \"gpt-5.5\""));
+        assert!(config.contains("model = \"gpt-5.6-sol\""));
+        assert!(!config.contains("gpt-5.5"));
 
         let _ = fs::remove_dir_all(&profile_dir);
     }
@@ -2389,7 +2447,8 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
 
         let config =
             fs::read_to_string(profile_dir.join(CODEX_PROFILE_CONFIG_FILE)).expect("read config");
-        assert!(config.contains("model = \"gpt-5.5\""));
+        assert!(config.contains("model = \"gpt-5.6-sol\""));
+        assert!(!config.contains("gpt-5.5"));
         assert!(!config.contains("model_catalog_json"));
 
         let _ = fs::remove_dir_all(&profile_dir);
@@ -4169,6 +4228,7 @@ http_headers = { "x-cockpit-instance-id" = "default" }
                 model_id: "gpt-5.6-luna".to_string(),
                 display_name: "5.6 Luna".to_string(),
                 reasoning_efforts: None,
+                default_reasoning_effort: None,
                 context_window: Some(516000),
                 auto_compact_token_limit: Some(460000),
             },
@@ -4176,6 +4236,7 @@ http_headers = { "x-cockpit-instance-id" = "default" }
                 model_id: "gpt-reserve".to_string(),
                 display_name: "GPT-5.6 Reserve".to_string(),
                 reasoning_efforts: None,
+                default_reasoning_effort: None,
                 context_window: None,
                 auto_compact_token_limit: None,
             },
@@ -4193,6 +4254,7 @@ http_headers = { "x-cockpit-instance-id" = "default" }
             vec![
                 "deepseek-flash",
                 "deepseek-v4-pro",
+                "grok-4.7",
                 "grok-4.6",
                 "grok-4.5",
                 "grok-4.3",
@@ -4205,8 +4267,11 @@ http_headers = { "x-cockpit-instance-id" = "default" }
         );
 
         let mut with_context = overlaid.clone();
-        with_context[2].context_window = Some(1_000_000);
-        with_context[2].auto_compact_token_limit = Some(900_000);
+        let grok_46 = with_context.iter_mut()
+            .find(|model| model.model_id == "grok-4.6")
+            .expect("grok-4.6 remains in the upgraded default catalog");
+        grok_46.context_window = Some(1_000_000);
+        grok_46.auto_compact_token_limit = Some(900_000);
         let preserved = super::overlay_rendered_pool_models_on_experimental_catalog(
             &profile_dir,
             with_context,

@@ -153,6 +153,10 @@ function isAllowedEnglishReuse(key, value) {
     'nav.codebuddy',
     'nav.codebuddyCn',
     'nav.claude',
+    // Official subscription product names, including the refresh-scope selector.
+    'codex.autoRefreshScope.plans.go',
+    'codex.autoRefreshScope.plans.plus',
+    'codex.autoRefreshScope.plans.pro',
     'nav.gemini',
     'nav.qoder',
   ]);
@@ -237,6 +241,11 @@ function isAllowedEnglishReuse(key, value) {
   ]);
 
   if (allowedExactValues.has(normalized)) {
+    return true;
+  }
+
+  // Token speed contains only the approximation symbol, interpolation and a protocol unit.
+  if (key === 'common.outputSpeed.value' && normalized === '≈ {{value}} tok/s') {
     return true;
   }
 

@@ -2,9 +2,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 pub const DEFAULT_CODEX_IMAGE_GENERATION_MODEL: &str = "gpt-image-2.5";
+pub const DEFAULT_MAX_ACCOUNT_CONCURRENCY: u16 = 2;
 
 fn default_image_generation_model() -> String {
     DEFAULT_CODEX_IMAGE_GENERATION_MODEL.to_string()
+}
+
+pub fn default_image_generation_models() -> Vec<String> {
+    vec!["gpt-image-2.5".to_string(), "gpt-image-2".to_string()]
 }
 
 fn is_false(value: &bool) -> bool {
@@ -87,6 +92,7 @@ impl Default for CodexLocalAccessImageGenerationMode {
 pub enum CodexLocalAccessGatewayMode {
     Legacy,
     Sidecar,
+    Native,
 }
 
 impl Default for CodexLocalAccessGatewayMode {
@@ -137,13 +143,6 @@ fn default_model_pricing_version() -> u64 {
     1
 }
 
-// Configurations written before the separate price-book marker existed are
-// treated as having completed the v3 migration. The loader then applies only
-// the narrowly-scoped v4 cleanup for known incorrect snapshots.
-fn default_model_pricing_book_version() -> u64 {
-    3
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexLocalAccessCustomRoutingRule {
@@ -183,6 +182,10 @@ pub struct CodexLocalAccessModelAlias {
 #[serde(rename_all = "camelCase")]
 pub struct CodexLocalAccessModelPricing {
     pub model_id: String,
+    /// Only explicitly edited long-context prices override the multiplier policy.
+    /// Legacy configurations retain their existing derived-price behavior.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub standard_long_price_override: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub long_context_threshold_tokens: Option<u64>,
     #[serde(default)]
@@ -221,6 +224,10 @@ fn default_max_retry_interval_ms() -> u64 {
 
 fn default_max_concurrent_image_requests() -> u16 {
     1
+}
+
+fn default_max_account_concurrency() -> u16 {
+    DEFAULT_MAX_ACCOUNT_CONCURRENCY
 }
 
 fn default_account_concurrency_wait_ms() -> u64 {
@@ -525,13 +532,28 @@ pub struct CodexLocalAccessCollection {
     pub image_generation_mode: CodexLocalAccessImageGenerationMode,
     #[serde(default = "default_image_generation_model")]
     pub image_generation_model: String,
+    #[serde(default = "default_image_generation_models")]
+    pub image_generation_models: Vec<String>,
+    #[serde(default)]
+    pub image_generation_deleted_models: Vec<String>,
+    #[serde(default)]
+    pub image_generation_model_catalog_revision: u64,
+    /// None preserves the legacy image relay model without expanding account catalogs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_generation_main_model: Option<String>,
     #[serde(default)]
     pub image_generation_account_policies: HashMap<String, CodexLocalAccessImageGenerationPolicy>,
-    /// 生图转发账号池：生图请求只允许落到这些 OAuth 账号；为空表示不转发。
+    /// 生图转发账号池：生图请求只允许落到所选 OAuth / API Key 来源。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub image_generation_account_ids: Vec<String>,
+    /// 生图来源账号 ID → 用户明确选择的完整上游图片模型 ID。
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub image_generation_account_models: HashMap<String, String>,
     #[serde(default)]
     pub gateway_mode: CodexLocalAccessGatewayMode,
+    /// Marks the one-time switch to the native default. Later user choices survive upgrades.
+    #[serde(default)]
+    pub native_gateway_default_migrated: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub upstream_proxy_url: Option<String>,
     #[serde(default)]
@@ -549,7 +571,8 @@ pub struct CodexLocalAccessCollection {
     pub suppress_oauth_model_alias: bool,
     #[serde(default = "default_model_pricing_version")]
     pub model_pricing_version: u64,
-    #[serde(default = "default_model_pricing_book_version")]
+    // Read the retired fork marker once; never write or maintain a separate book.
+    #[serde(default, skip_serializing)]
     pub model_pricing_book_version: u64,
     #[serde(default)]
     pub model_pricings: Vec<CodexLocalAccessModelPricing>,
@@ -579,13 +602,20 @@ pub struct CodexLocalAccessCollection {
     pub restrict_free_accounts: bool,
     #[serde(default = "default_true")]
     pub debug_logs: bool,
+    /// Explicit opt-in: stores bounded, field-redacted local request snapshots.
+    /// Plain text inside prompts may still contain private information.
+    #[serde(default)]
+    pub request_payload_logging: bool,
     #[serde(default)]
     pub immediate_sse_response: bool,
     #[serde(default = "default_max_concurrent_image_requests")]
     pub max_concurrent_image_requests: u16,
     /// 账号并发数：同一账号同时允许的会话数；0 表示不限制。
-    #[serde(default)]
+    #[serde(default = "default_max_account_concurrency")]
     pub max_account_concurrency: u16,
+    /// Compatibility marker; existing saved concurrency limits are preserved.
+    #[serde(default)]
+    pub account_concurrency_default_migrated: bool,
     /// 账号并发达到上限后的等待时长（毫秒）；0 表示不等待，直接拒绝。
     #[serde(default = "default_account_concurrency_wait_ms")]
     pub account_concurrency_wait_ms: u64,
@@ -760,7 +790,7 @@ pub struct CodexLocalAccessUsageEvent {
     pub proxy_route: Option<CodexLocalAccessProxyRoute>,
     #[serde(default)]
     pub model_id: String,
-    /// 客户端请求的模型（保留路由命名空间前缀，如 `cpa/gpt-5.5`）。
+    /// 客户端请求的模型（保留路由命名空间前缀，如 `cpa/gpt-5.6-sol`）。
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub requested_model: String,
     /// 实际发送给上游的模型（账号映射与路由改写之后）。
@@ -772,6 +802,12 @@ pub struct CodexLocalAccessUsageEvent {
     pub request_kind: CodexLocalAccessRequestKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub service_tier: Option<String>,
+    /// Final outbound field value (auto when omitted), independent from upstream feedback.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_service_tier: Option<String>,
+    /// Verbatim upstream response value; OAuth feedback does not confirm scheduling.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_service_tier: Option<String>,
     /// Request reasoning effort (e.g. low/medium/high/xhigh/max), when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
@@ -785,6 +821,14 @@ pub struct CodexLocalAccessUsageEvent {
     pub error_message: String,
     #[serde(default)]
     pub latency_ms: u64,
+    /// First nonempty upstream response fragment, measured from request start.
+    /// Historical records remain None; this is not a generated-token metric.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_response_ms: Option<u64>,
+    /// Successful streaming attempt: first upstream fragment to executor completion.
+    /// Approximate output timing; absent on historical and unsupported paths.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_generation_ms: Option<u64>,
     #[serde(default)]
     pub input_tokens: u64,
     #[serde(default)]
@@ -885,6 +929,110 @@ pub struct CodexLocalAccessUsageEventPage {
     pub total_pages: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexLocalAccessRequestAttempt {
+    pub sequence: u32,
+    #[serde(default)]
+    pub upstream_identity_metadata_captured: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream_installation_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream_chatgpt_account_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_identity: Option<crate::modules::codex_api_identity::InstallationProfile>,
+    #[serde(default)]
+    pub upstream_identity_captured: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream_thread_id: Option<String>,
+    #[serde(default)]
+    pub account_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_email: Option<String>,
+    #[serde(default)]
+    pub model_id: String,
+    #[serde(default)]
+    pub transport: String,
+    #[serde(default)]
+    pub started_at_ms: i64,
+    #[serde(default)]
+    pub latency_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<u16>,
+    #[serde(default)]
+    pub success: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_category: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_phase: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexLocalAccessRequestPayload {
+    pub stage: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempt_sequence: Option<u32>,
+    #[serde(default)]
+    pub transport: String,
+    #[serde(default)]
+    pub content_type: String,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub headers: HashMap<String, String>,
+    #[serde(default)]
+    pub body: String,
+    #[serde(default)]
+    pub truncated: bool,
+    #[serde(default)]
+    pub original_bytes: u64,
+    /// SHA-256 of the redacted local snapshot, never of secret-bearing source bytes.
+    #[serde(default)]
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexLocalAccessRequestDetail {
+    pub request_id: String,
+    #[serde(default)]
+    pub client_identity_metadata_captured: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_installation_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_chatgpt_account_id: Option<String>,
+    #[serde(default)]
+    pub client_identity_captured: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_thread_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_response_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_phase: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_diagnostic_items")]
+    pub attempts: Vec<CodexLocalAccessRequestAttempt>,
+    #[serde(default, deserialize_with = "deserialize_optional_diagnostic_items")]
+    pub payloads: Vec<CodexLocalAccessRequestPayload>,
+    #[serde(default)]
+    pub captured_at_ms: i64,
+    #[serde(default)]
+    pub truncated: bool,
+}
+
+fn deserialize_optional_diagnostic_items<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    // Legacy sidecars serialize absent Go slices as null when body recording is off.
+    Option::<Vec<T>>::deserialize(deserializer).map(Option::unwrap_or_default)
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexLocalAccessAccountCooldown {
@@ -948,6 +1096,7 @@ pub struct CodexLocalAccessAccountActivity {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexLocalAccessAccountPoolHealth {
+    pub request_id: String,
     pub api_key_id: String,
     pub api_key_label: String,
     pub provider: String,
@@ -965,7 +1114,20 @@ pub struct CodexLocalAccessAccountPoolHealth {
     pub image_policy_blocked_auths: usize,
     #[serde(default)]
     pub account_statuses: Vec<CodexLocalAccessAccountPoolMemberHealth>,
+    #[serde(default)]
+    pub scope_diagnostics: Vec<CodexLocalAccessAccountPoolScopeDiagnostic>,
     pub last_failure_at: i64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexLocalAccessAccountPoolScopeDiagnostic {
+    #[serde(default)]
+    pub account_id: String,
+    #[serde(default)]
+    pub account_email: String,
+    #[serde(default)]
+    pub reason_code: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -994,6 +1156,9 @@ pub struct CodexLocalAccessProfileAttachment {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexLocalAccessState {
+    pub recovering: bool,
+    pub recovery_attempt: usize,
+    pub recovery_total: usize,
     pub collection: Option<CodexLocalAccessCollection>,
     pub running: bool,
     pub preparing: bool,

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CodexGatewayModeControl, formatCodexGatewayModeError } from "./codex/CodexGatewayModeControl";
 import {
   Activity,
   Bug,
   Check,
+  ChevronDown,
   CircleAlert,
   Copy,
   Eye,
@@ -70,6 +72,7 @@ import {
   resolveCodexLocalAccessInitialAccountIds,
 } from "../utils/codexLocalAccessAccounts";
 import { isBlockingCodexAccountQuotaError } from "../utils/codexQuotaError";
+import { CODEX_LOCAL_ACCESS_STATUS_KEYS, resolveCodexLocalAccessRuntimeStatus } from "../utils/codexLocalAccessStatus";
 import { AccountTagFilterDropdown } from "./AccountTagFilterDropdown";
 import { CodexAccountPoolHealthModal } from "./CodexAccountPoolHealthModal";
 import {
@@ -78,6 +81,7 @@ import {
 } from "./MultiSelectFilterDropdown";
 import { SingleSelectDropdown } from "./SingleSelectDropdown";
 import { CodexImageModelSelect } from "./CodexImageModelConfig";
+import { CodexRequestPayloadSetting } from "./codex/CodexRequestPayloadSetting";
 import { CodexImageForwardConfig } from "./CodexImageForwardConfig";
 import { buildGrokMemberRowAccounts, CodexGrokBuildQuotaChip, selectCodexLocalAccessMemberRows } from "./codex/codexGrokMemberRows";
 import { PaginationControls } from "./PaginationControls";
@@ -147,6 +151,7 @@ interface CodexLocalAccessModalProps {
   isOpen: boolean;
   mode: "panel" | "members";
   state: CodexLocalAccessState | null;
+  onStateChange: (state: CodexLocalAccessState) => void;
   addressKind: CodexLocalAccessAddressKind;
   addressOptions: Array<{ value: string; label: string }>;
   onAddressKindChange: (value: string) => void;
@@ -191,9 +196,11 @@ interface CodexLocalAccessModalProps {
   ) => Promise<unknown> | unknown;
   onUpdateDebugLogs: (debugLogs: boolean) => Promise<unknown> | unknown;
   onUpdateImageGenerationModel: (model: string) => Promise<unknown> | unknown;
-  /** 保存 API 服务的生图转发账号池（生图请求交给这些 OAuth 账号）。 */
+  onUpdateImageGenerationMainModel: (model: string | null) => Promise<unknown> | unknown;
+  /** 保存 API 服务的生图来源（OAuth 或支持当前图片模型的 API Key 账号）。 */
   onUpdateImageGenerationAccounts: (
     accountIds: string[],
+    models: Record<string, string>,
   ) => Promise<unknown> | unknown;
   onRotateApiKey: () => Promise<unknown> | unknown;
   onRestartSidecar: () => Promise<unknown> | unknown;
@@ -221,6 +228,7 @@ export function CodexLocalAccessModal({
   isOpen,
   mode,
   state,
+  onStateChange,
   addressKind,
   addressOptions,
   onAddressKindChange,
@@ -243,6 +251,7 @@ export function CodexLocalAccessModal({
   onUpdateUpstreamProxyConfig,
   onUpdateDebugLogs,
   onUpdateImageGenerationModel,
+  onUpdateImageGenerationMainModel,
   onUpdateImageGenerationAccounts,
   onRotateApiKey,
   onRestartSidecar,
@@ -251,13 +260,16 @@ export function CodexLocalAccessModal({
   onRecoverAccounts,
   healthActionBusy,
   onStreamTestMessage,
-  saving,
+  saving: externalSaving,
   testing,
   starting,
   portCleanupBusy,
   sidecarRestarting,
 }: CodexLocalAccessModalProps) {
   const { t } = useTranslation();
+  const [gatewaySaving, setGatewaySaving] = useState(false);
+  const saving = externalSaving || gatewaySaving;
+  const localAccessStatus = resolveCodexLocalAccessRuntimeStatus(state?.collection, state);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filterTypes, setFilterTypes] = useState<string[]>([]);
@@ -277,6 +289,7 @@ export function CodexLocalAccessModal({
   const [grokMemberBusyId, setGrokMemberBusyId] = useState("");
   const [platformFilter, setPlatformFilter] = useState<string[]>([]);
   const [error, setError] = useState("");
+  const errorAreaRef = useRef<HTMLDivElement>(null);
   const [notice, setNotice] = useState("");
   const [testDialogOpen, setTestDialogOpen] = useState(false);
   const [healthModalOpen, setHealthModalOpen] = useState(false);
@@ -381,6 +394,12 @@ export function CodexLocalAccessModal({
     formatLocalAccessRequestResultDetail(t, usage);
   const testDialogBusy = testDialogRunning || testing;
   const actionBusy = saving || testing || starting || portCleanupBusy;
+  useEffect(() => {
+    if (!error && (!state?.lastError || actionBusy)) return;
+    errorAreaRef.current?.scrollIntoView({ block: "nearest" });
+    errorAreaRef.current?.focus({ preventScroll: true });
+  }, [error, state?.lastError, actionBusy]);
+
   const membersInteractionDisabled =
     actionBusy || !accountsLoaded || Boolean(grokMemberBusyId);
   const summaryStats = useMemo(
@@ -1414,12 +1433,12 @@ export function CodexLocalAccessModal({
     }
   };
 
-  const runAction = async (task: () => Promise<void>, successText: string) => {
+  const runAction = async (task: () => Promise<void | boolean>, successText: string) => {
     setError("");
     setNotice("");
     try {
-      await task();
-      setNotice(successText);
+      const completed = await task();
+      if (completed !== false) setNotice(successText);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -1979,7 +1998,8 @@ export function CodexLocalAccessModal({
   const handleToggleEnabled = async () => {
     await runAction(
       async () => {
-        await onToggleEnabled();
+        const completed = await onToggleEnabled();
+        if (completed === false) return false;
       },
       collection?.enabled
         ? t("codex.localAccess.disabledSuccess", "API 服务已停用")
@@ -2138,14 +2158,10 @@ export function CodexLocalAccessModal({
                   <div className="codex-local-access-header-badges">
                     <span
                       className={`codex-local-access-status ${
-                        collection?.enabled && state?.running ? "running" : "stopped"
+                        localAccessStatus
                       }`}
                     >
-                      {collection?.enabled
-                        ? state?.running
-                          ? t("codex.localAccess.statusRunning", "运行中")
-                          : t("codex.localAccess.statusStopped", "未运行")
-                        : t("codex.localAccess.statusDisabled", "已停用")}
+                      {t(CODEX_LOCAL_ACCESS_STATUS_KEYS[localAccessStatus])}
                     </span>
                     <span className="codex-local-access-subtle-badge">
                       {accessScopeBadge}
@@ -2356,11 +2372,12 @@ export function CodexLocalAccessModal({
             </button>
           </div>
 
-          <div className="modal-body codex-local-access-modal-body">
-            {state?.lastError && (
+          {(error || (state?.lastError && !actionBusy)) && (
+            <div className="codex-local-access-error-area" role="alert" ref={errorAreaRef} tabIndex={-1}>
+            {state?.lastError && !error && !actionBusy && (
               <div className="codex-local-access-inline-error codex-local-access-inline-error-with-action">
                 <CircleAlert size={14} />
-                <span>{state.lastError}</span>
+                <span>{formatCodexGatewayModeError(t, state.lastError)}</span>
                 {collection && (
                   <>
                     <button
@@ -2396,10 +2413,14 @@ export function CodexLocalAccessModal({
             {error && (
               <div className="codex-local-access-inline-error">
                 <CircleAlert size={14} />
-                <span>{error}</span>
+                <span>{formatCodexGatewayModeError(t, error)}</span>
               </div>
             )}
 
+            </div>
+          )}
+
+          <div className="modal-body codex-local-access-modal-body">
             {notice && (
               <div className="codex-local-access-inline-success">
                 <Check size={14} />
@@ -2565,6 +2586,9 @@ export function CodexLocalAccessModal({
                       {t("codex.localAccess.configTitle", "服务配置")}
                     </span>
                   </div>
+                  <CodexGatewayModeControl state={state} onState={onStateChange}
+                    disabled={actionBusy || sidecarRestarting} onError={setError}
+                    onNotice={setNotice} onSavingChange={setGatewaySaving} />
                   {collection ? (
                     <div className="codex-local-access-config-grid">
                       <div className="codex-local-access-config-card codex-local-access-config-card-base">
@@ -2846,20 +2870,34 @@ export function CodexLocalAccessModal({
                         <CodexImageForwardConfig
                           accounts={accounts}
                           accountIds={collection.imageGenerationAccountIds}
+                          imageGenerationModel={collection.imageGenerationModel}
+                          accountModels={collection.imageGenerationAccountModels}
                           disabled={saving || testing || starting}
                           maskAccountText={maskAccountText}
                           onSave={onUpdateImageGenerationAccounts}
                           imageModelControl={
                             <CodexImageModelSelect
-                              model={collection.imageGenerationModel}
+                              model={collection.imageGenerationModel} models={collection.imageGenerationModels} deletedModels={collection.imageGenerationDeletedModels} catalogUpdatedAt={collection.updatedAt}
+                              mainModel={collection.imageGenerationMainModel}
                               disabled={saving || testing || starting}
                               onSave={onUpdateImageGenerationModel}
+                              onSaveMainModel={onUpdateImageGenerationMainModel}
                             />
                           }
                         />
                       ) : null}
                     </div>
                   ) : null}
+                  <details className="codex-local-access-payload-details">
+                    <summary className="codex-local-access-section-title">
+                      <Bug size={16} />
+                      <span>{t("codex.requestDiagnostics.recordPayloads")}</span>
+                      <ChevronDown size={16} className="codex-local-access-payload-chevron" />
+                    </summary>
+                    <div className="codex-local-access-payload-details-body">
+                      <CodexRequestPayloadSetting />
+                    </div>
+                  </details>
                 </section>
 
                 <section className="codex-local-access-section codex-local-access-section-surface codex-local-access-account-stats-section">

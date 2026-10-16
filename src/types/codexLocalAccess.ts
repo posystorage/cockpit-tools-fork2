@@ -3,7 +3,8 @@ export type CodexLocalAccessScope = "localhost" | "lan";
 export type CodexLocalAccessClientBaseUrlHost = "localhost" | "127.0.0.1";
 export type CodexLocalAccessImageGenerationMode =
   "enabled" | "images_only" | "disabled";
-export type CodexLocalAccessGatewayMode = "legacy" | "sidecar";
+export type CodexLocalAccessGatewayMode = "legacy" | "sidecar" | "native";
+
 export type CodexLocalAccessRequestKind =
   "text" | "image_generation" | "image_edit" | "other";
 export type CodexLocalAccessImageGenerationStatus =
@@ -55,6 +56,7 @@ export interface CodexLocalAccessModelPricing {
   outputUsdPerMillion: number;
   cachedInputUsdPerMillion?: number | null;
   standardLongInputUsdPerMillion?: number | null;
+  standardLongPriceOverride?: boolean;
   standardLongOutputUsdPerMillion?: number | null;
   standardLongCachedInputUsdPerMillion?: number | null;
   priorityInputUsdPerMillion?: number | null;
@@ -121,13 +123,18 @@ export interface CodexLocalAccessCollection {
   clientBaseUrlHost: CodexLocalAccessClientBaseUrlHost;
   imageGenerationMode: CodexLocalAccessImageGenerationMode;
   imageGenerationModel: string;
+  imageGenerationModels?: string[];
+  imageGenerationDeletedModels?: string[];
+  imageGenerationMainModel?: string | null;
   imageGenerationAccountPolicies: Record<
     string,
     CodexLocalAccessImageGenerationPolicy
   >;
-  /** 生图转发账号池：生图与图片编辑请求只交给这些 OAuth 账号执行。 */
+  /** 生图转发账号池：生图与图片编辑请求交给这些 OAuth 或图片 API 来源执行。 */
   imageGenerationAccountIds?: string[];
+  imageGenerationAccountModels?: Record<string, string>;
   gatewayMode: CodexLocalAccessGatewayMode;
+  nativeGatewayDefaultMigrated?: boolean;
   upstreamProxyUrl?: string | null;
   routingStrategy: CodexLocalAccessRoutingStrategy;
   customRoutingRules: CodexLocalAccessCustomRoutingRule[];
@@ -136,6 +143,8 @@ export interface CodexLocalAccessCollection {
   modelPricingVersion: number;
   modelPricings: CodexLocalAccessModelPricing[];
   debugLogs: boolean;
+  /** Request bodies are recorded locally only when explicitly enabled. */
+  requestPayloadLogging?: boolean;
   immediateSseResponse: boolean;
   maxConcurrentImageRequests: number;
   maxAccountConcurrency: number;
@@ -280,6 +289,10 @@ export interface CodexLocalAccessUsageEvent {
   gatewayMode?: CodexLocalAccessGatewayMode | null;
   requestKind: CodexLocalAccessRequestKind;
   serviceTier?: string | null;
+  /** Final outbound field (auto when omitted); absent for historical records. */
+  requestedServiceTier?: string | null;
+  /** Upstream feedback, preserved verbatim (including default). */
+  responseServiceTier?: string | null;
   /** Request reasoning effort (e.g. low/medium/high/xhigh/max), when present. */
   reasoningEffort?: string | null;
   success: boolean;
@@ -287,6 +300,10 @@ export interface CodexLocalAccessUsageEvent {
   errorCategory: string;
   errorMessage: string;
   latencyMs: number;
+  /** Time to the first upstream response fragment; absent on older records. */
+  firstResponseMs?: number | null;
+  /** Observed streaming window for this successful upstream attempt; never inferred for older logs. */
+  outputGenerationMs?: number | null;
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
@@ -319,6 +336,65 @@ export interface CodexLocalAccessUsageEventPage {
   page: number;
   pageSize: number;
   totalPages: number;
+}
+
+export interface CodexLocalAccessRequestAttempt {
+  sequence: number;
+  accountId: string;
+  accountEmail?: string | null;
+  modelId: string;
+  transport: string;
+  startedAtMs: number;
+  latencyMs: number;
+  status?: number | null;
+  success: boolean;
+  errorCategory?: string | null;
+  errorMessage?: string | null;
+  failurePhase?: string | null;
+  /** Actual headers prepared for this upstream attempt, independent of body recording. */
+  upstreamIdentityCaptured?: boolean;
+  upstreamSessionId?: string | null;
+  upstreamThreadId?: string | null;
+  /** Additional headers were observed separately from legacy Session/Thread capture. */
+  upstreamIdentityMetadataCaptured?: boolean;
+  upstreamInstallationId?: string | null;
+  upstreamChatgptAccountId?: string | null;
+  /** Local selected-account snapshot, not proof that any header was sent. */
+  accountIdentity?: {
+    version: number;
+    scope: string;
+    installationId: string;
+    revision: number;
+  } | null;
+}
+
+export interface CodexLocalAccessRequestPayload {
+  stage: string;
+  attemptSequence?: number | null;
+  transport: string;
+  contentType: string;
+  headers?: Record<string, string>;
+  body: string;
+  truncated: boolean;
+  originalBytes: number;
+  sha256: string;
+}
+
+export interface CodexLocalAccessRequestDetail {
+  requestId: string;
+  firstResponseMs?: number | null;
+  failurePhase?: string | null;
+  /** Absent/false on historical records; never inferred from body or requestId. */
+  clientIdentityCaptured?: boolean;
+  clientSessionId?: string | null;
+  clientThreadId?: string | null;
+  clientIdentityMetadataCaptured?: boolean;
+  clientInstallationId?: string | null;
+  clientChatgptAccountId?: string | null;
+  attempts: CodexLocalAccessRequestAttempt[];
+  payloads: CodexLocalAccessRequestPayload[];
+  capturedAtMs: number;
+  truncated: boolean;
 }
 
 export interface CodexLocalAccessRequestLogQuery {
@@ -390,6 +466,8 @@ export interface CodexLocalAccessAccountActivity {
 }
 
 export interface CodexLocalAccessAccountPoolHealth {
+  /** Absent for diagnostic snapshots from older hosts. */
+  requestId?: string;
   apiKeyId: string;
   apiKeyLabel: string;
   provider: string;
@@ -406,7 +484,15 @@ export interface CodexLocalAccessAccountPoolHealth {
   quotaReservedAuths: number;
   imagePolicyBlockedAuths: number;
   accountStatuses: CodexLocalAccessAccountPoolMemberHealth[];
+  /** 账号范围/候选筛选诊断；不表示账号凭据或健康状态异常。 */
+  scopeDiagnostics?: CodexLocalAccessAccountPoolScopeDiagnostic[];
   lastFailureAt: number;
+}
+
+export interface CodexLocalAccessAccountPoolScopeDiagnostic {
+  accountId: string;
+  accountEmail: string;
+  reasonCode: string;
 }
 
 export interface CodexLocalAccessAccountPoolMemberHealth {
@@ -445,6 +531,9 @@ export interface CodexLocalAccessState {
   preparing: boolean;
   preparationTotal: number;
   preparationCompleted: number;
+  recovering?: boolean;
+  recoveryAttempt?: number;
+  recoveryTotal?: number;
   refreshingAccounts: boolean;
   accountRefreshTotal: number;
   accountRefreshCompleted: number;

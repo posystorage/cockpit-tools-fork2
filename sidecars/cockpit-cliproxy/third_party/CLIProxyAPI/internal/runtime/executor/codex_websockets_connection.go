@@ -121,7 +121,7 @@ func normalizeCodexWebsocketParallelToolCalls(body []byte, headers http.Header) 
 	return body
 }
 
-func buildCodexWebsocketRequestBody(body []byte) []byte {
+func buildCodexWebsocketRequestBody(body []byte, contexts ...context.Context) []byte {
 	if len(body) == 0 {
 		return nil
 	}
@@ -129,7 +129,9 @@ func buildCodexWebsocketRequestBody(body []byte) []byte {
 	// Match codex-rs websocket v2 semantics: every request is `response.create`.
 	// Incremental follow-up turns continue on the same websocket using
 	// `previous_response_id` + incremental `input`, not `response.append`.
-	body = helps.SanitizeCodexInputItemIDs(body)
+	if len(contexts) == 0 || !cliproxyexecutor.ContinuityActive(contexts[0]) {
+		body = helps.SanitizeCodexInputItemIDs(body)
+	}
 	wsReqBody, errSet := sjson.SetBytes(body, "type", "response.create")
 	if errSet == nil && len(wsReqBody) > 0 {
 		return wsReqBody
@@ -139,6 +141,9 @@ func buildCodexWebsocketRequestBody(body []byte) []byte {
 
 func readCodexWebsocketMessage(ctx context.Context, sess *codexWebsocketSession, conn *websocket.Conn, readCh chan codexWebsocketRead) (int, []byte, error) {
 	if sess == nil {
+		if ctx != nil && ctx.Err() != nil {
+			return 0, nil, ctx.Err()
+		}
 		if conn == nil {
 			return 0, nil, fmt.Errorf("codex websockets executor: websocket conn is nil")
 		}
@@ -153,21 +158,32 @@ func readCodexWebsocketMessage(ctx context.Context, sess *codexWebsocketSession,
 		return 0, nil, fmt.Errorf("codex websockets executor: session read channel is nil")
 	}
 	for {
+		var ev codexWebsocketRead
+		var ok bool
+		// A frame already received from this socket takes precedence over a
+		// cancellation caused by the reader's following EOF notification.
 		select {
-		case <-ctx.Done():
-			return 0, nil, ctx.Err()
-		case ev, ok := <-readCh:
-			if !ok {
-				return 0, nil, fmt.Errorf("codex websockets executor: session read channel closed")
+		case ev, ok = <-readCh:
+		default:
+			select {
+			case <-ctx.Done():
+				return 0, nil, ctx.Err()
+			case ev, ok = <-readCh:
 			}
-			if ev.conn != conn {
-				continue
-			}
-			if ev.err != nil {
-				return 0, nil, ev.err
-			}
-			return ev.msgType, ev.payload, nil
 		}
+		if !ok {
+			if ctx.Err() != nil {
+				return 0, nil, ctx.Err()
+			}
+			return 0, nil, fmt.Errorf("codex websockets executor: session read channel closed")
+		}
+		if ev.conn != conn {
+			continue
+		}
+		if ev.err != nil {
+			return 0, nil, ev.err
+		}
+		return ev.msgType, ev.payload, nil
 	}
 }
 

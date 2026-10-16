@@ -96,6 +96,13 @@
     "providerClear": "Effacer la sélection"
   },
   "common": {
+    "apiKeyAccount": "Compte API Key",
+    "status": "État",
+    "cliQuickLaunch": "Lancer CLI",
+    "requestId": "ID de requête",
+    "failureTime": "Heure de l’échec",
+    "clearRecord": "Effacer",
+    "clearingRecord": "Effacement…",
     "dragSortHint": "Faites glisser la poignée à gauche pour réordonner. L’ordre est enregistré au relâchement.",
     "dragSortFilteredHint": "Effacez la recherche pour réordonner.",
     "recycleBin": {
@@ -240,7 +247,8 @@
           "statusRunning": "Import en cours...",
           "statusSkipped": "Ignoré",
           "statusPending": "En attente d'import"
-        }
+        },
+        "invalidJson": "JSON non valide. Vérifiez le fichier ou le contenu collé."
       },
       "externalImport": {
         "bundleInvalidJson": "Le paquet d'import n'est pas un JSON valide",
@@ -314,6 +322,8 @@
         "manualCallbackPlaceholder": "Collez l'URL de callback complète, par ex. http://localhost:1455/auth/callback?code=...&state=..."
       },
       "refreshAll": "Tout rafraîchir",
+      "refreshSuccess": "Actualisé",
+      "refreshFailed": "Échec de l’actualisation : {{error}}",
       "refreshQuota": "Rafraîchir le quota",
       "search": "Rechercher des comptes...",
       "sort": {
@@ -417,7 +427,27 @@
     },
     "optional": " (facultatif)",
     "hide": "Masquer",
-    "show": "Afficher"
+    "show": "Afficher",
+    "configSaveTimeout": "Délai dépassé. Actualisez pour vérifier le résultat avant de réessayer.",
+    "clearAll": "Tout désélectionner",
+    "clear": "Effacer",
+    "outputSpeed": {
+      "label": "Vitesse",
+      "pageAverage": "Vitesse pondérée de la page",
+      "pageSamples": "{{count}} mesures valides",
+      "hint": "Débit approximatif des tokens de sortie, du premier fragment à la fin de l’exécution, hors attente initiale. Au moins 100 tokens de sortie et 100 ms. Les tokens de raisonnement suivent le total de sortie du fournisseur sans double comptage ; l’entrée en cache est exclue.",
+      "unavailableHint": "Aucune mesure valide : usage ou durée absent, transport non pris en charge, ancien journal, réponse courte, intervalle bref, échec ou annulation. Les sessions ordinaires sans mesure par la passerelle ne sont pas mesurées.",
+      "pageHint": "Page actuelle uniquement : somme des tokens de sortie valides divisée par la somme des intervalles observés. Les requêtes simultanées sont mesurées séparément ; ce n’est pas une moyenne de tout l’historique.",
+      "value": "≈ {{value}} tok/s",
+      "unavailableReasons": {
+        "canceled": "Requête annulée ; vitesse non mesurée.",
+        "failed": "Requête échouée ou incomplète ; vitesse non mesurée.",
+        "missingUsage": "Aucun volume de sortie valide enregistré.",
+        "shortOutput": "Moins de 100 jetons en sortie ; vitesse non mesurée.",
+        "missingTiming": "Aucune durée de sortie valide enregistrée.",
+        "shortWindow": "La fenêtre de sortie observée est inférieure à 100 ms."
+      }
+    }
   },
   "nav": {
     "overview": "Antigravity IDE​",
@@ -552,7 +582,7 @@
       "startAll": "Démarrer toutes les instances arrêtées ?",
       "restartAll": "Redémarrer toutes les instances en cours ?",
       "stopAll": "Fermer toutes les instances ?",
-      "syncThreads": "Toutes les instances Codex seront analysées et les threads manquants seront complétés automatiquement. Les threads existants ne seront pas réécrits et les fichiers de l’instance cible seront sauvegardés avant toute écriture. Continuer ?"
+      "syncThreads": "Ajoute les sessions manquantes dans toutes les instances et ajoute le nouveau contenu uniquement si l’instance cible est arrêtée et son historique correspond. Les octets existants sont conservés. Les mises à jour des historiques divergents ou des cibles actives sont refusées. Les fichiers cibles sont sauvegardés avant écriture. Continuer ?"
     },
     "status": {
       "running": "En cours",
@@ -662,8 +692,8 @@
       "autoSyncThreadsDesc": "Désactivé, les sessions des instances restent isolées. Activé, le lancement ou la fermeture d'une instance fusionne automatiquement les sessions locales, uniquement lorsque toutes les instances Codex sont arrêtées.",
       "modelRouting": {
         "title": "Routage d'API tierce",
-        "summary": "Les modèles sans préfixe utilisent l'abonnement actuel ; les modèles avec préfixe tels que cpa/gpt-5.5 sont transférés vers une API tierce. Les deux dépendent du service de routage local.",
-        "rowSummary": "Les modèles sans préfixe utilisent l'abonnement actuel ; les modèles avec préfixe tels que cpa/gpt-5.5 sont transférés vers une API tierce. Les deux dépendent du service de routage local.",
+        "summary": "Les modèles sans préfixe utilisent l'abonnement actuel ; les modèles avec préfixe tels que cpa/gpt-5.6-sol sont transférés vers une API tierce. Les deux dépendent du service de routage local.",
+        "rowSummary": "Les modèles sans préfixe utilisent l'abonnement actuel ; les modèles avec préfixe tels que cpa/gpt-5.6-sol sont transférés vers une API tierce. Les deux dépendent du service de routage local.",
         "confirmEnableTitle": "Activer le routage d'API tierce ?",
         "confirmEnableMessage": "Les requêtes de modèles Codex seront acheminées via le service local Cockpit Tools. Si le service n'est pas en cours d'exécution, les modèles d'abonnement et tiers peuvent être indisponibles.\n\nActiver le routage ?",
         "confirmEnableAction": "Activer",
@@ -839,6 +869,8 @@
       "data": "Gestion des données"
     },
     "general": {
+      "errorReporting": "Diagnostic",
+      "errorReportingDesc": "Une fois activé, transmet les diagnostics de démarrage et d’interface après nettoyage des données. La désactivation arrête les envois.",
       "appearance": "Apparence",
       "language": "Langue",
       "languageDesc": "Sélectionnez la langue de l'interface",
@@ -1139,7 +1171,19 @@
       "menuBarAccountPrefixDesc": "Comptes normaux uniquement : désactivé masque le préfixe e-mail. Service API Codex / clé API gardent le libellé API",
       "menuBarQuotaConfirmEnable": "Activer",
       "codexHideRelayQuota": "Masquer le quota relais",
-      "codexHideRelayQuotaDesc": "Masque les panneaux de quota relais / New API dans l’aperçu des comptes Codex."
+      "codexHideRelayQuotaDesc": "Masque les panneaux de quota relais / New API dans l’aperçu des comptes Codex.",
+      "floatingCardStyle": "Style flottant",
+      "floatingCardStyleDesc": "Commun à toutes les fenêtres flottantes. Modifiable aussi depuis la fenêtre.",
+      "floatingCardFull": "Carte complète",
+      "floatingCardMinimal": "Quota seul",
+      "floatingCardOpacity": "Intensité du fond",
+      "floatingCardOpacityDesc": "100% conserve le fond actuel ; 0% le masque. Le texte du quota reste lisible.",
+      "floatingCardOpacityValue": "Fond : {{value}}%",
+      "themeColorOled": "OLED noir et blanc",
+      "codexAutoRestoreTakeoverOnLaunch": "Restaurer Codex au démarrage",
+      "codexAutoRestoreTakeoverOnLaunchDesc": "Restaurer au démarrage les modèles activés et les connexions API encore gérées par Cockpit. Conserver les connexions modifiées manuellement.",
+      "codexPreserveExternalBridge": "Garder le pont externe",
+      "codexPreserveExternalBridgeDesc": "Conserver le pont Codex Web GPT validé par les données locales lors du changement de compte OAuth. Désactivé par défaut."
     },
     "network": {
       "apiTitle": "API du cockpit antigravité",
@@ -1216,7 +1260,7 @@
       "backup": {
         "title": "Gestion des sauvegardes",
         "desc": "Gérez les sauvegardes planifiées, le dossier de sauvegarde et la liste des fichiers au même endroit.",
-        "modalDesc": "Configurez les sauvegardes automatiques, parcourez les fichiers du dossier de sauvegarde du projet et restaurez-les ou nettoyez-les ici.",
+        "modalDesc": "Gérez les règles de sauvegarde automatique et le dossier sélectionné, avec migration possible vers un autre disque. Consultez, restaurez, téléchargez ou nettoyez les sauvegardes locales de ce dossier.",
         "statusEnabled": "La sauvegarde automatique est activée",
         "statusDisabled": "La sauvegarde automatique est désactivée",
         "lastRunLabel": "Dernière sauvegarde : {{time}}",
@@ -1234,8 +1278,10 @@
         "retentionDesc": "Les sauvegardes plus anciennes seront supprimées lors du prochain contrôle.",
         "retentionUnit": "jours",
         "directoryTitle": "Dossier de sauvegarde",
-        "directoryDesc": "Les sauvegardes sont toujours enregistrées dans le dossier backups du projet.",
+        "directoryDesc": "Les sauvegardes planifiées et les instantanés du comportement de Cockpit sont enregistrés dans le dossier sélectionné. Vous pouvez déplacer ces fichiers vers un autre disque.",
         "changeDirectory": "Changer de dossier",
+        "sourceUnavailable": "Les anciennes sauvegardes sont illisibles : leur nombre et leur migration ne peuvent pas être vérifiés. Vous pouvez changer de dossier de sauvegarde ; les anciens fichiers, comptes et le dossier des données de l’application restent inchangés. Motif : {{error}}",
+        "loadTimeout": "Le chargement des sauvegardes a expiré. Réessayez ou choisissez un autre dossier.",
         "migrating": "Migration...",
         "migrationConfirm": "Déplacer les sauvegardes existantes de {{oldPath}} vers {{newPath}} ?\n\nAnnuler change le dossier sans déplacer les anciens fichiers.",
         "usageTitle": "Espace des sauvegardes",
@@ -1363,6 +1409,8 @@
         "accountsOnlyFile": "Cette sauvegarde contient uniquement des données de comptes. Sélectionnez \"Données des comptes\" pour l'importer",
         "selectedSectionsMissing": "Le type de données sélectionné n'est pas présent dans cette sauvegarde",
         "unsupportedLegacyFile": "Ce format d'ancienne sauvegarde de comptes n'est pas reconnu",
+        "codexTopLayoutInvalid": "La sauvegarde contient une disposition des onglets non valide. La configuration n’a pas été importée.",
+        "codexTopLayoutImportFailed": "Les autres réglages ont été importés, mais la disposition des onglets n’a pas pu être enregistrée. Réessayez l’importation.",
         "unsupportedVersion": "Cette version de l'application ne prend pas en charge cette version du bundle"
       }
     },
@@ -1522,6 +1570,9 @@
       "all": "Tous ({{count}})",
       "pro": "PRO ({{count}})​",
       "ultra": "ULTRA ({{count}})​"
+    },
+    "filters": {
+      "all": "Tous"
     },
     "sortLabel": "Trier",
     "sort": {
@@ -1860,6 +1911,9 @@
     "clearSelection": "Effacer sélection",
     "switched": "Basculé vers {{email}}",
     "switchFailed": "Échec du basculement : {{error}}",
+    "antigravitySwitchBusy": "Un changement de compte Antigravity est en cours. Réessayez dans un instant.",
+    "antigravitySwitchPrepareTimeout": "La préparation du compte Antigravity a expiré. Réessayez.",
+    "antigravitySwitchStateSaveFailed": "Les identifiants du client ont changé, mais l’état local du compte n’a pas pu être enregistré : {{error}}. Réessayez le changement.",
     "antigravityLegacyUnsupported": "Antigravity 2.0.0 et versions ultérieures ne sont pas pris en charge ici. Choisissez une version d’Antigravity antérieure à 2.0.0 ou utilisez Antigravity IDE.",
     "importSuccess": "{{count}} comptes importés avec succès",
     "importLocalSuccess": "Compte importé avec succès : {{email}}",
@@ -2083,6 +2137,10 @@
       "accountsHint": "Sélectionnez plusieurs comptes pour tester.",
       "start": "Lancer le test",
       "testing": "Test en cours..."
+    },
+    "confirmation": {
+      "description": "Confirmez le réveil « {{name}} » pour {{count}} comptes. Aucune requête ne sera envoyée en cas d’annulation, de fermeture ou d’expiration.",
+      "expired": "Cette confirmation a expiré ou est terminée. Fermez la fenêtre."
     }
   },
   "update_notification": {
@@ -2265,9 +2323,9 @@
         "autoDisabled": "La synchronisation automatique des enregistrements de toutes les instances est désactivée",
         "autoEnabled": "La synchronisation automatique des enregistrements de toutes les instances est activée",
         "autoTooltip": "Synchroniser automatiquement les enregistrements de toutes les instances",
-        "autoDesc": "Désactivé, les enregistrements des multiples instances restent isolés. Activé, le démarrage ou la fermeture d’une instance fusionne automatiquement les enregistrements locaux uniquement après l’arrêt de toutes les instances Codex.",
+        "autoDesc": "Désactivé, les historiques des instances restent séparés. Activé, le démarrage ou l’arrêt d’une instance synchronise les sessions manquantes et les ajouts d’historique compatibles uniquement lorsque toutes les instances Codex sont arrêtées. Les octets existants sont conservés.",
         "closeFirst": "Fermez toutes les instances Codex avant de synchroniser les enregistrements afin d’éviter qu’une instance en cours d’exécution ne réécrive d’anciens enregistrements.",
-        "confirmMessage": "Les enregistrements de sessions locales seront entièrement synchronisés entre toutes les instances Codex. Les sessions ayant le même ID seront fusionnées au niveau des événements, et les fichiers clés de destination ainsi que les anciens fichiers de session seront sauvegardés avant l’écriture. Continuer ?",
+        "confirmMessage": "Ajoute les sessions manquantes dans toutes les instances et ajoute le nouveau contenu uniquement si l’instance cible est arrêtée et son historique correspond. Les octets existants sont conservés. Les mises à jour des historiques divergents ou des cibles actives sont refusées. Les fichiers cibles sont sauvegardés avant écriture. Continuer ?",
         "needTwo": "Au moins deux instances sont nécessaires pour synchroniser les enregistrements",
         "settingsSection": "Paramètres de synchronisation",
         "settingsSubtitle": "Gérer la synchronisation des enregistrements entre plusieurs instances Codex",
@@ -2313,12 +2371,12 @@
       "accessModeDirectCons": "1 : Pas de changement de modèle dans Codex, ni liaison OAuth ni redirection d'images",
       "accessModeCdpPros": "1 : Même vitesse que le direct\n2 : Flash / Pro commutables dans la liste officielle des modèles Codex",
       "accessModeCdpCons": "1 : Nécessite l'injection du client officiel, sans liaison OAuth ni redirection d'images",
-      "imageGenPickerDesc": "Lorsqu'une demande d'image arrive, elle est redirigée : le modèle de base la traite d'abord, puis le modèle d'image génère le visuel, ce qui consomme une partie du quota des comptes sélectionnés.",
+      "imageGenPickerDesc": "OAuth utilise un modèle de base et l’outil d’image ; API Key utilise les API d’images. Les frais ou quotas sont comptés par le fournisseur choisi.",
       "imageGenSwitchTitle": "Uniquement en mode passerelle",
       "imageGenSwitchDescription": "L'activation de la génération d'images GPT nécessite le mode passerelle. Passer à ce mode et l'activer ?",
       "imageGenSwitchYes": "Oui",
       "imageGenSwitchNo": "Non",
-      "imageGenTitle": "Activer la génération d'images GPT",
+      "imageGenTitle": "Activer les images",
       "oauthBindingHint": "Après la liaison, le démarrage est identique à celui d’un compte normal et toutes les capacités OAuth (compression à distance, contrôle du navigateur, divers plugins, etc.) sont disponibles ; les conversations passent toujours par le fournisseur de la clé API actuelle.",
       "oauthBindingChange": "Changer",
       "title": "Aperçu du lancement de Codex",
@@ -2341,17 +2399,21 @@
       "repairCompleted": "Visibilité des sessions réparée",
       "forceRefreshTitle": "Forcer le renouvellement du Token",
       "forceRefreshReady": "Les tokens OAuth peuvent être renouvelés manuellement",
-      "forceRefreshDescription": "Utilise refresh_token pour obtenir de nouvelles valeurs access_token et id_token. Le refresh token actuel peut être renouvelé.",
+      "forceRefreshDescription": "Renouveler access_token avec refresh_token. id_token est mis à jour seulement si la réponse le contient ; refresh_token peut changer.",
       "forceRefreshUnavailable": "Indisponible pour ce type de compte",
       "forceRefreshAction": "Renouveler maintenant",
       "forceRefreshRunning": "Renouvellement du Token…",
       "forceRefreshSuccess": "Token renouvelé avec succès",
-      "forceRefreshRetry": "Revérifier"
+      "forceRefreshRetry": "Revérifier",
+      "reloadConfig": "Recharger",
+      "contextReloadHint": "Le rechargement remplace les réglages non enregistrés. Vérifiez-les avant de les appliquer.",
+      "tokenExpiryDescription": "access_token autorise les requêtes ; id_token contient les informations d’identité. Son expiration ne suffit pas à invalider l’accès à l’API. La disponibilité est vérifiée au démarrage et par la réponse du service."
     },
     "switch": "Basculer",
     "switched": "Basculé vers {{email}}",
     "switchFailed": "Échec du basculement : {{error}}",
     "authError": {
+      "refreshFailed": "Échec du renouvellement du Token : {{error}}",
       "badge": "Problème d’autorisation",
       "refreshTokenReused": "L’autorisation Codex est invalide : le refresh_token a déjà été utilisé par un autre client ou une autre instance. Reconnectez-vous et évitez de renouveler le même compte en même temps depuis Codex officiel, d’autres instances ou des outils externes.",
       "refreshTokenExpired": "L’autorisation de connexion Codex a expiré et ne peut pas être renouvelée automatiquement. Reconnectez-vous au compte Codex.",
@@ -2530,7 +2592,15 @@
       "testServiceUnavailable": "Service joignable, mais actuellement indisponible : {{detail}}. Vérifiez si le service est activé, si la collection de comptes est vide ou si les comptes sont utilisables.",
       "gatewayErrors": {
         "authUnavailable": "Aucun compte du pool n’est actuellement utilisable. Le compte peut être en refroidissement, non autorisé ou limité par son quota. Vérifiez son état dans le service API de Cockpit Tools.",
-        "authNotFound": "Aucun compte utilisable n’est configuré dans le pool. Ajoutez ou activez un compte dans le service API de Cockpit Tools."
+        "authNotFound": "Aucun compte utilisable n’est configuré dans le pool. Ajoutez ou activez un compte dans le service API de Cockpit Tools.",
+        "accountConcurrencyExceeded": "La limite de requêtes simultanées du compte est atteinte. Réessayez plus tard.",
+        "providerRetryAfter": "Le fournisseur demande une pause. Réessayez dans {{seconds}} secondes.",
+        "audioInvalidRequest": "Requête audio invalide : {{detail}}",
+        "audioTooLarge": "Les requêtes audio ne doivent pas dépasser 26 MiB.",
+        "audioNotSupported": "Ce compte OAuth ne prend en charge que la transcription. Utilisez un fournisseur avec une API Key pour les autres fonctions audio.",
+        "audioUnavailable": "Le transfert audio est indisponible.",
+        "audioUpstreamFailed": "La requête audio au fournisseur a échoué.",
+        "modelNotAvailable": "Le modèle {{model}} n’est pas disponible pour cette API Key."
       },
       "testRateLimited": "Service joignable, mais l’amont est limité ou le quota est épuisé : {{detail}}.",
       "testHttpFailed": "Service joignable, mais la requête a renvoyé HTTP {{status}} : {{detail}}.",
@@ -2602,10 +2672,10 @@
       "killPortSuccess": "Port libéré ({{count}} processus fermé(s))",
       "killPortSuccessNone": "Port vérifié. Aucun processus externe ne l’utilise.",
       "killPortSuccessUnknown": "Port du service API libéré",
-      "restartAction": "Redémarrer le Sidecar",
-      "restartTitle": "Redémarrer le service API",
-      "restartConfirmMessage": "Seul le Sidecar du service API sera redémarré. Les comptes, tokens, clés API et réglages du pool de comptes ne seront pas modifiés. Les requêtes en cours peuvent être interrompues. Continuer ?",
-      "restartSuccess": "Sidecar du service API redémarré",
+      "restartAction": "Redémarrer l’API seule",
+      "restartTitle": "Redémarrer l’API seule",
+      "restartConfirmMessage": "Redémarrer uniquement le service API en conservant les fenêtres Codex et les paramètres du pool de comptes/API Key. Les requêtes API en cours peuvent être interrompues. Continuer ?",
+      "restartSuccess": "Service API redémarré",
       "refreshStats": "Actualiser les stats",
       "refreshStatsSuccess": "Les statistiques du service API ont été actualisées",
       "routingStrategy": {
@@ -2627,14 +2697,6 @@
       "hideEntryEffectHide": "Masquer l'entrée du service API dans la vue d'ensemble",
       "hideEntryEffectDisable": "Désactiver le service API actuel",
       "hideEntryEffectRestore": "Vous pourrez le réactiver dans les réglages Codex ou les réglages rapides",
-      "riskNotice": {
-        "title": "Avis de risque",
-        "message": "L’utilisation de comptes officiels ordinaires via un proxy inverse ou un relais peut faire l’objet de restrictions strictes du service officiel. Elle peut aussi être détectée comme un relais et affecter la qualité des réponses (« intelligence réduite »). À utiliser avec prudence, surtout si vous avez de nombreux comptes.",
-        "remember": "J'ai compris, ne plus afficher",
-        "acknowledge": "J'ai compris",
-        "continueStart": "Continuer",
-        "continueSwitch": "Continuer"
-      },
       "statsRange": {
         "label": "Période",
         "daily": "Jour",
@@ -2656,6 +2718,10 @@
       "modelId": "ID du modèle",
       "modelIdPlaceholder": "Sélectionner l'ID du modèle",
       "imageGenerationModel": {
+        "manage": "Gérer les modèles",
+        "deleteSelected": "Modèle utilisé. Remplacez-le et enregistrez d’abord.",
+        "invalid": "Les identifiants de modèle ne doivent contenir ni espaces ni caractères de contrôle et sont limités à 200 caractères.",
+        "syncFailed": "Échec de la détection des modèles d’image. Réessayez.",
         "label": "Modèle d’image",
         "custom": "Personnalisé",
         "save": "Enregistrer le modèle",
@@ -2741,8 +2807,8 @@
       "requestLogSuccess": "Succès",
       "requestLogFailed": "Échec",
       "requestLogTokens": "{{value}} jetons",
-      "imageForwardLabel": "Activer la génération d’images GPT",
-      "imageForwardHint": "Après activation, choisissez des comptes GPT : les demandes de génération et de retouche d’images passent par les comptes sélectionnés et consomment leur quota ; les requêtes de chat continuent d’utiliser le pool de comptes.",
+      "imageForwardLabel": "Activer les images",
+      "imageForwardHint": "API Key nécessite Images API et le choix du modèle réel dans la ligne du compte ; OAuth ne prend en charge que les modèles GPT natifs.",
       "imageGenerationMode": {
         "enabled": "Activé",
         "imagesOnly": "Images seules",
@@ -2791,12 +2857,29 @@
         "dialog": {
           "title": "Problèmes de comptes",
           "description": "Affiche les problèmes du pool et des comptes. Les actions sur un compte ne sont proposées que pour les erreurs qui lui sont attribuées.",
-          "noIssues": "Aucun problème de comptes",
+          "noIssues": "Aucun problème à afficher",
           "unscopedApiKey": "API Key actuelle",
           "poolUnavailable": "Aucun compte disponible dans le pool",
           "poolUnavailableDetail": "Aucun compte disponible n’a été sélectionné pour le modèle {{model}}",
           "poolUnattributedDetail": "Aucun diagnostic par compte n’a été reçu ; cette erreur ne peut donc être attribuée à un compte. Vérifiez le périmètre des comptes et la configuration des modèles de cette clé API.",
           "poolDiagnosticDetail": "Modèle {{model}} : {{candidate}} candidats, {{scoped}} dans le périmètre, {{available}} disponibles, {{unavailable}} indisponibles, {{modelExcluded}} exclus par le modèle, {{quotaReserved}} réservés par quota, {{imageBlocked}} bloqués par la politique d’image",
+          "poolNoCandidatesDetail": "Aucun compte candidat pour cette requête. Vérifiez le modèle demandé et le chargement des comptes.",
+          "poolScopeMismatchDetail": "Aucun candidat ne correspond au périmètre de cette clé API, ou son association au compte est inconnue. Vérifiez les comptes sélectionnés et la configuration du modèle.",
+          "inspectBinding": "Vérifier le lien",
+          "inspectConfig": "Voir la config.",
+          "unmappedAccount": "Compte non identifié",
+          "accountReference": "Compte {{id}}",
+          "scopeMismatchDetail": "Ce compte candidat est hors du périmètre lié à cette API Key.",
+          "accountMappingMissingDetail": "Les identifiants candidats ne peuvent pas être associés à un compte. Vérifiez le chargement des comptes et la synchronisation du pool.",
+          "boundAccountNotLoadedDetail": "Ce compte lié n’est pas chargé dans le service actuel. Vérifiez le chargement des comptes et la synchronisation du pool.",
+          "boundAccountNotCandidateDetail": "Ce compte lié est chargé, mais ne figure pas parmi les candidats de cette requête. Vérifiez le modèle, le fournisseur et le type de requête.",
+          "scopeUnknownDetail": "Ce diagnostic de périmètre ne précise pas la cause. Vérifiez les liens et les journaux du service.",
+          "poolBlockedDetail": "Filtrage du périmètre : {{unavailable}} indisponibles (désactivés, en pause ou en échec d’authentification, par exemple), {{modelExcluded}} exclus par modèle, {{quotaReserved}} bloqués par réserve de quota, {{imageBlocked}} bloqués par politique d’image. Vérifiez les raisons par compte et les paramètres.",
+          "poolUnknownDetail": "Le diagnostic ne précise pas la cause. Vérifiez le périmètre de la clé API, la configuration du modèle et les journaux du service.",
+          "clearHint": "L’effacement supprime uniquement ce diagnostic. Il ne répare ni paramètres, ni jetons, ni quota ; un nouvel échec peut créer un nouveau diagnostic.",
+          "clearSuccess": "Diagnostic effacé. Cela ne signifie pas que le pool de comptes est rétabli.",
+          "clearStale": "Un échec plus récent a remplacé ce diagnostic. Vérifiez l’état actuel et réessayez.",
+          "clearFailed": "Impossible d’effacer le diagnostic : {{error}}",
           "missing": "Compte manquant",
           "cooldown": "En pause",
           "quota": "Quota limité",
@@ -2834,7 +2917,38 @@
       "currentAccounts": "Comptes actuels",
       "historicalAccounts": "Comptes historiques",
       "historyDeleted": "Supprimé",
-      "historyNotJoined": "Non ajouté"
+      "historyNotJoined": "Non ajouté",
+      "imageAccounts": {
+        "upstreamModel": "Modèle fournisseur",
+        "chooseModel": "Choisir un modèle",
+        "modelRequired": "Choisissez un modèle compatible.",
+        "sourceUnavailable": "La source choisie ne prend pas en charge le modèle d’image actuel ou ne dispose pas d’identifiants API ou d’une URL valides.",
+        "loadFailed": "Impossible de charger les paramètres d’image. Réessayez.",
+        "missingModels": "Choisissez un modèle pour {{count}} sources sélectionnées.",
+        "locateModel": "Voir la source"
+      },
+      "gatewayEngineNative": "Rust natif",
+      "gatewayEngineSidecar": "Go (actuel)",
+      "gatewayEngineHint": "Go est le moteur par défaut ; le choix existant est conservé. Passez à Rust pour le tester. Le changement redémarre le service API et peut interrompre les requêtes actives ; les fenêtres Codex restent ouvertes.",
+      "gatewayEngineSwitching": "Changement de moteur…",
+      "gatewayEngineSwitchFailed": "Échec du changement de moteur : {{error}}",
+      "gatewayEngineReadbackFailed": "Impossible de confirmer le moteur actuel. Actualisez avant de réessayer : {{error}}",
+      "gatewayEngineReadbackTimeout": "Délai de lecture de l’état dépassé",
+      "gatewayEngineRequestsBusy": "Des requêtes sont en cours. Réessayez une fois terminées.",
+      "gatewayEngineOperationBusy": "Une autre opération du service est en cours. Réessayez dans un instant.",
+      "gatewayEngineSwitchRestored": "Le changement a échoué. Le moteur précédent a été rétabli.",
+      "gatewayEngineRestoreFailed": "Le changement et le rétablissement du moteur ont échoué. Vérifiez l’état du service avant de réessayer.",
+      "gatewayEngineStopped": "Le service API est arrêté. Redémarrez-le avant de réessayer.",
+      "imageGenerationMainModel": {
+        "label": "Modèle principal image",
+        "notice": "Ne modifiez pas le modèle principal en usage courant.",
+        "hint": "Il sert uniquement au relais vers le service officiel, pas au choix du modèle qui génère les images. Modifiez-le seulement si le modèle principal officiel change. Laissez vide pour gpt-5.6-luna.",
+        "invalid": "Saisissez un ID de modèle sans espaces, de 200 caractères maximum."
+      },
+      "requestDetail": {
+        "invalidRequestId": "Identifiant de requête invalide.",
+        "settingsChanged": "Les paramètres ont été modifiés ailleurs. Réessayez."
+      }
     },
     "local": {
       "desc": "Importer le compte connecté depuis ~/.codex/auth.json",
@@ -3207,7 +3321,7 @@
       "confirm": {
         "title": "Déplacer vers la corbeille",
         "message": "Les sessions sélectionnées seront déplacées vers la corbeille depuis leurs instances afin de pouvoir être restaurées plus tard. Les instances en cours d’exécution peuvent nécessiter un redémarrage avant que la modification apparaisse. Continuer ?",
-        "syncMessage": "Les threads manquants et leurs données de session seront synchronisés vers toutes les instances. Le contenu existant ne sera pas réécrit et les fichiers de l’instance cible seront sauvegardés avant toute écriture. Continuer ?",
+        "syncMessage": "Ajoute les sessions manquantes dans toutes les instances et ajoute le nouveau contenu uniquement si l’instance cible est arrêtée et son historique correspond. Les octets existants sont conservés. Les mises à jour des historiques divergents ou des cibles actives sont refusées. Les fichiers cibles sont sauvegardés avant écriture. Continuer ?",
         "repairVisibilityMessage": "Met à jour les enregistrements de la state DB officielle de Codex qui contrôlent l’affichage dans la barre latérale. Les fichiers state DB sont sauvegardés avant écriture."
       },
       "empty": {
@@ -3288,7 +3402,7 @@
           "pruneBackups": "Nettoyage des anciennes sauvegardes...",
           "done": "Réparation terminée",
           "writeSqliteProvider": "Écriture de la visibilité SQLite pour {{instance}}...",
-          "writeRolloutFiles": "Écriture des anciens fichiers de session...",
+          "writeRolloutFiles": "Correction des horodatages des sessions pour {{instance}}...",
           "writeSqliteTimestamps": "Correction des dates SQLite de {{instance}}...",
           "writeSessionIndex": "Écriture de session_index..."
         },
@@ -3299,9 +3413,9 @@
         "providerLoadFailed": "Échec du chargement des providers : {{error}}",
         "modeTitle": "Mode de réparation",
         "modeQuick": "Réparation rapide",
-        "modeQuickDesc": "Corrige la state DB officielle et la première ligne de métadonnées de session. Idéal après un changement de compte courant.",
+        "modeQuickDesc": "Normalise les fournisseurs dans la base officielle et les index de sessions. Les fichiers rollout sont conservés. Adapté aux changements de compte.",
         "modeDeep": "Réparation complète",
-        "modeDeepDesc": "Migre toutes les données historiques du fournisseur et répare les catalogues, espaces de travail et index de sous-agents. Quittez d’abord l’instance cible.",
+        "modeDeepDesc": "Répare tous les fournisseurs historiques, catalogues, espaces de travail et index des sous-agents. Les fichiers rollout sont conservés. Fermez d’abord l’instance cible.",
         "scopeTitle": "Portée sessions",
         "scopeAll": "Toutes les sessions",
         "scopeAllDesc": "Répare {{count}} session(s) de la liste actuelle.",
@@ -3333,13 +3447,18 @@
         "previewFailedWithError": "Échec de la prévisualisation de la réparation des sessions : {{error}}",
         "confirmRepair": "Confirmer la réparation",
         "title": "Réparer l’historique",
-        "description": "Migre les sessions historiques vers le fournisseur actuel de l’instance cible et répare les fichiers de session, les index SQLite, le catalogue local et l’état des espaces de travail. Une sauvegarde locale est créée au préalable.",
+        "description": "Normalise les fournisseurs dans les index SQLite, le catalogue des sessions et les espaces de travail. Les fichiers rollout restent identiques octet par octet ; seuls leurs horodatages sont corrigés. Une sauvegarde locale est créée auparavant.",
         "stopInstanceHint": "Quittez complètement l’instance Codex App/ChatGPT sélectionnée avant la réparation complète. Vous pouvez toujours prévisualiser les changements.",
         "encryptedContentWarning": "Un historique chiffré par un autre fournisseur ou compte a été détecté. Les métadonnées peuvent être migrées, mais la poursuite ou la compression de ces sessions peut échouer ; revenez au fournisseur/compte d’origine ou démarrez une nouvelle session."
       },
       "importModal": {
         "title": "Importer des sessions",
         "hint": "Les paquets de sessions importent uniquement les fichiers rollout et les entrées session_index. Les comptes, tokens, clés API et paramètres de l’application ne sont pas inclus ; les sessions avec le même ID déjà présentes dans l’instance cible sont ignorées.",
+        "cwdPathAbsolute": "Saisissez un chemin absolu sur cet ordinateur",
+        "cwdPathMissing": "Dossier introuvable ou inaccessible",
+        "cwdMappingTitle": "Correspondance des chemins de projet (facultatif)",
+        "cwdMappingHint": "Associez chaque répertoire de travail source au chemin d’un projet déjà ajouté à Codex sur cet ordinateur. Laissez vide pour conserver le chemin source.",
+        "cwdTargetPlaceholder": "Saisissez le chemin absolu d’un projet sur cet ordinateur",
         "noTarget": "Aucune instance Codex disponible pour l’import",
         "noPackage": "Sélectionnez d’abord un paquet de sessions",
         "pickOne": "Sélectionnez au moins une session importable",
@@ -3440,7 +3559,8 @@
         "7d": "7 jours",
         "30d": "30 jours",
         "month": "Ce mois",
-        "all": "Tout"
+        "all": "Tout",
+        "today": "Aujourd’hui"
       },
       "instance": {
         "label": "Profil",
@@ -3503,7 +3623,8 @@
         "total": "Cumul",
         "requests": "Req.",
         "cost": "Coût"
-      }
+      },
+      "costUnavailable": "Certains modèles n’ont pas de prix disponible : le coût journalier complet ne peut pas être estimé."
     },
     "api": {
       "baseUrl": "URL de base",
@@ -3655,14 +3776,14 @@
         "cdpMode": "Injection CDP",
         "cdpDesc": "Prend le contrôle de la liste de modèles officielle de Codex par injection, à la même vitesse que le mode direct. Nécessite d'injecter le client officiel ; la liaison OAuth n'est pas prise en charge.",
         "context": "Contexte pris en charge",
-        "imageGen": "Génération d'images GPT",
-        "imageGenHint": "Uniquement en mode passerelle. Le chat reste traité par les modèles de ce fournisseur ; la génération d'images utilise le pipeline gpt-image d'origine, exécuté par les comptes GPT sélectionnés et consomme leur quota.",
-        "imageGenPick": "Choisir des comptes GPT",
+        "imageGen": "Génération d’images",
+        "imageGenHint": "API Key nécessite Images API et le choix du modèle réel dans la ligne du compte ; OAuth ne prend en charge que les modèles GPT natifs.",
+        "imageGenPick": "Sources d’images",
         "imageGenSelected": "{{count}} compte(s) sélectionné(s)",
         "imageGenEmpty": "Aucun compte sélectionné",
         "imageGenLocked": "Cochez pour choisir des comptes",
         "pickerTitle": "Choisir les comptes d'images",
-        "pickerEmpty": "Aucun compte OAuth ne peut générer d'images (comptes Free et API Key non pris en charge).",
+        "pickerEmpty": "Aucune source compatible. API Key doit proposer le modèle choisi ou sa famille GPT ; OAuth prend en charge les modèles GPT natifs uniquement hors Free.",
         "pickerSelectAll": "Tout sélectionner",
         "pickerClear": "Effacer",
         "protocol": "Protocole",
@@ -3893,7 +4014,7 @@
       },
       "vision": {
         "providerDefault": "Ce fournisseur prend en charge les images par défaut",
-        "providerDefaultHint": "Les modèles sans réglage explicite utilisent cette valeur ; GPT-5.5 et les versions suivantes acceptent les images par défaut. Désactivez chaque modèle dans la liste. Si la passerelle ne trouve aucun modèle visuel, elle omet les images et poursuit avec le texte.",
+        "providerDefaultHint": "Les modèles sans réglage explicite utilisent cette valeur ; les modèles tels que GPT-5.6 Sol et GPT-5.6 Luna acceptent les images par défaut. Désactivez chaque modèle dans la liste. Si la passerelle ne trouve aucun modèle visuel, elle omet les images et poursuit avec le texte.",
         "modelsHint": "Un modèle par ligne. Utile quand seuls certains modèles du fournisseur acceptent les images collées.",
         "routingModelHint": "Si le modèle actuel ne lit pas les images, la passerelle utilise ce modèle. Laissez vide pour utiliser le seul modèle visuel disponible ; sinon, les images sont omises et le texte est traité.",
         "allModels": "Images​",
@@ -4165,11 +4286,20 @@
       "standard": "Normale",
       "standardDesc": "Vitesse par défaut, usage normal",
       "fast": "Rapide",
-      "fastDesc": "Vitesse 1,5x, usage accru",
+      "fastDesc": "Plus rapide, coût accru",
       "saveSuccess": "Vitesse mise à jour",
-      "saveFailed": "Impossible d’enregistrer la vitesse : {{error}}"
+      "saveFailed": "Impossible d’enregistrer la vitesse : {{error}}",
+      "loadFailed": "Échec du chargement de la vitesse : {{error}}",
+      "apiHint": "Après enregistrement, ce réglage s’applique aux prochaines requêtes API sans redémarrage. Les requêtes en cours restent inchangées ; le niveau explicite du client est prioritaire. Le mode rapide peut augmenter l’utilisation ou le coût ; le gain dépend du modèle et du fournisseur.",
+      "apiSyncFailed": "Préférence enregistrée, mais le service API en cours n’a pas confirmé la mise à jour. Réessayez.",
+      "launchHint": "Enregistré à la connexion et au lancement via Cockpit. Redémarrez le client actif. Les nouveaux chats utilisent ce réglage ; ajustez la vitesse des chats existants dans le client."
     },
     "apiService": {
+      "inspection": {
+        "internalScope": "Il s’agit d’une requête du client interne. Vérifiez le pool de comptes du service et le lien de l’instance ; elle ne correspond pas à une Key de client public.",
+        "keyUnavailable": "La Key du client de cette requête est absente ou supprimée. Vérifiez les Keys actuelles et le pool de comptes.",
+        "imageScope": "Les requêtes d’image utilisent le pool d’images et les règles d’image des comptes. Vérifiez les paramètres d’image."
+      },
       "navTitle": "Service API Codex",
       "title": "Service API Codex",
       "openPage": "Ouvrir le service API",
@@ -4346,7 +4476,30 @@
         "reasoningEffortValue": "Rais. {{effort}}",
         "serviceTier": "Niveau de service",
         "serviceTierValue": "Niveau {{tier}}",
-        "upstreamModel": "Modèle envoyé"
+        "requestedTier": "Demande : {{tier}}",
+        "responseTier": "Retour : {{tier}}",
+        "legacyTier": "Ancien : {{tier}}",
+        "serviceTierHint": "Le niveau demandé est le service_tier envoyé en amont ; il ne confirme pas le niveau de traitement réel. Avec Codex OAuth, un retour default ne prouve pas un déclassement du mode rapide. Automatique signifie qu’aucun niveau précis n’a été demandé (champ omis ou défini sur auto).",
+        "legacyTierHint": "Cet ancien enregistrement mélange les niveaux de demande et de réponse. Leur source et le niveau de traitement réel sont inconnus.",
+        "upstreamModel": "Modèle envoyé",
+        "columns": {
+          "time": "Heure",
+          "model": "Modèle",
+          "result": "Résultat",
+          "source": "Origine",
+          "account": "Compte",
+          "tokens": "Jetons",
+          "cost": "Valeur estimée",
+          "performance": "Performance",
+          "proxy": "Proxy",
+          "requestId": "ID requête",
+          "actions": "Actions"
+        },
+        "columnSettings": "Colonnes",
+        "tokenInput": "Entrée",
+        "tokenOutput": "Sortie",
+        "tokenCache": "Cache",
+        "tokenTotal": "Total"
       },
       "timeouts": {
         "entryLabel": "Avancé",
@@ -4426,6 +4579,11 @@
         "duplicate": "Les modèles de requête doivent être uniques",
         "saveSuccess": "Correspondances de modèles de compte enregistrées",
         "cardCount": "{{count}} mappés"
+      },
+      "recovery": {
+        "progress": "Restauration de la configuration des comptes ({{attempt}}/{{total}})",
+        "partialUnavailable": "Certains comptes sont indisponibles. Les autres peuvent encore traiter les requêtes. Vérifiez les comptes associés aux Key.",
+        "unavailable": "La configuration des comptes doit être rétablie. Vérifiez les comptes associés aux Key, puis réessayez."
       }
     },
     "apiKey": {
@@ -4653,6 +4811,12 @@
       "restartFailed": "Échec du redémarrage de la passerelle : {{error}}"
     },
     "proxy": {
+      "legacyBoundHint": "Le proxy du compte précédemment lié reste actif. Enregistrer à nouveau applique le mode choisi.",
+      "boundAccountUnavailable": "Le compte lié est indisponible. Choisissez à nouveau un proxy.",
+      "boundProxyUnavailable": "Le compte lié ne dispose d’aucun proxy disponible. Choisissez-en un à nouveau.",
+      "sourceUnavailable": "La source du proxy ou le nœud est indisponible. Sélectionnez-le à nouveau.",
+      "operationTimeout": "L’opération du proxy a expiré. Réessayez.",
+      "cardScopeHint": "Le client de bureau Codex lancé utilise le proxy de cette carte. Les connexions des passerelles de modèles à leurs fournisseurs conservent leurs propres routes.",
       "display": {
         "title": "Affichage du proxy",
         "compact": "Condensé",
@@ -4768,7 +4932,7 @@
         "followYes": "Oui",
         "followNo": "Non",
         "empty": "Aucun compte ne peut utiliser un proxy de sortie",
-        "emptyHint": "Ajoutez d’abord un compte OAuth ordinaire, puis configurez sa sortie ici.",
+        "emptyHint": "Ajoutez un compte OAuth ou API, ou activez la carte du service API, puis configurez sa route ici.",
         "loadFailed": "Impossible de charger les données de sortie",
         "loadFailedHint": "La lecture des ressources proxy locales a échoué ; réessayez plus tard. Les associations de compte indépendantes continuent de fonctionner."
       },
@@ -4894,7 +5058,7 @@
       "disableAction": "Retirer le proxy",
       "setIndependent": "Proxy individuel",
       "disabledHint": "Ignorer les proxys individuels et partagés ; tenter une connexion directe.",
-      "disabledWarning": "L’accès direct peut échouer. Les nouvelles connexions des applications utilisant le relais local prennent en compte ce choix ; les autres clients en cours nécessitent un redémarrage. Les connexions existantes peuvent conserver leur ancien itinéraire.",
+      "disabledWarning": "Une connexion directe peut ne pas atteindre le service. Redémarrez Codex pour ordinateur pour vous connecter directement sans le relais local de Cockpit. En attendant, les clients relayés tentent un accès direct pour les nouvelles connexions ; les connexions existantes peuvent conserver leur ancien chemin.",
       "exitIp": "IP de sortie",
       "sessionHistory": "Activité",
       "sessionHistoryHint": "État vérifié toutes les 5 secondes. État initial et changements de cet aperçu uniquement, 20 entrées maximum, effacées à la fermeture. Ce n’est pas un historique complet.",
@@ -4932,7 +5096,7 @@
       "restoreEntry": "Rétablir le relais",
       "restoringEntry": "Rétablissement…",
       "restoreEntryFailed": "Impossible de rétablir le relais proxy du bureau. Réessayez.",
-      "restoreEntryPortBusy": "Le port proxy initial est occupé. Libérez-le puis réessayez ; l’application de bureau ne peut pas changer de port automatiquement.",
+      "restoreEntryPortBusy": "Impossible de lier le port proxy initial ; il est peut-être utilisé ou réservé par le système. Libérez-le et réessayez, ou redémarrez le client via Cockpit pour attribuer un point d’entrée disponible.",
       "restoreEntryNotRunning": "Aucune application de bureau en cours utilisant une entrée proxy enregistrée de cette instance Cockpit n’a été trouvée.",
       "restoreEntryBusy": "Le rétablissement du proxy est déjà en cours. Réessayez dans un instant.",
       "restoreEntryTimeout": "Le rétablissement du proxy a expiré. Réessayez.",
@@ -4953,16 +5117,16 @@
       "modeDefaultHint": "Ce compte n'utilise pas de proxy et conserve sa sortie par défaut.",
       "modeStaleHint": "La source ou le nœud lié n'est plus disponible. Choisissez-le à nouveau.",
       "management": "Gestion des proxys",
-      "managementHint": "Sortie dédiée aux comptes OAuth. Le proxy système reste inchangé.",
+      "managementHint": "Définissez des proxies pour les cartes de comptes OAuth, API et du service API sans modifier le proxy système. Sur les cartes API, le proxy s’applique au client de bureau lancé ; les passerelles de modèles conservent leurs propres routes.",
       "emptyTitle": "Une connexion dédiée à votre compte",
-      "emptyDescription": "Aucun compte OAuth compatible pour le moment. Ajoutez-en un depuis la vue des comptes, puis revenez ici pour associer un proxy et tester sa sortie.",
+      "emptyDescription": "Aucune carte de compte compatible. Ajoutez un compte OAuth ou API, ou activez la carte du service API, puis choisissez un proxy ici.",
       "search": "Rechercher un compte",
       "filter": "Association",
       "filter_all": "Tous",
       "filter_bound": "Associés",
       "filter_unbound": "Non associés",
       "noMatches": "Aucun compte correspondant",
-      "oauthOnly": "Compte OAuth",
+      "oauthOnly": "Carte de compte",
       "saved": "Enregistré",
       "hiddenSummary": "Identifiants masqués",
       "inputMode": "Mode de saisie",
@@ -4993,7 +5157,7 @@
       "action": "Relais",
       "boundHint": "Associé ; connexion non vérifiée",
       "unboundHint": "Aucun proxy configuré pour ce compte",
-      "unsupportedAccount": "Réservé aux comptes OAuth ordinaires",
+      "unsupportedAccount": "Ce réglage prend en charge les cartes de comptes OAuth ordinaires, API et du service API.",
       "invalidUrl": "Adresse du proxy invalide",
       "unsupportedProtocol": "Ce protocole de proxy n’est pas encore pris en charge",
       "saveFailed": "Impossible d’enregistrer le proxy",
@@ -5104,14 +5268,17 @@
         "chooseMember": "Choisir un membre",
         "chooseAccount": "Choisir un compte",
         "bind": "Lier le compte",
-        "noAccounts": "Ajoutez un compte OAuth standard pour le lier. Vous pouvez déjà tester la sortie.",
+        "noAccounts": "Ajoutez un compte OAuth ou API, ou activez la carte du service API pour attribuer un proxy. Vous pouvez déjà tester une route.",
         "autoGroupHint": "Utilise le groupe entier sans fixer de nœud. Le choix se fait selon la latence ; la sortie peut changer.",
         "policyGroupHint": "Utilise le groupe entier sans fixer de nœud. Sa règle sélectionne la sortie, qui peut changer.",
         "selectGroupHint": "Choisissez un membre du groupe, ou directement un nœud pour le fixer.",
         "chooseResource": "Choisir une ressource",
         "unsupported": "Non pris en charge",
         "invalidInput": "Saisissez un nom et une URL, un lien de nœud ou une configuration proxy valides.",
-        "downloadFailed": "Impossible de récupérer l’abonnement. Vérifiez l’adresse et la connexion ; les redirections vers une autre origine ne sont pas prises en charge.",
+        "downloadFailed": "Échec du téléchargement de l’abonnement. Vérifiez le réseau et les paramètres du proxy, puis réessayez.",
+        "downloadRedirect": "Téléchargement de l’abonnement arrêté : redirection vers une autre origine ou trop de redirections.",
+        "downloadDenied": "Le serveur d’abonnement refuse l’accès (HTTP 401/403). Vérifiez le lien et sa validité.",
+        "downloadTls": "Échec de la négociation TLS ou de la vérification du certificat de l’abonnement. Vérifiez le réseau et les paramètres du proxy.",
         "timeout": "Délai dépassé. Actualisez pour vérifier le résultat avant de réessayer.",
         "tooLarge": "Le contenu ou le nombre de ressources dépasse la limite. Réduisez l’abonnement.",
         "busy": "Une tâche est en cours ou en sauvegarde. Actualisez dans un instant.",
@@ -5249,7 +5416,7 @@
         "assign": "Attribuer un proxy",
         "specific": "Comptes choisis",
         "shared": "Proxy partagé",
-        "sharedHint": "Les comptes Codex OAuth sans proxy propre utiliseront celui-ci, y compris les comptes compatibles ajoutés ensuite. Les réglages individuels existants restent actifs. Les comptes explicitement réglés sur « Sans proxy » sont exclus.",
+        "sharedHint": "Les cartes compatibles sans proxy individuel utilisent ce proxy, y compris les nouvelles. Les réglages individuels et Aucun proxy sont prioritaires. Les cartes API l’utilisent pour le client de bureau ; les passerelles de modèles conservent leurs propres routes.",
         "apply": "Attribuer"
       },
       "managerResources": {
@@ -5276,7 +5443,7 @@
         "follow": "Utiliser le partage",
         "followHint": "Utilise le proxy partagé ou le réseau par défaut du client si le proxy est désactivé.",
         "independentHint": "Ne modifie que ce compte et remplace le réglage partagé.",
-        "scope": "Disponible pour les comptes Codex OAuth compatibles. Les comptes avec clé API et les fournisseurs personnalisés ne sont pas pris en charge.",
+        "scope": "Comptes OAuth, API et service API",
         "followConfirm": "Supprimer les proxys individuels de {{count}} comptes. Ils utiliseront le proxy partagé s’il est activé, sinon le réseau par défaut du client."
       },
       "managerUnified": {
@@ -5322,6 +5489,8 @@
       "noChanges": "Aucune modification en attente",
       "topLayoutTitle": "Disposition supérieure",
       "topLayoutDesc": "Réorganisez par glisser-déposer ou avec les flèches. Les cinq premiers éléments apparaissent en haut, les autres dans le même ordre sous Plus.",
+      "topLayoutSaveFailed": "La disposition des onglets n’a pas été enregistrée. Votre ordre est actif pour le moment. Réessayez ; un redémarrage peut rétablir l’ancien ordre.",
+      "topLayoutReadFailed": "Impossible de lire la disposition enregistrée des onglets. L’ordre actuel reste disponible. Réessayez ou modifiez la disposition pour l’enregistrer.",
       "locationTop": "Haut",
       "locationMore": "Plus",
       "topLayoutHint": "Le bouton « Plus » reste fixé à droite et ne peut être ni déplacé ni masqué.",
@@ -5340,6 +5509,169 @@
       "errors": {
         "bindingChanged": "La liaison du compte a changé. Son réglage actuel a été conservé."
       }
+    },
+    "instance": {
+      "errors": {
+        "threadSyncWorkerFailed": "Échec de la tâche de synchronisation des sessions : {{error}}",
+        "threadSyncBusy": "La synchronisation des sessions Codex est en cours. Réessayez dans un instant.",
+        "threadSyncTargetRunning": "L’instance Codex cible est en cours d’exécution. Fermez-la avant de mettre à jour les sessions existantes.",
+        "threadSyncTargetChanged": "La session cible a changé depuis l’aperçu. Relancez la synchronisation ; le nouveau contenu a été conservé.",
+        "threadSyncTargetReplaced": "Le fichier de la session cible a été remplacé. Affichez à nouveau l’aperçu de synchronisation.",
+        "threadSyncFileBusy": "Une autre synchronisation utilise la session cible. Réessayez dans un instant."
+      }
+    },
+    "thresholds": {
+      "shortCycle": "Quota court",
+      "weekly": "Quota hebdomadaire",
+      "windowHint": "Les seuils suivent la durée réelle : une semaine ou plus utilise le seuil hebdomadaire. Les comptes avec uniquement ce quota ne vérifient que celui-ci. Sans durée, la correspondance des fenêtres principale et secondaire est conservée.",
+      "rule": "Solde court <= {{shortCycle}}% ou hebdomadaire <= {{weekly}}%"
+    },
+    "autoRefreshScope": {
+      "label": "Forfaits à actualiser",
+      "description": "Filtre les actualisations programmées des quotas par plateforme et groupe pour les comptes OAuth standard. Tous les forfaits sont sélectionnés par défaut. Les actualisations manuelles et du compte actif, le maintien des jetons et les autres types de comptes restent inchangés.",
+      "plans": {
+        "free": "Gratuit",
+        "go": "Go",
+        "plus": "Plus",
+        "pro": "Pro",
+        "team": "Équipe",
+        "business": "Professionnel",
+        "enterprise": "Entreprise",
+        "edu_k12": "Éducation",
+        "unknown": "Inconnu"
+      }
+    },
+    "requestDiagnostics": {
+      "recordPayloads": "Enregistrer les corps",
+      "recordPayloadsHint": "Désactivé par défaut. Les requêtes client et amont sont conservées localement avec une taille limitée. La désactivation arrête les nouvelles captures ; les corps enregistrés peuvent être effacés séparément.",
+      "privacyHint": "Les champs d’authentification sont masqués, mais des secrets peuvent subsister dans le texte. Vérifiez avant de copier ou partager.",
+      "clearPayloads": "Effacer les corps",
+      "clearConfirm": "Effacer uniquement les corps et conserver statistiques et essais ?",
+      "cleared": "{{count}} enregistrements de corps effacés",
+      "title": "Détails de requête",
+      "totalLatency": "Durée totale",
+      "firstResponse": "Première réponse",
+      "firstResponseHint": "Durée entre le début de la requête et le premier fragment reçu en amont, pas forcément le premier jeton généré.",
+      "unavailable": "Aucun diagnostic pour le moment. Actualisez plus tard. Les anciennes requêtes ne sont pas complétées.",
+      "attempts": "Essais",
+      "noAttempts": "Aucun historique d’essais enregistré.",
+      "detailTruncated": "Certains diagnostics ont été omis en raison de la limite de taille.",
+      "payloads": "Captures de requêtes",
+      "noPayloads": "Aucun corps enregistré. L’activation ne concerne que les nouvelles requêtes.",
+      "clientPayload": "Requête client",
+      "upstreamPayload": "Requête amont #{{sequence}}",
+      "headers": "En-têtes",
+      "payloadTruncated": "Capture tronquée. Seule la partie conservée est affichée.",
+      "details": "Détails",
+      "latencyPair": "Durée {{total}} · Première {{first}}",
+      "phases": {
+        "selection": "Sélection du compte",
+        "upstream_connect": "Connexion amont",
+        "upstream_response": "Réponse amont",
+        "stream_read": "Lecture du flux",
+        "downstream_delivery": "Livraison au client",
+        "client_canceled": "Annulé par le client",
+        "stream_incomplete": "Flux incomplet",
+        "completed": "Terminé",
+        "unknown": "Non enregistré"
+      },
+      "failurePhase": "Étape d’échec",
+      "applying": "Application aux passerelles actives…",
+      "applyFailed": "Paramètres enregistrés, mais non appliqués aux passerelles actives. Réessayez. Motif : {{error}}",
+      "timeout": {
+        "open": "Délai dépassé en attendant l’ouverture du flux en amont. Régler « Délais et tentatives → {{setting}} » (1–600 secondes, 60 par défaut).",
+        "idle": "Le flux est ouvert, mais l’attente de nouvelles données a expiré. Régler le délai d’inactivité correspondant dans « Délais et tentatives ».",
+        "canceled": "Le client a annulé cette requête ; ce n’est pas un délai d’ouverture du flux.",
+        "gateway": "HTTP 504 indique un délai de passerelle dépassé. Ce journal ne précise pas la cause ; consulter l’erreur en amont et la phase de requête.",
+        "threshold": "Seuil appliqué à cette requête : {{seconds}} secondes.",
+        "settings": "Régler le délai"
+      },
+      "identity": {
+        "title": "Identité de session et de compte",
+        "client": "Requête cliente",
+        "upstreamAttempt": "Envoi #{{sequence}}",
+        "notProvided": "Non fourni",
+        "notCaptured": "Non enregistré",
+        "notSent": "Aucun envoi tenté",
+        "hint": "Enregistre les en-têtes d’identité et le profil local du compte choisi au moment de la requête, sans confirmer leur réception en amont. Indépendant de l’enregistrement du contenu ; aucun ajout aux anciennes requêtes.",
+        "copyHeader": "Copier {{header}}",
+        "profileTitle": "Profil d’identité du compte",
+        "profileInstallationId": "ID d’installation",
+        "profileScope": "Portée",
+        "profileVersion": "Version du profil",
+        "profileRevision": "Révision",
+        "profileHint": "Instantané local du compte choisi ; les en-têtes réellement utilisés figurent ci-dessus."
+      }
+    },
+    "experimentalModels": {
+      "defaultReasoning": "Niveau par défaut",
+      "defaultReasoningFollow": "Valeur par défaut",
+      "defaultReasoningHint": "Laissez vide pour reprendre le niveau par défaut du modèle. Le niveau choisi doit être pris en charge.",
+      "defaultReasoningInvalid": "Le niveau de raisonnement par défaut doit être pris en charge par ce modèle."
+    },
+    "modelConfig": {
+      "transfer": "Importer / Exporter",
+      "title": "Configuration des modèles",
+      "description": "Exportez les modèles enregistrés, le modèle par défaut et les tarifs, alias et références de routage du service API. Le fichier ne contient ni API Key, ni identifiants de compte, ni paramètres de démarrage ou d’arrêt du service.",
+      "importHint": "L’import enregistre immédiatement dans l’instance actuelle et met à jour le catalogue de modèles s’il est activé. Les paramètres du service API sont partagés globalement. Il n’active pas la gestion des modèles, ne démarre pas de passerelle et ne prend pas le contrôle du client. Il remplace les modifications de modèles non enregistrées.",
+      "import": "Importer",
+      "export": "Exporter",
+      "file": "Choisir un JSON",
+      "jsonLabel": "JSON de configuration",
+      "strategy": "Conflits",
+      "keepExisting": "Conserver l’existant",
+      "replace": "Remplacer les mêmes",
+      "strategyHint": "Les paramètres existants sont conservés par défaut. Le remplacement met uniquement à jour les entrées de même nom présentes dans le fichier, sans supprimer les autres.",
+      "preview": "Aperçu",
+      "previewFirst": "Vérifiez l’aperçu et corrigez toutes les erreurs avant de confirmer l’import.",
+      "previewLoading": "Création de l’aperçu…",
+      "importLoading": "Import en cours…",
+      "exported": "Configuration exportée.",
+      "imported": "{{count}} paramètres enregistrés.",
+      "section": "Section",
+      "item": "Entrée",
+      "result": "Résultat",
+      "actions": {
+        "added": "Ajouter",
+        "updated": "Mettre à jour",
+        "conflict": "Conflit",
+        "skipped": "Ignorer",
+        "error": "Erreur"
+      },
+      "sections": {
+        "models": "Modèles",
+        "defaultModel": "Modèle par défaut",
+        "prices": "Tarifs",
+        "aliases": "Alias",
+        "accountRules": "Règles des comptes",
+        "routing": "Routage",
+        "exclusions": "Modèles exclus",
+        "apiService": "Service API"
+      },
+      "errors": {
+        "invalid": "Le format ou le contenu de la configuration est invalide.",
+        "json": "Impossible d’analyser le JSON. Vérifiez son contenu.",
+        "version": "Ce format ou cette version de configuration n’est pas pris en charge.",
+        "fields": "Le fichier comporte des champs manquants, invalides ou non pris en charge. Utilisez un fichier de configuration de modèles exporté.",
+        "tooLarge": "Le fichier de configuration dépasse la limite de 4 MB.",
+        "tooMany": "Trop d’entrées. Chaque section accepte au maximum 1000 entrées.",
+        "duplicate": "Le fichier contient des entrées en double dans une même section.",
+        "stateChanged": "Les paramètres locaux ont changé après l’aperçu. Recréez l’aperçu.",
+        "accountMissing": "Le compte référencé n’existe pas ou ne fait pas partie du groupe de comptes actuel du service API.",
+        "modelMissing": "Le modèle référencé est absent de la configuration cible et des comptes disponibles.",
+        "serviceMissing": "La configuration du service API n’a pas encore été créée. Ses tarifs et routes ne peuvent pas être importés.",
+        "price": "Les tarifs doivent être des nombres finis positifs ou nuls, et le seuil de contexte long doit être supérieur à 0.",
+        "alias": "L’alias est invalide ou identique au modèle source.",
+        "rule": "La règle est invalide. Vérifiez les modèles concernés, la priorité et le poids.",
+        "busy": "Une autre opération de configuration des modèles est en cours. Réessayez dans un instant.",
+        "instanceMissing": "L’instance cible n’existe plus. Sélectionnez-la à nouveau.",
+        "read": "Impossible de lire les paramètres locaux. Réessayez.",
+        "write": "Impossible d’enregistrer la configuration. Les paramètres d’origine ont été conservés. Réessayez.",
+        "validation": "La configuration contient des erreurs. Recréez l’aperçu et corrigez-les.",
+        "recovery": "L’import précédent a été interrompu. La restauration a échoué à cause de paramètres plus récents ou d’un problème de fichier. Le journal de restauration et les données existantes ont été conservés.",
+        "apply": "Les paramètres ont été enregistrés, mais la passerelle active n’a pas pu être rechargée : {{error}}"
+      },
+      "closeHint": "Une fois confirmé, l’import continue à enregistrer après la fermeture de la boîte de dialogue."
     }
   },
   "githubCopilot": {
@@ -6823,6 +7155,15 @@
       "info": "Info",
       "warn": "Avert.",
       "error": "Erreur"
+    },
+    "search": {
+      "placeholder": "Rechercher dans le journal",
+      "regex": "Expression régulière",
+      "errors": {
+        "invalidRegex": "Expression régulière invalide. Veuillez la modifier.",
+        "timeout": "Délai dépassé. Simplifiez l’expression ou désactivez les expressions régulières.",
+        "unavailable": "Impossible de lancer le filtre. Réessayez."
+      }
     }
   },
   "mfaQuick": {
@@ -7076,6 +7417,8 @@
     },
     "quota": {
       "weekly": "Utilisation hebdomadaire",
+      "sharedPool": "Quota partagé",
+      "monthly": "Usage mensuel",
       "onDemand": "Utilisation à la demande",
       "balance": "Solde et crédits",
       "included": "Utilisation incluse",
@@ -7351,6 +7694,10 @@
       "labelOverridePlaceholder": "Nom dans le menu",
       "supports1mLabel": "Déclarer 1M",
       "supports1mShort": "1M contexte"
+    },
+    "errors": {
+      "profileMissing": "Le dossier du profil Claude est introuvable. Ouvrez Claude une fois, puis réessayez.",
+      "cookieSnapshotTooLarge": "La base de données des cookies est trop volumineuse pour être lue en toute sécurité."
     }
   },
   "openrouter": {

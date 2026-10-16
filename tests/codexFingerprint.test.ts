@@ -34,7 +34,7 @@ test('deleted provider keys are not resurrected by standalone account targets', 
 });
 test('saved empty model selection stays empty and invalid settings are repaired', () => {
   assert.deepEqual(normalizeFingerprintPreferences({ models: [], targetIds: ['oauth:1', 'oauth:1'], concurrency: 0, samples: 4 }), { models: [], targetIds: ['oauth:1'], concurrency: 3, samples: 3 });
-  assert.deepEqual(normalizeFingerprintPreferences({ models: ['gpt-5.5', 'unknown'], concurrency: 10, samples: 1 }).models, ['gpt-5.5']);
+  assert.deepEqual(normalizeFingerprintPreferences({ models: ['gpt-5.5', 'gpt-6.1-sol', 'unknown'], concurrency: 10, samples: 1 }).models, ['gpt-6.1-sol']);
 });
 test('OAuth and every distinct upstream API key can be tested together', () => {
   const accounts = [

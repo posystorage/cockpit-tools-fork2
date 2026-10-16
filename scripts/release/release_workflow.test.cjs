@@ -32,3 +32,20 @@ test("fork retains Windows portable packaging and disables unrelated publication
     assert.match(body, /if: \$\{\{ false \}\}/);
   }
 });
+
+
+test("enabled platform uploads use retry helper and the actual fork tag", () => {
+  assert.doesNotMatch(workflow, /gh release upload/);
+  for (const [job, next] of [
+    ["build-windows", "build-macos-aarch64"],
+    ["build-macos-aarch64", "build-macos-x86_64"],
+    ["build-macos-x86_64", "build-macos-universal"],
+    ["build-macos-universal", "build-linux"],
+  ]) {
+    const body = jobBody(job, next);
+    assert.match(body, /upload_release_assets[.]cjs/);
+    assert.doesNotMatch(body, /upload_release_assets[.]cjs "v/);
+    assert.match(body, /RELEASE_TAG:/);
+  }
+  assert.match(workflow, /RELEASE_VERSIONS=\("1[.]3[.]69" "1[.]3[.]68" "1[.]3[.]67" "1[.]3[.]66"\)/);
+});

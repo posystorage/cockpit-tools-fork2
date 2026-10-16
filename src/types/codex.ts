@@ -11,9 +11,47 @@ export interface CodexExperimentalModelDefinition {
   display_name: string;
   /** undefined follows the official model reasoning levels; otherwise custom multi-select. */
   reasoning_efforts?: CodexReasoningEffort[];
+  default_reasoning_effort?: CodexReasoningEffort;
   /** Omitted values follow the model catalog metadata. */
   context_window?: number;
   auto_compact_token_limit?: number;
+}
+
+export interface CodexModelConfigApiService {
+  routingStrategy?: import('./codexLocalAccess').CodexLocalAccessRoutingStrategy;
+  modelPricings: import('./codexLocalAccess').CodexLocalAccessModelPricing[];
+  modelAliases: import('./codexLocalAccess').CodexLocalAccessModelAlias[];
+  accountModelRules: import('./codexLocalAccess').CodexLocalAccessAccountModelRule[];
+  customRoutingRules: import('./codexLocalAccess').CodexLocalAccessCustomRoutingRule[];
+  excludedModels: string[];
+}
+
+export interface CodexModelConfigDocument {
+  schema: 'cockpit-tools.codex-model-config';
+  version: 1;
+  models: CodexExperimentalModelDefinition[];
+  defaultModelId?: string | null;
+  apiService?: CodexModelConfigApiService;
+}
+
+export interface CodexModelConfigImportEntry {
+  section: 'models' | 'defaultModel' | 'prices' | 'aliases' | 'accountRules' | 'routing' | 'exclusions' | 'apiService';
+  id: string;
+  action: 'added' | 'updated' | 'conflict' | 'skipped' | 'error';
+  errorCode?: string;
+}
+
+export interface CodexModelConfigImportPreview {
+  revision: string;
+  entries: CodexModelConfigImportEntry[];
+  added: string[];
+  updated: string[];
+  conflicts: string[];
+  skipped: string[];
+  errors: string[];
+  committed: number;
+  models: CodexExperimentalModelDefinition[];
+  defaultModelId: string | null;
 }
 
 export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
@@ -45,6 +83,9 @@ export interface CodexAppSpeedConfig {
 
 /** Codex 账号数据 */
 export interface CodexAccount {
+  /** Fixed error code on a safe proxy target projection; never a credential URL. */
+  egress_proxy_error?: string | null;
+  egress_proxy_legacy_bound?: boolean;
   usage_updated_at?: number | null;
   id: string;
   email: string;
@@ -65,8 +106,9 @@ export interface CodexAccount {
   api_vision_routing_model?: string | null;
   api_instance_access_mode?: "gateway" | "direct" | "cdp" | string | null;
   api_startup_model?: string | null;
-  /** 网关模式下用于生图转发的 GPT(OAuth) 账号池。 */
+  /** 网关模式下用于生图转发的 OAuth / 图片 API Key 账号池。 */
   api_image_generation_account_ids?: string[] | null;
+  api_image_generation_account_models?: Record<string, string> | null;
   bound_oauth_account_id?: string | null;
   /** Grok 供应商账号绑定的 Grok 平台账号 ID：上游凭据来自该 Grok 账号（OAuth）。 */
   upstream_grok_account_id?: string | null;
@@ -468,6 +510,7 @@ export interface CodexSessionUsageTotals {
 }
 
 export interface CodexSessionUsageBreakdownRow {
+  estimatedCostUsd?: number | null;
   key: string;
   label: string;
   inputTokens: number;

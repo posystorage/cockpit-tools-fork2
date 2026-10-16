@@ -1,3 +1,4 @@
+import { resolveCodexAccountDisplayName } from "../utils/codexAccountDisplayName";
 import { useEffect, useMemo, useCallback, type MouseEvent as ReactMouseEvent } from "react";
 import { RefreshCw, RotateCw } from "lucide-react";
 import * as codexService from "../services/codexService";
@@ -13,6 +14,7 @@ import { useCodexImageForwardConfig } from "../components/CodexImageForwardConfi
 import { useEscClose } from "../hooks/useEscClose";
 import { useEnterConfirm } from "../hooks/useEnterConfirm";
 import type { CodexAccount } from "../types/codex";
+import { CODEX_LOCAL_ACCESS_STATUS_KEYS, resolveCodexLocalAccessRuntimeStatus } from "../utils/codexLocalAccessStatus";
 import { CODEX_API_SERVICE_BIND_ID } from "../types/instance";
 import { createCodexOverviewAccountComparator, filterAndSortCodexOverviewAccounts } from "../utils/codexAccountOverview";
 import { buildPaginatedGroups, buildPaginationPageSizeStorageKey, isEveryIdSelected, usePagination } from "../hooks/usePagination";
@@ -717,7 +719,7 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
         },
         {
           id: "cli",
-          label: t("codex.cli.quickLaunch", "CLI 快速启动"),
+          label: t("common.cliQuickLaunch", "CLI 快速启动"),
           description: `${accountName} · ${t("instances.defaultName", "默认实例")}`,
           actionLabel: t("common.open", "打开"),
           disabled: cliLaunchingAccountId === account.id,
@@ -798,18 +800,28 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
     const localAccessImageForward = useCodexImageForwardConfig({
       accounts,
       accountIds: localAccessCollection?.imageGenerationAccountIds,
+      imageGenerationModel: localAccessCollection?.imageGenerationModel,
+      accountModels: localAccessCollection?.imageGenerationAccountModels,
       disabled: localAccessRefreshing || !localAccessCollection,
-      onSave: async (accountIds) => {
+      onSave: async (accountIds, models) => {
         const nextState =
           await codexLocalAccessService.updateCodexLocalAccessImageGenerationAccounts(
             accountIds,
+            models,
           );
         setLocalAccessState(nextState);
       },
       imageModelControl: (
         <CodexImageModelSelect
           model={localAccessCollection?.imageGenerationModel}
+          models={localAccessCollection?.imageGenerationModels}
+          deletedModels={localAccessCollection?.imageGenerationDeletedModels}
+          catalogUpdatedAt={localAccessCollection?.updatedAt}
+          mainModel={localAccessCollection?.imageGenerationMainModel}
           disabled={localAccessRefreshing}
+          onSaveMainModel={async (model) => {
+            setLocalAccessState(await codexLocalAccessService.updateCodexLocalAccessImageGenerationMainModel(model));
+          }}
           onSave={async (model) => {
             const nextState =
               await codexLocalAccessService.updateCodexLocalAccessImageGenerationModel(
@@ -825,11 +837,8 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
       useCallback((): CodexLaunchPreviewSummary => {
         const collection = localAccessCollection;
         const totals = localAccessState?.stats.weekly.totals;
-        const statusLabel = localAccessState?.running
-          ? t("codex.localAccess.statusRunning", "运行中")
-          : collection?.enabled
-            ? t("codex.localAccess.statusStopped", "未运行")
-            : t("codex.localAccess.statusDisabled", "已停用");
+        const status = resolveCodexLocalAccessRuntimeStatus(collection, localAccessState);
+        const statusLabel = t(CODEX_LOCAL_ACCESS_STATUS_KEYS[status]);
         const scopeLabel =
           collection?.accessScope === "lan"
             ? t("codex.localAccess.accessScopeLanShort", "本机+局域网")
@@ -863,9 +872,9 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
             },
           )}`,
           statusLabel,
-          statusTone: localAccessState?.running
+          statusTone: status === "running"
             ? "success"
-            : collection?.enabled
+            : status === "stopped"
               ? "neutral"
               : "warning",
           facts: [
@@ -944,7 +953,7 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
                       .slice(0, 4)
                       .map((item) => (
                         <span key={item.id}>
-                          {item.email || item.account_name || item.id}
+                          {resolveCodexAccountDisplayName(item, t("common.apiKeyAccount"))}
                         </span>
                       ))}
                   </div>
@@ -979,7 +988,7 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
           },
           {
             id: "cli",
-            label: t("codex.cli.quickLaunch", "CLI 快速启动"),
+            label: t("common.cliQuickLaunch", "CLI 快速启动"),
             description: `${t("codex.localAccess.title", "API 服务")} · ${baseUrl}`,
             actionLabel: t("common.open", "打开"),
             disabled: cliLaunchingAccountId === CODEX_API_SERVICE_BIND_ID,
@@ -1023,9 +1032,9 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
             label: localAccessCollection.enabled
               ? t("codex.localAccess.disableService", "停用服务")
               : t("codex.localAccess.enableService", "启用服务"),
-            description: localAccessState?.running
-              ? t("codex.localAccess.statusRunning", "运行中")
-              : t("codex.localAccess.statusStopped", "未运行"),
+            description: t(CODEX_LOCAL_ACCESS_STATUS_KEYS[
+              resolveCodexLocalAccessRuntimeStatus(localAccessCollection, localAccessState)
+            ]),
             actionLabel: localAccessCollection.enabled
               ? t("codex.localAccess.disableService", "停用服务")
               : t("codex.localAccess.enableService", "启用服务"),

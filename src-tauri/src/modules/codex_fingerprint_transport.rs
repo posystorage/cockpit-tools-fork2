@@ -1,7 +1,6 @@
 // Explicit, single-account/model probes. Never change the active account or fall back.
 const FINGERPRINT_TIMEOUT: Duration = Duration::from_secs(240);
 const FINGERPRINT_MODELS: &[&str] = &[
-    "gpt-5.5",
     "gpt-5.6-sol",
     "gpt-5.6-terra",
     "gpt-5.6-luna",
@@ -126,19 +125,11 @@ fn fingerprint_oauth_request(
     prompt: &str,
     account_id: &str,
 ) -> Result<(Vec<u8>, HashMap<String, String>), String> {
-    let (raw, mut headers) = build_pelican_request(model, "medium", prompt, account_id)?;
+    let (raw, headers) = build_pelican_request(model, "medium", prompt, account_id)?;
     let mut body: Value = serde_json::from_slice(&raw).map_err(|e| e.to_string())?;
-    // Every sample is independent, including from concurrent Pelican tests.
-    let session = uuid::Uuid::new_v4().to_string();
-    let turn = uuid::Uuid::new_v4().to_string();
+    // The shared builder creates one independent session and consistent headers.
+    // Final transport applies only the selected account installation identity.
     body["instructions"] = Value::String(String::new());
-    body["prompt_cache_key"] = Value::String(session.clone());
-    body["client_metadata"]["x-codex-window-id"] = Value::String(format!("{session}:0"));
-    body["client_metadata"]["x-codex-turn-metadata"] =
-        Value::String(build_codex_turn_metadata(&session, &turn));
-    for header in ["session-id", "conversation_id", "x-client-request-id"] {
-        headers.insert(header.to_string(), session.clone());
-    }
     Ok((
         serde_json::to_vec(&body).map_err(|e| e.to_string())?,
         headers,
@@ -415,8 +406,13 @@ mod fingerprint_transport_tests {
         let (bytes, first) = fingerprint_oauth_request("gpt-6-sol", "numbers", "account").unwrap();
         let (_, second) = fingerprint_oauth_request("gpt-6-sol", "numbers", "account").unwrap();
         assert_ne!(first["session-id"], second["session-id"]);
+        assert_eq!(first["session-id"], first["thread-id"]);
+        assert_eq!(first["session-id"], first["conversation_id"]);
         let body: Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(body["model"], "gpt-6-sol");
+        assert_eq!(body["prompt_cache_key"], first["session-id"]);
+        assert_eq!(body["client_metadata"]["x-codex-window-id"], first["x-codex-window-id"]);
+        assert_eq!(body["client_metadata"]["x-codex-turn-metadata"], first["x-codex-turn-metadata"]);
         assert_eq!(body["instructions"], "");
         assert!(body.get("tools").is_none());
     }
@@ -436,6 +432,7 @@ mod fingerprint_transport_tests {
         );
         assert!(fingerprint_endpoint("file:///tmp/example", "responses").is_err());
         assert!(FINGERPRINT_MODELS.contains(&"gpt-6.1-sol"));
+        assert!(!FINGERPRINT_MODELS.contains(&"gpt-5.5"));
         let body = fingerprint_response_body("gpt-6.1-sol", "numbers");
         assert_eq!(body["model"], "gpt-6.1-sol");
         assert_eq!(body["instructions"], "");

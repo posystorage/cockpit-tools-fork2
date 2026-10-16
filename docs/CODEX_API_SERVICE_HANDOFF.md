@@ -15,11 +15,12 @@ The repository was imported from `jlcodes99/cockpit-tools` at commit
 Codex CLI / selected Codex profile
   -> auth.json + config.toml injected by Cockpit
   -> http://localhost:<configured-port>/v1
-  -> cockpit-cliproxy sidecar by default
+  -> cockpit-cliproxy Go sidecar by default (optional native Rust engine)
   -> selected Codex OAuth credentials or configured provider API key
   -> OpenAI Codex upstream or provider upstream
 
-React page -> Tauri invoke -> Rust collection/runtime -> sidecar config + manifest
+React page -> Tauri invoke -> Rust collection/runtime -> Go sidecar (default)
+                                                    -> native engine (optional)
 ```
 
 Since upstream v1.3.7 the service is an accountless platform with platform ID
@@ -28,12 +29,20 @@ service page remain mounted after their first visit. Keep service-member activit
 on the service page and shared management modal; do not restore the removed member
 preview on the ordinary Codex accounts page.
 
-The implementation has two gateway modes:
+Production traffic uses the selected engine:
 
-- `sidecar` is the default. Rust materializes config and credentials, then starts
-  the bundled Go executable `cockpit-cliproxy`.
-- `legacy` retains the Rust in-process HTTP proxy path. Do not change defaults or
-  route behavior in one mode without checking the other.
+- New installations default to Go. The first runtime upgrade preserves explicit
+  engine choices, migrates legacy mode to Go, and records the migration marker
+  without forcing Rust. Choices survive restarts and unrelated writes. Both
+  engines support fork activity, historical usage and backup-dispatch controls.
+- When Go is selected, Rust materializes config and credentials and starts the
+  bundled `cockpit-cliproxy` executable.
+- `CodexLocalAccessGatewayMode::Legacy` is not selectable. Persisted global
+  collections are migrated before runtime startup; no active request is switched
+  by the migration.
+- The retired in-process gateway is compiled only under `#[cfg(test)]` as a test
+  oracle (`codex_local_access_recovery.rs`). Do not route production traffic
+  through it; it is distinct from the new native engine in `codex_native_api`.
 
 ## Source Ownership
 
@@ -43,8 +52,9 @@ The implementation has two gateway modes:
 | UI bridge | `src/services/codexLocalAccessService.ts` | Typed wrappers around the Tauri commands. Keep camelCase payload names aligned with Rust command arguments. |
 | Contract | `src/types/codexLocalAccess.ts`, `src-tauri/src/models/codex_local_access.rs` | Frontend/Rust state and configuration schema. Rust uses `serde(rename_all = "camelCase")`. |
 | Commands | `src-tauri/src/commands/codex.rs` | Tauri command boundary; commands are registered in `src-tauri/src/lib.rs`. |
-| Service coordinator | `src-tauri/src/modules/codex_local_access.rs` | Persistence, profile takeover, sidecar lifecycle, legacy proxy, routing, quotas, request logs and tests. |
+| Service coordinator | `src-tauri/src/modules/codex_local_access.rs` | Persistence, profile takeover, sidecar lifecycle, routing, quotas, request logs and tests. |
 | Sidecar | `sidecars/cockpit-cliproxy/main.go` | Go HTTP gateway based on CLIProxyAPI SDK. Receives generated config and manifest. |
+| Native engine | `src-tauri/src/modules/codex_native_api/`, `codex_local_access_native.rs` | Rust protocol implementation and host account/routing integration. |
 
 ## Runtime Flow
 
@@ -53,10 +63,11 @@ The implementation has two gateway modes:
 2. Rust persists a `CodexLocalAccessCollection`, synchronizes `GatewayRuntime`,
    and calls `ensure_gateway_matches_runtime` when a gateway-relevant setting
    changes.
-3. In sidecar mode, `prepare_sidecar_launch_config` writes the sidecar `config.json`,
+3. Native mode starts the host engine directly. In Go mode,
+   `prepare_sidecar_launch_config` writes the sidecar `config.json`,
    `manifest.json`, credentials below `auths/`, and quota-reserve state. A stable
    fingerprint decides whether the process must be restarted.
-4. The sidecar authenticates the client key, applies model visibility/alias rules,
+4. The selected engine authenticates the client key, applies model visibility/alias rules,
    selects an account, and sends the upstream request. It reports diagnostics and
    usage back to Rust.
 5. Activating the service backs up the target profile before writing a managed
@@ -175,7 +186,7 @@ platform migration. The v1.3.10 merge keeps activity in the primary service memb
 cards and shared modal, while scheduler availability remains a separate health
 signal.
 
-Before implementing a change, identify whether it belongs to the UI contract,
-Rust legacy proxy, generated sidecar contract, or all three. Test both the
-OpenAI-compatible request path and Codex profile takeover/restore whenever the
-change affects activation, keys, base URLs, models, routing, or credentials.
+Before implementing a change, identify whether it belongs to the UI contract, the
+generated sidecar contract, or both. Test both the OpenAI-compatible request path
+and Codex profile takeover/restore whenever the change affects activation, keys,
+base URLs, models, routing, or credentials.
