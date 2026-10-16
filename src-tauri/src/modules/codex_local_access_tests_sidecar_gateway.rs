@@ -677,6 +677,39 @@
     }
 
     #[test]
+    fn fork_window_history_alias_requires_official_id_and_matching_email() {
+        let dir = make_temp_dir("fork-window-history-alias");
+        let conn = open_local_access_logs_db_once(&dir.join("logs.sqlite"), true).unwrap();
+        for (key, local, official, email, tokens) in [
+            ("a", "old-a", "team", "A@example.invalid", 11),
+            ("b", "old-b", "team", "b@example.invalid", 22),
+            ("legacy", "team", "", "a@example.invalid", 33),
+        ] {
+            conn.execute("INSERT INTO request_logs (event_key, timestamp, account_id, official_account_id, email, input_tokens) VALUES (?1, 1700000000000, ?2, ?3, ?4, ?5)",
+                rusqlite::params![key, local, official, email, tokens]).unwrap();
+        }
+        let queries = [
+            ("new-a", "team", "a@example.invalid"),
+            ("new-b", "team", "b@example.invalid"),
+            ("no-email", "team", ""),
+            ("wrong-id", "other-team", "a@example.invalid"),
+            ("old-a", "", "changed@example.invalid"),
+        ].into_iter().map(|(local, official, email)| CodexLocalAccessAccountWindowQuery {
+            account_id: local.into(), official_account_id: official.into(), account_email: email.into(),
+            window_key: "primary".into(), start_at: 1699999999000, end_at: 1700000001000,
+        }).collect();
+        let stats: HashMap<_, _> = super::query_local_access_account_window_stats_from_conn(&conn, queries).unwrap()
+            .into_iter().map(|row| (row.account_id, (row.input_tokens, row.request_count))).collect();
+        assert_eq!(stats["new-a"], (44, 2));
+        assert_eq!(stats["new-b"], (22, 1));
+        assert_eq!(stats["no-email"], (0, 0));
+        assert_eq!(stats["wrong-id"], (0, 0));
+        assert_eq!(stats["old-a"], (11, 1));
+        drop(conn);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn port_in_reserved_ranges_detects_membership() {
         assert!(super::port_in_reserved_ranges(1450, &[(1400, 1500)]));
         assert!(!super::port_in_reserved_ranges(1399, &[(1400, 1500)]));

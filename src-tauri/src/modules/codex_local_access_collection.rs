@@ -2081,7 +2081,11 @@ async fn ensure_runtime_loaded_without_start_with_profile_restore(
                 (next_collection, crate::get_app_handle().cloned())
             {
                 tauri::async_runtime::spawn(async move {
-                    let model_ids = effective_price_book_model_ids(Some(&collection));
+                    let mut model_ids = effective_price_book_model_ids(Some(&collection));
+                    // Retired presets remain billable in old logs even after their
+                    // stored overrides and request options have been removed.
+                    model_ids.extend(HISTORICAL_CODEX_MODEL_PRICE_BOOK.iter()
+                        .map(|entry| entry.model_id.to_string()));
                     logger::log_codex_api_info(
                         "Codex API 服务默认价格表已升级，历史估算已转入后台重算",
                     );

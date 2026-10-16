@@ -1221,6 +1221,36 @@ async fn handle_sidecar_stdout_line(
     }
 }
 
+fn track_sidecar_activity_ids(pending: &mut HashSet<String>, line: &str) {
+    let Ok(value) = serde_json::from_str::<Value>(line) else { return; };
+    match value.get("type").and_then(Value::as_str) {
+        Some("auth_selected") => {
+            if let Ok(event) = serde_json::from_value::<SidecarAuthSelectedEvent>(value) {
+                let id = event.request_id.trim();
+                if !id.is_empty() && !event.account_id.trim().is_empty() {
+                    pending.insert(id.to_string());
+                }
+            }
+        }
+        Some("usage") => {
+            if let Ok(event) = serde_json::from_value::<SidecarUsageEvent>(value) {
+                pending.remove(event.request_id.trim());
+            }
+        }
+        _ => {}
+    }
+}
+
+fn finish_sidecar_activity_ids(runtime: &mut GatewayRuntime, pending: HashSet<String>, now: i64) {
+    for id in pending {
+        // Scope cleanup to this stdout stream, including retired profile sidecars.
+        if runtime.running_requests.contains_key(&id) {
+            finish_account_activity_locked(runtime, Some(&id), None, None, None, None, None, CodexLocalAccessRequestKind::Other, now);
+        }
+    }
+    prune_account_activity(runtime, now);
+}
+
 async fn drain_sidecar_stdout(
     stdout: tokio::process::ChildStdout,
     ready_sender: oneshot::Sender<SidecarReadySignal>,
@@ -1231,9 +1261,11 @@ async fn drain_sidecar_stdout(
     ensure_request_diagnostics_poller_started();
     let mut lines = BufReader::new(stdout).lines();
     let mut ready_sender = Some(ready_sender);
+    let mut pending_activity = HashSet::new();
     loop {
         match lines.next_line().await {
             Ok(Some(line)) => {
+                track_sidecar_activity_ids(&mut pending_activity, &line);
                 handle_sidecar_stdout_line(&line, &mut ready_sender, &diagnostics).await
             }
             Ok(None) => break,
@@ -1245,6 +1277,11 @@ async fn drain_sidecar_stdout(
                 break;
             }
         }
+    }
+    if !pending_activity.is_empty() {
+        let mut runtime = gateway_runtime().lock().await;
+        finish_sidecar_activity_ids(&mut runtime, pending_activity, now_ms());
+        emit_local_access_state_updated();
     }
 }
 

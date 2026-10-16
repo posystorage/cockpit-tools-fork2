@@ -2,7 +2,7 @@
 
 入口按钮统一为“指纹测智”：账号概览页位于“鹈鹕测智”按钮紧邻左侧；模型供应商页位于“一键测试”按钮紧邻左侧。两处均使用原有批量操作区，不在顶部工具栏重复放置入口。
 
-- 请求模型：gpt-5.5、gpt-5.6-sol/terra/luna、gpt-6-astra/sol/luna、gpt-6.1-sol。
+- 请求模型：gpt-5.6-sol/terra/luna、gpt-6-astra/sol/luna、gpt-6.1-sol。
 - 首次默认勾选 gpt-5.6-sol、gpt-6-sol、gpt-6-astra；之后记忆模型选择，包括全部取消。
 - 首次不勾选账号；开始测试后记忆本次实际使用的账号／API Key。
 - OAuth 账号、独立 API Key 账号、模型供应商中的各个 API Key 均可选择；相同上游和 Key 去重。

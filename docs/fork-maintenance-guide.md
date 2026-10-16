@@ -69,6 +69,8 @@ Rust 从 RequestTracker 已提交路由发出活动选择，使用诊断请求 I
 - Rust 定向测试程序成功编译；默认环境及精简 DLL 搜索路径均在断言前返回 0xC0000139 / STATUS_ENTRYPOINT_NOT_FOUND，与既有本机限制一致，不能标为运行通过。后续需在可运行环境执行 fork_、native_gateway_default 和 fingerprint 定向用例及真实双引擎切换。
 - 未向真实模型账号发请求，未操作实际 Codex Desktop；未创建新发布 tag。
 
+二次审计及修正详见 [v1.3.69 合并后二次审计](upstream-v1.3.69-review.md)：补齐严格历史身份别名、Go 输出结束活动清理、退役模型后台重算目标及 Rust 辅助请求活动分类。
+
 ### 2.0.1 v1.3.65 升级施工边界（2026-10-02）
 
 从 fork `1.3.63b1`（`1d29dea8`）合入上游 `v1.3.65`（`0b6514b4`），
@@ -925,7 +927,7 @@ MIT 许可随 public/licenses/CodexInputUnlock-LICENSE.txt 打包。不得重新
 
 ### 9.2 配置、调度与结果不变量
 
-- 可选模型固定为 `gpt-5.5`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`、`gpt-6-astra`、`gpt-6-sol`、`gpt-6-luna`。首次仅勾选 `gpt-5.6-sol`、`gpt-6-sol`、`gpt-6-astra`；保存过的空模型选择不能被默认值覆盖。
+- 可选模型固定为 `gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`、`gpt-6-astra`、`gpt-6-sol`、`gpt-6-luna`、`gpt-6.1-sol`。首次仅勾选 `gpt-5.6-sol`、`gpt-6-sol`、`gpt-6-astra`；保存过的空模型选择不能被默认值覆盖。
 - 首次账号选择为空。开始测试后记录实际使用的账号／API Key；未启动测试的账号选择编辑不覆盖上次测试记录。模型、并行数和采样数的编辑立即记忆。
 - OAuth、独立 API Key 账号和供应商各 API Key 可共同选择；相同上游地址与 Key 去重。Web Session、待完成 OAuth 和缺少凭据的目标不列为可测账号。
 - 按账号／上游 × 请求模型生成组合，最大并行数 1–10、默认 3；每组采样数 1／2／3、默认 3，同组内顺序采样。OAuth 仍受原有账号级内部调度器限制。

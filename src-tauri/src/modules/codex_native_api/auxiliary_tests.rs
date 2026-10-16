@@ -1012,3 +1012,11 @@ async fn realtime_client_secret_capacity_error_has_retry_after() {
     }
     cleanup(handle, upstream, root).await;
 }
+
+#[test]
+fn fork_auxiliary_activity_preserves_search_and_classifies_audio_and_live() {
+    for path in ["/v1/audio/transcriptions", "/backend-api/codex/transcribe", "/v1/realtime", "/v1/live/call"] {
+        assert_eq!(auxiliary_operation(path), "other");
+    }
+    assert_eq!(auxiliary_operation("/backend-api/codex/alpha/search"), "text");
+}

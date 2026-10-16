@@ -2413,6 +2413,8 @@ fn normalize_request_log_time_bound(value: i64) -> i64 {
 
 struct AccountWindowStatSpec {
     account_id: String,
+    official_account_id: String,
+    account_email: String,
     window_key: String,
     start_at: i64,
     end_at: i64,
@@ -2444,7 +2446,7 @@ fn query_local_access_account_window_stats_from_conn(
     let mut specs = Vec::new();
     let mut min_start = i64::MAX;
     let mut max_end = 0i64;
-    let mut local_account_ids = HashSet::new();
+    let mut lookup_account_ids = HashSet::new();
     for query in &queries {
         let account_id = query.account_id.trim();
         let window_key = query.window_key.trim();
@@ -2455,9 +2457,16 @@ fn query_local_access_account_window_stats_from_conn(
         }
         min_start = min_start.min(start_at);
         max_end = max_end.max(end_at);
-        local_account_ids.insert(account_id.to_string());
+        lookup_account_ids.insert(account_id.to_string());
+        let official_account_id = query.official_account_id.trim();
+        let account_email = query.account_email.trim();
+        if !official_account_id.is_empty() && !account_email.is_empty() {
+            lookup_account_ids.insert(official_account_id.to_string());
+        }
         specs.push(AccountWindowStatSpec {
             account_id: account_id.to_string(),
+            official_account_id: official_account_id.to_string(),
+            account_email: account_email.to_string(),
             window_key: window_key.to_string(),
             start_at,
             end_at,
@@ -2467,7 +2476,7 @@ fn query_local_access_account_window_stats_from_conn(
         return Ok(Vec::new());
     }
 
-    let placeholders = local_account_ids
+    let placeholders = lookup_account_ids
         .iter()
         .map(|_| "?")
         .collect::<Vec<_>>()
@@ -2475,10 +2484,10 @@ fn query_local_access_account_window_stats_from_conn(
     let sql = format!(
         "SELECT account_id, timestamp,
                 input_tokens, output_tokens, total_tokens,
-                cached_tokens, estimated_cost_usd
+                cached_tokens, estimated_cost_usd, official_account_id, email
          FROM request_logs
          WHERE timestamp >= ? AND timestamp <= ?
-           AND account_id IN ({placeholders})"
+           AND (account_id IN ({placeholders}) OR official_account_id IN ({placeholders}))"
     );
     let mut statement = conn
         .prepare(sql.as_str())
@@ -2487,8 +2496,10 @@ fn query_local_access_account_window_stats_from_conn(
         rusqlite::types::Value::Integer(min_start),
         rusqlite::types::Value::Integer(max_end),
     ];
-    for account_id in &local_account_ids {
-        params.push(rusqlite::types::Value::Text(account_id.clone()));
+    for _ in 0..2 {
+        for account_id in &lookup_account_ids {
+            params.push(rusqlite::types::Value::Text(account_id.clone()));
+        }
     }
 
     let mut totals = HashMap::<(String, String), CodexLocalAccessAccountWindowStats>::new();
@@ -2513,15 +2524,25 @@ fn query_local_access_account_window_stats_from_conn(
                 row.get::<_, i64>(4)?.max(0) as u64,
                 row.get::<_, i64>(5)?.max(0) as u64,
                 row.get::<_, f64>(6).unwrap_or(0.0),
+                row.get::<_, String>(7)?,
+                row.get::<_, String>(8)?,
             ))
         })
         .map_err(|e| format!("查询 API 服务账号窗口用量失败: {}", e))?;
 
     for row in rows {
-        let (row_account_id, timestamp, input, output, total, cached, cost) =
+        let (row_account_id, timestamp, input, output, total, cached, cost, official_id, email) =
             row.map_err(|e| format!("解析 API 服务账号窗口用量失败: {}", e))?;
         for spec in &specs {
-            if !account_window_stat_identity_matches(&row_account_id, &spec.account_id)
+            let local_match = account_window_stat_identity_matches(&row_account_id, &spec.account_id);
+            // Official workspace IDs alone are shared by multiple members.
+            // Alias recovery requires both the official ID and the same email.
+            let alias_match = !spec.official_account_id.is_empty()
+                && !spec.account_email.is_empty()
+                && (official_id.trim() == spec.official_account_id
+                    || row_account_id.trim() == spec.official_account_id)
+                && email.trim().eq_ignore_ascii_case(&spec.account_email);
+            if !(local_match || alias_match)
                 || timestamp < spec.start_at
                 || timestamp > spec.end_at
             {

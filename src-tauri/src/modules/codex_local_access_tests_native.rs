@@ -1118,3 +1118,24 @@ async fn fork_native_history_retains_email_after_account_deletion() {
     host.account_overrides.remove("pool-a");
     assert_eq!(host.account_email("pool-a"), Some(expected));
 }
+
+#[test]
+fn fork_sidecar_exit_cleans_only_its_pending_requests() {
+    let mut runtime = GatewayRuntime::default();
+    for id in ["go-active", "native-active"] {
+        record_account_activity_selected_locked(&mut runtime, RequestActivitySelection {
+            request_id: id.into(), account_id: id.into(), email: String::new(),
+            api_key_id: String::new(), api_key_label: String::new(), model_id: "fixture".into(),
+            request_kind: CodexLocalAccessRequestKind::Text, routing_strategy: String::new(),
+        }, 100);
+    }
+    let mut pending = HashSet::new();
+    track_sidecar_activity_ids(&mut pending, r#"{"type":"auth_selected","requestId":"go-active","accountId":"go-active"}"#);
+    track_sidecar_activity_ids(&mut pending, r#"{"type":"auth_selected","requestId":"go-completed","accountId":"go-completed"}"#);
+    track_sidecar_activity_ids(&mut pending, r#"{"type":"usage","requestId":"go-completed"}"#);
+    assert_eq!(pending, HashSet::from(["go-active".to_string()]));
+    finish_sidecar_activity_ids(&mut runtime, pending, 200);
+    assert_eq!(runtime.running_requests.len(), 1);
+    assert!(runtime.running_requests.contains_key("native-active"));
+    assert_eq!(runtime.account_activity["go-active"].last_finished_at, Some(200));
+}

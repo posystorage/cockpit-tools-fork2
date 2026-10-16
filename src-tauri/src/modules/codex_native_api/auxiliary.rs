@@ -57,6 +57,7 @@ async fn handle_tracked(
     let audio_deadline = is_audio(&path).then(|| Instant::now() + AUDIO_REQUEST_TIMEOUT);
     let allow_secret = path.contains("realtime") || path.starts_with("/v1/live");
     tracker.context(request.method().as_str(), &path, request.headers(), false);
+    tracker.set_operation(auxiliary_operation(&path));
     let auth = bindings::authorize(&state, request.headers(), allow_secret).await?;
     tracker.authorized(&auth.caller, "");
     if path.contains("/translations") && path.contains("realtime")
@@ -486,6 +487,7 @@ async fn websocket_tracked(
         .as_mut()
         .expect("WebSocket request tracker is present");
     tracker.context("GET", request.uri().path(), request.headers(), false);
+    tracker.set_operation(auxiliary_operation(request.uri().path()));
     let auth = bindings::authorize(&state, request.headers(), true).await?;
     tracker.authorized(&auth.caller, "");
     let headers = request.headers().clone();
@@ -680,6 +682,9 @@ async fn relay(
 use axum::extract::FromRequestParts;
 fn invalid(message: &str) -> ServiceError {
     ServiceError::new(400, "invalid_auxiliary_request", message)
+}
+fn auxiliary_operation(path: &str) -> &'static str {
+    if path.contains("/alpha/search") { "text" } else { "other" }
 }
 fn is_audio(path: &str) -> bool {
     path.ends_with("/transcribe") || path.contains("/audio/")
