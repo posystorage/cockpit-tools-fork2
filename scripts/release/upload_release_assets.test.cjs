@@ -169,3 +169,42 @@ test("retry classification includes transport disconnects and timeouts", () => {
   assert.equal(isRetryableFailure({ status: null, error: { code: "ETIMEDOUT", message: "timed out" } }), true);
   assert.equal(isRetryableFailure({ status: null, error: { code: "ENOENT", message: "gh not found" } }), false);
 });
+
+
+test("fork draft tags reach uploads unchanged and invalid tags cannot invoke gh", async (t) => {
+  const files = assets(t, ["latest.json"]);
+  for (const tag of ["v1.3.69", "1.3.69", "1.3.69b1", "1.3.69b2", "1.3.69beta.2", "1.3.69rc-1"]) {
+    const calls = [];
+    await uploadReleaseAssets(tag, files, {
+      run(args) { calls.push(args); return success(args[1] === "view" ? "true" : ""); },
+      log() {},
+    });
+    assert.deepEqual(calls.map((args) => args.slice(0, 3)), [["release", "view", tag], ["release", "upload", tag]]);
+  }
+  for (const tag of ["", "untagged-7e800d0e00ef76fde2a9", "--draft", "v1.3.69b2", "1.3.69/b2", "1.3.69 b2"]) {
+    await assert.rejects(uploadReleaseAssets(tag, files, {
+      run() { assert.fail("invalid tag must not invoke gh"); },
+    }), /Usage:/);
+  }
+});
+
+test("beta tag CLI uploads draft assets and still refuses published releases", (t) => {
+  const [file] = assets(t, ["latest.json"]);
+  const preload = path.join(path.dirname(file), "fake-gh-beta.cjs");
+  for (const draft of [true, false]) {
+    fs.writeFileSync(preload, [
+      'const assert = require("node:assert/strict");',
+      'require("node:child_process").spawnSync = (_command, args) => {',
+      'assert.equal(args[2], "1.3.69b2");',
+      'if (args[1] === "view") return {status:0,stdout:' + JSON.stringify(String(draft)) + ',stderr:""};',
+      'assert.equal(args[1], "upload");',
+      'return {status:0,stdout:"",stderr:""};',
+      '};',
+    ].join("\n"));
+    const result = spawnSync(process.execPath, ["--require", preload, path.join(__dirname, "upload_release_assets.cjs"), "1.3.69b2", file], { encoding: "utf8" });
+    assert.ifError(result.error);
+    assert.equal(result.status, draft ? 0 : 1, result.stderr);
+    if (draft) assert.match(result.stdout, /Uploaded latest.json to 1.3.69b2/);
+    else assert.match(result.stderr, /refusing to mutate a published release/);
+  }
+});
