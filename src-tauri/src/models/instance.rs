@@ -77,6 +77,8 @@ pub struct InstanceProfile {
     /// None follows the launch binding default; Some(false) is an explicit opt-out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hide_native_quota_banner: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quota_display_compatibility: Option<bool>,
     pub created_at: i64,
     pub last_launched_at: Option<i64>,
     #[serde(default)]
@@ -117,6 +119,8 @@ pub struct DefaultInstanceSettings {
     pub app_speed: CodexAppSpeed,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hide_native_quota_banner: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quota_display_compatibility: Option<bool>,
     #[serde(default = "default_follow_local_account")]
     pub follow_local_account: bool,
     #[serde(default)]
@@ -139,6 +143,7 @@ impl Default for DefaultInstanceSettings {
             launch_mode: InstanceLaunchMode::App,
             app_speed: CodexAppSpeed::Standard,
             hide_native_quota_banner: None,
+            quota_display_compatibility: None,
             follow_local_account: true,
             auto_sync_threads: false,
             last_pid: None,
@@ -212,6 +217,19 @@ mod tests {
 
         assert!(store.instances[0].model_routing.is_none());
         assert!(store.default_settings.model_routing.is_none());
+        assert_eq!(
+            store.instances[0]
+                .quota_display_compatibility
+                .unwrap_or(false),
+            false
+        );
+        assert_eq!(
+            store
+                .default_settings
+                .quota_display_compatibility
+                .unwrap_or(false),
+            false
+        );
         assert_eq!(store.instances[0].hide_native_quota_banner, None);
         assert_eq!(store.default_settings.hide_native_quota_banner, None);
     }
@@ -228,6 +246,25 @@ mod tests {
             );
             let restored: DefaultInstanceSettings = serde_json::from_value(value).unwrap();
             assert_eq!(restored.hide_native_quota_banner, preference);
+        }
+    }
+
+    #[test]
+    fn quota_display_preference_round_trips_independently_of_banner_policy() {
+        for hide in [None, Some(false), Some(true)] {
+            for compatibility in [None, Some(false), Some(true)] {
+                let mut settings = DefaultInstanceSettings::default();
+                settings.hide_native_quota_banner = hide;
+                settings.quota_display_compatibility = compatibility;
+                let value = serde_json::to_value(&settings).unwrap();
+                assert_eq!(
+                    value.get("quotaDisplayCompatibility"),
+                    compatibility.map(serde_json::Value::Bool).as_ref()
+                );
+                let restored: DefaultInstanceSettings = serde_json::from_value(value).unwrap();
+                assert_eq!(restored.hide_native_quota_banner, hide);
+                assert_eq!(restored.quota_display_compatibility, compatibility);
+            }
         }
     }
 

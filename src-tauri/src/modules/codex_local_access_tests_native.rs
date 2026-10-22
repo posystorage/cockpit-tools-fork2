@@ -379,38 +379,46 @@ fn native_test_account_with_quota(hourly: i32, weekly: i32) -> CodexAccount {
 
 #[test]
 fn native_quota_reservation_applies_only_to_bound_account_and_present_windows() {
+    let account_with_quota = |hourly, weekly| {
+        let mut account = native_test_account_with_quota(hourly, weekly);
+        account.id = "quota-reservation-present-windows".into();
+        account
+    };
     let mut collection = native_test_collection();
-    collection.bound_oauth_account_id = Some("fixture-account".into());
+    collection.bound_oauth_account_id = Some("quota-reservation-present-windows".into());
     collection.bound_oauth_quota_reserve = Some(CodexLocalAccessQuotaReserve {
         hourly_percent: 20,
         weekly_percent: 10,
-    });
-    assert!(native_quota_allows(
-        &collection,
-        &native_test_account_with_quota(21, 11)
-    ));
-    assert!(!native_quota_allows(
-        &collection,
-        &native_test_account_with_quota(20, 11)
-    ));
-    assert!(!native_quota_allows(
-        &collection,
-        &native_test_account_with_quota(21, 10)
-    ));
-    let mut unrelated = native_test_account_with_quota(5, 5);
+        strict: false, safety_margin_percent: 3,
+});
+    let available = account_with_quota(24, 14);
+    {
+        let mut runtime = quota_reserve_coordinator().lock().unwrap();
+        runtime.accounts.entry(available.id.clone()).or_default();
+    }
+    confirm_gateway_quota_refresh(&available.id, available.quota.as_ref().unwrap(), Instant::now());
+    assert!(native_quota_allows(&collection, &available));
+    let hourly_blocked = account_with_quota(23, 14);
+    confirm_gateway_quota_refresh(&hourly_blocked.id, hourly_blocked.quota.as_ref().unwrap(), Instant::now());
+    assert!(!native_quota_allows(&collection, &hourly_blocked));
+    let weekly_blocked = account_with_quota(24, 13);
+    confirm_gateway_quota_refresh(&weekly_blocked.id, weekly_blocked.quota.as_ref().unwrap(), Instant::now());
+    assert!(!native_quota_allows(&collection, &weekly_blocked));
+    let mut unrelated = account_with_quota(5, 5);
     unrelated.id = "unrelated-account".into();
     assert!(native_quota_allows(&collection, &unrelated));
-    let mut absent_window = native_test_account_with_quota(0, 11);
+    let mut absent_window = account_with_quota(0, 14);
     absent_window.quota.as_mut().unwrap().hourly_window_present = Some(false);
+    confirm_gateway_quota_refresh(&absent_window.id, absent_window.quota.as_ref().unwrap(), Instant::now());
     assert!(native_quota_allows(&collection, &absent_window));
     collection.bound_oauth_quota_reserve = None;
     assert!(native_quota_allows(
         &collection,
-        &native_test_account_with_quota(5, 5)
+        &account_with_quota(5, 5)
     ));
     assert!(!native_quota_allows(
         &collection,
-        &native_test_account_with_quota(0, 5)
+        &account_with_quota(0, 5)
     ));
 }
 
@@ -421,7 +429,8 @@ fn native_reserved_quota_fails_closed_for_missing_stale_or_invalid_evidence() {
     collection.bound_oauth_quota_reserve = Some(CodexLocalAccessQuotaReserve {
         hourly_percent: 20,
         weekly_percent: 10,
-    });
+        strict: false, safety_margin_percent: 3,
+});
     assert!(!native_quota_allows(&collection, &native_test_account()));
     let now = chrono::Utc::now().timestamp();
     for timestamp in [None, Some(0), Some(now - 181), Some(now + 60)] {
@@ -524,6 +533,8 @@ fn native_test_route_request(session: &str) -> native_contract::RouteRequest {
         excluded_account_ids: vec![],
         requires_permit: true,
         auxiliary: None,
+        required_capabilities: Vec::new(),
+        capability_fallback_from: None,
     }
 }
 
@@ -1138,4 +1149,36 @@ fn fork_sidecar_exit_cleans_only_its_pending_requests() {
     assert_eq!(runtime.running_requests.len(), 1);
     assert!(runtime.running_requests.contains_key("native-active"));
     assert_eq!(runtime.account_activity["go-active"].last_finished_at, Some(200));
+}
+
+#[tokio::test]
+async fn go_limits_host_ignores_legacy_total_timeout_and_wait_queue_releases_on_drop() {
+    let mut collection = native_test_collection();
+    collection.timeouts.legacy_stream_total_timeout_ms = 300_000;
+    let host = NativeHostBridge::for_collection(collection);
+    let policy = native_contract::Host::execution_policy(&host).await.unwrap();
+    assert!(policy.total_timeout.is_zero());
+    assert_eq!(policy.open_timeout, Duration::from_secs(60));
+    assert_eq!(policy.idle_timeout, Duration::from_secs(120));
+    let slots: Vec<_> = (0..100).map(|_| native_account_wait_slot(&host).unwrap()).collect();
+    assert_eq!(native_account_wait_slot(&host).err().unwrap().code, "account_busy");
+    drop(slots);
+    assert_eq!(host.account_waiters.load(Ordering::Acquire), 0);
+    let slot = native_account_wait_slot(&host).unwrap();
+    drop(slot);
+    assert_eq!(host.account_waiters.load(Ordering::Acquire), 0);
+    let mut collection = native_test_collection();
+    collection.max_account_concurrency = 1;
+    collection.account_concurrency_wait_ms = 10_000;
+    let accounts = [native_test_account()];
+    let (_, busy) = native_acquire_account_concurrency_permit(&host, &collection, &accounts, true).await.unwrap();
+    let mut waiting = Box::pin(native_acquire_account_concurrency_permit(&host, &collection, &accounts, true));
+    tokio::select! {
+        result = &mut waiting => panic!("occupied account unexpectedly resolved: {}", result.is_ok()),
+        _ = tokio::time::sleep(Duration::from_millis(10)) => {}
+    }
+    assert_eq!(host.account_waiters.load(Ordering::Acquire), 1);
+    drop(waiting);
+    assert_eq!(host.account_waiters.load(Ordering::Acquire), 0);
+    drop(busy);
 }

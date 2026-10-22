@@ -59,7 +59,14 @@ impl Host for PreparationHost {
                 .with_retry_after(Some(Duration::from_secs(7))));
             }
             Ok(Route {
+                continuity_account_id: None,
                 installation_profile: None,
+                official_authorization_revision: None,
+                official_registration_id: None,
+                official_fallback_registration_id: None,
+                official_fallback_authorization_revision: None,
+                authorization_scope_fingerprint: None,
+                official_fallback_failure: None,
                 transport_identity: None,
                 account_id: "a".into(),
                 owner_id: "owner-a".into(),
@@ -70,6 +77,7 @@ impl Host for PreparationHost {
                 proxy_url: None,
                 proxy_route: None,
                 chatgpt: self.oauth,
+                chatgpt_plan: false,
                 wire_api: WireApi::Responses,
                 compact_endpoint: None,
                 websocket_endpoint: None,
@@ -81,7 +89,7 @@ impl Host for PreparationHost {
     fn prepare_body<'a>(
         &'a self,
         _: &'a Caller,
-        _: &'a str,
+        _: &'a Route,
         _: &'a HeaderMap,
         body: Value,
         _: bool,
@@ -124,6 +132,8 @@ impl Host for PreparationHost {
                         image_input: false,
                         excluded_account_ids: request.excluded_account_ids,
                         requires_permit: true,
+                        required_capabilities: Vec::new(),
+                        capability_fallback_from: None,
                         auxiliary: Some("images.generations".into()),
                     },
                 )
@@ -343,9 +353,9 @@ async fn total_and_open_deadlines_cancel_initial_selection_before_any_upstream_a
         );
         assert!(started.elapsed() < Duration::from_millis(600));
         assert_eq!(source.requests.load(Ordering::SeqCst), 0);
-        preparation_reports(&host, 1).await;
-        assert_eq!(host.reports.lock().unwrap().len(), 1);
         handle.shutdown(Duration::from_secs(2)).await.unwrap();
+        assert!(host.reports.lock().unwrap().is_empty(),
+            "selection/preparation failures must not create upstream request records");
         task.abort();
     }
 }
@@ -371,8 +381,9 @@ async fn selection_and_policy_preparation_share_one_total_deadline() {
         "upstream_total_timeout"
     );
     assert_eq!(source.requests.load(Ordering::SeqCst), 0);
-    preparation_reports(&host, 1).await;
     handle.shutdown(Duration::from_secs(2)).await.unwrap();
+    assert!(host.reports.lock().unwrap().is_empty(),
+        "selection/preparation failures must not create upstream request records");
     task.abort();
 }
 
@@ -421,9 +432,9 @@ async fn immediate_sse_headers_precede_selection_and_disabled_mode_keeps_real_st
             );
         }
         assert_eq!(source.requests.load(Ordering::SeqCst), 0);
-        preparation_reports(&host, 1).await;
-        assert_eq!(host.reports.lock().unwrap().len(), 1);
         handle.shutdown(Duration::from_secs(2)).await.unwrap();
+        assert!(host.reports.lock().unwrap().is_empty(),
+            "selection/preparation failures must not create upstream request records");
         task.abort();
     }
 }
@@ -528,8 +539,9 @@ async fn websocket_automatic_history_preparation_timeout_keeps_cipher_and_never_
     let value: Value = serde_json::from_str(&event.into_text().unwrap()).unwrap();
     assert_eq!(value["status"], 504);
     assert_eq!(value["error"]["code"], "upstream_total_timeout");
-    preparation_reports(&host, 1).await;
     handle.shutdown(Duration::from_secs(2)).await.unwrap();
+    assert!(host.reports.lock().unwrap().is_empty(),
+        "selection/preparation failures must not create upstream request records");
     assert_eq!(host.selections.lock().unwrap().len(), 1);
     assert_eq!(source.requests.load(Ordering::SeqCst), 0);
     let connection = rusqlite::Connection::open(&path).unwrap();

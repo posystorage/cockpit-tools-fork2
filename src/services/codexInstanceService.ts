@@ -84,6 +84,7 @@ export async function createInstance(payload: {
   launchMode?: InstanceLaunchMode;
   appSpeed?: CodexAppSpeed;
   hideNativeQuotaBanner?: boolean;
+  quotaDisplayCompatibility?: boolean;
   copySourceInstanceId: string;
   initMode?: "copy" | "empty" | "existingDir";
 }): Promise<InstanceProfile> {
@@ -97,6 +98,7 @@ export async function createInstance(payload: {
     launchMode: payload.launchMode ?? "app",
     appSpeed: payload.appSpeed ?? "standard",
     hideNativeQuotaBanner: payload.hideNativeQuotaBanner,
+    quotaDisplayCompatibility: payload.quotaDisplayCompatibility,
     copySourceInstanceId: payload.copySourceInstanceId,
     initMode: payload.initMode ?? "copy",
   });
@@ -113,6 +115,7 @@ export async function updateInstance(payload: {
   launchMode?: InstanceLaunchMode;
   appSpeed?: CodexAppSpeed;
   hideNativeQuotaBanner?: boolean;
+  quotaDisplayCompatibility?: boolean;
   autoSyncThreads?: boolean;
   deferBindAccountApplication?: boolean;
 }): Promise<InstanceProfile> {
@@ -145,6 +148,9 @@ export async function updateInstance(payload: {
   }
   if (payload.hideNativeQuotaBanner !== undefined) {
     body.hideNativeQuotaBanner = payload.hideNativeQuotaBanner;
+  }
+  if (payload.quotaDisplayCompatibility !== undefined) {
+    body.quotaDisplayCompatibility = payload.quotaDisplayCompatibility;
   }
   if (payload.autoSyncThreads !== undefined) {
     body.autoSyncThreads = payload.autoSyncThreads;
@@ -220,6 +226,7 @@ export async function saveCodexInstanceConfiguration(payload: {
   launchMode?: InstanceLaunchMode;
   appSpeed?: CodexAppSpeed;
   hideNativeQuotaBanner?: boolean;
+  quotaDisplayCompatibility?: boolean;
   autoSyncThreads?: boolean;
   deferBindAccountApplication?: boolean;
   updateContextOverride?: boolean;
@@ -247,6 +254,7 @@ export async function saveCodexInstanceConfiguration(payload: {
     launchMode: payload.launchMode,
     appSpeed: payload.appSpeed,
     hideNativeQuotaBanner: payload.hideNativeQuotaBanner,
+    quotaDisplayCompatibility: payload.quotaDisplayCompatibility,
     autoSyncThreads: payload.autoSyncThreads,
     deferBindAccountApplication: payload.deferBindAccountApplication,
     updateContextOverride: payload.updateContextOverride,

@@ -28,6 +28,8 @@ use super::{contract::*, start, Handle, Options};
 
 #[path = "http_parity_tests.rs"]
 mod http_parity_tests;
+#[path = "request_size_tests.rs"]
+mod request_size_tests;
 #[path = "thinking_suffix_tests.rs"]
 mod thinking_suffix_tests;
 
@@ -66,7 +68,7 @@ impl Host for TestHost {
     fn prepare_body<'a>(
         &'a self,
         _: &'a Caller,
-        _: &'a str,
+        _: &'a Route,
         _: &'a HeaderMap,
         mut body: Value,
         _: bool,
@@ -119,7 +121,14 @@ impl Host for TestHost {
                 HeaderValue::from_static("Bearer upstream-test-key"),
             );
             Ok(Route {
+                continuity_account_id: None,
                 installation_profile: None,
+                official_authorization_revision: None,
+                official_registration_id: None,
+                official_fallback_registration_id: None,
+                official_fallback_authorization_revision: None,
+                authorization_scope_fingerprint: None,
+                official_fallback_failure: None,
                 transport_identity: None,
                 account_id: if self.route_by_model.load(Ordering::SeqCst) {
                     format!("account-{}", request.model)
@@ -157,6 +166,7 @@ impl Host for TestHost {
                 proxy_url: self.proxy_url.lock().unwrap().clone(),
                 proxy_route: None,
                 chatgpt: self.chatgpt,
+                chatgpt_plan: false,
                 wire_api: WireApi::Responses,
                 compact_endpoint: None,
                 websocket_endpoint: None,
@@ -904,7 +914,7 @@ async fn compressed_body_is_decoded_with_a_decompressed_size_limit() {
 }
 
 #[tokio::test]
-async fn websocket_disabled_handshake_is_diagnostic_only_and_http_fallback_is_counted_once() {
+async fn websocket_disabled_handshake_is_local_and_http_fallback_is_counted_once() {
     let app = Router::new().route(
         "/v1/responses",
         post(|| async {
@@ -931,6 +941,8 @@ async fn websocket_disabled_handshake_is_diagnostic_only_and_http_fallback_is_co
         _ => panic!("disabled WebSocket must reject before upgrading"),
     }
     assert!(host.selections.lock().unwrap().is_empty());
+    assert!(host.diagnostics.lock().unwrap().is_empty(),
+        "local protocol negotiation is not an upstream request");
     let response = client()
         .post(format!("http://{}/v1/responses", service.addr))
         .bearer_auth("local-test-key")
@@ -952,22 +964,14 @@ async fn websocket_disabled_handshake_is_diagnostic_only_and_http_fallback_is_co
     assert_eq!(reports[0].status, 200);
     assert_eq!(reports[0].account_id, "account-a");
     let diagnostics = host.diagnostics.lock().unwrap();
-    let fallback = diagnostics
-        .iter()
-        .find(|context| context.failure_phase.as_deref() == Some("transport_fallback"))
-        .expect("the disabled handshake retains its diagnostic");
-    assert_eq!(fallback.method, "GET");
-    assert_eq!(fallback.attempts.len(), 1);
-    let attempt = &fallback.attempts[0];
-    assert_eq!(attempt.status, Some(426));
-    assert_eq!(attempt.transport, "websocket");
-    assert_eq!(
-        attempt.error_category.as_deref(),
-        Some("websockets_disabled")
-    );
-    assert_eq!(attempt.failure_phase.as_deref(), Some("transport_fallback"));
-    assert!(attempt.account_id.is_empty());
-    assert!(!attempt.success);
+    assert_eq!(diagnostics.len(), 1, "only the actual HTTP send is diagnostic");
+    assert_eq!(diagnostics[0].method, "POST");
+    assert_eq!(diagnostics[0].attempts.len(), 1);
+    let attempt = &diagnostics[0].attempts[0];
+    assert_eq!(attempt.status, Some(200));
+    assert_eq!(attempt.transport, "http");
+    assert_eq!(attempt.account_id, "account-a");
+    assert!(attempt.success);
     upstream.abort();
 }
 
@@ -1053,8 +1057,8 @@ async fn disabled_websocket_does_not_mask_invalid_client_authentication() {
     service.shutdown(Duration::from_secs(2)).await.unwrap();
     assert!(host.selections.lock().unwrap().is_empty());
     let diagnostics = host.diagnostics.lock().unwrap();
-    assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].failure_phase.as_deref(), Some("routing"));
+    assert!(diagnostics.is_empty(), "local authentication rejection has no upstream diagnostic");
+    assert!(host.reports.lock().unwrap().is_empty());
     upstream.abort();
 }
 
@@ -1193,7 +1197,7 @@ async fn websocket_http_bridge_keeps_selected_model_policy_and_explicit_tier() {
         HeaderValue::from_static("Bearer local-test-key"),
     );
     let (mut socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
-    for tier in [None, Some("flex")] {
+    for tier in [None, Some("flex"), Some("ultrafast")] {
         let mut request = body(true);
         request["type"] = json!("response.create");
         if let Some(tier) = tier {
@@ -1212,7 +1216,7 @@ async fn websocket_http_bridge_keeps_selected_model_policy_and_explicit_tier() {
         }
     }
     let requests = seen.lock().unwrap();
-    assert_eq!(requests.len(), 2);
+    assert_eq!(requests.len(), 3);
     for request in requests.iter() {
         assert_eq!(request["model"], "mapped-model");
         assert_eq!(request["max_output_tokens"], 7);
@@ -1223,6 +1227,7 @@ async fn websocket_http_bridge_keeps_selected_model_policy_and_explicit_tier() {
     }
     assert_eq!(requests[0]["service_tier"], "priority");
     assert_eq!(requests[1]["service_tier"], "flex");
+    assert_eq!(requests[2]["service_tier"], "ultrafast");
     drop(requests);
     let _ = socket.close(None).await;
     service.shutdown(Duration::from_secs(2)).await.unwrap();

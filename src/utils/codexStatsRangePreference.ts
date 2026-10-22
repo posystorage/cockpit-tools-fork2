@@ -40,8 +40,12 @@ export function readCodexStatsRangeSelection(
   storageKey: string,
   now = new Date(),
   storage?: RangePreferenceStorage,
+  allowExactRollingPresets = false,
 ): CodexStatsRangeSelection {
   const raw = readPreference(storageKey, storage);
+  if (allowExactRollingPresets && (raw === "last24h" || raw === "last48h" || raw === "last7d")) {
+    return { key: raw, range: buildCodexStatsTimeRange(raw, now) };
+  }
   // Keep the existing plain-string preset format, including the previously
   // omitted daily value. Recalculate rolling/calendar ranges for today's date.
   if (raw === "daily" || raw === "rolling7d" || raw === "weekly" || raw === "monthly" || raw === "last7d") {

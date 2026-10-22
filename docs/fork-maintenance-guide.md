@@ -10,7 +10,7 @@
 2. 为 Codex API 服务提供只读的当前/最近账号调度观测；普通 Codex 页对所有仍存在账号显示窗口内 API 用量，独立 API 页提供可滚动的时间范围统计。
 3. 保留并增强自定义 API Provider 的上游计费、用量和余额查询，重点兼容 Sub2API。
 4. 保留历史账号统计及用户显式控制的最低优先级兜底暂停能力；价格簿完全跟随上游，停止独立维护 fork 定价和版本。
-5. 按实例隐藏 Codex Desktop 官方额度提示，并独立解除 API Service 本地 Composer 的重复额度门禁；保留真实额度、请求路由和上游错误。
+5. 按实例隐藏 Codex Desktop 官方额度提示，并独立解除 API Service 本地 Composer 的重复额度门禁；提供默认关闭的主额度显示兼容开关，保留真实额度、请求路由和上游错误。
 6. 提供基于 ModelTrace 的指纹测智：OAuth 与 API 上游多选、账号 × 模型矩阵、独立采样、有限并行、选择记忆和可取消结果展示。
 
 除此以外，原则上跟随上游。发布工作流、fork 下载地址、签名密钥和免责声明属于交付差异，不应扩张成新的产品分叉。
@@ -37,11 +37,11 @@ Release workflow 中 `build-windows`、`build-macos-aarch64`、`build-macos-x86_
 
 ## 2. 当前基线与历史锚点
 
-### 2.0 v1.3.73 已确认合并方案（2026-10-22，待施工）
+### 2.0 v1.3.73 升级施工边界（2026-10-22）
 
-本节记录用户已确定的后续合并规则，不表示产品代码已经升级。当前代码仍基于
-上游 v1.3.69，fork 草稿为 1.3.69b2；目标上游 v1.3.73 的 release commit 为
-5330f75ae6b3c39fbd72f528ac2188207047d49a。直接合入 .73，不逐个运行 .70–.72 的迁移。
+从 fork 1.3.69b2（31410d39）直接合入上游 v1.3.73，release commit 为
+5330f75ae6b3c39fbd72f528ac2188207047d49a，分支 codex/upgrade-upstream-v1.3.73。
+应用版本为 1.3.73，不逐个运行 .70–.72 的迁移。本节是后续升级必须保留的现行边界。
 
 Go 继续作为默认引擎，保留用户显式选择。上游新增的官方授权功能仅支持 Rust，
 按上游能力边界接入，不向 Go 移植；Rust 继续支持既有 fork 私有功能，方便切换测试。
@@ -55,6 +55,7 @@ Go 继续作为默认引擎，保留用户显式选择。上游新增的官方�
 - 原独立开关“隐藏 Codex 官方额度提示”：保留按实例记忆及既有默认策略；API Service
   桌面默认开，其他绑定默认关，用户显式值优先。只控制提示隐藏。
 - 新增次级开关“额度显示兼容”：按实例记忆，默认关闭，旧配置缺失按关闭处理。
+  入口仅显示在 API Service 的桌面启动预览中；其他 Provider 的上游全局增强设置照常保留。
   开启后采用上游的页面内存额度状态兼容；关闭时不改写 rate-limit-status 共享查询缓存。
   次级仅表示界面层级，不能依赖隐藏开关是否开启，也不能控制发送解锁。
 - 额度显示兼容只调整上游已限定的主额度允许／阻止状态，不填充剩余额度、不篡改用量
@@ -76,6 +77,16 @@ Go 继续作为默认引擎，保留用户显式选择。上游新增的官方�
 严格官方 ID／邮箱历史别名；上游账号暂停与 fork 兜底暂停不能互相清除；新绑定额度保留
 默认不勾选、已有选择保留。发布吸收上游缓存和 Universal 产物复用，但继续使用实际 beta
 tag 上传 Windows 与 macOS 全架构草稿，发布说明完整覆盖 1.3.73 → 1.3.72 → 1.3.71 → 1.3.70。
+
+实际实现复用上游 live-quota 会话：一个条件断点解除发送门禁，另两个断点让原生提示
+渲染器读取原始额度快照，防止兼容缓存间接抹掉提示。断点均不暂停调试器，停止时统一清理。
+提示隐藏仍只由 fork 现有 Observer 负责，不叠加上游第二套 DOM 隐藏逻辑。
+本轮冲突处理、旧要求核对和验证结果见 [v1.3.73 合并审计](upstream-v1.3.73-review.md)。
+
+验证：1709 项 TypeScript 测试、类型检查、生产构建、Go 根模块、18 份语言和 155 个 Provider
+检查通过；发布脚本 56 通过／1 平台跳过，增强 JS 76 通过／3 缺少原生 fixture 跳过。
+Rust 主库与全部测试目标检查通过，fork_ 测试程序编译链接成功，但运行在断言前返回本机既有
+0xC0000139，不能记为运行通过。真实账号／Codex Desktop 和 Windows/macOS 安装包尚待验收。
 
 ### 2.0 v1.3.69 升级施工边界（2026-10-16）
 
@@ -915,10 +926,11 @@ New API URL 构造：
 
 ## 8. 修改集 E：额度提示隐藏与 API Service 本地发送解锁
 
-本节以下描述现有代码及历史验收。v1.3.73 待施工的混合方案以第 2.0 节最新约定为准：
-保留独立提示隐藏，新增默认关闭的额度显示兼容开关，本地发送解锁始终独立。
+v1.3.73 起采用第 2.0 节混合方案：保留独立提示隐藏，新增默认关闭的额度显示兼容
+开关，本地发送解锁始终独立。以下保留历史来源并说明当前落点。
 
-本次草稿标签为 `1.3.59b4`，应用版本继续保持 `1.3.59`。发布说明仅聚合 b3 到 b4 的额度 UI 与发送解锁增量；Windows、macOS Apple Silicon、Intel 和 Universal 继续构建到同一草稿，禁止自动发布。
+该功能最早在 `1.3.59b4` 草稿交付；该版本仅聚合 b3 到 b4 的额度 UI 与发送解锁增量。
+当前升级的发布范围以第 2.0 节为准，Windows 与 macOS 三架构仍构建到同一草稿。
 
 2026-09-28 起两项功能独立：显示偏好只控制提示隐藏；API Service 桌面发送解锁不依赖显示开关，也不再要求精确命中 workspace_member_credits_depleted。请求是否可用由 API Service 与上游决定，原始 429／鉴权／账号池错误继续返回。
 
@@ -932,10 +944,10 @@ New API URL 构造：
 
 ### 8.2 本地发送解锁
 
-- 固定复用 1zero224/codex-input-unlock commit fbc04a3032766918556168d9b27e74da8d863bb1 的纯 JS 定位器。
-- 支持 codex-local-quota、legacy-local-host、third-party-composer-dual；使用实际脚本的结构匹配、唯一候选与可执行断点位置，不硬编码压缩变量或行号。
+- v1.3.73 采用上游 codex_app_enhancements 的 live-quota 定位与生命周期，读取实际 app-initial/app-primary 脚本并校验结构、唯一候选、局部变量及本地 URL。
+- 早期 1zero224/codex-input-unlock 定位器及其 MIT 许可保留于仓库作为历史来源；API Service 当前路径不再启动第二套 codex_input_unlock 监督循环。
 - 条件断点只把局部额度阻塞变量设为 false，并返回 false 避免挂起。保留空输入、上传中、提交中等其他禁用项；不得直接覆盖最终 submitDisabled 或移除按钮 disabled。
-- 旧的 rate-limit-status 共享缓存改写已删除，不再伪造 credits、rate_limit 或 spend_control 状态，不改变真实额度和路由。
+- 新开关关闭时不改写共享额度缓存；显式开启时，仅兼容主 rate-limit-status 的 allowed/limit_reached 标志，不修改数字、credits、spend_control 或图片额度。原始快照供提示渲染和关闭时恢复。
 - 发送策略识别显式 __api_service__、codex_local_access_runtime 及具有受管 Provider、受管 Key 与 loopback 地址的 profile 接管；同时校验实例仍存在、绑定未改变、启动模式为 app。
 - 默认实例跟随本地账号时，启动、恢复及运行时读取必须使用相同的解析后绑定，不能混用存储绑定。
 
@@ -950,11 +962,11 @@ New API URL 构造：
 
 ### 8.4 合并热点与验收
 
-核心文件：src-tauri/src/modules/codex_app_injection.rs、codex_input_unlock.rs、codex_input_unlock_gate.cjs、codex_native_quota_banner.js、codex_native_quota_policy.rs、logger.rs；实例 launch/config 接口与原开关保持兼容。
+核心文件：src-tauri/src/modules/codex_app_injection.rs、codex_app_enhancements.rs 及其 fast.rs/quota.js、codex_native_quota_banner.js、codex_native_quota_policy.rs、logger.rs；实例 launch/config 接口保留原开关并新增可选 quotaDisplayCompatibility。
 
 MIT 许可随 public/licenses/CodexInputUnlock-LICENSE.txt 打包。不得重新引入旧的无条件缓存改写、单 banner 类型发送限制或显示开关耦合。新增开关显式开启后的上游兼容范围见第 2.0 节。
 
-详细使用、诊断和验证见 [codex-quota-ui-runtime.md](codex-quota-ui-runtime.md)。自动测试：tests/codexNativeQuotaBanner.test.ts、tests/codexInputUnlock.test.ts 以及 Rust input_unlock_tests。真实验收需证明已耗尽登录账号下，API Service 接到预期请求，并分别验证可用上游成功、不可用上游正常报错。不能用断点安装成功替代端到端验收。
+详细使用、诊断和验证见 [codex-quota-ui-runtime.md](codex-quota-ui-runtime.md)。自动测试包含 tests/codexNativeQuotaBanner.test.ts、codex_app_enhancements/quota.test.cjs、fast_tests.rs 与启动预览偏好测试。真实验收需证明已耗尽登录账号下，API Service 接到预期请求，并分别验证可用上游成功、不可用上游正常报错。不能用断点安装成功替代端到端验收。
 
 ## 9. 修改集 F：模型指纹测智
 

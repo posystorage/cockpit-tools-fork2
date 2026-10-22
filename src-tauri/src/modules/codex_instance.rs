@@ -1,7 +1,7 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::collections::HashSet;
 
 use chrono::Utc;
 use uuid::Uuid;
@@ -66,25 +66,33 @@ pub fn provider_gateway_bind_account_id(account_id: &str) -> Option<String> {
 }
 
 /// 预检桌面客户端出口；API 服务与 API Key 卡片使用独立的客户端配置。
-pub async fn preflight_egress_proxy_for_bind_account(bind_account_id: Option<&str>) -> Result<(), String> {
-    let Some(bound) = bind_account_id.map(str::trim).filter(|value| !value.is_empty()) else {
+pub async fn preflight_egress_proxy_for_bind_account(
+    bind_account_id: Option<&str>,
+) -> Result<(), String> {
+    let Some(bound) = bind_account_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
         return Ok(());
     };
     if is_api_service_bind_account_id(bound) {
         super::codex_client_proxy::resolve(bound).await?;
         return Ok(());
     }
-    let normalized = parse_provider_gateway_bind_account_id(bound).unwrap_or_else(|| bound.to_owned());
+    let normalized =
+        parse_provider_gateway_bind_account_id(bound).unwrap_or_else(|| bound.to_owned());
     let account = super::codex_proxy_runtime::load(&normalized).await?;
     if account.is_api_key_auth() {
         super::codex_client_proxy::resolve(&normalized).await?;
         return Ok(());
     }
-    let account_id = parse_provider_gateway_bind_account_id(bound).unwrap_or_else(|| bound.to_owned());
+    let account_id =
+        parse_provider_gateway_bind_account_id(bound).unwrap_or_else(|| bound.to_owned());
     crate::modules::codex_proxy_engine_preflight::for_account(
         &account_id,
         crate::modules::codex_proxy_engine_preflight::Usage::Desktop,
-    ).await?;
+    )
+    .await?;
     // Prepare the local listener before stopping a working desktop or writing
     // credentials. This opens no upstream connection and does not test a model.
     crate::modules::codex_proxy_desktop_router::ensure(&account_id).await?;
@@ -102,23 +110,30 @@ pub async fn resolve_egress_proxy_for_bind_account(
     bind_account_id: Option<&str>,
 ) -> Result<crate::modules::process::CodexLaunchProxy, String> {
     use crate::modules::process::CodexLaunchProxy;
-    let Some(bind_account_id) = bind_account_id.map(str::trim).filter(|value| !value.is_empty()) else {
+    let Some(bind_account_id) = bind_account_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
         return Ok(CodexLaunchProxy::Inherit);
     };
     if is_api_service_bind_account_id(bind_account_id) {
         return super::codex_client_proxy::resolve(bind_account_id).await;
     }
-    let account_id =
-        parse_provider_gateway_bind_account_id(bind_account_id).unwrap_or_else(|| bind_account_id.to_string());
+    let account_id = parse_provider_gateway_bind_account_id(bind_account_id)
+        .unwrap_or_else(|| bind_account_id.to_string());
     let account = crate::modules::codex_proxy_runtime::load(&account_id).await?;
-    if account.is_api_key_auth() { return super::codex_client_proxy::resolve(&account_id).await; }
+    if account.is_api_key_auth() {
+        return super::codex_client_proxy::resolve(&account_id).await;
+    }
     if crate::modules::codex_account_proxy::eligible(&account) && account.egress_proxy_disabled {
         return Ok(CodexLaunchProxy::Direct);
     }
-    Ok(match crate::modules::codex_proxy_desktop_router::ensure(&account_id).await? {
-        Some(url) => CodexLaunchProxy::Proxy(url),
-        None => CodexLaunchProxy::Inherit,
-    })
+    Ok(
+        match crate::modules::codex_proxy_desktop_router::ensure(&account_id).await? {
+            Some(url) => CodexLaunchProxy::Proxy(url),
+            None => CodexLaunchProxy::Inherit,
+        },
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -134,6 +149,7 @@ pub struct CreateInstanceParams {
     pub launch_mode: Option<InstanceLaunchMode>,
     pub app_speed: Option<CodexAppSpeed>,
     pub hide_native_quota_banner: Option<bool>,
+    pub quota_display_compatibility: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -147,6 +163,7 @@ pub struct UpdateInstanceParams {
     pub launch_mode: Option<InstanceLaunchMode>,
     pub app_speed: Option<CodexAppSpeed>,
     pub hide_native_quota_banner: Option<Option<bool>>,
+    pub quota_display_compatibility: Option<Option<bool>>,
 }
 
 fn instances_path() -> Result<PathBuf, String> {
@@ -196,8 +213,16 @@ pub(crate) fn verify_prepared_launch_binding(
 
 pub(crate) fn bind_default_account_for_switch(account_id: &str) -> Result<(), String> {
     let updated = update_default_settings(
-        Some(Some(account_id.to_owned())), None, None, Some(false), None, None, None,
-    ).map_err(|error| {
+        Some(Some(account_id.to_owned())),
+        None,
+        None,
+        Some(false),
+        None,
+        None,
+        None,
+        None,
+    )
+    .map_err(|error| {
         modules::logger::log_warn(&format!("更新 Codex 默认实例绑定失败，停止启动: {error}"));
         "CODEX_SWITCH_BINDING_FAILED".to_owned()
     })?;
@@ -221,6 +246,7 @@ pub fn update_default_settings(
     launch_mode: Option<InstanceLaunchMode>,
     auto_sync_threads: Option<bool>,
     hide_native_quota_banner: Option<Option<bool>>,
+    quota_display_compatibility: Option<Option<bool>>,
 ) -> Result<DefaultInstanceSettings, String> {
     let _lock = CODEX_INSTANCE_STORE_LOCK
         .lock()
@@ -260,6 +286,10 @@ pub fn update_default_settings(
 
     if let Some(enabled) = hide_native_quota_banner {
         settings.hide_native_quota_banner = enabled;
+    }
+
+    if let Some(enabled) = quota_display_compatibility {
+        settings.quota_display_compatibility = enabled;
     }
 
     let updated = settings.clone();
@@ -1014,6 +1044,10 @@ pub fn update_instance(params: UpdateInstanceParams) -> Result<InstanceProfile, 
         instance.hide_native_quota_banner = enabled;
     }
 
+    if let Some(enabled) = params.quota_display_compatibility {
+        instance.quota_display_compatibility = enabled;
+    }
+
     let updated = instance.clone();
     save_instance_store(&store)?;
     Ok(updated)
@@ -1157,7 +1191,11 @@ pub fn disable_model_routing(instance_id: &str) -> Result<bool, String> {
     }
     if instance_id == CODEX_DEFAULT_INSTANCE_ID {
         let current = load_default_settings()?;
-        let Some(routing) = current.model_routing.clone().filter(|routing| routing.enabled) else {
+        let Some(routing) = current
+            .model_routing
+            .clone()
+            .filter(|routing| routing.enabled)
+        else {
             return Ok(false);
         };
         update_default_settings(
@@ -1166,6 +1204,7 @@ pub fn disable_model_routing(instance_id: &str) -> Result<bool, String> {
                 enabled: false,
                 ..routing
             })),
+            None,
             None,
             None,
             None,
@@ -1197,14 +1236,13 @@ pub fn disable_model_routing(instance_id: &str) -> Result<bool, String> {
         launch_mode: None,
         app_speed: None,
         hide_native_quota_banner: None,
+        quota_display_compatibility: None,
     })?;
     Ok(true)
 }
 
 /// 读取指定实例（或默认实例）当前启用中的混合模型路由配置。
-pub fn load_enabled_model_routing(
-    instance_id: &str,
-) -> Result<CodexInstanceModelRouting, String> {
+pub fn load_enabled_model_routing(instance_id: &str) -> Result<CodexInstanceModelRouting, String> {
     let instance_id = instance_id.trim();
     if instance_id == CODEX_DEFAULT_INSTANCE_ID {
         return load_default_settings()?
@@ -1241,7 +1279,10 @@ fn routing_references_accounts(
     bind_account_id: Option<&str>,
     deleted: &HashSet<&str>,
 ) -> bool {
-    if let Some(bind_account_id) = bind_account_id.map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(bind_account_id) = bind_account_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         let resolved = parse_provider_gateway_bind_account_id(bind_account_id)
             .unwrap_or_else(|| bind_account_id.to_string());
         if deleted.contains(resolved.trim()) {
@@ -1275,11 +1316,7 @@ pub fn disable_model_routing_for_deleted_accounts(
     let settings = load_default_settings()?;
     if settings.model_routing.as_ref().is_some_and(|routing| {
         routing.enabled
-            && routing_references_accounts(
-                routing,
-                settings.bind_account_id.as_deref(),
-                &deleted,
-            )
+            && routing_references_accounts(routing, settings.bind_account_id.as_deref(), &deleted)
     }) {
         disable_model_routing(CODEX_DEFAULT_INSTANCE_ID)?;
         affected.push(CODEX_DEFAULT_INSTANCE_ID.to_string());
@@ -1320,17 +1357,34 @@ pub fn clear_all_pids() -> Result<(), String> {
     Ok(())
 }
 
-fn replace_instance_account_reference(value: &mut Option<String>, old_id: &str, new_id: &str) -> bool {
-    let Some(current) = value.as_deref() else { return false; };
+fn replace_instance_account_reference(
+    value: &mut Option<String>,
+    old_id: &str,
+    new_id: &str,
+) -> bool {
+    let Some(current) = value.as_deref() else {
+        return false;
+    };
     let replacement = if current.trim() == old_id {
         Some(new_id.to_string())
     } else if parse_provider_gateway_bind_account_id(current).as_deref() == Some(old_id) {
         provider_gateway_bind_account_id(new_id)
-    } else { None };
-    if let Some(replacement) = replacement { *value = Some(replacement); true } else { false }
+    } else {
+        None
+    };
+    if let Some(replacement) = replacement {
+        *value = Some(replacement);
+        true
+    } else {
+        false
+    }
 }
 
-fn replace_instance_routing_references(routing: &mut Option<CodexInstanceModelRouting>, old_id: &str, new_id: &str) -> bool {
+fn replace_instance_routing_references(
+    routing: &mut Option<CodexInstanceModelRouting>,
+    old_id: &str,
+    new_id: &str,
+) -> bool {
     let mut changed = false;
     if let Some(routing) = routing {
         for route in &mut routing.routes {
@@ -1343,23 +1397,38 @@ fn replace_instance_routing_references(routing: &mut Option<CodexInstanceModelRo
     changed
 }
 
-fn replace_instance_store_account_references(store: &mut InstanceStore, old_id: &str, new_id: &str) -> bool {
+fn replace_instance_store_account_references(
+    store: &mut InstanceStore,
+    old_id: &str,
+    new_id: &str,
+) -> bool {
     let settings = &mut store.default_settings;
-    let mut changed = replace_instance_account_reference(&mut settings.bind_account_id, old_id, new_id);
-    if changed { settings.follow_local_account = false; }
+    let mut changed =
+        replace_instance_account_reference(&mut settings.bind_account_id, old_id, new_id);
+    if changed {
+        settings.follow_local_account = false;
+    }
     changed |= replace_instance_routing_references(&mut settings.model_routing, old_id, new_id);
     for instance in &mut store.instances {
-        changed |= replace_instance_account_reference(&mut instance.bind_account_id, old_id, new_id);
+        changed |=
+            replace_instance_account_reference(&mut instance.bind_account_id, old_id, new_id);
         changed |= replace_instance_routing_references(&mut instance.model_routing, old_id, new_id);
     }
     changed
 }
 
-pub fn replace_bind_account_references(old_account_id: &str, new_account_id: &str) -> Result<(), String> {
+pub fn replace_bind_account_references(
+    old_account_id: &str,
+    new_account_id: &str,
+) -> Result<(), String> {
     let old_id = old_account_id.trim();
     let new_id = new_account_id.trim();
-    if old_id.is_empty() || new_id.is_empty() || old_id == new_id { return Ok(()); }
-    let _lock = CODEX_INSTANCE_STORE_LOCK.lock().map_err(|_| "无法获取实例锁")?;
+    if old_id.is_empty() || new_id.is_empty() || old_id == new_id {
+        return Ok(());
+    }
+    let _lock = CODEX_INSTANCE_STORE_LOCK
+        .lock()
+        .map_err(|_| "无法获取实例锁")?;
     let mut store = load_instance_store()?;
     if replace_instance_store_account_references(&mut store, old_id, new_id) {
         save_instance_store(&store)?;

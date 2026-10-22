@@ -7,6 +7,9 @@ pub(crate) const REQUEST_SCOPED: &str = "upstream_request_scoped";
 /// Mirrors the Go host's request-fault decision before credential penalties.
 /// A status alone must not turn malformed prompts into authentication failures.
 pub(crate) fn request_fault(status: u16, body: &Value) -> bool {
+    if super::official_fallback::explicit_rejection(body).is_some() {
+        return false;
+    }
     let text = body
         .as_str()
         .map(str::to_owned)
@@ -336,6 +339,8 @@ pub(super) fn chat_failure(value: &Value, fallback: u16) -> Option<ServiceError>
                 401
             }
             "account_deactivated" | "account_suspended" => 403,
+            code if super::chatgpt_plan_wire::error_status(code).is_some() =>
+                super::chatgpt_plan_wire::error_status(code).unwrap(),
             _ => {
                 // Opening probes use zero to distinguish an absent upstream
                 // status from the normal reporting fallback of 502.

@@ -24,6 +24,7 @@ fn key_rotation_migrates_default_and_managed_gateway_bindings_and_routes() {
     store.default_settings.model_routing = Some(routing(old));
     store.instances.push(InstanceProfile {
             hide_native_quota_banner: None,
+            quota_display_compatibility: None,
         id: "instance".into(),
         name: "test".into(),
         user_data_dir: "synthetic".into(),

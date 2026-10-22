@@ -75,6 +75,7 @@ mod profile_copy_integration_tests {
 
         let profile = create_instance(CreateInstanceParams {
             hide_native_quota_banner: None,
+            quota_display_compatibility: None,
             name: "Synthetic clone".to_string(),
             user_data_dir: target.to_string_lossy().into_owned(),
             working_dir: None,
@@ -107,6 +108,7 @@ mod profile_copy_integration_tests {
     fn params(name: &str, target: &Path, mode: &str) -> CreateInstanceParams {
         CreateInstanceParams {
             hide_native_quota_banner: None,
+            quota_display_compatibility: None,
             name: name.to_string(),
             user_data_dir: target.to_string_lossy().into_owned(),
             working_dir: None,

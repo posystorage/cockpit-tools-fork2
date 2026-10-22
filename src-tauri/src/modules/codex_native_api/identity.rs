@@ -1,6 +1,6 @@
 //! Durable, caller- and owner-scoped protocol identities. Never rewrites model content.
 //!
-//! Public methods perform bounded SQLite work and must run on a blocking worker.
+//! Public methods perform SQLite/history work and must run on a blocking worker.
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -31,8 +31,8 @@ pub(crate) mod rebuild;
 const MAX_REQUEST_OPAQUE_REFS: usize = 100_000;
 const OPAQUE_TTL_SECONDS: i64 = 24 * 60 * 60;
 const MAX_ID_BYTES: usize = 4096;
-// Canonical body metadata includes the full tool inventory. Keep its limit aligned
-// with the service request-body ceiling; HTTP headers have their transport limit.
+// Canonical metadata includes the tool inventory. Bound metadata expansion
+// independently of conversation input; HTTP headers have their transport limit.
 const MAX_METADATA_BYTES: usize = 16 * 1024 * 1024;
 
 pub struct IdentityStore {
@@ -359,6 +359,16 @@ impl IdentityStore {
         self.inspect_mode(caller, headers, body, true)
     }
 
+    fn checkpoint_reader(&self) -> Result<Connection, ServiceError> {
+        let connection =
+            Connection::open_with_flags(&self.path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .map_err(storage)?;
+        connection
+            .busy_timeout(Duration::from_secs(2))
+            .map_err(storage)?;
+        Ok(connection)
+    }
+
     fn inspect_mode(
         &self,
         caller: &str,
@@ -399,7 +409,10 @@ impl IdentityStore {
         } else {
             identity_value(flat.and_then(|v| v.get("turn_id")))?
         };
-        let connection = self.connection.lock().map_err(storage)?;
+        // Input/tool scans and accepted-history decoding can be large. Keep
+        // them off the publication mutex and use one consistent WAL snapshot.
+        let reader = self.checkpoint_reader()?;
+        let connection = reader.unchecked_transaction().map_err(storage)?;
         let mut opaque = Vec::new();
         if let Some(value) = identity_value(body.get("previous_response_id"))? {
             let reference = digest("response", &value);
@@ -716,6 +729,57 @@ impl IdentityStore {
             detached_turn_states,
             unregistered_blobs,
         })
+    }
+
+    /// A fallback marker describes authorization, not a change of owner. Reuse
+    /// existing opaque state only when this caller's evidence proves that the
+    /// selected credential already owns it. This performs no publication.
+    pub(crate) fn same_upstream_owner(
+        &self,
+        context: &RequestIdentity,
+        account_id: &str,
+        owner_id: &str,
+    ) -> Result<bool, ServiceError> {
+        if context.state_account_id.as_deref() != Some(account_id)
+            || !context.unregistered_blobs.is_empty()
+        {
+            return Ok(false);
+        }
+        let reader = self.checkpoint_reader()?;
+        let connection = reader.unchecked_transaction().map_err(storage)?;
+        let scope = rebuild::accepted_scope(
+            &connection, &context.caller, context.thread_id.as_deref(),
+            Some(account_id), context.generation.as_deref(),
+        )?;
+        let accepted_here = scope.as_ref().is_some_and(|(account, owner, _)| {
+            account == account_id && owner == owner_id
+        });
+        let mut proven = accepted_here;
+        for reference in &context.opaque {
+            if automatic_history::detached(context, reference) {
+                continue;
+            }
+            let Some((account, owner)) = automatic_history::lookup(
+                &connection, &context.caller, reference,
+                context.thread_id.as_deref(), context.turn_id.as_deref(),
+            )? else {
+                return Ok(false);
+            };
+            if account == account_id && owner == owner_id {
+                proven = true;
+                continue;
+            }
+            if accepted_here && reference.kind == "encrypted"
+                && rebuild::blob_accepted(
+                    &connection, &context.caller, context.thread_id.as_deref(), reference,
+                    scope.as_ref().expect("accepted scope checked"),
+                )?
+            {
+                continue;
+            }
+            return Ok(false);
+        }
+        Ok(proven)
     }
 
     pub fn rewrite(

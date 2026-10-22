@@ -243,6 +243,7 @@ pub fn create_instance_for_platform(
 
     let instance = InstanceProfile {
         hide_native_quota_banner: None,
+        quota_display_compatibility: None,
         id: Uuid::new_v4().to_string(),
         name,
         user_data_dir,

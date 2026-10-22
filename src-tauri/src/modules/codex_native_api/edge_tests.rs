@@ -35,7 +35,14 @@ impl Host for FixtureHost {
     ) -> BoxFuture<'a, Result<Route, ServiceError>> {
         Box::pin(async move {
             Ok(Route {
+                continuity_account_id: None,
                 installation_profile: None,
+                official_authorization_revision: None,
+                official_registration_id: None,
+                official_fallback_registration_id: None,
+                official_fallback_authorization_revision: None,
+                authorization_scope_fingerprint: None,
+                official_fallback_failure: None,
                 transport_identity: None,
                 account_id: "a".into(),
                 owner_id: "owner".into(),
@@ -46,6 +53,7 @@ impl Host for FixtureHost {
                 proxy_url: None,
                 proxy_route: None,
                 chatgpt: false,
+                chatgpt_plan: false,
                 wire_api: self.wire,
                 compact_endpoint: None,
                 websocket_endpoint: None,
@@ -277,8 +285,8 @@ async fn native_edge_upstream_errors_use_the_requested_protocol() {
 }
 
 #[tokio::test]
-async fn native_edge_malformed_core_parameter_reports_actual_status() {
-    let fixture = Fixture::new(WireApi::Responses, Router::new()).await;
+async fn native_edge_malformed_core_parameter_returns_status_without_upstream_record() {
+    let mut fixture = Fixture::new(WireApi::Responses, Router::new()).await;
     let response = reqwest::Client::new()
         .post(fixture.url("/v1/messages"))
         .bearer_auth("local-key")
@@ -287,21 +295,11 @@ async fn native_edge_malformed_core_parameter_reports_actual_status() {
         .await
         .unwrap();
     assert_eq!(response.status(), 400);
-    tokio::time::timeout(Duration::from_secs(1), async {
-        while fixture.host.reports.lock().unwrap().is_empty() {
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-    })
-    .await
-    .unwrap();
-    let reports = fixture.host.reports.lock().unwrap();
-    assert_eq!(reports.len(), 1);
-    assert_eq!(reports[0].status, 400);
-    assert!(!reports[0].success);
-    assert_eq!(
-        reports[0].error.as_deref(),
-        Some("invalid_compat_parameter")
-    );
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "invalid_compat_parameter");
+    fixture.handle.shutdown(Duration::from_secs(2)).await.unwrap();
+    assert!(fixture.host.reports.lock().unwrap().is_empty(),
+        "local parameter rejection must not be logged as an upstream request");
 }
 
 #[tokio::test]

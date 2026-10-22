@@ -55,6 +55,17 @@ test("migrates the legacy exact seven-day preset to rolling seven days", () => {
   assert.deepEqual(selection.range, buildCodexStatsTimeRange("rolling7d", NOW));
 });
 
+test("standalone API stats restore exact rolling presets while the shared modal keeps calendar defaults", () => {
+  const storage = new MemoryStorage();
+  for (const key of ["last24h", "last48h", "last7d"] as const) {
+    persistCodexStatsRangeSelection(API_RANGE_KEY, { key, range: buildCodexStatsTimeRange(key, NOW) }, storage);
+    const restored = readCodexStatsRangeSelection(API_RANGE_KEY, NOW, storage, true);
+    assert.equal(restored.key, key);
+    assert.deepEqual(restored.range, buildCodexStatsTimeRange(key, NOW));
+    assert.equal(readCodexStatsRangeSelection(API_RANGE_KEY, NOW, storage).key, "rolling7d");
+  }
+});
+
 test("round-trips custom start and end dates", () => {
   const storage = new MemoryStorage();
   const range = parseCodexStatsTimeRange("2026-08-01", "2026-08-17");

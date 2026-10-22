@@ -6,11 +6,16 @@ use tokio::sync::Semaphore;
 
 #[derive(Default)]
 struct Recorder {
+    quotas: Mutex<Vec<(String, super::super::rate_limits::QuotaSnapshot)>>,
     reports: Mutex<Vec<RequestReport>>,
     contexts: Mutex<Vec<DiagnosticContext>>,
+    invalidations: Mutex<Vec<String>>,
     changed: Notify,
     selections: Mutex<Vec<(String, String)>>,
     finishes: Mutex<Vec<String>>,
+    quota_checks: Mutex<Vec<String>>,
+    quota_denied: Mutex<Vec<String>>,
+    selection_pause: Mutex<Option<Arc<Notify>>>,
 }
 
 impl Host for Recorder {
@@ -18,20 +23,41 @@ impl Host for Recorder {
         &'a self,
         id: &'a str,
         _: &'a Caller,
-        route: &'a Route,
+        account_id: &'a str,
+        _: &'a str,
         _: &'static str,
     ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
+            let pause = self.selection_pause.lock().unwrap().clone();
+            if let Some(pause) = pause {
+                pause.notified().await;
+            }
             self.selections
                 .lock()
                 .unwrap()
-                .push((id.into(), route.account_id.clone()));
+                .push((id.into(), account_id.to_owned()));
         })
     }
     fn activity_finished<'a>(&'a self, id: &'a str) -> BoxFuture<'a, ()> {
         Box::pin(async move {
             self.finishes.lock().unwrap().push(id.into());
         })
+    }
+    fn check_quota_before_send(&self, account_id: &str) -> Result<(), ServiceError> {
+        self.quota_checks.lock().unwrap().push(account_id.into());
+        if self.quota_denied.lock().unwrap().iter().any(|id| id == account_id) {
+            return Err(ServiceError::new(429, "quota_reserved", "Synthetic reserve"));
+        }
+        Ok(())
+    }
+
+    fn invalidate_transport(&self, identity: &str) -> bool {
+        self.invalidations.lock().unwrap().push(identity.to_owned());
+        true
+    }
+    fn observe_rate_limits(&self, account_id: &str, snapshot: super::super::rate_limits::QuotaSnapshot,
+        _: std::time::Instant) {
+        self.quotas.lock().unwrap().push((account_id.to_owned(), snapshot));
     }
     fn authorize<'a>(&'a self, _: &'a str) -> BoxFuture<'a, Result<Caller, ServiceError>> {
         Box::pin(async { unreachable!() })
@@ -59,6 +85,8 @@ impl Host for Recorder {
     }
 }
 
+include!("lifecycle_dispatch_tests.rs");
+
 fn usage() -> Value {
     json!({"input_tokens": 17, "output_tokens": 23, "total_tokens": 40})
 }
@@ -84,7 +112,7 @@ async fn fixture() -> (
         },
         "model",
     );
-    tracker.begin_attempt("responses");
+    tracker.begin_attempt("responses").await;
     tracker.first_response();
     tracker.response_tier(Some("priority"));
     let route_gate = Arc::new(Semaphore::new(1));
@@ -104,6 +132,27 @@ async fn recorded(host: &Recorder) -> RequestReport {
     })
     .await
     .expect("report persisted without waiting for a live request")
+}
+
+#[tokio::test]
+async fn native_lifecycle_quota_is_observed_before_completion_and_ignores_outgoing_headers() {
+    let (mut tracker, host, _activity, _stop, _gate) = fixture().await;
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert("x-codex-primary-used-percent", "89.5".parse().unwrap());
+    tracker.quota_headers(&headers);
+    assert!(host.quotas.lock().unwrap().is_empty(), "unrelated providers cannot update Codex quota");
+    tracker.quota_account = Some("oauth-quota-fixture".into());
+    tracker.upstream_headers(&headers);
+    assert!(host.quotas.lock().unwrap().is_empty(), "request headers are not quota evidence");
+    tracker.quota_headers(&headers);
+    tracker.quota_event(&json!({"type":"codex.rate_limits","rate_limits":{
+        "secondary":{"used_percent":75.25,"window_minutes":10080,"reset_at":5000}}}));
+    let quotas = host.quotas.lock().unwrap();
+    assert_eq!(quotas.len(), 2);
+    assert_eq!(quotas[0].0, "oauth-quota-fixture");
+    assert_eq!(quotas[0].1.primary.as_ref().unwrap().remaining_percent, 10.5);
+    assert_eq!(quotas[1].1.secondary.as_ref().unwrap().remaining_percent, 24.75);
+    assert!(host.reports.lock().unwrap().is_empty(), "quota delivery does not wait for request persistence");
 }
 
 #[tokio::test]
@@ -294,39 +343,25 @@ async fn native_lifecycle_rebuild_abort_follows_attempt_failure_drop_and_success
 }
 
 fn activity_route(account: &str) -> Route {
-    Route {
-        account_id: account.into(),
-        owner_id: account.into(),
-        installation_profile: None,
-        transport_identity: None,
-        base_url: "http://127.0.0.1:9".into(),
-        model: "fixture".into(),
-        headers: axum::http::HeaderMap::new(),
-        client: reqwest::Client::new(),
-        proxy_url: None,
-        proxy_route: None,
-        chatgpt: false,
-        wire_api: super::super::contract::WireApi::Responses,
-        compact_endpoint: None,
-        websocket_endpoint: None,
-        default_service_tier: None,
-        permit: None,
-    }
+    let mut route = dispatch_route(account);
+    route.model = "fixture".into();
+    route
 }
 
 #[tokio::test]
 async fn fork_activity_retry_and_cancellation_share_exact_request_identity() {
-    let (mut tracker, host, _, _stop, _) = fixture().await;
+    let (mut tracker, host, _, _stop) = unsent_fixture();
     let caller = Caller {
         id: "caller".into(),
         label: "fixture".into(),
     };
-    tracker
-        .routed(&caller, &activity_route("a"), "fixture")
-        .await;
-    tracker
-        .routed(&caller, &activity_route("b"), "fixture")
-        .await;
+    tracker.routed(&caller, &activity_route("candidate-only"), "fixture");
+    assert!(host.selections.lock().unwrap().is_empty());
+    tracker.routed(&caller, &activity_route("a"), "fixture");
+    tracker.begin_attempt("http").await;
+    tracker.attempt_result(429, false, Some("rate_limited"));
+    tracker.routed(&caller, &activity_route("b"), "fixture");
+    tracker.begin_attempt("http").await;
     let selections = host.selections.lock().unwrap().clone();
     assert_eq!(selections.len(), 2);
     assert_eq!(selections[0].0, selections[1].0);
@@ -340,18 +375,60 @@ async fn fork_activity_retry_and_cancellation_share_exact_request_identity() {
 
 #[tokio::test]
 async fn fork_activity_local_completion_ends_observation_without_usage() {
-    let (mut tracker, host, _, _stop, _) = fixture().await;
+    let (mut tracker, host, _, _stop) = unsent_fixture();
     let caller = Caller {
         id: "caller".into(),
         label: "fixture".into(),
     };
     tracker
-        .routed(&caller, &activity_route("a"), "fixture")
-        .await;
+        .routed(&caller, &activity_route("a"), "fixture");
+    tracker.begin_attempt("http").await;
     tracker.complete_local().await;
     assert_eq!(
         host.finishes.lock().unwrap()[0],
         host.selections.lock().unwrap()[0].0
     );
     assert!(host.reports.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn fork_activity_unsent_rollback_clears_and_same_candidate_can_dispatch_again() {
+    let (mut tracker, host, activity, _stop) = unsent_fixture();
+    select_candidate(&mut tracker, "rollback-account");
+    assert!(host.selections.lock().unwrap().is_empty());
+    tracker.begin_attempt("http").await;
+    let id = host.selections.lock().unwrap()[0].0.clone();
+    assert!(tracker.discard_unsent_attempt().await);
+    assert!(!tracker.discard_unsent_attempt().await);
+    assert_eq!(*host.finishes.lock().unwrap(), vec![id.clone()]);
+    assert_eq!(tracker.dispatch_count, 0);
+    assert!(tracker.diagnostics.as_ref().unwrap().attempts.is_empty());
+    assert!(host.reports.lock().unwrap().is_empty());
+    tracker.begin_attempt("http").await;
+    assert_eq!(host.selections.lock().unwrap().len(), 2);
+    assert_eq!(host.selections.lock().unwrap()[1].0, id);
+    tracker.complete(200, true, None, None).await;
+    assert_eq!(recorded(&host).await.account_id, "rollback-account");
+    assert_eq!(*host.finishes.lock().unwrap(), vec![id.clone(), id]);
+    drop(tracker);
+    assert_eq!(activity.count.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn fork_activity_cancellation_while_host_waits_does_not_commit_dispatch() {
+    let (mut tracker, host, activity, _stop) = unsent_fixture();
+    let request_id = tracker.diagnostics.as_ref().unwrap().request_id.clone();
+    *host.selection_pause.lock().unwrap() = Some(Arc::new(Notify::new()));
+    select_candidate(&mut tracker, "waiting-for-observation");
+    let mut dispatch = Box::pin(tracker.begin_attempt("http"));
+    tokio::select! {
+        _ = &mut dispatch => panic!("blocked observer unexpectedly completed"),
+        _ = tokio::time::sleep(Duration::from_millis(5)) => {}
+    }
+    drop(dispatch);
+    assert_eq!(tracker.dispatch_count, 0);
+    assert!(host.selections.lock().unwrap().is_empty());
+    drop(tracker);
+    assert_no_dispatch_records(&host, &activity).await;
+    assert_eq!(*host.finishes.lock().unwrap(), vec![request_id]);
 }

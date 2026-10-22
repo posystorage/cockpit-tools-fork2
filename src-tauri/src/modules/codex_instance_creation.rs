@@ -210,6 +210,7 @@ fn create_instance_with_profile_copy(
         launch_mode: params.launch_mode.unwrap_or_default(),
         app_speed: params.app_speed.unwrap_or_default(),
         hide_native_quota_banner: params.hide_native_quota_banner,
+        quota_display_compatibility: params.quota_display_compatibility,
         created_at: Utc::now().timestamp_millis(),
         last_launched_at: None,
         last_pid: None,

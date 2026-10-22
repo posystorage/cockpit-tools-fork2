@@ -67,7 +67,7 @@ function harness(routing = false, overlay = "global-progress-overlay") {
     normalizedRoutingRoutes: [], routingRoutes: [], dirty: true, contextWindowInput: "", compactLimitInput: "",
     contextOverrideEnabled: false, mode: "account", instanceId: "synthetic", account: null,
     loadedTarget: "synthetic", previewTargetKey: "synthetic",
-    nativeQuotaDraft: null, nativeQuotaDraftKey: "synthetic",
+    nativeQuotaDraft: null, quotaDisplayDraft: null, nativeQuotaDraftKey: "synthetic",
     document: { querySelectorAll: () => ["codex-launch-preview-overlay", overlay].map((className) => ({ classList: [className] })) },
     onClose: () => { assert.equal(c.configSession.current, 2); closed = true; events.push("close"); },
     loadCodexLaunchPreviewConfig: () => { events.push("read"); return read.promise; },
@@ -211,6 +211,33 @@ test("closing while the fork quota preference saves prevents a later launch", as
   quotaWrite.resolve();
   await pending;
   assert.ok(!h.events.includes("launch"));
+  assert.deepEqual(h.lateUpdates, []);
+});
+
+for (const hide of [false, true]) for (const compatibility of [false, true]) {
+  test(`launch saves independent display preferences: hide=${hide}, compatibility=${compatibility}`, async () => {
+    const h = harness(); h.c.dirty = false;
+    h.c.nativeQuotaDraft = { key: "synthetic", value: hide };
+    h.c.quotaDisplayDraft = { key: "synthetic", value: compatibility };
+    const updates: any[] = [];
+    Object.assign(h.getStore(), { updateInstance: async (value: any) => { updates.push(value); } });
+    await h.c.handlers.handleExecute(true);
+    assert.deepEqual(JSON.parse(JSON.stringify(updates)), [
+      { instanceId: "synthetic", hideNativeQuotaBanner: hide },
+      { instanceId: "synthetic", quotaDisplayCompatibility: compatibility },
+    ]);
+    assert.equal(h.events.includes("launch"), true);
+  });
+}
+
+test("closing while compatibility preference saves prevents a later launch", async () => {
+  const h = harness(); h.c.dirty = false;
+  h.c.quotaDisplayDraft = { key: "synthetic", value: true };
+  const write = deferred<void>();
+  Object.assign(h.getStore(), { updateInstance: () => write.promise });
+  const pending = h.c.handlers.handleExecute(true);
+  await settlePromises(); h.c.handlers.requestClose(); write.resolve(); await pending;
+  assert.equal(h.events.includes("launch"), false);
   assert.deepEqual(h.lateUpdates, []);
 });
 

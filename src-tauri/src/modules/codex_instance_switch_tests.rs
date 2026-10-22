@@ -89,6 +89,7 @@ fn api_service_activation_uses_committed_binding_instead_of_previous_account() {
         store.default_settings.extra_args = "--existing-option".into();
         store.default_settings.launch_mode = InstanceLaunchMode::Cli;
         store.default_settings.hide_native_quota_banner = Some(false);
+        store.default_settings.quota_display_compatibility = Some(true);
         save_instance_store(&store).unwrap();
 
         let expected = bind_default_api_service_for_launch().unwrap();
@@ -99,6 +100,7 @@ fn api_service_activation_uses_committed_binding_instead_of_previous_account() {
         assert_eq!(saved.extra_args, "--existing-option");
         assert_eq!(saved.launch_mode, InstanceLaunchMode::Cli);
         assert_eq!(saved.hide_native_quota_banner, Some(false));
+        assert_eq!(saved.quota_display_compatibility, Some(true));
         verify_prepared_launch_binding(Some(expected), saved.bind_account_id.as_deref()).unwrap();
     }
 }
@@ -126,7 +128,8 @@ fn api_service_launch_still_rejects_binding_changed_after_preparation() {
     bind_default_account_for_switch("another-oauth").unwrap();
     let saved = load_default_settings().unwrap();
     assert_eq!(
-        verify_prepared_launch_binding(Some(expected), saved.bind_account_id.as_deref()).unwrap_err(),
+        verify_prepared_launch_binding(Some(expected), saved.bind_account_id.as_deref())
+            .unwrap_err(),
         "CODEX_SWITCH_BINDING_FAILED"
     );
 }
@@ -147,17 +150,30 @@ fn prepared_profile_rejects_changed_or_missing_binding_before_launch() {
 fn old_reauth_status_does_not_hide_a_current_launch_setup_failure() {
     let _fixture = Fixture::new();
     let mut account = crate::models::codex::CodexAccount::new(
-        "switch-setup-error".into(), "fixture@example.invalid".into(),
+        "switch-setup-error".into(),
+        "fixture@example.invalid".into(),
         crate::models::codex::CodexTokens {
             access_token: "fixture-access".into(),
-            refresh_token: Some("fixture-refresh".into()), id_token: "fixture-id".into(),
+            refresh_token: Some("fixture-refresh".into()),
+            id_token: "fixture-id".into(),
         },
     );
     account.requires_reauth = true;
     account.reauth_reason = Some("refresh_token_expired".into());
     modules::codex_account::save_account(&account).unwrap();
-    for code in ["CODEX_SWITCH_BINDING_FAILED", "CODEX_PROCESS_SCAN_FAILED", "PROXY_ENTRY_PORT_UNAVAILABLE"] {
-        assert_eq!(modules::codex_account::format_account_switch_error(&account.id, code.into()), code);
+    for code in [
+        "CODEX_SWITCH_BINDING_FAILED",
+        "CODEX_PROCESS_SCAN_FAILED",
+        "PROXY_ENTRY_PORT_UNAVAILABLE",
+    ] {
+        assert_eq!(
+            modules::codex_account::format_account_switch_error(&account.id, code.into()),
+            code
+        );
     }
-    assert!(modules::codex_account::load_account(&account.id).unwrap().requires_reauth);
+    assert!(
+        modules::codex_account::load_account(&account.id)
+            .unwrap()
+            .requires_reauth
+    );
 }

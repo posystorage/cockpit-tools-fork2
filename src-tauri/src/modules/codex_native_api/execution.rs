@@ -1,5 +1,6 @@
 //! Per-request preparation budgets. Body reads and authentication keep their
 //! own short limits; selecting and preparing an account use execution limits.
+use crate::modules::codex_native_api::deadline::{self, Deadline};
 use std::{future::Future, time::Duration};
 
 use tokio::time::Instant;
@@ -13,7 +14,7 @@ use super::{
 #[derive(Clone)]
 pub(super) struct Execution {
     pub policy: ExecutionPolicy,
-    pub total_deadline: Instant,
+    pub total_deadline: Deadline,
     pub open_deadline: Instant,
 }
 
@@ -26,8 +27,9 @@ impl Execution {
         Self::from_deadline(policy.clone(), tracker.deadline(policy.total_timeout))
     }
 
-    pub(super) fn from_deadline(policy: ExecutionPolicy, total_deadline: Instant) -> Self {
-        let open_deadline = (Instant::now() + policy.open_timeout).min(total_deadline);
+    pub(super) fn from_deadline(policy: ExecutionPolicy, total_deadline: impl Into<Deadline>) -> Self {
+        let total_deadline = total_deadline.into();
+        let open_deadline = total_deadline.cap(Instant::now() + policy.open_timeout);
         Self {
             policy,
             total_deadline,
@@ -36,7 +38,7 @@ impl Execution {
     }
 
     pub(super) fn prepare_deadline(&self) -> Instant {
-        self.open_deadline.min(self.total_deadline)
+        self.total_deadline.cap(self.open_deadline)
     }
 
     /// A new opening attempt receives another open budget, never another total
@@ -114,28 +116,33 @@ pub(super) async fn current_or_new(state: &AppState) -> Result<Execution, Servic
         return Ok(execution);
     }
     let policy = super::retry::execution_policy(state).await?;
-    let deadline = Instant::now() + policy.total_timeout;
+    let deadline = Deadline::after(policy.total_timeout);
     Ok(Execution::from_deadline(policy, deadline))
 }
 
-pub(super) async fn within<T>(
-    state: &AppState,
-    future: impl Future<Output = Result<T, ServiceError>>,
-) -> Result<T, ServiceError> {
-    let execution = current_or_new(state).await?;
-    let mut stop = state.stop.clone();
-    tokio::select! {
-        _ = stop.wait() => Err(stopping_error()),
-        result = tokio::time::timeout_at(execution.prepare_deadline(), future) =>
-            result.map_err(|_| execution.timeout_error())?,
+pub(super) fn within<'a, T: 'a>(
+    state: &'a AppState,
+    future: impl Future<Output = Result<T, ServiceError>> + 'a,
+) -> impl Future<Output = Result<T, ServiceError>> + 'a {
+    // Box before constructing the wrapper. Nested retry preparation otherwise
+    // retains and copies every large child future into each timeout layer.
+    let future = Box::pin(future);
+    async move {
+        let execution = current_or_new(state).await?;
+        let mut stop = state.stop.clone();
+        tokio::select! {
+            _ = stop.wait() => Err(stopping_error()),
+            result = deadline::timeout_at(execution.prepare_deadline(), future) =>
+                result.map_err(|_| execution.timeout_error())?,
+        }
     }
 }
 
-pub(super) async fn prepare<T>(
-    state: &AppState,
-    future: impl Future<Output = Result<T, ServiceError>>,
-) -> Result<T, ServiceError> {
-    within(state, future).await
+pub(super) fn prepare<'a, T: 'a>(
+    state: &'a AppState,
+    future: impl Future<Output = Result<T, ServiceError>> + 'a,
+) -> impl Future<Output = Result<T, ServiceError>> + 'a {
+    within(state, future)
 }
 
 pub(super) async fn total<T>(
@@ -146,7 +153,7 @@ pub(super) async fn total<T>(
     let mut stop = state.stop.clone();
     tokio::select! {
         _ = stop.wait() => Err(stopping_error()),
-        result = tokio::time::timeout_at(execution.total_deadline, future) =>
+        result = deadline::timeout_at(execution.total_deadline, future) =>
             result.map_err(|_| super::retry::total_timeout())?,
     }
 }

@@ -43,6 +43,7 @@ export interface InstanceProfile {
   launchMode?: InstanceLaunchMode;
   appSpeed?: CodexAppSpeed;
   hideNativeQuotaBanner?: boolean;
+  quotaDisplayCompatibility?: boolean;
   createdAt: number;
   lastLaunchedAt?: number | null;
   lastPid?: number | null;

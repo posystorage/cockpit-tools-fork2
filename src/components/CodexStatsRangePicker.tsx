@@ -79,6 +79,10 @@ export function CodexStatsRangePicker({
             key: "last48h" as const,
             label: t("codex.localAccess.statsRange.last48h", "48H"),
           },
+          {
+            key: "last7d" as const,
+            label: t("codex.localAccess.statsRange.last7d", "7Day"),
+          },
         ]
       : []),
   ];

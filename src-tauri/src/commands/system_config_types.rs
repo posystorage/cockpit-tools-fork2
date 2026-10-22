@@ -90,6 +90,8 @@ pub struct GeneralConfig {
     pub codex_sync_wsl: bool,
     /// 是否启用 Codex 客户端中的 API 服务额度显示注入
     pub codex_app_ui_injection_enabled: bool,
+    pub codex_app_native_fast_enabled: bool,
+    pub codex_app_api_quota_compat_enabled: bool,
     /// Codex WSL 配置目录 (Windows Only)
     pub codex_wsl_config_dir: String,
     /// Zed 自动刷新间隔（分钟），-1 表示禁用
@@ -239,7 +241,6 @@ pub struct GeneralConfig {
     /// 切换 Codex 时是否自动启动/重启 Codex App
     pub codex_launch_on_switch: bool,
     pub codex_auto_restore_takeover_on_launch: bool,
-    pub codex_preserve_verified_external_bridge: bool,
     /// 切换 Antigravity IDE 时是否自动启动/重启应用
     pub antigravity_launch_on_switch: bool,
     /// 切换 Codex 时是否自动重启指定应用
@@ -1154,6 +1155,8 @@ fn is_general_config_patch_field(key: &str) -> bool {
             | "codex_auto_refresh_plan_types"
             | "codex_sync_wsl"
             | "codex_app_ui_injection_enabled"
+            | "codex_app_native_fast_enabled"
+            | "codex_app_api_quota_compat_enabled"
             | "codex_wsl_config_dir"
             | "zed_auto_refresh_minutes"
             | "ghcp_auto_refresh_minutes"
@@ -1237,7 +1240,6 @@ fn is_general_config_patch_field(key: &str) -> bool {
             | "hermes_auth_overwrite_on_switch"
             | "codex_launch_on_switch"
             | "codex_auto_restore_takeover_on_launch"
-            | "codex_preserve_verified_external_bridge"
             | "antigravity_launch_on_switch"
             | "codex_restart_specified_app_on_switch"
             | "codex_local_access_entry_visible"

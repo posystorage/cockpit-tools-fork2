@@ -81,7 +81,7 @@ async fn handle_tracked(
     let mut stop = state.stop.clone();
     let bytes = tokio::select! {
         _=stop.wait()=>return Err(stopping_error()),
-        result=tokio::time::timeout_at(audio_deadline.unwrap_or_else(|| Instant::now() + state.options.request_timeout),to_bytes(request.into_body(),if is_audio(&path) {state.options.max_upload_bytes.min(26 * 1024 * 1024)} else {state.options.max_body_bytes}))=>result.map_err(|_|ServiceError::new(408,"request_body_timeout","Request body timed out"))?.map_err(|_|ServiceError::new(413,"request_too_large","Request body exceeds its limit"))?,
+        result=tokio::time::timeout_at(audio_deadline.unwrap_or_else(|| Instant::now() + state.options.request_timeout),to_bytes(request.into_body(),if is_audio(&path) {state.options.max_upload_bytes.min(26 * 1024 * 1024)} else {state.options.max_body_bytes}))=>result.map_err(|_|ServiceError::new(408,"request_body_timeout","Request body timed out"))?.map_err(super::request_body::read_error)?,
     };
     let bytes = super::http::decode_body_with_limit(
         &state,
@@ -97,7 +97,7 @@ async fn handle_tracked(
     .into();
     let policy = super::retry::execution_policy(&state).await?;
     let execution = super::execution::Execution::new(tracker, &policy);
-    let audio_deadline = audio_deadline.map(|deadline| deadline.min(execution.total_deadline));
+    let audio_deadline = audio_deadline.map(|deadline| execution.total_deadline.cap(deadline));
     execution
         .run(handle_prepared(
             state,
@@ -146,7 +146,7 @@ async fn handle_prepared(
             .filter(|model| !model.is_empty())
             .unwrap_or("gpt-realtime");
         let route = select(&state, &auth, &headers, model, "realtime", None).await?;
-        tracker.routed(&auth.caller, &route, model).await;
+        tracker.routed(&auth.caller, &route, model);
         let result =
             bindings::create_secret(&state, &auth, &body, path.ends_with("/sessions"), &route)?;
         tracker.complete(200, true, None, None).await;
@@ -169,7 +169,7 @@ async fn handle_prepared(
             None,
         )
         .await?;
-        tracker.routed(&auth.caller, &route, &audio.model).await;
+        tracker.routed(&auth.caller, &route, &audio.model);
         let url = if route.chatgpt {
             format!(
                 "{}/transcribe",
@@ -197,7 +197,7 @@ async fn handle_prepared(
         let status = response.status();
         let response_headers = response.headers().clone();
         if route.chatgpt && !audio.native {
-            let bytes = read_until(&state, response, audio_deadline).await?;
+            let bytes = read_until_limited(&state, response, audio_deadline, if status.is_success() { 4 * 1024 * 1024 } else { usize::MAX }).await?;
             if !status.is_success() {
                 capture_auxiliary_error(tracker, status.as_u16(), &response_headers, &bytes);
                 tracker
@@ -245,6 +245,7 @@ async fn handle_prepared(
                 .expect("HTTP request tracker is present"),
             route,
             audio_deadline,
+            usize::MAX,
         );
     }
     if path.ends_with("/alpha/search") {
@@ -267,7 +268,7 @@ async fn handle_prepared(
             );
         }
         let route = select(&state, &auth, &identity_headers, &model, "search", None).await?;
-        tracker.routed(&auth.caller, &route, &model).await;
+        tracker.routed(&auth.caller, &route, &model);
         let object = body.as_object_mut().expect("Search body checked above");
         object.remove("prompt_cache_key");
         object.remove("prompt_cache_retention");
@@ -323,7 +324,7 @@ async fn handle_prepared(
                 "Realtime credential owner has changed",
             ));
         }
-        tracker.routed(&auth.caller, &route, &binding.model).await;
+        tracker.routed(&auth.caller, &route, &binding.model);
         let response = send(
             &state,
             route
@@ -378,7 +379,7 @@ async fn handle_prepared(
         .unwrap_or("gpt-realtime")
         .to_owned();
     let route = select(&state, &auth, &headers, &model, "realtime", None).await?;
-    tracker.routed(&auth.caller, &route, &model).await;
+    tracker.routed(&auth.caller, &route, &model);
     body["session"]["model"] = json!(upstream_live_model(&model, &route));
     body.as_object_mut().unwrap().remove("model");
     // Official AVAS calls remove the client session id from the session object.
@@ -548,8 +549,7 @@ async fn websocket_tracked(
             tracker_slot
                 .as_mut()
                 .expect("WebSocket request tracker is present")
-                .routed(&auth.caller, &route, &model)
-                .await;
+                .routed(&auth.caller, &route, &model);
             let mut body = json!({});
             let mut mapped = rewrite(&state, &auth, &route, &headers, &mut body).await?;
             mapped.remove("sec-websocket-key");
@@ -572,20 +572,32 @@ async fn websocket_tracked(
             let tracker = tracker_slot
                 .as_mut()
                 .expect("WebSocket request tracker is present");
-            tracker.begin_attempt("websocket");
-            tracker.upstream_headers(&mapped);
-            let mut upstream = super::execution::prepare(
+            tracker.check_quota_before_send()?;
+            let dispatch_tracker = &mut *tracker;
+            let connected = super::execution::prepare(
                 &state,
-                super::transport::connect_websocket(
+                super::transport::connect_websocket_tracked(
                     &route,
                     url.as_str(),
                     mapped,
                     state.options.max_body_bytes,
                     remaining_open.min(policy.websocket_connect_timeout),
                     state.stop.clone(),
+                    |headers| async move {
+                        dispatch_tracker.begin_attempt("websocket").await;
+                        dispatch_tracker.upstream_headers(&headers);
+                    },
                 ),
             )
-            .await?;
+            .await;
+            let mut upstream = match connected {
+                Ok(upstream) => upstream,
+                Err(error) => {
+                    if error.upstream_not_sent { tracker.discard_unsent_attempt().await; }
+                    return Err(error);
+                }
+            };
+            tracker.upstream_response_headers(&upstream.1);
             let selected_protocol = realtime::selected_protocol(&protocols, &upstream.1)?;
             let ws = if let Some(protocol) = selected_protocol {
                 ws.protocols([protocol])
@@ -620,6 +632,7 @@ async fn websocket_tracked(
                 .expect("WebSocket request tracker is present");
             Ok(ws
                 .max_message_size(state.options.max_body_bytes)
+                .max_frame_size(state.options.max_body_bytes)
                 .on_upgrade(move |socket| {
                     relay(
                         state, route, auth, model, connection, socket, upstream.0, tracker,
@@ -811,10 +824,19 @@ async fn select(
         image_input: false,
         excluded_account_ids: Vec::new(),
         requires_permit: !has_call_permit,
+        required_capabilities: Vec::new(),
+        capability_fallback_from: None,
         auxiliary: Some(operation.into()),
     };
     let route = super::execution::route(state, &auth.caller, request).await?;
-    if preferred.is_some_and(|id| route.account_id != id)
+    if route.chatgpt_plan {
+        return Err(ServiceError::new(
+            400,
+            "subscription_sharing_unsupported_capability",
+            "ChatGPT plan accounts support HTTP Responses inference only",
+        ));
+    }
+    if preferred.is_some_and(|id| route.continuity_id() != id)
         || auth
             .owner_id
             .as_ref()
@@ -837,7 +859,7 @@ async fn rewrite(
 ) -> Result<HeaderMap, ServiceError> {
     let store = state.identity.clone();
     let caller = auth.caller.id.clone();
-    let account = route.account_id.clone();
+    let account = route.continuity_id().to_owned();
     let owner = route.owner_id.clone();
     let mut headers = auth_headers(incoming, route)?;
     let mut data = body.clone();
@@ -881,10 +903,34 @@ async fn send_until(
     let (client, request) = request.build_split();
     let request = request.map_err(|_| {
         ServiceError::new(502, "upstream_unavailable", "Unable to connect to upstream")
+            .with_upstream_not_sent(true)
     })?;
-    tracker.begin_attempt("http");
-    tracker.upstream_headers(request.headers());
-    tokio::select! {_=stop.wait()=>Err(stopping_error()),r=tokio::time::timeout_at(deadline,client.execute(request))=>r.map_err(|_|ServiceError::new(504,"upstream_timeout","Upstream request timed out"))?.map_err(|_|ServiceError::new(502,"upstream_unavailable","Unable to connect to upstream"))}
+    let result = tokio::select! {
+        biased;
+        _=stop.wait()=>Err(stopping_error()),
+        r=tokio::time::timeout_at(deadline,async {
+            if Instant::now() >= deadline {
+                return Err(ServiceError::new(504,"upstream_timeout","Upstream request timed out"));
+            }
+            tracker.check_quota_before_send()?;
+            tracker.begin_attempt("http").await;
+            tracker.upstream_headers(request.headers());
+            client.execute(request).await.map_err(|error| {
+                ServiceError::new(502,"upstream_unavailable","Unable to connect to upstream")
+                    .with_upstream_not_sent(error.is_connect() || error.is_builder())
+            })
+        })=>r.map_err(|_|ServiceError::new(504,"upstream_timeout","Upstream request timed out"))?
+    };
+    let response = match result {
+        Ok(response) => response,
+        Err(error) => {
+            if error.upstream_not_sent { tracker.discard_unsent_attempt().await; }
+            return Err(error);
+        }
+    };
+    tracker.quota_headers(response.headers());
+    tracker.upstream_response_headers(response.headers());
+    Ok(response)
 }
 async fn read(state: &AppState, response: reqwest::Response) -> Result<Vec<u8>, ServiceError> {
     read_until(state, response, None).await
@@ -894,6 +940,14 @@ async fn read_until(
     response: reqwest::Response,
     deadline: Option<Instant>,
 ) -> Result<Vec<u8>, ServiceError> {
+    read_until_limited(state, response, deadline, 32 * 1024 * 1024).await
+}
+async fn read_until_limited(
+    state: &AppState,
+    response: reqwest::Response,
+    deadline: Option<Instant>,
+    limit: usize,
+) -> Result<Vec<u8>, ServiceError> {
     let deadline = scoped_deadline(deadline, false);
     let mut source = response.bytes_stream();
     let mut bytes = Vec::new();
@@ -902,7 +956,7 @@ async fn read_until(
         let next = tokio::select! {_=stop.wait()=>return Err(stopping_error()),v=timed_read(deadline,state.options.idle_timeout,source.next())=>v?};
         match next {
             Some(Ok(chunk)) => {
-                if bytes.len() + chunk.len() > state.options.max_response_bytes {
+                if bytes.len().saturating_add(chunk.len()) > state.options.max_response_bytes.min(limit) {
                     return Err(ServiceError::new(
                         502,
                         "upstream_response_too_large",
@@ -937,11 +991,11 @@ async fn timed_read<T>(
 }
 
 fn scoped_deadline(deadline: Option<Instant>, opening: bool) -> Option<Instant> {
-    let configured = super::execution::current().map(|scope| {
+    let configured = super::execution::current().and_then(|scope| {
         if opening {
-            scope.prepare_deadline()
+            Some(scope.prepare_deadline())
         } else {
-            scope.total_deadline
+            scope.total_deadline.instant()
         }
     });
     match (deadline, configured) {
@@ -1020,7 +1074,7 @@ fn stream_response(
     tracker: RequestTracker,
     route: Route,
 ) -> Result<Response, ServiceError> {
-    stream_response_until(state, response, tracker, route, None)
+    stream_response_until(state, response, tracker, route, None, 32 * 1024 * 1024)
 }
 fn stream_response_until(
     state: Arc<AppState>,
@@ -1028,6 +1082,7 @@ fn stream_response_until(
     tracker: RequestTracker,
     route: Route,
     deadline: Option<Instant>,
+    limit: usize,
 ) -> Result<Response, ServiceError> {
     // The downstream body is polled after the preparation task-local scope ends.
     // Capture its absolute total budget now, including time spent selecting an account.
@@ -1068,7 +1123,7 @@ fn stream_response_until(
             match next {
                 Ok(Some(Ok(bytes))) => {
                     received = received.saturating_add(bytes.len());
-                    if received > state.options.max_response_bytes {
+                    if received > state.options.max_response_bytes.min(limit) {
                         let error = ServiceError::new(
                             502,
                             "upstream_response_too_large",

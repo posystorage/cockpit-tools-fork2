@@ -1768,6 +1768,7 @@ supports_websockets = false
         let mut store = InstanceStore::new();
         store.instances.push(InstanceProfile {
             hide_native_quota_banner: None,
+            quota_display_compatibility: None,
             id: "unbound-instance".to_string(),
             name: "Unbound instance".to_string(),
             user_data_dir: profile_dir.to_string_lossy().to_string(),
@@ -1834,6 +1835,7 @@ supports_websockets = false
         let mut store = InstanceStore::new();
         store.instances.push(InstanceProfile {
             hide_native_quota_banner: None,
+            quota_display_compatibility: None,
             id: "legacy-instance".to_string(),
             name: "Legacy instance".to_string(),
             user_data_dir: profile_dir.to_string_lossy().to_string(),

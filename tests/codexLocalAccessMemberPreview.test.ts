@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import { codexServiceOriginalAccounts } from "../src/utils/chatgptPlanOverview";
+import type { CodexAccount } from "../src/types/codex";
 
 const rendererSource = readFileSync(
   `${process.cwd()}/src/pages/useCodexAccountsRenderers.tsx`,
@@ -116,7 +118,12 @@ describe("Codex API service member preview", () => {
 
   it("keeps the full account store for both member views, including Grok members", () => {
     assert.match(rendererSource, /\[accounts, localAccessCollection\?\.accountIds, localAccessState\?\.accountActivity\]/);
-    assert.ok(servicePageSource.includes("const localAccessAccounts = useMemo(() => accounts, [accounts])"));
+    assert.ok(servicePageSource.includes("codexServiceOriginalAccounts(accounts, collection?.accountIds)"));
+    const accounts = [
+      { id: "oauth" },
+      { id: "grok", upstream_grok_account_id: "linked-grok" },
+    ] as CodexAccount[];
+    assert.deepEqual(codexServiceOriginalAccounts(accounts, ["oauth", "grok"]).map(account => account.id), ["oauth", "grok"]);
     assert.ok(servicePageSource.includes("const memberAccounts = useMemo("));
     const memberGrid = serviceStyleSource.match(/\.codex-api-service-account-grid\s*\{([^}]+)\}/);
     assert.ok(memberGrid);

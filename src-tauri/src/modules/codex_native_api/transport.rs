@@ -15,14 +15,49 @@ use super::{
     lifecycle::{stopping_error, StopSignal},
 };
 
+#[cfg(test)]
+#[path = "transport_unsent_dispatch_tests.rs"]
+mod unsent_dispatch_tests;
+
 pub(super) async fn connect_websocket(
+    route: &Route,
+    url: &str,
+    headers: HeaderMap,
+    max_message_bytes: usize,
+    timeout: std::time::Duration,
+    stop: StopSignal,
+) -> Result<(WebSocketStream<reqwest::Upgraded>, HeaderMap), ServiceError> {
+    connect_websocket_tracked(
+        route,
+        url,
+        headers,
+        max_message_bytes,
+        timeout,
+        stop,
+        |_| async {},
+    )
+    .await
+}
+
+/// Call the tracker only after local validation and when the network future is
+/// actually polled. The caller can discard a proven unsent connect failure.
+pub(super) async fn connect_websocket_tracked<Dispatch: std::future::Future<Output = ()>>(
     route: &Route,
     url: &str,
     mut headers: HeaderMap,
     max_message_bytes: usize,
     timeout: std::time::Duration,
     mut stop: StopSignal,
+    on_dispatch: impl FnOnce(HeaderMap) -> Dispatch,
 ) -> Result<(WebSocketStream<reqwest::Upgraded>, HeaderMap), ServiceError> {
+    if route.chatgpt_plan {
+        return Err(ServiceError::new(
+            400,
+            "subscription_sharing_unsupported_capability",
+            "ChatGPT plan accounts support HTTP Responses inference only",
+        )
+        .with_upstream_not_sent(true));
+    }
     let url = url
         .strip_prefix("wss://")
         .map(|v| format!("https://{v}"))
@@ -42,11 +77,32 @@ pub(super) async fn connect_websocket(
         .header(header::UPGRADE, "websocket")
         .header(header::SEC_WEBSOCKET_VERSION, "13")
         .header(header::SEC_WEBSOCKET_KEY, key);
+    let (client, request) = request.build_split();
+    let request = request.map_err(|error| {
+        super::diagnostics::transport_failure(
+            502,
+            "websocket_request_invalid",
+            "Unable to prepare the upstream WebSocket request",
+            &error,
+        )
+        .with_upstream_not_sent(true)
+    })?;
     let response = tokio::select! {
+        biased;
         _ = stop.wait() => return Err(stopping_error()),
-        result = tokio::time::timeout_at(deadline, request.send()) => result
+        result = tokio::time::timeout_at(deadline, async {
+            if tokio::time::Instant::now() >= deadline {
+                return Err(ServiceError::new(504,"websocket_connect_timeout","Upstream WebSocket connection timed out"));
+            }
+            on_dispatch(request.headers().clone()).await;
+            client.execute(request).await.map_err(|error| {
+                let not_sent = error.is_connect() || error.is_builder();
+                super::diagnostics::transport_failure(502,"websocket_connect_failed","Unable to establish the upstream WebSocket", &error)
+                    .with_upstream_not_sent(not_sent)
+            })
+        }) => result
             .map_err(|_| ServiceError::new(504,"websocket_connect_timeout","Upstream WebSocket connection timed out"))?
-            .map_err(|_| ServiceError::new(502,"websocket_connect_failed","Unable to establish the upstream WebSocket"))?,
+            ?,
     };
     if response.status() != axum::http::StatusCode::SWITCHING_PROTOCOLS {
         let status = response.status().as_u16();
@@ -73,11 +129,12 @@ pub(super) async fn connect_websocket(
                         "Upstream error response exceeds its size limit",
                     ))
                 }
-                Some(Err(_)) => {
-                    return Err(ServiceError::new(
+                Some(Err(error)) => {
+                    return Err(super::diagnostics::transport_failure(
                         status,
                         "websocket_upstream_rejected",
                         "Unable to read the upstream error response",
+                        &error,
                     ))
                 }
                 None => break,
@@ -136,7 +193,7 @@ pub(super) async fn connect_websocket(
         _ = stop.wait() => return Err(stopping_error()),
         result = tokio::time::timeout_at(deadline, response.upgrade()) => result
             .map_err(|_| ServiceError::new(504,"websocket_connect_timeout","Upstream WebSocket upgrade timed out"))?
-            .map_err(|_| ServiceError::new(502,"websocket_connect_failed","Unable to upgrade the upstream connection"))?,
+            .map_err(|error| super::diagnostics::transport_failure(502,"websocket_connect_failed","Unable to upgrade the upstream connection", &error))?,
     };
     let config = WebSocketConfig::default()
         .max_message_size(Some(max_message_bytes))

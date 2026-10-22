@@ -10,6 +10,18 @@ const englishChangelog = readFileSync(`${process.cwd()}/CHANGELOG.md`, "utf8");
 const chineseChangelog = readFileSync(`${process.cwd()}/CHANGELOG.zh-CN.md`, "utf8");
 
 describe("fork draft release workflow", () => {
+  it("aggregates exactly 1.3.73 through 1.3.70 and includes the fork adaptation", () => {
+    const mapping = workflowSource.match(/"1[.]3[.]73"\)\s*RELEASE_VERSIONS=\(([^)]*)\)/);
+    assert.ok(mapping);
+    assert.equal(mapping[1], '"1.3.73" "1.3.72" "1.3.71" "1.3.70"');
+    for (const changelog of [englishChangelog, chineseChangelog]) {
+      for (const version of ["1.3.73", "1.3.72", "1.3.71", "1.3.70"]) {
+        assert.ok(changelog.includes(`## [${version}]`));
+      }
+      const latest = changelog.slice(changelog.indexOf("## [1.3.73]"), changelog.indexOf("## [1.3.72]"));
+      assert.match(latest, /### Fork /);
+    }
+  });
   it("includes exactly both upstream releases in the 1.3.65 upgrade", () => {
     const start = workflowSource.indexOf('"1.3.65")');
     const end = workflowSource.indexOf(';;', start);

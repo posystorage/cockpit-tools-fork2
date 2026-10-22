@@ -250,6 +250,7 @@
     ) -> InstanceProfile {
         InstanceProfile {
             hide_native_quota_banner: None,
+            quota_display_compatibility: None,
             id: id.to_string(),
             name: id.to_string(),
             user_data_dir: profile_dir.to_string(),

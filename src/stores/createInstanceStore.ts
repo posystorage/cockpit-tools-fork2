@@ -26,6 +26,7 @@ export type InstanceStoreState = {
     launchMode?: InstanceLaunchMode;
     appSpeed?: CodexAppSpeed;
     hideNativeQuotaBanner?: boolean;
+    quotaDisplayCompatibility?: boolean;
     copySourceInstanceId: string;
     initMode?: InstanceInitMode;
   }) => Promise<InstanceProfile>;
@@ -40,6 +41,7 @@ export type InstanceStoreState = {
     launchMode?: InstanceLaunchMode;
     appSpeed?: CodexAppSpeed;
     hideNativeQuotaBanner?: boolean;
+    quotaDisplayCompatibility?: boolean;
     autoSyncThreads?: boolean;
     deferBindAccountApplication?: boolean;
   }) => Promise<InstanceProfile>;

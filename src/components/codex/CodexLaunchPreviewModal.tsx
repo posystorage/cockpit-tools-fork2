@@ -362,6 +362,11 @@ export function CodexLaunchPreviewModal({
     value: boolean;
   } | null>(null);
   useEffect(() => { setNativeQuotaDraft(null); }, [nativeQuotaDraftKey]);
+  const [quotaDisplayDraft, setQuotaDisplayDraft] = useState<{
+    key: string;
+    value: boolean;
+  } | null>(null);
+  useEffect(() => { setQuotaDisplayDraft(null); }, [nativeQuotaDraftKey]);
   const nativeQuotaBindId = mode === "apiService"
     ? CODEX_API_SERVICE_BIND_ID
     : mode === "account"
@@ -374,6 +379,8 @@ export function CodexLaunchPreviewModal({
         nativeQuotaBindId,
         selectedInstance?.launchMode ?? "app",
       );
+  const quotaDisplayCompatibility = quotaDisplayDraft?.key === nativeQuotaDraftKey
+    ? quotaDisplayDraft.value : selectedInstance?.quotaDisplayCompatibility === true;
   const instanceConfigKey = codexLaunchPreviewInstanceConfigKey(selectedInstance);
   const instanceConfigChanged = loadedInstanceKey !== null && loadedInstanceKey !== instanceConfigKey;
   const configReady = loadedTarget === previewTargetKey && !loading &&
@@ -960,6 +967,13 @@ export function CodexLaunchPreviewModal({
           });
           if (session !== configSession.current) return;
         }
+        if (quotaDisplayDraft?.key === nativeQuotaDraftKey) {
+          await useCodexInstanceStore.getState().updateInstance({
+            instanceId,
+            quotaDisplayCompatibility: quotaDisplayDraft.value,
+          });
+          if (session !== configSession.current) return;
+        }
         const launchOptions: CodexLaunchPreviewLaunchOptions | undefined =
           account && isDeepSeekAccount(account)
             ? {
@@ -993,11 +1007,11 @@ export function CodexLaunchPreviewModal({
       imageModelConfig.model,
       imageModelConfig.loaded,
       imageModelConfig.deletedModels,
-      account,
       t,
       imageGenEnabled,
       instanceId,
       nativeQuotaDraft,
+      quotaDisplayDraft,
       nativeQuotaDraftKey,
       onExecute,
       persistDraft,
@@ -1541,8 +1555,8 @@ export function CodexLaunchPreviewModal({
   useEscCloseTopmost(contextConfigOpen && !busy && !contextConfigSaving, () => closeContextConfig(false), contextDialog);
   useEscCloseTopmost(Boolean(manualRefreshResult) && !forceRefreshing, closeManualRefreshResult, refreshDialog);
 
-  const handleManualRefreshReauthorize = useCallback(() => {
-    if (!account || forceRefreshing || !manualRefreshResult?.requiresReauth) return;
+  const handleReauthorize = useCallback((retryInstanceLaunchAfterOAuth = false) => {
+    if (!account || !isStandardCodexOAuthAccount(account) || busy) return;
     setManualRefreshResult(null);
     onClose();
     window.dispatchEvent(
@@ -1551,14 +1565,19 @@ export function CodexLaunchPreviewModal({
     requestCodexOpenAddAccount({
       tab: "oauth",
       targetAccountId: account.id,
-      ...(mode === "instance"
+      ...(retryInstanceLaunchAfterOAuth && mode === "instance"
         ? {
             retryInstanceLaunchAfterOAuth: true,
             retryInstanceId: instanceId,
           }
         : {}),
     });
-  }, [account, forceRefreshing, instanceId, mode, onClose, manualRefreshResult?.requiresReauth]);
+  }, [account, busy, instanceId, mode, onClose]);
+
+  const handleManualRefreshReauthorize = useCallback(() => {
+    if (!manualRefreshResult?.requiresReauth) return;
+    handleReauthorize(true);
+  }, [handleReauthorize, manualRefreshResult?.requiresReauth]);
 
   const renderFooterAction = (action: CodexLaunchPreviewAction) => (
     <div
@@ -1904,6 +1923,20 @@ export function CodexLaunchPreviewModal({
                   <span>{t("common.enable", "启用")}</span>
                 </label>
               </section>
+              {nativeQuotaBindId === CODEX_API_SERVICE_BIND_ID && (selectedInstance?.launchMode ?? "app") === "app" && (
+              <section className="codex-launch-preview-tool-row" style={{ paddingLeft: 36 }}>
+                <div className="codex-launch-preview-tool-copy">
+                  <h3>{t("codex.launchPreview.quotaDisplayCompatibilityTitle", "额度显示兼容")}</h3>
+                  <p>{t("codex.launchPreview.quotaDisplayCompatibilityDescription", "默认关闭。仅兼容桌面主额度的允许／阻止显示状态，不改用量数字、余额或图片额度。与提示隐藏及 API 服务本地发送解锁独立，按实例保存。")}</p>
+                </div>
+                <label className="codex-launch-preview-checkbox">
+                  <input type="checkbox" checked={quotaDisplayCompatibility}
+                    disabled={configBusy}
+                    onChange={(event) => setQuotaDisplayDraft({ key: nativeQuotaDraftKey, value: event.target.checked })} />
+                  <span>{t("common.enable", "启用")}</span>
+                </label>
+              </section>
+              )}
               {providerRowsVisible && mode !== "apiService" && (
                 <section className="codex-launch-preview-tool-row">
                   <div className="codex-launch-preview-tool-icon">
@@ -2390,6 +2423,17 @@ export function CodexLaunchPreviewModal({
                 </button>
               </div>
               <div className="codex-launch-preview-footer-primary">
+                {account && isStandardCodexOAuthAccount(account) && (
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={() => handleReauthorize()}
+                    disabled={busy}
+                  >
+                    <KeyRound size={15} />
+                    {t("common.reauthorize", "重新授权")}
+                  </button>
+                )}
                 {dirty && (
                   <button
                     type="button"

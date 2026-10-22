@@ -24,15 +24,14 @@ use terminal::build_codex_terminal_launch_plan;
 #[cfg(test)]
 use super::codex_instance_app_exit::idle_codex_profile_dirs_for_app_exit;
 pub use super::codex_instance_app_exit::restore_mixed_model_profiles_for_app_exit;
+#[cfg(test)]
+use super::codex_instance_model_catalog::PENDING_MODEL_CATALOG_FILE;
 use super::codex_instance_model_catalog::{
     apply_pending_model_catalog, read_pending_model_catalog, restore_pending_model_catalog,
     save_pending_model_catalog,
 };
-#[cfg(test)]
-use super::codex_instance_model_catalog::PENDING_MODEL_CATALOG_FILE;
 use super::codex_instance_routing::{
-    launch_mode_uses_desktop_runtime, model_routing_update_error,
-    validate_instance_model_routing,
+    launch_mode_uses_desktop_runtime, model_routing_update_error, validate_instance_model_routing,
 };
 use super::codex_instance_start_runtime::{stop_runtime_for_start, StartRuntimeState};
 
@@ -134,7 +133,8 @@ impl CodexInstanceStartTarget {
         if launch_mode_uses_desktop_runtime(&self.launch_mode) {
             modules::codex_instance::preflight_egress_proxy_for_bind_account(
                 self.bind_account_id.as_deref(),
-            ).await?;
+            )
+            .await?;
         }
         Ok(())
     }
@@ -250,6 +250,7 @@ pub struct CodexInstanceProfileView {
     pub app_speed: CodexAppSpeed,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hide_native_quota_banner: Option<bool>,
+    pub quota_display_compatibility: Option<bool>,
     pub created_at: i64,
     pub last_launched_at: Option<i64>,
     pub last_pid: Option<u32>,
@@ -275,6 +276,7 @@ impl CodexInstanceProfileView {
             launch_mode: profile.launch_mode,
             app_speed: profile.app_speed,
             hide_native_quota_banner: profile.hide_native_quota_banner,
+            quota_display_compatibility: profile.quota_display_compatibility,
             created_at: profile.created_at,
             last_launched_at: profile.last_launched_at,
             last_pid: profile.last_pid,
@@ -494,12 +496,17 @@ async fn apply_launch_speed_after_auth(
     });
     tauri::async_runtime::spawn_blocking(move || {
         // DeepSeek deliberately removes service_tier as an unsupported option.
-        if account_id.as_deref().and_then(modules::codex_account::load_account)
-            .is_some_and(|account| modules::codex_account::is_deepseek_account(&account)) {
+        if account_id
+            .as_deref()
+            .and_then(modules::codex_account::load_account)
+            .is_some_and(|account| modules::codex_account::is_deepseek_account(&account))
+        {
             return Ok(());
         }
         modules::codex_speed::write_app_speed_for_dir(&profile_dir, speed).map(|_| ())
-    }).await.map_err(|error| error.to_string())?
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 async fn restore_mixed_model_gateway_when_disabled(
@@ -532,6 +539,7 @@ fn default_instance_view(
         launch_mode: default_settings.launch_mode.clone(),
         app_speed: default_settings.app_speed.clone(),
         hide_native_quota_banner: default_settings.hide_native_quota_banner,
+        quota_display_compatibility: default_settings.quota_display_compatibility,
         created_at: 0,
         last_launched_at: None,
         last_pid,
@@ -855,33 +863,81 @@ mod tests {
             std::fs::write(dir.join("config.toml"), "model = 'fixture-model'\n").unwrap();
             store.instances.push(InstanceProfile {
                 hide_native_quota_banner: None,
-                id: id.to_string(), name: id.to_string(),
+                quota_display_compatibility: None,
+                id: id.to_string(),
+                name: id.to_string(),
                 user_data_dir: dir.to_string_lossy().to_string(),
-                working_dir: None, extra_args: String::new(), bind_account_id: None,
-                model_routing: None, launch_mode: InstanceLaunchMode::App,
-                app_speed: CodexAppSpeed::Standard, created_at: 1,
-                last_launched_at: None, last_pid: None,
+                working_dir: None,
+                extra_args: String::new(),
+                bind_account_id: None,
+                model_routing: None,
+                launch_mode: InstanceLaunchMode::App,
+                app_speed: CodexAppSpeed::Standard,
+                created_at: 1,
+                last_launched_at: None,
+                last_pid: None,
             });
         }
         modules::codex_instance::save_instance_store(&store).unwrap();
-        for speed in [CodexAppSpeed::Fast, CodexAppSpeed::Standard] {
+        for speed in [
+            CodexAppSpeed::Ultrafast,
+            CodexAppSpeed::Fast,
+            CodexAppSpeed::Standard,
+        ] {
             codex_update_instance(
-                "target".to_string(), None, None, None,
-                Some(Some("fixture-account".to_string())), None, None, None,
-                Some(speed.clone()), None, Some(true), None,
-            ).await.unwrap();
+                "target".to_string(),
+                None,
+                None,
+                None,
+                Some(Some("fixture-account".to_string())),
+                None,
+                None,
+                None,
+                Some(speed.clone()),
+                None,
+                Some(true),
+                None,
+                None,
+            )
+            .await
+            .unwrap();
             let reloaded = modules::codex_instance::load_instance_store().unwrap();
-            let target = reloaded.instances.iter().find(|item| item.id == "target").unwrap();
+            let target = reloaded
+                .instances
+                .iter()
+                .find(|item| item.id == "target")
+                .unwrap();
             assert_eq!(target.bind_account_id.as_deref(), Some("fixture-account"));
             assert_eq!(target.app_speed, speed);
-            assert_eq!(reloaded.instances.iter().find(|item| item.id == "other").unwrap().app_speed, CodexAppSpeed::Standard);
+            assert_eq!(
+                reloaded
+                    .instances
+                    .iter()
+                    .find(|item| item.id == "other")
+                    .unwrap()
+                    .app_speed,
+                CodexAppSpeed::Standard
+            );
             let dir = env.root.join("target");
             // Simulate a credential/provider projection restoring the old config.
             // No auth files, real accounts, client processes or model calls are used.
-            std::fs::write(dir.join("config.toml"), "model = 'fixture-model'\nservice_tier = 'default'\n").unwrap();
-            apply_launch_speed_after_auth(&dir, None, target.app_speed.clone()).await.unwrap();
-            assert_eq!(modules::codex_speed::get_app_speed_config_for_dir(&dir).unwrap().speed, speed);
-            assert!(std::fs::read_to_string(dir.join("config.toml")).unwrap().contains("fixture-model"));
+            std::fs::write(
+                dir.join("config.toml"),
+                "model = 'fixture-model'\nservice_tier = 'default'\n",
+            )
+            .unwrap();
+            apply_launch_speed_after_auth(&dir, None, target.app_speed.clone())
+                .await
+                .unwrap();
+            assert_eq!(
+                modules::codex_speed::get_app_speed_config_for_dir(&dir)
+                    .unwrap()
+                    .speed,
+                speed
+            );
+            assert!(std::fs::read_to_string(dir.join("config.toml"))
+                .unwrap()
+                .contains("fixture-model"));
         }
     }
 
@@ -940,6 +996,7 @@ mod tests {
                     None,
                     None,
                     Some(preference),
+                    None,
                 )
                 .await
                 .unwrap();
@@ -1058,6 +1115,7 @@ mod tests {
 
         let instance = InstanceProfile {
             hide_native_quota_banner: None,
+            quota_display_compatibility: None,
             id: "created-instance".to_string(),
             name: "Created instance".to_string(),
             user_data_dir: target_dir.to_string_lossy().to_string(),
@@ -1107,6 +1165,7 @@ mod tests {
         let mut store = crate::models::InstanceStore::new();
         store.instances.push(InstanceProfile {
             hide_native_quota_banner: None,
+            quota_display_compatibility: None,
             id: "routing-rollback-instance".to_string(),
             name: "Original name".to_string(),
             user_data_dir: profile_path.to_string_lossy().to_string(),
@@ -1132,6 +1191,7 @@ mod tests {
             None,
             None,
             Some(CodexAppSpeed::Fast),
+            None,
             None,
             None,
             None,
@@ -1175,6 +1235,7 @@ mod tests {
         let mut store = crate::models::InstanceStore::new();
         store.instances.push(InstanceProfile {
             hide_native_quota_banner: None,
+            quota_display_compatibility: None,
             id: instance_id.to_string(),
             name: "Context preservation test".to_string(),
             user_data_dir: profile_dir.to_string_lossy().to_string(),
@@ -1207,6 +1268,7 @@ mod tests {
     fn app_exit_preserves_running_profiles_even_when_routing_was_disabled_for_later() {
         let profile = |id: &str, enabled: bool, pid: u32| InstanceProfile {
             hide_native_quota_banner: None,
+            quota_display_compatibility: None,
             id: id.to_string(),
             name: id.to_string(),
             user_data_dir: format!("/test/{id}"),
@@ -1273,37 +1335,65 @@ mod tests {
             .expect("decode explicit disable");
         let saved = codex_save_instance_configuration(
             instance_id.to_string(),
-            None, None, None, None,
+            None,
+            None,
+            None,
+            None,
             disabled,
-            None, None, None, None,
+            None,
+            None,
+            None,
+            None,
             Some(true),
-            None, None, None,
+            None,
+            None,
+            None,
             false,
             test_experimental_models(),
+            None,
             None,
             None,
         )
         .await
         .expect("disable routing");
         assert!(!saved.instance.model_routing.expect("saved routing").enabled);
-        assert_eq!(std::fs::read(profile_dir.join("config.toml")).unwrap(), before_config);
+        assert_eq!(
+            std::fs::read(profile_dir.join("config.toml")).unwrap(),
+            before_config
+        );
         assert!(profile_dir.join(PENDING_MODEL_CATALOG_FILE).exists());
 
         // A later account selection must preserve the disabled state.
         codex_update_instance(
             instance_id.to_string(),
-            None, None, None,
+            None,
+            None,
+            None,
             Some(Some("another-oauth-account".to_string())),
-            None, None, None, None, None,
+            None,
+            None,
+            None,
+            None,
+            None,
             Some(true),
+            None,
             None,
         )
         .await
         .expect("save new binding without launching Codex");
         let reloaded = modules::codex_instance::load_instance_store().expect("reload store");
         let instance = &reloaded.instances[0];
-        assert!(!instance.model_routing.as_ref().expect("persisted routing").enabled);
-        assert_eq!(instance.bind_account_id.as_deref(), Some("another-oauth-account"));
+        assert!(
+            !instance
+                .model_routing
+                .as_ref()
+                .expect("persisted routing")
+                .enabled
+        );
+        assert_eq!(
+            instance.bind_account_id.as_deref(),
+            Some("another-oauth-account")
+        );
         let config = std::fs::read_to_string(profile_dir.join("config.toml")).expect("read config");
         assert!(config.contains("model_context_window = 1000000"));
         assert!(config.contains("model_auto_compact_token_limit = 900000"));
@@ -1313,14 +1403,28 @@ mod tests {
 
     #[test]
     fn pending_catalog_preserves_active_files_and_handles_removed_default() {
-        let _lock = crate::modules::test_support::env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = crate::modules::test_support::env_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let env = TestDataDirGuard::new("pending-catalog");
-        let profile = save_instance_with_quick_config(&env, "pending", Some(1_000_000), Some(900_000));
+        let profile =
+            save_instance_with_quick_config(&env, "pending", Some(1_000_000), Some(900_000));
         let before = std::fs::read(profile.join("config.toml")).unwrap();
-        let view = save_pending_model_catalog(&profile, true, test_experimental_models(), Some("cpa/gpt-6-astra".into())).unwrap();
+        let view = save_pending_model_catalog(
+            &profile,
+            true,
+            test_experimental_models(),
+            Some("cpa/gpt-6-astra".into()),
+        )
+        .unwrap();
         assert!(view.experimental_model_catalog_default_model_id.is_none());
         assert_eq!(std::fs::read(profile.join("config.toml")).unwrap(), before);
-        assert!(read_pending_model_catalog(&profile).unwrap().unwrap().enabled);
+        assert!(
+            read_pending_model_catalog(&profile)
+                .unwrap()
+                .unwrap()
+                .enabled
+        );
         apply_pending_model_catalog(&profile).unwrap();
         assert!(read_pending_model_catalog(&profile).unwrap().is_none());
         let config = std::fs::read_to_string(profile.join("config.toml")).unwrap();
@@ -1334,7 +1438,9 @@ mod tests {
 
     #[test]
     fn invalid_pending_catalog_does_not_replace_saved_draft() {
-        let _lock = crate::modules::test_support::env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = crate::modules::test_support::env_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let env = TestDataDirGuard::new("pending-invalid");
         let profile = save_instance_with_quick_config(&env, "pending", None, None);
         save_pending_model_catalog(&profile, true, test_experimental_models(), None).unwrap();
@@ -1346,18 +1452,39 @@ mod tests {
 
     #[tokio::test]
     async fn routing_without_oauth_binding_is_auto_disabled_on_save() {
-        let _lock = crate::modules::test_support::env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = crate::modules::test_support::env_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let env = TestDataDirGuard::new("pending-rollback");
         let profile = save_instance_with_quick_config(&env, "pending", None, None);
         save_pending_model_catalog(&profile, false, Vec::new(), None).unwrap();
         let result = codex_save_instance_configuration(
-            "pending".into(), None, None, None, None,
-            Some(Some(CodexInstanceModelRouting { enabled: true, ..Default::default() })),
-            None, None, None, None, Some(true), None, None, None,
-            true, test_experimental_models(), None, None,
-        ).await;
-        let saved = result
-            .expect("绑定账号不是 OAuth 订阅账号时，混合模型路由必须自动关闭而不是拦住保存");
+            "pending".into(),
+            None,
+            None,
+            None,
+            None,
+            Some(Some(CodexInstanceModelRouting {
+                enabled: true,
+                ..Default::default()
+            })),
+            None,
+            None,
+            None,
+            None,
+            Some(true),
+            None,
+            None,
+            None,
+            true,
+            test_experimental_models(),
+            None,
+            None,
+            None,
+        )
+        .await;
+        let saved =
+            result.expect("绑定账号不是 OAuth 订阅账号时，混合模型路由必须自动关闭而不是拦住保存");
         let routing = saved.instance.model_routing.expect("路由配置需要保留");
         assert!(
             !routing.enabled,
@@ -1397,6 +1524,7 @@ mod tests {
                 .expect("write base config");
             store.instances.push(InstanceProfile {
                 hide_native_quota_banner: None,
+                quota_display_compatibility: None,
                 id: instance_id.to_string(),
                 name: instance_id.to_string(),
                 user_data_dir: profile_dir.to_string_lossy().to_string(),
@@ -1468,6 +1596,7 @@ mod tests {
             None,
             false,
             test_experimental_models(),
+            None,
             None,
             None,
         )
@@ -1544,6 +1673,7 @@ mod tests {
             test_experimental_models(),
             None,
             None,
+            None,
         )
         .await
         .expect("save instance configuration");
@@ -1584,6 +1714,7 @@ mod tests {
             None,
             true,
             test_experimental_models(),
+            None,
             None,
             None,
         )
@@ -1795,7 +1926,17 @@ pub async fn codex_get_instance_quick_config(
             if let Some(models) =
                 modules::codex_local_access::api_service_preview_model_definitions(&base_dir)
             {
-                config.experimental_model_catalog_models = models;
+                config.experimental_model_catalog_models = models
+                    .into_iter()
+                    .map(|model| {
+                        config
+                            .experimental_model_catalog_models
+                            .iter()
+                            .find(|saved| saved.model_id == model.model_id)
+                            .cloned()
+                            .unwrap_or(model)
+                    })
+                    .collect();
             }
         }
         if let Some(draft) = read_pending_model_catalog(&base_dir)? {
@@ -1905,6 +2046,7 @@ pub async fn codex_save_instance_configuration(
     experimental_model_catalog_models: Vec<CodexExperimentalModelDefinition>,
     experimental_model_catalog_default_model_id: Option<String>,
     hide_native_quota_banner: Option<bool>,
+    quota_display_compatibility: Option<bool>,
 ) -> Result<CodexInstanceConfigurationSaveResult, String> {
     let profile = resolve_instance_base_dir(&instance_id)?;
     if defer_bind_account_application == Some(true) && model_routing.is_some() {
@@ -1912,8 +2054,10 @@ pub async fn codex_save_instance_configuration(
         let previous_quick_config =
             codex_get_instance_quick_config(instance_id.clone(), None).await?;
         let mut quick_config = save_pending_model_catalog(
-            &profile, experimental_model_catalog_enabled,
-            experimental_model_catalog_models, experimental_model_catalog_default_model_id,
+            &profile,
+            experimental_model_catalog_enabled,
+            experimental_model_catalog_models,
+            experimental_model_catalog_default_model_id,
         )?;
         if update_context_override == Some(true) {
             let context_profile = profile.clone();
@@ -1937,25 +2081,35 @@ pub async fn codex_save_instance_configuration(
                     quick_config.detected_auto_compact_token_limit =
                         saved_context.detected_auto_compact_token_limit;
                     quick_config.context_window_1m = saved_context.context_window_1m;
-                    quick_config.auto_compact_token_limit =
-                        saved_context.auto_compact_token_limit;
+                    quick_config.auto_compact_token_limit = saved_context.auto_compact_token_limit;
                 }
                 Err(error) => {
-                    restore_pending_model_catalog(
-                        &profile,
-                        previous_pending_catalog.as_ref(),
-                    )?;
+                    restore_pending_model_catalog(&profile, previous_pending_catalog.as_ref())?;
                     return Err(error);
                 }
             }
         }
         let result = codex_update_instance(
-            instance_id.clone(), name, working_dir, extra_args, bind_account_id, model_routing,
-            follow_local_account, launch_mode, app_speed, auto_sync_threads, Some(true),
+            instance_id.clone(),
+            name,
+            working_dir,
+            extra_args,
+            bind_account_id,
+            model_routing,
+            follow_local_account,
+            launch_mode,
+            app_speed,
+            auto_sync_threads,
+            Some(true),
             hide_native_quota_banner,
-        ).await;
+            quota_display_compatibility,
+        )
+        .await;
         return match result {
-            Ok(instance) => Ok(CodexInstanceConfigurationSaveResult { instance, quick_config }),
+            Ok(instance) => Ok(CodexInstanceConfigurationSaveResult {
+                instance,
+                quick_config,
+            }),
             Err(error) => {
                 let context_rollback = if update_context_override == Some(true) {
                     codex_save_instance_quick_config(
@@ -2019,6 +2173,7 @@ pub async fn codex_save_instance_configuration(
         auto_sync_threads,
         defer_bind_account_application,
         hide_native_quota_banner,
+        quota_display_compatibility,
     )
     .await;
 
@@ -2301,12 +2456,15 @@ pub async fn codex_preview_session_import(
 pub async fn codex_validate_session_import_paths(
     cwd_mappings: std::collections::HashMap<String, String>,
 ) -> Result<std::collections::HashMap<String, String>, String> {
-    tokio::time::timeout(std::time::Duration::from_secs(5),
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
         tauri::async_runtime::spawn_blocking(move || {
             modules::codex_session_import_paths::validate_target_paths(&cwd_mappings)
         }),
-    ).await.map_err(|_| "验证项目目录超时，请重试".to_string())?
-        .map_err(|error| format!("验证项目目录失败: {}", error))
+    )
+    .await
+    .map_err(|_| "验证项目目录超时，请重试".to_string())?
+    .map_err(|error| format!("验证项目目录失败: {}", error))
 }
 
 #[tauri::command]
@@ -2386,10 +2544,21 @@ pub async fn codex_create_instance(
     launch_mode: Option<InstanceLaunchMode>,
     app_speed: Option<CodexAppSpeed>,
     hide_native_quota_banner: Option<bool>,
+    quota_display_compatibility: Option<bool>,
 ) -> Result<CodexInstanceProfileView, String> {
     let params = modules::codex_instance::CreateInstanceParams {
-        name, user_data_dir, working_dir, extra_args: extra_args.unwrap_or_default(),
-        bind_account_id, model_routing, copy_source_instance_id, init_mode, launch_mode, app_speed, hide_native_quota_banner,
+        name,
+        user_data_dir,
+        working_dir,
+        extra_args: extra_args.unwrap_or_default(),
+        bind_account_id,
+        model_routing,
+        copy_source_instance_id,
+        init_mode,
+        launch_mode,
+        app_speed,
+        hide_native_quota_banner,
+        quota_display_compatibility,
     };
     let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let worker_cancelled = cancelled.clone();
@@ -2397,7 +2566,9 @@ pub async fn codex_create_instance(
         let mut params = params;
         let effective_launch_mode = params.launch_mode.clone().unwrap_or_default();
         params.model_routing = validate_instance_model_routing(
-            params.bind_account_id.as_deref(), &effective_launch_mode, params.model_routing.as_ref(),
+            params.bind_account_id.as_deref(),
+            &effective_launch_mode,
+            params.model_routing.as_ref(),
         )?;
         modules::codex_instance::create_instance_with_cancellation(params, &worker_cancelled)
     });
@@ -2438,6 +2609,7 @@ pub async fn codex_update_instance(
     auto_sync_threads: Option<bool>,
     defer_bind_account_application: Option<bool>,
     hide_native_quota_banner: Option<bool>,
+    quota_display_compatibility: Option<bool>,
 ) -> Result<CodexInstanceProfileView, String> {
     let model_routing_update_requested = model_routing.is_some();
     let app_speed_update_requested = app_speed.is_some();
@@ -2477,6 +2649,7 @@ pub async fn codex_update_instance(
             launch_mode,
             auto_sync_threads,
             hide_native_quota_banner.map(Some),
+            quota_display_compatibility.map(Some),
         )?;
         let mut update_error = None;
         if let Some(speed) = app_speed {
@@ -2520,6 +2693,7 @@ pub async fn codex_update_instance(
                 Some(current.launch_mode.clone()),
                 Some(current.auto_sync_threads),
                 Some(current.hide_native_quota_banner),
+                Some(current.quota_display_compatibility),
             ) {
                 rollback_errors.push(rollback_error);
             }
@@ -2618,6 +2792,7 @@ pub async fn codex_update_instance(
             launch_mode,
             app_speed,
             hide_native_quota_banner: hide_native_quota_banner.map(Some),
+            quota_display_compatibility: quota_display_compatibility.map(Some),
         })?;
     let mut update_error = selected_app_speed.and_then(|speed| {
         modules::codex_speed::write_app_speed_for_dir(Path::new(&instance.user_data_dir), speed)
@@ -2657,6 +2832,7 @@ pub async fn codex_update_instance(
                 launch_mode: Some(current.launch_mode.clone()),
                 app_speed: Some(current.app_speed.clone()),
                 hide_native_quota_banner: Some(current.hide_native_quota_banner),
+                quota_display_compatibility: Some(current.quota_display_compatibility),
             },
         ) {
             rollback_errors.push(rollback_error);
@@ -2730,7 +2906,8 @@ async fn codex_start_instance_internal(
     clear_codex_instance_start_cancel(&instance_id);
     let mut launch_target = resolve_codex_instance_start_target(&instance_id)?;
     modules::codex_instance::verify_prepared_launch_binding(
-        expected_prepared_binding, launch_target.bind_account_id.as_deref(),
+        expected_prepared_binding,
+        launch_target.bind_account_id.as_deref(),
     )?;
     let configured_launch_mode = launch_target.launch_mode.clone();
     // 绑定账号不再是可直接登录的 OAuth 订阅账号时，路由按关闭处理：
@@ -2939,11 +3116,15 @@ async fn codex_start_instance_internal(
         let default_settings = modules::codex_instance::load_default_settings()?;
         let default_bind_account_id = resolve_default_account_id(&default_settings);
         modules::codex_instance::verify_prepared_launch_binding(
-            expected_prepared_binding, default_bind_account_id.as_deref(),
+            expected_prepared_binding,
+            default_bind_account_id.as_deref(),
         )?;
         if default_settings.launch_mode != InstanceLaunchMode::Cli {
-            tauri::async_runtime::spawn_blocking(modules::process::ensure_codex_launch_path_configured)
-                .await.map_err(|error| error.to_string())??;
+            tauri::async_runtime::spawn_blocking(
+                modules::process::ensure_codex_launch_path_configured,
+            )
+            .await
+            .map_err(|error| error.to_string())??;
         }
         modules::logger::log_info(&format!(
             "[Codex Start] default prepare phase finished: bind_account_id={:?}, launch_mode={:?}, elapsed_ms={}, total_ms={}",
@@ -3036,7 +3217,12 @@ async fn codex_start_instance_internal(
         ));
         // Auth/provider restoration can restore a previous service_tier. Apply
         // the selected speed afterwards, before the gateway reads its defaults.
-        apply_launch_speed_after_auth(&default_dir, default_bind_account_id.as_deref(), default_settings.app_speed.clone()).await?;
+        apply_launch_speed_after_auth(
+            &default_dir,
+            default_bind_account_id.as_deref(),
+            default_settings.app_speed.clone(),
+        )
+        .await?;
         let refreshed_oauth_account = oauth_account_id
             .as_deref()
             .and_then(modules::codex_account::load_account);
@@ -3192,7 +3378,8 @@ async fn codex_start_instance_internal(
             modules::codex_app_injection::build_launch_args(&extra_args, cdp_enabled)?;
         let launch_proxy = modules::codex_instance::resolve_egress_proxy_for_bind_account(
             default_bind_account_id.as_deref(),
-        ).await?;
+        )
+        .await?;
         launch_proxy.append_electron_args(&mut injection_plan.args);
         emit_codex_instance_launch_step(
             &app,
@@ -3205,6 +3392,13 @@ async fn codex_start_instance_internal(
         );
         let launch_started = Instant::now();
         ensure_codex_instance_start_not_cancelled(&instance_id)?;
+        modules::codex_app_injection::start_for_launched_profile(
+            app.clone(),
+            DEFAULT_INSTANCE_ID.to_string(),
+            default_dir.clone(),
+            injection_plan.port,
+            default_bind_account_id.clone(),
+        );
         let launch_args = injection_plan.args.clone();
         let prepared_home = default_dir.clone();
         // Package registration, activation and PID confirmation can wait on
@@ -3231,14 +3425,6 @@ async fn codex_start_instance_internal(
         ));
         let finalize_started = Instant::now();
         let updated = modules::codex_instance::update_default_pid(Some(pid))?;
-        modules::codex_app_injection::start_for_profile(
-            app.clone(),
-            DEFAULT_INSTANCE_ID.to_string(),
-            default_dir.clone(),
-            injection_plan.port,
-            default_bind_account_id.clone(),
-            hide_native_quota,
-        );
         let running = modules::process::is_pid_running(pid);
         modules::logger::log_info(&format!(
             "[Codex Start] default finalize phase finished: elapsed_ms={}, total_ms={}",
@@ -3278,7 +3464,8 @@ async fn codex_start_instance_internal(
         .ok_or("实例不存在")?;
 
     modules::codex_instance::verify_prepared_launch_binding(
-        expected_prepared_binding, instance.bind_account_id.as_deref(),
+        expected_prepared_binding,
+        instance.bind_account_id.as_deref(),
     )?;
     modules::codex_instance::ensure_instance_shared_skills(Path::new(&instance.user_data_dir))?;
     let instance_dir = Path::new(&instance.user_data_dir);
@@ -3297,7 +3484,8 @@ async fn codex_start_instance_internal(
     let target_home = instance.user_data_dir.clone();
     stop_runtime_for_start(runtime_state, move || {
         modules::process::close_codex_instances(&[target_home], 20)
-    }).await?;
+    })
+    .await?;
     let _ = modules::codex_instance::update_instance_pid(&instance.id, None)?;
     modules::codex_local_access::stop_provider_gateways_for_profile(instance_dir).await;
     restore_mixed_model_gateway_when_disabled(instance_dir, instance.model_routing.as_ref())
@@ -3358,7 +3546,12 @@ async fn codex_start_instance_internal(
         inject_started.elapsed().as_millis(),
         flow_started.elapsed().as_millis()
     ));
-    apply_launch_speed_after_auth(instance_dir, instance.bind_account_id.as_deref(), instance.app_speed.clone()).await?;
+    apply_launch_speed_after_auth(
+        instance_dir,
+        instance.bind_account_id.as_deref(),
+        instance.app_speed.clone(),
+    )
+    .await?;
     let refreshed_oauth_account = oauth_account_id
         .as_deref()
         .and_then(modules::codex_account::load_account);
@@ -3495,7 +3688,8 @@ async fn codex_start_instance_internal(
     }
 
     tauri::async_runtime::spawn_blocking(modules::process::ensure_codex_launch_path_configured)
-        .await.map_err(|error| error.to_string())??;
+        .await
+        .map_err(|error| error.to_string())??;
     let extra_args = modules::process::parse_extra_args(&instance.extra_args);
     let hide_native_quota = modules::codex_app_injection::native_quota_banner_enabled(
         instance.hide_native_quota_banner,
@@ -3507,10 +3701,12 @@ async fn codex_start_instance_internal(
         hide_native_quota,
         instance_dir,
     );
-    let mut injection_plan = modules::codex_app_injection::build_launch_args(&extra_args, cdp_enabled)?;
+    let mut injection_plan =
+        modules::codex_app_injection::build_launch_args(&extra_args, cdp_enabled)?;
     let launch_proxy = modules::codex_instance::resolve_egress_proxy_for_bind_account(
         instance.bind_account_id.as_deref(),
-    ).await?;
+    )
+    .await?;
     launch_proxy.append_electron_args(&mut injection_plan.args);
     emit_codex_instance_launch_step(
         &app,
@@ -3523,6 +3719,13 @@ async fn codex_start_instance_internal(
     );
     let launch_started = Instant::now();
     ensure_codex_instance_start_not_cancelled(&instance_id)?;
+    modules::codex_app_injection::start_for_launched_profile(
+        app.clone(),
+        instance.id.clone(),
+        instance_dir.to_path_buf(),
+        injection_plan.port,
+        instance.bind_account_id.clone(),
+    );
     let launch_home = instance.user_data_dir.clone();
     let launch_args = injection_plan.args.clone();
     let pid = tauri::async_runtime::spawn_blocking(move || {
@@ -3548,14 +3751,6 @@ async fn codex_start_instance_internal(
     ));
     let finalize_started = Instant::now();
     let updated = modules::codex_instance::update_instance_after_start(&instance.id, pid)?;
-    modules::codex_app_injection::start_for_profile(
-        app.clone(),
-        instance.id.clone(),
-        instance_dir.to_path_buf(),
-        injection_plan.port,
-        instance.bind_account_id.clone(),
-        hide_native_quota,
-    );
     let running = modules::process::is_pid_running(pid);
     let initialized = is_profile_initialized(&updated.user_data_dir);
     modules::logger::log_info(&format!(
@@ -3848,11 +4043,15 @@ pub async fn codex_stop_instance(instance_id: String) -> Result<CodexInstancePro
         .ok_or("实例不存在")?;
 
     modules::codex_app_injection::stop_for_profile(Path::new(&instance.user_data_dir));
-    if modules::process::resolve_codex_pid(instance.last_pid, Some(&instance.user_data_dir)).is_some() {
+    if modules::process::resolve_codex_pid(instance.last_pid, Some(&instance.user_data_dir))
+        .is_some()
+    {
         let target_home = instance.user_data_dir.clone();
         tauri::async_runtime::spawn_blocking(move || {
             modules::process::close_codex_instances(&[target_home], 20)
-        }).await.map_err(|error| error.to_string())??;
+        })
+        .await
+        .map_err(|error| error.to_string())??;
     }
     modules::codex_local_access::stop_provider_gateways_for_profile(Path::new(
         &instance.user_data_dir,

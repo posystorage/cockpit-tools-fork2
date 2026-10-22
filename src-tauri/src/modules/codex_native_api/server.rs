@@ -27,10 +27,18 @@ use super::{
 
 #[derive(Clone, Debug)]
 pub struct Options {
+    /// usize::MAX leaves conversation request sizes unrestricted by the gateway.
     pub max_body_bytes: usize,
+    /// Per uploaded image file, rather than the sum of a multipart request.
     pub max_upload_bytes: usize,
+    /// Ordinary Go responses are collected without a gateway size cap.
     pub max_response_bytes: usize,
+    /// Independent Images API; OAuth images use ordinary Responses limits.
+    pub max_image_response_bytes: usize,
+    /// Codex executor SSE line budget.
     pub max_event_bytes: usize,
+    /// Chat provider gateway SSE line budget.
+    pub max_provider_event_bytes: usize,
     /// Zero preserves the host's per-account concurrency policy without another global cap.
     pub max_in_flight: usize,
     pub request_timeout: Duration,
@@ -40,10 +48,12 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            max_body_bytes: 16 * 1024 * 1024,
+            max_body_bytes: usize::MAX,
             max_upload_bytes: 64 * 1024 * 1024,
-            max_response_bytes: 32 * 1024 * 1024,
-            max_event_bytes: 8 * 1024 * 1024,
+            max_response_bytes: usize::MAX,
+            max_image_response_bytes: 96 * 1024 * 1024,
+            max_event_bytes: 50 * 1024 * 1024,
+            max_provider_event_bytes: 4 * 1024 * 1024,
             max_in_flight: 0,
             request_timeout: Duration::from_secs(30),
             idle_timeout: Duration::from_secs(180),

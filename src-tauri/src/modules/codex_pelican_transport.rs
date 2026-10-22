@@ -1,6 +1,6 @@
 // Deliberately separate from wakeup: bounded streaming, no tools, no model fallback,
 // no API-service startup and no automatic generation retries.
-pub const PELICAN_DELIVERY_INSTRUCTIONS: &str = "Return a complete standalone HTML document in your response. Do not use Markdown fences or external dependencies.";
+pub const PELICAN_DELIVERY_INSTRUCTIONS: &str = "Follow the output format requested by the user. For HTML or SVG creation tasks, return a complete standalone HTML document without Markdown fences or external dependencies. For other tasks, answer directly in the requested format; do not wrap plain text or JSON in HTML. Do not use external tools or search.";
 const PELICAN_MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 const PELICAN_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 const PELICAN_TOTAL_TIMEOUT: Duration = Duration::from_secs(15 * 60);
@@ -8,6 +8,8 @@ static PELICAN_PREPARATION_SLOTS: std::sync::LazyLock<Arc<tokio::sync::Semaphore
     std::sync::LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(6)));
 
 pub struct PelicanChatOutput {
+    /// Independent plan usage must not be measured with the original Codex quota.
+    pub uses_official_authorization: bool,
     pub reply: String,
     pub usage: Option<Value>,
     pub response_id: Option<String>,
@@ -252,6 +254,7 @@ impl PelicanSseDecoder {
             final_text
         };
         Ok(PelicanChatOutput {
+            uses_official_authorization: false,
             reply,
             usage: response.get("usage").filter(|v| !v.is_null()).cloned(),
             response_id: response
@@ -364,6 +367,18 @@ async fn pelican_chat_inner(
     prompt: &str,
     on_delta: impl Fn(String) + Send + Sync + 'static,
 ) -> Result<PelicanChatOutput, String> {
+    if let Some(authorization) = prepare_official_background_authorization(account_id).await? {
+        return run_official_background_chat(
+            &authorization,
+            model,
+            effort,
+            prompt,
+            PELICAN_DELIVERY_INSTRUCTIONS,
+            "pelican",
+            on_delta,
+        )
+        .await;
+    }
     let id = account_id.to_owned();
     let runtime_handle = tokio::runtime::Handle::current();
     // Blocking disk/syscall work cannot be forcibly cancelled. Keep its permit in
