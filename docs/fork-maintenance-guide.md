@@ -37,6 +37,29 @@ Release workflow 中 `build-windows`、`build-macos-aarch64`、`build-macos-x86_
 
 ## 2. 当前基线与历史锚点
 
+### 2.0 v1.3.75 升级施工边界（2026-10-28）
+
+从 fork 1.3.73b1（83ca9ff8）直接合入上游 v1.3.75（2cfe5e51314bfc0bf70bdda1ba08aed82c7dc8bf），
+分支 codex/upgrade-upstream-v1.3.75。发布说明仅聚合 1.3.75、1.3.74 及本轮 fork 适配。
+Go 默认、Rust 官方授权、七个指纹模型、上游价格簿、六组 fork 行为和全平台草稿发布边界继续执行。
+
+接受上游新版 browser preload、initial／primary／composer-adapter 主链，再分别接入本地发送解锁、
+原提示隐藏偏好和默认关闭的主额度显示兼容。不得通过强制开启 quotaCompat 获得发送能力。
+旧布局保留同会话三个条件断点及原始 usage 恢复；新布局发送只放行已验证的本地 API 会话，
+官方／remote／cloud／useAsbDirect 和其他提交限制仍保留。错过完整 preload 的已打开新布局页面
+报告需要重启，等待显式重启或自然新文档，不强制重载用户页面。
+
+统计缓存保留优化必须比较 officialAccountId／accountEmail，身份变化不能继承旧统计；
+保留严格历史别名、全账号窗口统计和独立 API 页滚动范围。新增会话 ID 映射按上游默认开启，
+显式 false 保存并贯通 Go/Rust，不替代诊断请求 ID 或改变指纹请求身份构造。
+检查高计价 revision 的旧配置是否仍能重算新增 Terra 历史日志，保留用户价格覆盖，不恢复独立价格版本。
+
+接受压缩会话、手动历史索引修复、Windows 启动确认／路径恢复、其他平台改进和本地背景设置。
+新增商业域名卡片皮肤按既有去推广规则剔除，普通 Provider 功能保留；Cask 继续删除。
+同步锁文件版本元数据，修正上游历史修复说明与最终运行行为不一致的部分。
+
+施工和验证结果在本轮完成后补充；不能把编译或缺少真实模块 fixture 的跳过结果当作实际客户端验收。
+
 ### 2.0 v1.3.73 升级施工边界（2026-10-22）
 
 从 fork 1.3.69b2（31410d39）直接合入上游 v1.3.73，release commit 为
