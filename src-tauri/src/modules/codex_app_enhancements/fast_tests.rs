@@ -24,10 +24,17 @@ fn live_quota_condition_requires_valid_minified_locals() {
 
 struct Options {
     api_service: bool,
+    native_fast: bool,
+    api_key_auth_verified: bool,
+    fast_only: bool,
+    full_quota_only: bool,
+    initially_active: bool,
+    browser_preloading_reads: usize,
     quota_compat: bool,
     public_entry: bool,
     live_quota: bool,
     live_plan_invalid: bool,
+    current_layout: bool,
     debugger_error: bool,
     preload_first: bool,
     profile_dir: PathBuf,
@@ -56,10 +63,17 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             api_service: false,
+            native_fast: true,
+            api_key_auth_verified: true,
+            fast_only: false,
+            full_quota_only: false,
+            initially_active: false,
+            browser_preloading_reads: 0,
             quota_compat: true,
             public_entry: false,
             live_quota: false,
             live_plan_invalid: false,
+            current_layout: false,
             debugger_error: false,
             preload_first: false,
             profile_dir: PathBuf::new(),
@@ -121,6 +135,8 @@ async fn start(options: Options) -> Running {
     let startup = options.startup.clone();
     let profile_dir = options.profile_dir.clone();
     let api_service = options.api_service;
+    let native_fast = options.native_fast;
+    let api_key_auth_verified = options.api_key_auth_verified;
     let quota_compat = options.quota_compat;
     let public_entry = options.public_entry;
     let live_quota = options.live_quota;
@@ -131,6 +147,7 @@ async fn start(options: Options) -> Running {
         let mut registrations = 0;
         let mut preparations = 0;
         let mut inspections = 0;
+        let mut browser_probes = 0;
         let mut reload_attempts = 0;
         let mut delayed_registration = None;
         let mut prepared_nonce: Option<String> = None;
@@ -173,17 +190,22 @@ async fn start(options: Options) -> Running {
                     let value = if expression == "location.href" {
                         json!("app://-/index.html")
                     } else if expression == "window.__cockpitQuotaCompat.prepareLiveQuotaGate()" {
-                        json!({"ok":true,"plan":{
-                            "url":if options.live_plan_invalid { "https://example.test/assets/app-primary-mock.js" } else { "app://-/assets/app-primary-mock.js" },
-                            "lineNumber":12,"columnNumber":34,"hardVariable":"Ct","guardVariable":"vn",
-                            "bannerLocations":[
-                                {"url":"app://-/assets/app-initial-mock.js","lineNumber":2,"columnNumber":3,"usageVariable":"usage"},
-                                {"url":"app://-/assets/app-primary-mock.js","lineNumber":4,"columnNumber":5,"usageVariable":"quota"}
-                            ]
-                        }})
+                        if options.current_layout {
+                            json!({"ok":false,"reason":"quota-restart-required"})
+                        } else {
+                            json!({"ok":true,"plan":{
+                                "url":if options.live_plan_invalid { "https://example.test/assets/app-primary-mock.js" } else { "app://-/assets/app-primary-mock.js" },
+                                "lineNumber":12,"columnNumber":34,"hardVariable":"Ct","guardVariable":"vn",
+                                "bannerLocations":[
+                                    {"url":"app://-/assets/app-initial-mock.js","lineNumber":2,"columnNumber":3,"usageVariable":"usage"},
+                                    {"url":"app://-/assets/app-primary-mock.js","lineNumber":4,"columnNumber":5,"usageVariable":"quota"}
+                                ]
+                            }})
+                        }
                     } else if expression
                         .starts_with("window.__cockpitQuotaCompat.installLiveQuotaGuard(")
                     {
+                        notice = Some(json!({"phase":"cache-policy","reason":"applied"}));
                         json!({"ok":true})
                     } else if let Some(nonce) = argument(expression, "prepareHandoff") {
                         prepared_nonce = Some(nonce);
@@ -228,12 +250,16 @@ async fn start(options: Options) -> Running {
                         }
                         json!({"ok":accepted,"reason":rejection.copied().unwrap_or(if accepted { "reload-started" } else { "draft-present" })})
                     } else if expression.contains("state:s.nativePatchState") {
-                        if message["params"]["contextId"] == 2 {
+                        if message["params"]["contextId"] == 2 || options.initially_active {
                             if let Some(reason) = options.rejected_new_context {
                                 json!({"state":"unsupported","reason":reason})
                             } else if options.active_new_context {
                                 if options.capability_only {
                                     json!({"state":"active-capability","reason":"capability-only-quota-provider-not-unique"})
+                                } else if options.fast_only {
+                                    json!({"state":"active","reason":"fast-only-quota-unsupported","mode":"fast-only","features":"1010","quotaState":"unsupported","quotaReason":"quota-imports-missing"})
+                                } else if options.full_quota_only {
+                                    json!({"state":"active","reason":"module-evaluated","mode":"full","features":"0101"})
                                 } else {
                                     json!({"state":"active"})
                                 }
@@ -244,7 +270,12 @@ async fn start(options: Options) -> Running {
                             json!({"state":"pending"})
                         }
                     } else if expression.contains("typeof p?.prepareHandoff") {
-                        json!(message["params"]["contextId"] == 2)
+                        browser_probes += 1;
+                        if options.browser_preloading_reads > 0 {
+                            json!({"installed":false,"preloading":browser_probes <= options.browser_preloading_reads})
+                        } else {
+                            json!(message["params"]["contextId"] == 2 || options.initially_active)
+                        }
                     } else {
                         json!(true)
                     };
@@ -342,9 +373,9 @@ async fn start(options: Options) -> Running {
             run(
                 url,
                 profile_dir,
-                true,
+                native_fast,
                 quota_compat,
-                true,
+                api_key_auth_verified,
                 api_service,
                 preload_first,
                 startup,
@@ -355,9 +386,9 @@ async fn start(options: Options) -> Running {
             run_with_live_quota(
                 url,
                 profile_dir,
-                true,
+                native_fast,
                 quota_compat,
-                true,
+                api_key_auth_verified,
                 api_service,
                 preload_first,
                 startup,
@@ -452,6 +483,8 @@ fn assert_safe_protocol(calls: &[Value]) {
 async fn api_service_fallback_waits_without_automatic_reload() {
     let mut runtime = start(Options {
         api_service: true,
+        native_fast: false,
+        api_key_auth_verified: false,
         quota_compat: false,
         public_entry: true,
         ..Options::default()
@@ -1593,4 +1626,239 @@ async fn disabled_and_stopped_sessions_do_not_connect() {
     )
     .await
     .is_ok());
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tokio::test]
+async fn verified_api_fast_reuses_fresh_startup_and_reports_partial_activation() {
+    let mut runtime = start(Options {
+        api_service: true,
+        quota_compat: false,
+        public_entry: true,
+        fast_only: true,
+        ..Options::default()
+    })
+    .await;
+    let notice = runtime
+        .notice("activation", Some("fast-only-quota-unsupported"))
+        .await;
+    assert_eq!(notice["quotaState"], "unsupported");
+    assert_eq!(notice["quotaReason"], "quota-imports-missing");
+    assert_eq!(runtime.navigations.load(Ordering::Acquire), 1);
+    let calls = runtime.finish(false).await;
+    assert_eq!(
+        expressions(&calls, "window.__cockpitNativeFast.inspectStartupReload()"),
+        1
+    );
+    assert_eq!(methods(&calls, "Debugger.enable"), 0);
+}
+
+#[tokio::test]
+async fn verified_api_fast_running_document_never_reloads() {
+    let mut runtime = start(Options {
+        api_service: true,
+        quota_compat: false,
+        public_entry: true,
+        startup: None,
+        ..Options::default()
+    })
+    .await;
+    runtime.notice("document", Some("restart-required")).await;
+    assert_eq!(runtime.navigations.load(Ordering::Acquire), 0);
+    let calls = runtime.finish(false).await;
+    assert_eq!(
+        expressions(&calls, "window.__cockpitNativeFast.inspectStartupReload()"),
+        0
+    );
+}
+
+#[tokio::test]
+async fn verified_api_fast_preload_late_attach_waits_without_second_reload() {
+    let mut runtime = start(Options {
+        api_service: true,
+        quota_compat: false,
+        public_entry: true,
+        preload_first: true,
+        ..Options::default()
+    })
+    .await;
+    runtime.notice("document", Some("restart-required")).await;
+    assert_eq!(runtime.navigations.load(Ordering::Acquire), 0);
+    let calls = runtime.finish(false).await;
+    assert_eq!(
+        expressions(&calls, "window.__cockpitNativeFast.inspectStartupReload()"),
+        0
+    );
+    assert_eq!(methods(&calls, "Page.addScriptToEvaluateOnNewDocument"), 1);
+    assert!(calls.iter().any(|call| call["params"]["source"]
+        .as_str()
+        .is_some_and(|source| source.contains("__cockpitStartupPreloadStarted"))));
+}
+
+#[tokio::test]
+async fn live_quota_worker_preserves_an_already_active_fast_module() {
+    let mut runtime = start(Options {
+        api_service: true,
+        live_quota: true,
+        fast_only: true,
+        initially_active: true,
+        ..Options::default()
+    })
+    .await;
+    runtime
+        .notice("activation", Some("fast-only-quota-unsupported"))
+        .await;
+    let calls = runtime.finish(false).await;
+    assert_eq!(methods(&calls, "Debugger.enable"), 0);
+    assert_eq!(
+        expressions(&calls, "window.__cockpitQuotaCompat.prepareLiveQuotaGate()"),
+        0
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[tokio::test]
+async fn windows_api_fresh_startup_retains_legacy_live_unlock_without_reload() {
+    let mut runtime = start(Options {
+        api_service: true,
+        quota_compat: false,
+        public_entry: true,
+        preload_first: false,
+        ..Options::default()
+    })
+    .await;
+    runtime
+        .notice("activation", Some("quota-breakpoint-armed"))
+        .await;
+    assert_eq!(runtime.navigations.load(Ordering::Acquire), 0);
+    let calls = runtime.finish(false).await;
+    assert_eq!(
+        expressions(&calls, "window.__cockpitNativeFast.inspectStartupReload()"),
+        0
+    );
+    assert!(calls.iter().any(|call| call["params"]["source"]
+        .as_str()
+        .is_some_and(|source| source.contains("__cockpitStartupPreloadStarted"))));
+}
+
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn macos_api_fresh_launch_uses_live_unlock_without_forced_reload() {
+    let mut runtime = start(Options {
+        api_service: true,
+        native_fast: false,
+        api_key_auth_verified: false,
+        quota_compat: true,
+        public_entry: true,
+        full_quota_only: true,
+        ..Options::default()
+    })
+    .await;
+    runtime
+        .notice("activation", Some("quota-breakpoint-armed"))
+        .await;
+    assert_eq!(runtime.navigations.load(Ordering::Acquire), 0);
+    let calls = runtime.finish(false).await;
+    assert_eq!(
+        expressions(&calls, "window.__cockpitNativeFast.inspectStartupReload()"),
+        0
+    );
+    assert_eq!(methods(&calls, "Debugger.setBreakpointByUrl"), 3);
+}
+
+#[tokio::test]
+async fn full_quota_only_module_is_not_replaced_by_a_live_guard_on_reconnect() {
+    let mut runtime = start(Options {
+        api_service: true,
+        native_fast: false,
+        api_key_auth_verified: false,
+        live_quota: true,
+        full_quota_only: true,
+        initially_active: true,
+        ..Options::default()
+    })
+    .await;
+    runtime.notice("activation", Some("module-evaluated")).await;
+    runtime.notice("cache-policy", Some("applied")).await;
+    let calls = runtime.finish(false).await;
+    assert_eq!(methods(&calls, "Debugger.enable"), 0);
+    assert_eq!(
+        expressions(&calls, "window.__cockpitQuotaCompat.prepareLiveQuotaGate()"),
+        0
+    );
+    assert_eq!(
+        expressions(
+            &calls,
+            "window.__cockpitQuotaCompat.installLiveQuotaGuard({})"
+        ),
+        1
+    );
+}
+
+#[tokio::test]
+async fn already_open_current_adapter_requires_restart_without_unscoped_breakpoints_or_reload() {
+    let mut runtime = start(Options {
+        api_service: true,
+        live_quota: true,
+        current_layout: true,
+        quota_compat: false,
+        ..Options::default()
+    })
+    .await;
+    runtime
+        .notice("activation", Some("quota-restart-required"))
+        .await;
+    assert_eq!(runtime.navigations.load(Ordering::Acquire), 0);
+    let calls = runtime.finish(false).await;
+    assert_eq!(methods(&calls, "Debugger.enable"), 0);
+    assert_eq!(methods(&calls, "Debugger.setBreakpointByUrl"), 0);
+    assert!(!calls
+        .iter()
+        .any(|call| call["params"]["expression"].as_str().is_some_and(
+            |source| source.starts_with("window.__cockpitQuotaCompat.installLiveQuotaGuard(")
+        )));
+}
+
+#[tokio::test]
+async fn page_worker_waits_for_browser_completion_before_replacing_its_owner() {
+    let mut runtime = start(Options {
+        browser_preloading_reads: 2,
+        initially_active: true,
+        fast_only: true,
+        ..Options::default()
+    })
+    .await;
+    runtime.notice("document", Some("browser-preloading")).await;
+    runtime
+        .notice("activation", Some("fast-only-quota-unsupported"))
+        .await;
+    assert_eq!(runtime.navigations.load(Ordering::Acquire), 0);
+    let calls = runtime.finish(false).await;
+    let expressions: Vec<_> = calls
+        .iter()
+        .filter_map(|call| call["params"]["expression"].as_str())
+        .collect();
+    let bootstrap = expressions
+        .iter()
+        .position(|expression| expression.contains("const previous = window.__cockpitEnhancements"))
+        .unwrap();
+    assert_eq!(
+        expressions[..bootstrap]
+            .iter()
+            .filter(|expression| expression.contains("typeof p?.prepareHandoff"))
+            .count(),
+        3
+    );
+}
+
+#[test]
+fn fallback_speed_metadata_uses_only_bundled_ultrafast_models() {
+    let fallbacks = service_tier_fallbacks().as_object().unwrap();
+    assert_eq!(fallbacks.len(), 2);
+    for model in ["gpt-6.1-sol", "gpt-6-astra"] {
+        assert_eq!(fallbacks[model]["id"], "ultrafast");
+        assert_eq!(fallbacks[model]["description"], "");
+    }
+    let runtime = bootstrap(true, false, true, false, "catalog-test");
+    assert!(runtime.contains("\"serviceTierFallbacks\""));
 }

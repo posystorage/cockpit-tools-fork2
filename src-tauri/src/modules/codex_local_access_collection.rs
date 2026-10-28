@@ -2095,6 +2095,7 @@ async fn ensure_runtime_loaded_without_start_with_profile_restore(
                 model_pricings: Vec::new(),
                 excluded_models: Vec::new(),
                 session_affinity: true,
+                session_identity_mapping_enabled: true,
                 session_affinity_ttl_ms: DEFAULT_SESSION_AFFINITY_TTL_MS,
                 session_affinity_default_enabled_migrated: true,
                 responses_websockets_enabled: false,
@@ -2206,6 +2207,13 @@ async fn ensure_runtime_loaded_without_start_with_profile_restore(
                     "Codex API 服务默认价格表已升级，但应用句柄尚未就绪，历史估算将在下次启动后台重算",
                 );
             }
+        } else if let (Some(collection), Some(app)) =
+            (next_collection, crate::get_app_handle().cloned())
+        {
+            // A user-edited revision (or the retired fork-book cleanup) may
+            // already be >= the new upstream book. Inspect only Terra history
+            // in background; collection revisions alone cannot identify it.
+            tauri::async_runtime::spawn(queue_missing_terra_price_recovery(app, collection));
         }
 
         Ok::<_, String>(())

@@ -675,7 +675,7 @@
         assert_eq!(loaded.0, "Production Key");
         assert_eq!(loaded.1, long_error);
         assert!(loaded.1.contains("tail-marker"));
-        assert_eq!(loaded.2, 7);
+        assert_eq!(loaded.2, DEFAULT_MODEL_PRICING_VERSION as i64);
 
         drop(conn);
         let _ = fs::remove_dir_all(dir);
@@ -1025,8 +1025,8 @@
             token_breakdown: None,
         };
         for (request_id, timestamp, pricing_version) in [
-            ("req-stale", 1_700_000_000_000, 7),
-            ("req-current", 1_700_000_000_001, 8),
+            ("req-stale", 1_700_000_000_000, DEFAULT_MODEL_PRICING_VERSION - 1),
+            ("req-current", 1_700_000_000_001, DEFAULT_MODEL_PRICING_VERSION),
         ] {
             let event = append_usage_event(
                 &mut events,
@@ -1064,17 +1064,19 @@
             insert_local_access_usage_event(&conn, &event).expect("insert request log");
         }
 
+        conn.execute("UPDATE request_logs SET model_pricing_version = ?1 WHERE request_id = ?2", rusqlite::params![DEFAULT_MODEL_PRICING_VERSION - 1, "req-stale"]).unwrap();
+
         let model_ids = vec!["gpt-5.4".to_string()];
         assert_eq!(
-            count_request_logs_for_model_ids(&conn, Some(&model_ids), Some(8))
+            count_request_logs_for_model_ids(&conn, Some(&model_ids), Some(DEFAULT_MODEL_PRICING_VERSION), false)
                 .expect("count stale rows"),
             1
         );
         let mut cursors = HashMap::from([("gpt-5.4".to_string(), 0_i64)]);
-        let rows = read_request_log_reprice_batch(&conn, &mut cursors, 10, Some(8))
+        let rows = read_request_log_reprice_batch(&conn, &mut cursors, 10, Some(DEFAULT_MODEL_PRICING_VERSION), false)
             .expect("read stale rows");
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].previous_model_pricing_version, 7);
+        assert_eq!(rows[0].previous_model_pricing_version, DEFAULT_MODEL_PRICING_VERSION - 1);
 
         drop(conn);
         let _ = fs::remove_dir_all(dir);
@@ -2427,6 +2429,31 @@ supports_websockets = false
     }
 
     #[test]
+    fn gpt_6_1_terra_catalog_and_official_pricing() {
+        assert!(super::api_service_supported_codex_model_ids().iter().any(|id| id == "gpt-6.1-terra"));
+        assert_eq!(super::normalize_known_openai_codex_model("codex/gpt-6.1-terra-2026-10-26").as_deref(), Some("gpt-6.1-terra"));
+        for (tokens, tier, expected) in [
+            (272_000, None, (1.0, 0.05, 5.0)),
+            (272_001, None, (2.0, 0.1, 7.5)),
+            (272_001, Some("priority"), (4.0, 0.2, 15.0)),
+            (272_001, Some("flex"), (1.0, 0.05, 3.75)),
+        ] {
+            let usage = UsageCapture { input_tokens: tokens, ..Default::default() };
+            let price = resolve_effective_model_pricing(None, Some("gpt-6.1-terra"), Some(&usage), tier).unwrap();
+            assert_eq!((price.input_usd_per_million, price.cached_input_usd_per_million.unwrap(), price.output_usd_per_million), expected);
+        }
+        let mut breakdown = CodexTokenBreakdown::default();
+        breakdown.schema_version = 2;
+        breakdown.quality = "complete".into();
+        breakdown.input.cache_write_tokens = 100_000;
+        breakdown.input.total_tokens = 100_000;
+        breakdown.total_tokens = 100_000;
+        let usage = UsageCapture { input_tokens: 100_000, total_tokens: 100_000, token_breakdown: Some(breakdown), ..Default::default() };
+        let price = resolve_effective_model_pricing(None, Some("gpt-6.1-terra"), Some(&usage), None).unwrap();
+        assert!((calculate_usage_cost_usd(Some(&usage), Some(&price)) - 0.125).abs() < 1e-10);
+    }
+
+    #[test]
     fn gpt_6_1_sol_does_not_inherit_legacy_model_prices() {
         use super::{normalize_known_openai_codex_model, price_book_entry_for_model};
         assert_eq!(
@@ -2606,4 +2633,102 @@ supports_websockets = false
         let mut reloaded = serde_json::from_value(saved).unwrap();
         assert!(!super::sanitize_collection_structure(&mut reloaded).unwrap());
         assert_eq!(reloaded.model_pricing_version, 51);
+    }
+
+    #[test]
+    fn delayed_terra_startup_probe_rejects_changed_prices_or_collection_identity() {
+        let mut probed = test_local_access_collection(vec![]);
+        probed.model_pricing_version = 42;
+        probed.model_pricings.clear();
+        assert!(super::missing_terra_price_recovery_is_current(Some(&probed), &probed));
+        assert!(!super::missing_terra_price_recovery_is_current(None, &probed));
+
+        // The user saves while the SQLite probe is awaiting completion. Both
+        // free and paid overrides supersede the old default-price recovery.
+        for rate in [0.0, 7.0] {
+            let mut saved = probed.clone();
+            saved.model_pricing_version = 43;
+            saved.model_pricings = vec![model_pricing("gpt-6.1-terra", None,
+                codex_price(rate, 0.0, rate), None, None, None)];
+            assert!(!super::missing_terra_price_recovery_is_current(Some(&saved), &probed));
+            saved.model_pricing_version = 42;
+            assert!(!super::missing_terra_price_recovery_is_current(Some(&saved), &probed),
+                "changed prices must be rejected even if the revision matches");
+        }
+        let mut changed = probed.clone();
+        changed.model_pricing_version = 43;
+        assert!(!super::missing_terra_price_recovery_is_current(Some(&changed), &probed));
+        changed = probed.clone();
+        changed.created_at += 1;
+        assert!(!super::missing_terra_price_recovery_is_current(Some(&changed), &probed));
+        changed = probed.clone();
+        changed.api_key.push_str("-replacement");
+        assert!(!super::missing_terra_price_recovery_is_current(Some(&changed), &probed));
+        changed = probed.clone();
+        changed.port = changed.port.saturating_add(1);
+        changed.updated_at += 1;
+        assert!(super::missing_terra_price_recovery_is_current(Some(&changed), &probed),
+            "unrelated settings do not change pricing authority");
+    }
+
+    #[test]
+    fn fork_terra_missing_price_snapshots_recover_without_advancing_collection_revision() {
+        for revision in [8, 42] {
+            let dir = make_temp_dir("fork-terra-existing-revision");
+            let mut conn = open_local_access_logs_db_once(&dir.join("logs.sqlite"), true).unwrap();
+            conn.execute("INSERT INTO request_logs (event_key, timestamp, model_id, input_tokens, total_tokens, model_pricing_version) VALUES ('missing', 1700000000000, 'gpt-6.1-terra', 100000, 100000, ?1)", [revision as i64]).unwrap();
+            conn.execute("INSERT INTO request_logs (event_key, timestamp, model_id, input_tokens, total_tokens, model_pricing_version, input_usd_per_million, output_usd_per_million, cached_input_usd_per_million, estimated_cost_usd) VALUES ('priced', 1700000000000, 'gpt-6.1-terra', 100000, 100000, ?1, 9, 9, 0, 0.9)", [revision as i64]).unwrap();
+            let mut collection = test_local_access_collection(vec![]);
+            collection.model_pricing_version = revision;
+            super::sanitize_collection_structure(&mut collection).unwrap();
+            assert_eq!(collection.model_pricing_version, revision);
+            assert!(super::should_recover_missing_terra_prices(&collection));
+            let models = vec!["gpt-6.1-terra".to_owned()];
+            assert_eq!(count_request_logs_for_model_ids(&conn, Some(&models), Some(revision), false).unwrap(), 0);
+            assert_eq!(count_request_logs_for_model_ids(&conn, Some(&models), Some(revision), true).unwrap(), 1);
+            let mut cursors = super::request_log_reprice_model_cursors(&conn, Some(&models)).unwrap();
+            let rows = read_request_log_reprice_batch(&conn, &mut cursors, 100, Some(revision), true).unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].event_key, "missing");
+            let updates = super::compute_request_log_reprice_updates(rows, Some(&collection));
+            assert_eq!(updates.len(), 1);
+            assert!((updates[0].estimated_cost_usd - 0.1).abs() < 1e-10);
+            assert_eq!(updates[0].model_pricing_version, revision);
+            super::write_request_log_reprice_updates(&mut conn, &updates).unwrap();
+            assert_eq!(count_request_logs_for_model_ids(&conn, Some(&models), Some(revision), true).unwrap(), 0,
+                "a second startup must not enqueue already repaired history");
+            let priced: f64 = conn.query_row("SELECT estimated_cost_usd FROM request_logs WHERE event_key = 'priced'", [], |row| row.get(0)).unwrap();
+            assert_eq!(priced, 0.9, "a present pricing snapshot is not missing");
+            drop(conn);
+            fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn fork_terra_explicit_free_and_paid_prices_are_authoritative() {
+        for rate in [0.0, 7.0] {
+            let dir = make_temp_dir("fork-terra-explicit-pricing");
+            let conn = open_local_access_logs_db_once(&dir.join("logs.sqlite"), true).unwrap();
+            let mut collection = test_local_access_collection(vec![]);
+            collection.model_pricing_version = 42;
+            collection.model_pricings = vec![model_pricing("gpt-6.1-terra", None,
+                codex_price(rate, 0.0, rate), None, None, None)];
+            conn.execute("INSERT INTO request_logs (event_key, timestamp, model_id, input_tokens, total_tokens, model_pricing_version) VALUES ('explicit', 1700000000000, 'gpt-6.1-terra', 100000, 100000, 42)", []).unwrap();
+            super::sanitize_collection_structure(&mut collection).unwrap();
+            assert_eq!(collection.model_pricings[0].input_usd_per_million, rate);
+            assert!(!super::should_recover_missing_terra_prices(&collection),
+                "including free user overrides must bypass the missing-price startup probe");
+            let models = vec!["gpt-6.1-terra".to_owned()];
+            assert_eq!(count_request_logs_for_model_ids(&conn, Some(&models), Some(42),
+                super::should_recover_missing_terra_prices(&collection)).unwrap(), 0);
+            let price = resolve_effective_model_pricing(Some(&collection), Some("gpt-6.1-terra"), None, None).unwrap();
+            assert_eq!(price.input_usd_per_million, rate);
+            // The normal revision-change/manual reprice path still uses the user's exact rate.
+            let mut cursors = super::request_log_reprice_model_cursors(&conn, Some(&models)).unwrap();
+            let rows = read_request_log_reprice_batch(&conn, &mut cursors, 100, None, false).unwrap();
+            let updates = super::compute_request_log_reprice_updates(rows, Some(&collection));
+            assert!((updates[0].estimated_cost_usd - rate * 0.1).abs() < 1e-10);
+            drop(conn);
+            fs::remove_dir_all(dir).unwrap();
+        }
     }

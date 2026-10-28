@@ -6,6 +6,19 @@ import (
 	"time"
 )
 
+type authRecoveryBarrier struct {
+	startedAt       time.Time
+	attemptSequence uint64
+}
+
+func (b authRecoveryBarrier) rejects(ctx context.Context, startedAt time.Time) bool {
+	if sequence := upstreamAttemptSequence(ctx); sequence != 0 && b.attemptSequence != 0 {
+		return upstreamAttemptPrecedes(sequence, b.attemptSequence)
+	}
+	// External callers can still submit timestamp-only results.
+	return !b.startedAt.IsZero() && !startedAt.IsZero() && startedAt.Before(b.startedAt)
+}
+
 func (m *Manager) markAuthRecoveryBarrier(authID string) {
 	if m == nil {
 		return
@@ -16,9 +29,9 @@ func (m *Manager) markAuthRecoveryBarrier(authID string) {
 	}
 	m.mu.Lock()
 	if m.authRecoveryBarriers == nil {
-		m.authRecoveryBarriers = make(map[string]time.Time)
+		m.authRecoveryBarriers = make(map[string]authRecoveryBarrier)
 	}
-	m.authRecoveryBarriers[authID] = time.Now()
+	m.authRecoveryBarriers[authID] = authRecoveryBarrier{startedAt: time.Now(), attemptSequence: upstreamAttemptOrder.nextSequence()}
 	m.mu.Unlock()
 }
 

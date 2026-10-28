@@ -769,7 +769,7 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 			m.hook.OnResult(ctx, result)
 			return
 		}
-		if barrier := m.authRecoveryBarriers[result.AuthID]; !barrier.IsZero() && !result.AttemptStartedAt.IsZero() && result.AttemptStartedAt.Before(barrier) {
+		if m.authRecoveryBarriers[result.AuthID].rejects(ctx, result.AttemptStartedAt) {
 			m.mu.Unlock()
 			return
 		}

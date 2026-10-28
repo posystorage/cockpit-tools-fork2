@@ -165,6 +165,7 @@ fn old_reauth_status_does_not_hide_a_current_launch_setup_failure() {
         "CODEX_SWITCH_BINDING_FAILED",
         "CODEX_PROCESS_SCAN_FAILED",
         "PROXY_ENTRY_PORT_UNAVAILABLE",
+        "APP_PATH_NOT_FOUND:codex",
     ] {
         assert_eq!(
             modules::codex_account::format_account_switch_error(&account.id, code.into()),

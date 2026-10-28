@@ -145,7 +145,7 @@ type Manager struct {
 	configCooldownMu          sync.Mutex
 	auths                     map[string]*Auth
 	authEpochs                map[string]uint64
-	authRecoveryBarriers      map[string]time.Time
+	authRecoveryBarriers      map[string]authRecoveryBarrier
 	scheduler                 *authScheduler
 	// pluginScheduler runs outside m.mu before falling back to native selection.
 	pluginScheduler PluginScheduler
@@ -212,7 +212,7 @@ func NewManager(store Store, selector Selector, hook Hook) *Manager {
 		hook:                  hook,
 		auths:                 make(map[string]*Auth),
 		authEpochs:            make(map[string]uint64),
-		authRecoveryBarriers:  make(map[string]time.Time),
+		authRecoveryBarriers:  make(map[string]authRecoveryBarrier),
 		homeRuntimeAuths:      make(map[string]map[string]*Auth),
 		homeRuntimeAuthOwners: make(map[string]map[string]*HomeDispatchSelection),
 		homeSessionSelections: make(map[string]map[homeSessionSelectionKey]*HomeDispatchSelection),

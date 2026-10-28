@@ -26,6 +26,10 @@ func TestResetAuthStateIgnoresResultsFromOlderAttempts(t *testing.T) {
 	if _, err := manager.ResetAuthState(context.Background(), authID); err != nil {
 		t.Fatalf("reset auth state: %v", err)
 	}
+	// Reproduce a coarse clock deterministically: both attempts have exactly
+	// the reset timestamp, so only execution ordering can distinguish them.
+	barrier := manager.authRecoveryBarriers[authID]
+	oldAttempt = context.WithValue(oldAttempt, upstreamAttemptStartedAtContextKey{}, barrier.startedAt)
 
 	manager.MarkResult(oldAttempt, Result{
 		AuthID:   authID,
@@ -47,7 +51,12 @@ func TestResetAuthStateIgnoresResultsFromOlderAttempts(t *testing.T) {
 		t.Fatalf("old result restored cleared state: %#v", afterOldResult)
 	}
 
-	newAttempt := newUpstreamAttemptContext(context.Background())
+	// A retry derives from the old context but receives a fresh attempt order.
+	newAttempt := newUpstreamAttemptContext(oldAttempt)
+	newAttempt = context.WithValue(newAttempt, upstreamAttemptStartedAtContextKey{}, barrier.startedAt)
+	if upstreamAttemptSequence(newAttempt) == upstreamAttemptSequence(oldAttempt) {
+		t.Fatal("retry inherited the previous attempt sequence")
+	}
 	cliproxyexecutor.MarkUpstreamAttempt(newAttempt)
 	manager.MarkResult(newAttempt, Result{
 		AuthID:   authID,
@@ -64,6 +73,27 @@ func TestResetAuthStateIgnoresResultsFromOlderAttempts(t *testing.T) {
 	afterNewResult, ok := manager.GetByID(authID)
 	if !ok || afterNewResult == nil || afterNewResult.ModelStates[model] == nil {
 		t.Fatalf("new result was not recorded: %#v", afterNewResult)
+	}
+}
+
+func TestRecoveryBarrierSequenceWrapAndTimestampOnlyCompatibility(t *testing.T) {
+	var order upstreamAttemptSequencer
+	order.next.Store(^uint64(0) - 1)
+	oldSequence := order.nextSequence()
+	barrierSequence := order.nextSequence()
+	newSequence := order.nextSequence()
+	if oldSequence == 0 || barrierSequence == 0 || newSequence == 0 {
+		t.Fatal("wrapped sequence must never be zero")
+	}
+	stamp := time.Unix(100, 0)
+	barrier := authRecoveryBarrier{startedAt: stamp, attemptSequence: barrierSequence}
+	oldAttempt := context.WithValue(context.Background(), upstreamAttemptSequenceContextKey{}, oldSequence)
+	newAttempt := context.WithValue(oldAttempt, upstreamAttemptSequenceContextKey{}, newSequence)
+	if !barrier.rejects(oldAttempt, stamp) || barrier.rejects(newAttempt, stamp) {
+		t.Fatal("wraparound must reject old attempts and accept new attempts at the same timestamp")
+	}
+	if !barrier.rejects(context.Background(), stamp.Add(-time.Nanosecond)) || barrier.rejects(context.Background(), stamp.Add(time.Nanosecond)) {
+		t.Fatal("timestamp-only external results must retain the recovery barrier")
 	}
 }
 

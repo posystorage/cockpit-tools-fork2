@@ -101,3 +101,15 @@ test("1.3.73 release notes include precisely the four new upstream releases", ()
   assert.ok(mapping);
   assert.equal(mapping[1], '"1.3.73" "1.3.72" "1.3.71" "1.3.70"');
 });
+
+test("1.3.75 release notes include precisely the two newly merged upstream releases", () => {
+  const mapping = workflow.match(/"1[.]3[.]75"\)\s*RELEASE_VERSIONS=\(([^)]*)\)/);
+  assert.ok(mapping);
+  assert.equal(mapping[1], '"1.3.75" "1.3.74"');
+  for (const file of ["CHANGELOG.md", "CHANGELOG.zh-CN.md"]) {
+    const changelog = fs.readFileSync(path.join(__dirname, "../..", file), "utf8");
+    for (const version of ["1.3.75", "1.3.74"]) {
+      assert.equal(changelog.split(`## [${version}] -`).length - 1, 1, `${file}: ${version} must appear once`);
+    }
+  }
+});

@@ -74,6 +74,18 @@ fn provider_gateway_template_preserves_enabled_and_disabled_concurrency() {
 }
 
 #[test]
+fn provider_gateway_template_preserves_both_session_identity_mapping_policies() {
+    let mut instance = test_local_access_collection(vec!["bound".into()]);
+    let mut template = test_local_access_collection(vec!["global".into()]);
+    for enabled in [false, true, false] {
+        template.session_identity_mapping_enabled = enabled;
+        super::apply_provider_gateway_template_settings(&mut instance, &template);
+        assert_eq!(instance.session_identity_mapping_enabled, enabled);
+        assert_eq!(instance.account_ids, vec!["bound".to_string()]);
+    }
+}
+
+#[test]
 fn automatic_catalog_keeps_explicit_future_models_without_guessing() {
     let models = vec![
         "gpt-future-test".into(),

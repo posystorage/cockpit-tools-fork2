@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 )
@@ -22,6 +23,8 @@ func TestCodexEncryptedRecoveryResumesTTFTAtSuccessfulBody(t *testing.T) {
 			_, _ = io.WriteString(w, `{"error":{"code":"invalid_encrypted_content"}}`)
 			return
 		}
+		// Keep the successful response on a later clock tick even on Windows.
+		time.Sleep(20 * time.Millisecond)
 		_, _ = io.WriteString(w, "success")
 	}))
 	defer server.Close()
@@ -62,6 +65,8 @@ func TestCodexEncryptedRecoveryOrdinaryFailuresKeepTTFT(t *testing.T) {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			ctx := context.Background()
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// A loopback response can otherwise arrive within one clock tick.
+				time.Sleep(20 * time.Millisecond)
 				w.WriteHeader(status)
 				_, _ = io.WriteString(w, `{"error":{"code":"ordinary_error"}}`)
 			}))

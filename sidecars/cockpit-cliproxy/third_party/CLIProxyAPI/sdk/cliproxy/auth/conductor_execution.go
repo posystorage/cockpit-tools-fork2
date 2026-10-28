@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
@@ -24,11 +25,41 @@ import (
 )
 
 type upstreamAttemptStartedAtContextKey struct{}
+type upstreamAttemptSequenceContextKey struct{}
+
+type upstreamAttemptSequencer struct {
+	next atomic.Uint64
+}
+
+var upstreamAttemptOrder upstreamAttemptSequencer
+
+func (s *upstreamAttemptSequencer) nextSequence() uint64 {
+	for {
+		if sequence := s.next.Add(1); sequence != 0 {
+			return sequence
+		}
+	}
+}
+
+// Serial-number comparison remains ordered across uint64 wraparound. Fewer
+// than 2^63 attempts/resets may intervene while an execution remains in flight.
+func upstreamAttemptPrecedes(attempt, barrier uint64) bool {
+	return int64(attempt-barrier) < 0
+}
 
 func newUpstreamAttemptContext(ctx context.Context) context.Context {
 	ctx = logging.WithFreshResponseHeadersHolder(ctx)
 	ctx = cliproxyexecutor.WithUpstreamAttemptTracker(ctx)
+	ctx = context.WithValue(ctx, upstreamAttemptSequenceContextKey{}, upstreamAttemptOrder.nextSequence())
 	return context.WithValue(ctx, upstreamAttemptStartedAtContextKey{}, time.Now())
+}
+
+func upstreamAttemptSequence(ctx context.Context) uint64 {
+	if ctx == nil {
+		return 0
+	}
+	sequence, _ := ctx.Value(upstreamAttemptSequenceContextKey{}).(uint64)
+	return sequence
 }
 
 func upstreamAttemptStartedAt(ctx context.Context) time.Time {
@@ -169,6 +200,7 @@ func (m *Manager) Execute(ctx context.Context, providers []string, req cliproxye
 		if errExec == nil {
 			return resp, nil
 		}
+		errExec = preserveContinuityUpstreamError(errExec, preferredUpstreamErr)
 		if isRequestTerminatedError(errExec) || isRequestStopError(errExec) {
 			return cliproxyexecutor.Response{}, unwrapExecutionBoundaryError(errExec)
 		}
@@ -307,6 +339,7 @@ func (m *Manager) ExecuteStream(ctx context.Context, providers []string, req cli
 		if errStream == nil {
 			return result, nil
 		}
+		errStream = preserveContinuityUpstreamError(errStream, preferredUpstreamErr)
 		if hasUpstreamExecutionAttempt(errStream) {
 			preferredUpstreamErr = errStream
 		}
@@ -626,7 +659,7 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 					continue
 				}
 				if isResponsesCompactRequestFaultError(execOpts, errExec) || (isRequestInvalidError(errExec) && !canFallbackCapability(req, execOpts, errExec)) {
-					return cliproxyexecutor.Response{}, errExec
+					return cliproxyexecutor.Response{}, preserveContinuityUpstreamError(errExec, upstreamErr)
 				}
 				authErr = errExec
 				if result.CredentialScope {
@@ -652,7 +685,7 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 				continue
 			}
 			if isResponsesCompactRequestFaultError(opts, authErr) || (isRequestInvalidError(authErr) && !canFallbackCapability(req, opts, authErr)) {
-				return cliproxyexecutor.Response{}, authErr
+				return cliproxyexecutor.Response{}, preserveContinuityUpstreamError(authErr, upstreamErr)
 			}
 			lastErr = authErr
 			if homeMode {
@@ -1136,7 +1169,7 @@ func (m *Manager) executeStreamMixedOnce(ctx context.Context, providers []string
 				continue
 			}
 			if isRequestInvalidError(errStream) && !canFallbackCapability(req, opts, errStream) {
-				return nil, errStream
+				return nil, preserveContinuityUpstreamError(errStream, upstreamErr)
 			}
 			lastErr = errStream
 			if homeMode {

@@ -76,6 +76,7 @@ import { isDeepSeekAccount } from '../utils/codexDeepSeekAccess';
 import './DashboardPage.css';
 import { RobotIcon } from '../components/icons/RobotIcon';
 import { CodexIcon } from '../components/icons/CodexIcon';
+import { CodexResetCreditExpiry } from '../components/CodexResetCreditExpiry';
 import { WindsurfIcon } from '../components/icons/WindsurfIcon';
 import { KiroIcon } from '../components/icons/KiroIcon';
 import { CursorIcon } from '../components/icons/CursorIcon';
@@ -2152,6 +2153,7 @@ export function DashboardPage({
     sublineTitle,
     maxMetrics = 3,
     onEditTags,
+    extraContent,
   }: {
     presentation: UnifiedAccountPresentation;
     onRefresh: () => void;
@@ -2163,6 +2165,7 @@ export function DashboardPage({
     sublineTitle?: string;
     maxMetrics?: number;
     onEditTags?: () => void;
+    extraContent?: React.ReactNode;
   }) => {
     const resolvedSublineText = sublineText || presentation.sublineText || '';
     const shouldShowPlan = Boolean(presentation.planLabel) && presentation.planLabel !== 'UNKNOWN';
@@ -2192,6 +2195,8 @@ export function DashboardPage({
         <div className="account-mini-quotas">
           {renderPresentationQuotaItems(presentation, maxMetrics)}
         </div>
+
+        {extraContent}
 
         <div className="account-mini-actions icon-only-row">
           {onEditTags && (
@@ -2444,6 +2449,12 @@ export function DashboardPage({
       isRefreshing: refreshing.has(account.id),
       isSwitching: false,
       maxMetrics: 4,
+      extraContent: !isCodexApiKeyAccount(account) && (account.quota?.reset_credits_available ?? 0) > 0 ? (
+        <div className="account-mini-reset-credits">
+          <CodexResetCreditExpiry key={account.id} accountId={account.id} quota={account.quota}
+            disabled={refreshing.has(account.id)} onClick={() => onNavigate('codex')} />
+        </div>
+      ) : undefined,
       onEditTags: () => setTagModalState({ accountId: account.id, platform: 'codex', tags: account.tags || [] }),
     });
   };

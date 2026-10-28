@@ -13,7 +13,10 @@ and Rust checks/tests. CI builds the Go sidecar for each target platform.
 ## Versions and release notes
 
 `package.json.version` is the application version. Run `npm run sync-version`
-after changing it, then commit the synchronized files. The fork accepts a
+after changing it, and also synchronize the root version and root package version
+in `package-lock.json` without rebuilding the dependency tree. The version-sync
+script updates the Tauri and Cargo manifests, but does not update the lockfile
+metadata. Commit the synchronized files. The fork accepts a
 formal `v<version>` or `<version>` tag, or a draft tag such as `1.3.57b1`.
 The tag must point to the commit that is to be built.
 
@@ -22,8 +25,9 @@ since the last merged baseline to both `CHANGELOG.md` and
 `CHANGELOG.zh-CN.md`. Update the workflow's `RELEASE_VERSIONS` list to contain
 exactly those versions in descending order. Do not repeat older upgrades.
 Include a separate fork beta section when a later build changes fork behavior.
-The 1.3.73 upgrade aggregates exactly 1.3.73, 1.3.72, 1.3.71 and 1.3.70, including
-the fork adaptation recorded in the 1.3.73 section.
+The 1.3.75 upgrade aggregates exactly 1.3.75 and 1.3.74, including the fork
+adaptation recorded in the 1.3.75 section. The preceding 1.3.73 upgrade is already
+part of the baseline and is not repeated in the new draft release notes.
 
 ## Draft builds
 

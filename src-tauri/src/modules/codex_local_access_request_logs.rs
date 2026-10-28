@@ -948,10 +948,33 @@ fn migrate_local_access_json_events(
     Ok(())
 }
 
+// Collection revisions can already exceed a newly added upstream price book.
+// A zero snapshot is ambiguous when the user supplied an explicit price, so
+// only recover formerly unknown Terra prices in the absence of that override.
+fn should_recover_missing_terra_prices(collection: &CodexLocalAccessCollection) -> bool {
+    !collection.model_pricings.iter().any(|pricing| {
+        normalize_known_openai_codex_model(&pricing.model_id).as_deref() == Some("gpt-6.1-terra")
+    })
+}
+
+fn missing_terra_price_recovery_is_current(
+    current: Option<&CodexLocalAccessCollection>,
+    probed: &CodexLocalAccessCollection,
+) -> bool {
+    current.is_some_and(|current| {
+        current.created_at == probed.created_at
+            && current.api_key == probed.api_key
+            && current.model_pricing_version == probed.model_pricing_version
+            && current.model_pricings == probed.model_pricings
+            && should_recover_missing_terra_prices(current)
+    })
+}
+
 fn count_request_logs_for_model_ids(
     conn: &Connection,
     model_ids: Option<&[String]>,
     target_pricing_version: Option<u64>,
+    recover_missing_terra_prices: bool,
 ) -> Result<u64, String> {
     if matches!(model_ids, Some(items) if items.is_empty()) {
         return Ok(0);
@@ -974,13 +997,14 @@ fn count_request_logs_for_model_ids(
     };
     if let Some(target_pricing_version) = target_pricing_version {
         count_sql.push_str(if model_filter.is_some() {
-            " AND model_pricing_version != ?"
+            " AND (model_pricing_version != ? OR (? AND model_id = 'gpt-6.1-terra' AND input_usd_per_million = 0 AND output_usd_per_million = 0 AND cached_input_usd_per_million IS NULL))"
         } else {
-            " WHERE model_pricing_version != ?"
+            " WHERE (model_pricing_version != ? OR (? AND model_id = 'gpt-6.1-terra' AND input_usd_per_million = 0 AND output_usd_per_million = 0 AND cached_input_usd_per_million IS NULL))"
         });
         params.push(SqlValue::Integer(
             target_pricing_version.min(i64::MAX as u64) as i64,
         ));
+        params.push(SqlValue::Integer(i64::from(recover_missing_terra_prices)));
     }
     let total: i64 = conn
         .query_row(count_sql.as_str(), params_from_iter(params), |row| {
@@ -1027,6 +1051,7 @@ fn read_request_log_reprice_rows_for_model(
     limit: i64,
     service_tier_select: &str,
     target_pricing_version: Option<u64>,
+    recover_missing_terra_prices: bool,
 ) -> Result<Vec<RequestLogRepriceRow>, String> {
     let select_sql = format!(
         r#"
@@ -1052,7 +1077,9 @@ fn read_request_log_reprice_rows_for_model(
         FROM request_logs
         WHERE model_id = ?1
           AND id > ?2
-          AND (?4 IS NULL OR model_pricing_version != ?4)
+          AND (?4 IS NULL OR model_pricing_version != ?4 OR
+               (?5 AND model_id = 'gpt-6.1-terra' AND input_usd_per_million = 0
+                   AND output_usd_per_million = 0 AND cached_input_usd_per_million IS NULL))
         ORDER BY id ASC
         LIMIT ?3
         "#
@@ -1067,6 +1094,7 @@ fn read_request_log_reprice_rows_for_model(
                 after_id,
                 limit.max(1),
                 target_pricing_version.map(|version| version.min(i64::MAX as u64) as i64),
+                recover_missing_terra_prices,
             ],
             |row| {
                 let read_u64 = |name: &str| -> rusqlite::Result<u64> {
@@ -1109,6 +1137,7 @@ fn read_request_log_reprice_batch(
     model_cursors: &mut HashMap<String, i64>,
     limit: i64,
     target_pricing_version: Option<u64>,
+    recover_missing_terra_prices: bool,
 ) -> Result<Vec<RequestLogRepriceRow>, String> {
     if model_cursors.is_empty() {
         return Ok(Vec::new());
@@ -1138,6 +1167,7 @@ fn read_request_log_reprice_batch(
             remaining as i64,
             service_tier_select,
             target_pricing_version,
+            recover_missing_terra_prices,
         )?;
         if let Some(last) = model_rows.last() {
             if model_rows.len() < remaining {
@@ -1353,6 +1383,43 @@ async fn apply_reprice_changes_to_runtime_stats(changes: &[RequestLogRepriceChan
     schedule_stats_flush_if_needed().await;
 }
 
+async fn queue_missing_terra_price_recovery(app: AppHandle, collection: CodexLocalAccessCollection) {
+    if !should_recover_missing_terra_prices(&collection) {
+        return;
+    }
+    let target_version = collection.model_pricing_version;
+    let needed = tauri::async_runtime::spawn_blocking(move || -> Result<bool, String> {
+        let path = local_access_logs_db_path()?;
+        if !path.is_file() {
+            return Ok(false);
+        }
+        let conn = Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|error| error.to_string())?;
+        conn.busy_timeout(Duration::from_millis(75)).map_err(|error| error.to_string())?;
+        with_request_log_sql_budget(&conn, Duration::from_millis(1500), || {
+            conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM request_logs WHERE model_id = 'gpt-6.1-terra' AND (model_pricing_version != ?1 OR (input_usd_per_million = 0 AND output_usd_per_million = 0 AND cached_input_usd_per_million IS NULL)))",
+                [target_version.min(i64::MAX as u64) as i64],
+                |row| row.get::<_, bool>(0),
+            ).map_err(|error| error.to_string())
+        })
+    }).await;
+    match needed {
+        Ok(Ok(true)) => {
+            let runtime = gateway_runtime().lock().await;
+            if missing_terra_price_recovery_is_current(runtime.collection.as_ref(), &collection) {
+                // Keep validation and enqueue ordered with price publication.
+                // The queue only takes its metadata lock, with no DB/file I/O.
+                // A delayed startup probe must not replace a newer user job.
+                let current = runtime.collection.as_ref().unwrap().clone();
+                queue_model_pricing_reprice(app, current, vec!["gpt-6.1-terra".into()]).await;
+            }
+        }
+        Ok(Ok(false)) => {},
+        result => logger::log_codex_api_warn(&format!("Terra historical pricing check deferred: {result:?}")),
+    }
+}
+
 async fn queue_model_pricing_reprice(
     app: AppHandle,
     collection: CodexLocalAccessCollection,
@@ -1475,10 +1542,12 @@ async fn run_model_pricing_reprice_job(app: AppHandle, job: ModelPricingRepriceJ
         }
     };
     let target_pricing_version = job.collection.model_pricing_version;
+    let recover_missing_terra_prices = should_recover_missing_terra_prices(&job.collection);
     let total = match count_request_logs_for_model_ids(
         &conn,
         Some(&job.model_ids),
         Some(target_pricing_version),
+        recover_missing_terra_prices,
     ) {
         Ok(total) => total,
         Err(error) => {
@@ -1553,6 +1622,7 @@ async fn run_model_pricing_reprice_job(app: AppHandle, job: ModelPricingRepriceJ
             &mut model_cursors,
             MODEL_PRICING_REPRICE_BATCH_SIZE,
             Some(target_pricing_version),
+            recover_missing_terra_prices,
         ) {
             Ok(rows) => rows,
             Err(error) => {
@@ -1659,6 +1729,7 @@ fn reprice_request_logs_with_model_ids(
             &mut model_cursors,
             MODEL_PRICING_REPRICE_BATCH_SIZE,
             None,
+            false,
         )?;
         if rows.is_empty() {
             break;

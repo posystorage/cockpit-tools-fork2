@@ -5,13 +5,14 @@ import vm from "node:vm";
 import ts from "typescript";
 import { buildCodexModelRoutingValue, resolveRoutingCatalog } from "../../utils/codexModelRoutingValue.ts";
 import { deferred, settlePromises } from "../../../tests/helpers/reactHookHarness";
+import { isCodexLaunchCancelled } from '../../utils/codexLaunchCancellation';
 
 // Exercise the production callbacks with controlled IPC completion order. This
 // deliberately excludes rendering, native dialogs and real account/config data.
 const source = ts.createSourceFile("CodexLaunchPreviewModal.tsx", readFileSync(
   new URL("./CodexLaunchPreviewModal.tsx", import.meta.url), "utf8",
 ), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-const names = ["requestClose", "persistDraft", "handleExecute", "handleInstanceChange", "applyContextConfig", "openModelConfig", "closeModelConfig", "reloadContextConfig", "closeContextConfig"];
+const names = ["requestClose", "persistDraft", "handleExecute", "handleAuxiliaryAction", "handleInstanceChange", "applyContextConfig", "openModelConfig", "closeModelConfig", "reloadContextConfig", "closeContextConfig"];
 const callbacks: string[] = [];
 let configReadSetup = '';
 const closeButtons: (string | undefined)[] = [];
@@ -56,6 +57,7 @@ function harness(routing = false, overlay = "global-progress-overlay") {
   const saved = { model: "saved" };
   const savedInstance = { id: "synthetic", saved: true };
   const c: Record<string, any> = {
+    isCodexLaunchCancelled,
     configSession: { current: 1 }, configWritePending: { current: false },
     contextReloadRequest: { current: 0 }, contextReloadPending: { current: false },
     loading: false, contextConfigSnapshot: null,
@@ -93,6 +95,162 @@ function harness(routing = false, overlay = "global-progress-overlay") {
   return { c, read, write, events, lateUpdates, cached, saved, savedInstance, getStore: () => store,
     completeWrite(context: boolean) { write.resolve(routing && !context ? { quickConfig: saved, instance: savedInstance } : saved); },
   };
+}
+
+test('CLI action saves the preview before opening the CLI dialog and closes the preview afterwards', async () => {
+  const h = harness();
+  let options: unknown;
+  h.c.onClose = () => h.events.push('preview-close');
+  const pending = h.c.handlers.handleAuxiliaryAction({ id: 'cli', onAction: (value: unknown) => {
+    options = value;
+    h.events.push('cli-open');
+  } });
+  assert.equal(h.events.includes('cli-open'), false);
+  h.read.resolve({}); await settlePromises();
+  assert.equal(h.events.includes('quick-write'), true);
+  assert.equal(h.events.includes('cli-open'), false);
+  h.completeWrite(false); await pending;
+  assert.equal(JSON.stringify(options), '{}');
+  assert.ok(h.events.indexOf('cli-open') > h.events.indexOf('quick-write'));
+  assert.ok(h.events.indexOf('preview-close') > h.events.indexOf('cli-open'));
+  assert.equal(h.events.includes('launch'), false, 'CLI must not invoke the desktop switch/start action');
+});
+
+test('CLI action failures stay inside the open preview and permit retry', async () => {
+  const h = harness(); h.c.dirty = false;
+  let error: string | null = 'old failure';
+  let closed = false;
+  let attempts = 0;
+  h.c.setError = (value: string | null) => { error = value; };
+  h.c.onClose = () => { closed = true; };
+  const action = { id: 'cli', onAction: () => {
+    assert.equal(error, null);
+    if (++attempts === 1) throw new Error('CLI preparation failed');
+  } };
+  await h.c.handlers.handleAuxiliaryAction(action);
+  assert.equal(error, 'CLI preparation failed');
+  assert.equal(closed, false);
+  await h.c.handlers.handleAuxiliaryAction(action);
+  assert.equal(attempts, 2);
+  assert.equal(error, null);
+  assert.equal(closed, true);
+});
+
+test('CLI action cannot bypass configuration loading or a failed save', async () => {
+  for (const blocked of ['loading', 'save-failure']) {
+    const h = harness();
+    let opened = false;
+    let closed = false;
+    h.c.onClose = () => { closed = true; };
+    h.c.configBusy = blocked === 'loading';
+    const pending = h.c.handlers.handleAuxiliaryAction({ id: 'cli', onAction: () => { opened = true; } });
+    if (blocked === 'save-failure') {
+      h.read.resolve({}); await settlePromises();
+      h.write.reject(new Error('disk full'));
+    }
+    await pending;
+    assert.equal(opened, false);
+    assert.equal(closed, false);
+  }
+});
+
+test('CLI opens only after both independent quota preferences finish saving', async () => {
+  const h = harness(); h.c.dirty = false;
+  h.c.nativeQuotaDraft = { key: 'synthetic', value: true };
+  h.c.quotaDisplayDraft = { key: 'synthetic', value: false };
+  const hideWrite = deferred<void>();
+  const compatibilityWrite = deferred<void>();
+  const updates: any[] = [];
+  Object.assign(h.getStore(), { updateInstance(value: any) {
+    updates.push(value);
+    return 'hideNativeQuotaBanner' in value ? hideWrite.promise : compatibilityWrite.promise;
+  } });
+  let opened = false;
+  h.c.onClose = () => {};
+  const pending = h.c.handlers.handleAuxiliaryAction({ id: 'cli', onAction() { opened = true; } });
+  await settlePromises();
+  assert.equal(updates.length, 1); assert.equal(opened, false);
+  hideWrite.resolve(); await settlePromises();
+  assert.equal(updates.length, 2); assert.equal(opened, false);
+  compatibilityWrite.resolve(); await pending;
+  assert.equal(opened, true);
+  assert.equal(h.events.includes('launch'), false);
+  assert.deepEqual(JSON.parse(JSON.stringify(updates)), [
+    { instanceId: 'synthetic', hideNativeQuotaBanner: true },
+    { instanceId: 'synthetic', quotaDisplayCompatibility: false },
+  ]);
+});
+
+// Wire the real overview action to the real CLI controller so this covers the
+// lifetime guard across the modal, action adapter and asynchronous config save.
+function productionDeepSeekCli(h: ReturnType<typeof harness>, saved: Promise<any>) {
+  const access = ts.createSourceFile('useCodexAccountsAccessController.tsx', readFileSync(
+    new URL('../../pages/useCodexAccountsAccessController.tsx', import.meta.url), 'utf8',
+  ), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const overview = ts.createSourceFile('useCodexAccountsOverviewController.tsx', readFileSync(
+    new URL('../../pages/useCodexAccountsOverviewController.tsx', import.meta.url), 'utf8',
+  ), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let handler = '';
+  let action = '';
+  function findHandler(node: ts.Node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(access) === 'handleLaunchCodexCli') {
+      handler = node.initializer!.getText(access);
+    }
+    ts.forEachChild(node, findHandler);
+  }
+  function findAction(node: ts.Node) {
+    if (ts.isObjectLiteralExpression(node)) {
+      const properties = node.properties.filter(ts.isPropertyAssignment);
+      const id = properties.find(property => property.name.getText(overview) === 'id');
+      const callback = properties.find(property => property.name.getText(overview) === 'onAction');
+      if (id?.initializer.getText(overview) === '"cli"' && callback?.initializer.getText(overview).includes('handleLaunchCodexCli')) {
+        action = callback.initializer.getText(overview);
+      }
+    }
+    ts.forEachChild(node, findAction);
+  }
+  findHandler(access); findAction(overview);
+  assert.ok(handler); assert.ok(action);
+  Object.assign(h.c, {
+    account: { id: 'deepseek-account', api_provider_id: 'deepseek' },
+    imageGenEnabled: false, deepSeekAccessMode: 'gateway',
+    getCodexSwitchOrLaunchBlockedReason: () => null,
+    isDeepSeekAccount: (account: any) => account.api_provider_id === 'deepseek',
+    isCodexWebSessionAccount: () => false,
+    updateAccountInstanceAccess: () => { h.events.push('cli-config-write'); return saved; },
+    buildCodexAccountPresentation: (account: any) => ({ displayName: account.id }),
+    resolveDeepSeekBindAccountId: (account: any) => account.id,
+    setLaunchPreviewCliIntent: () => h.events.push('cli-intent'),
+    openCodexCliLaunchModal: () => h.events.push('cli-open'),
+  });
+  vm.runInNewContext(ts.transpileModule(`globalThis.handleLaunchCodexCli = ${handler};
+    globalThis.productionCliAction = ${action};`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText, h.c);
+  return { id: 'cli', onAction: h.c.productionCliAction };
+}
+
+for (const invalidation of ['close-and-reopen', 'replace-target']) {
+  test(`pending production CLI save cannot open its old target or close the new preview after ${invalidation}`, async () => {
+    const h = harness(); h.c.dirty = false;
+    const saved = deferred<any>();
+    const action = productionDeepSeekCli(h, saved.promise);
+    let closeCount = 0;
+    h.c.onClose = () => { closeCount++; };
+    const pending = h.c.handlers.handleAuxiliaryAction(action);
+    await settlePromises();
+    assert.equal(h.events.includes('cli-config-write'), true);
+    if (invalidation === 'close-and-reopen') h.c.handlers.requestClose();
+    h.c.handlers.resetConfigReadState();
+    h.c.account = { id: 'replacement-account', api_provider_id: 'deepseek' };
+    const previousCloses = closeCount;
+    saved.resolve({ id: 'deepseek-account', api_provider_id: 'deepseek' });
+    await pending;
+    assert.equal(h.events.includes('cli-open'), false);
+    assert.equal(h.events.includes('cli-intent'), false);
+    assert.equal(closeCount, previousCloses, 'late CLI completion must not close the replacement preview');
+    assert.equal(h.events.includes('launch'), false);
+  });
 }
 
 test('context conflict refuses a write and can reload even while configBusy', async () => {

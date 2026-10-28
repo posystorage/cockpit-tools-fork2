@@ -9,7 +9,8 @@
   );
 
   function enabledFor(host, settings, threadProvider) {
-    if (host !== 'local' || root.__cockpitEnhancements?.quotaCompat !== true
+    if (host !== 'local' || !(root.__cockpitEnhancements?.quotaCompat === true
+      || root.__cockpitEnhancements?.apiService === true)
       || settings?.isConfigDataPending !== false) return false;
     const config = settings.resolvedConfig;
     const providerId = threadProvider ?? config?.model_provider ?? 'openai';
@@ -29,6 +30,10 @@
   // Reattaching the host must preserve Provider identity and the editor below
   // it, including drafts. Feature changes are read from root on each render.
   let bannerContext = root.__cockpitQuotaCompat?.getBannerContext?.();
+  const composerRefreshers = root.__cockpitQuotaCompat?.getComposerRefreshers?.() ?? new Set();
+  function refreshCurrentComposers() {
+    for (const refresh of composerRefreshers) refresh();
+  }
   const contextFor = react => bannerContext ??= react.createContext(null);
   function wrapComposer(react, jsx, host, settings, provider, eligible, children, imageLimit = null) {
     return jsx(contextFor(react).Provider, {
@@ -211,10 +216,21 @@
 
   function installLiveQuotaGuard(plan) {
     if (root.__cockpitEnhancements?.apiService !== true) return { ok: false, reason: 'disabled' };
+    root.clearTimeout?.(liveQuota.timer);
+    liveQuota.timer = null;
+    const active = root.__cockpitEnhancements;
+    const preservedNativeModule = active.nativePatchState === 'active'
+      && (active.nativePatchMode === 'full' && /^[01]{4}$/.test(active.nativePatchFeatures || '')
+        || active.nativePatchMode === 'fast-only' && active.nativePatchFeatures?.startsWith('1'));
+    // A Fast-only fallback has no transformed presenters to recover raw usage.
+    // Keep that graph intact; cache compatibility must not suppress its notice.
+    if (preservedNativeModule && active.nativePatchMode === 'fast-only') {
+      return { ok: true, preservedNativeModule: true, preservedNativeFast: true };
+    }
     const apply = () => {
       const client = liveQuotaEnabled() ? patchLiveQueryClient(findLiveQueryClient()) : null;
       const changed = client ? rewriteCachedLiveUsage(client) : 0;
-      const refreshed = refreshLiveComposers(plan);
+      const refreshed = preservedNativeModule ? 0 : refreshLiveComposers(plan);
       return { client: !!client, changed, refreshed };
     };
     let applied = apply();
@@ -222,15 +238,17 @@
       root.clearTimeout?.(liveQuota.timer);
       liveQuota.timer = root.setTimeout(() => {
         liveQuota.retries++;
-        const next = apply();
-        if (next.client) liveQuota.retries = 20;
-        else if (liveQuota.retries < 20) installLiveQuotaGuard(plan);
+        // Recheck activation before touching the page: Fast may have finished
+        // loading while this older quota retry was waiting.
+        installLiveQuotaGuard(plan);
       }, 250);
     }
     const config = root.__cockpitEnhancements;
+    if (preservedNativeModule) return { ok: true, ...applied, preservedNativeModule: true,
+      ...(active.nativePatchFeatures?.startsWith('1') ? { preservedNativeFast: true } : {}) };
     if (config) {
       config.nativePatchMode = 'live-quota';
-      config.nativePatchFeatures = [false, true, false, true].map(Number).join('');
+      config.nativePatchFeatures = [false, config.quotaCompat === true, false, true].map(Number).join('');
       config.nativePatchRequestedFeatures = [config.nativeFast, config.quotaCompat,
         config.apiKeyAuthVerified, config.apiService].map(Number).join('');
       config.nativePatchState = 'active';
@@ -296,6 +314,16 @@
       const primary = transformComposer(
         await read(primaryUrl), primaryUrl, initialUrl, contract.diagnostics?.bindings,
       );
+      if (primary.ok && contract.diagnostics?.bindings?.layout === 'adapter-v1') {
+        const adapterUrl = new URL(contract.diagnostics.bindings.adapterPath, initialUrl).href;
+        const adapter = transformAdapter(await read(adapterUrl), adapterUrl, initialUrl,
+          primaryUrl, primary.diagnostics?.bindings);
+        if (!adapter.ok) return { ok: false, reason: adapter.diagnostics?.reason || 'quota-adapter-contract-failed' };
+        // The existing adapter has no thread-provider selector import. An
+        // unscoped breakpoint would bypass official threads, and rewriting
+        // usage cache would falsify real quota. Wait for a complete preload.
+        return { ok: false, reason: 'quota-restart-required' };
+      }
       if (!primary.ok || !primary.diagnostics?.location)
         return { ok: false, reason: primary.diagnostics?.reason || 'quota-location-unavailable' };
       const bannerLocations = [...(contract.diagnostics.bannerLocations ?? []),
@@ -313,7 +341,7 @@
     columnNumber: offset - source.lastIndexOf('\n', offset - 1) - 1,
     usageVariable,
   });
-  function transformSharedBanner(source, locations = null, url = null) {
+  function transformSharedBanner(source, locations = null, url = null, hideMethod = 'shouldHideBanner') {
     // Both legacy and unified announcement paths call this initial-module
     // renderer. Match its props and native fallback, never translated text.
     const matches = [...source.matchAll(new RegExp(
@@ -329,7 +357,7 @@
     locations?.push(statementLocation(source, url, range.returnAt, usage));
     // Every original hook still runs. Preserve image/model limits and the
     // native lower-priority content; quota snapshots are never modified.
-    const inserted = `${usage}=globalThis.__cockpitQuotaCompat.originalUsage(${usage});let __cockpitSharedScope=globalThis.__cockpitQuotaCompat.useBannerScope(${react});if(${banner}.model_slug==null&&${banner}.blocked_model_slug==null&&globalThis.__cockpitQuotaCompat.shouldHideBanner(__cockpitSharedScope,__cockpitSharedScope?.host,{...${usage},rate_limit_upsell:${banner}},__cockpitSharedScope?.imageLimit))return ${fallback}??null;`;
+    const inserted = `${usage}=globalThis.__cockpitQuotaCompat.originalUsage(${usage});let __cockpitSharedScope=globalThis.__cockpitQuotaCompat.useBannerScope(${react});if(${banner}.model_slug==null&&${banner}.blocked_model_slug==null&&globalThis.__cockpitQuotaCompat.${hideMethod}(__cockpitSharedScope,__cockpitSharedScope?.host,{...${usage},rate_limit_upsell:${banner}},__cockpitSharedScope?.imageLimit))return ${fallback}??null;`;
     return source.slice(0, range.returnAt) + inserted + source.slice(range.returnAt);
   }
 
@@ -418,7 +446,8 @@
     if (!hardBlocked || !threadProvider) return failed('quota-exports-missing');
     const bannerLocations = [];
     const withBanner = transformSharedBanner(source, bannerLocations, url);
-    if (!withBanner) return failed('quota-shared-banner-contract-mismatch');
+    if (!withBanner) return root.__cockpitQuotaCurrent?.initial(source, url, { hardBlocked, threadProvider })
+      ?? failed('quota-shared-banner-contract-mismatch');
     return {
       ok: true,
       patchedSource: `${withBanner}\n;globalThis.__cockpitQuotaCompat.initialReady=true;\n`,
@@ -437,6 +466,8 @@
         || !((parsed.protocol === 'app:' && parsed.hostname === '-')
           || (parsed.protocol === 'file:' && !parsed.hostname))) return failed('unsupported-url');
     } catch { return failed('unsupported-url'); }
+    if (bindings?.layout === 'adapter-v1') return root.__cockpitQuotaCurrent?.primary(source, url, initialUrl, bindings)
+      ?? failed('quota-current-runtime-missing');
     const imports = [...source.matchAll(/import\{([^{}]+)\}from(["'`])([^"'`]+)\2/g)]
       .filter(match => { try { return new URL(match[3], url).href === initialUrl; } catch { return false; } });
     if (imports.length !== 1) return failed('quota-import-not-unique');
@@ -504,9 +535,63 @@
     };
   }
 
-  const api = { enabledFor, wrapComposer, useBannerScope, shouldHideBanner,
-    originalUsage, getBannerContext: () => bannerContext, transform, transformComposer,
+  function enabledForCurrent(host, settings, threadProvider) {
+    if (enabledFor(host, settings, threadProvider)) return true;
+    const mode = root.__cockpitEnhancements;
+    if (host !== 'local' || mode?.apiService !== true
+      || settings?.isConfigDataPending !== false) return false;
+    const config = settings.resolvedConfig, providerId = threadProvider ?? config?.model_provider ?? 'openai';
+    const provider = config?.model_providers?.[providerId];
+    if (providerId === 'openai' || provider?.requires_openai_auth !== false
+      || typeof provider.experimental_bearer_token !== 'string' || !provider.experimental_bearer_token.trim()) return false;
+    try {
+      const url = new URL(provider.base_url);
+      return ['http:', 'https:'].includes(url.protocol) && !!url.hostname
+        && !url.username && !url.password && !url.search && !url.hash;
+    } catch { return false; }
+  }
+  function wrapCurrentComposer(react, jsx, host, settings, provider, eligible, children) {
+    // Keep the editor mounted when a host preference changes. This hook runs
+    // unconditionally in the adapter, alongside its original composer hooks.
+    const [, refresh] = react.useReducer(value => value + 1, 0);
+    react.useEffect(() => {
+      composerRefreshers.add(refresh);
+      return () => composerRefreshers.delete(refresh);
+    }, []);
+    return jsx(contextFor(react).Provider, {
+      value: { host, compatible: eligible && enabledForCurrent(host, settings, provider), imageLimit: null }, children,
+    });
+  }
+  function enabledForComposer(host, settings, provider, props, scope) {
+    const route = scope?.value;
+    const eligible = props?.useAsbDirect !== true && props?.selectedProject?.type !== 'remote'
+      && props?.homeRunLocationRemoteProject == null
+      && (route?.kind === 'local' && (route.conversationId == null || typeof provider === 'string' && provider.length > 0)
+        || route?.kind === 'new' && !route.cloudThreadPrototype);
+    return eligible && enabledForCurrent(host, settings, provider);
+  }
+  function shouldHideCurrentBanner(scope, host, usage, imageLimit) {
+    const mode = root.__cockpitEnhancements;
+    usage = originalUsage(usage);
+    // Route scope and the instance hide preference are independent from cache
+    // compatibility and Fast. Unknown/official scopes keep their native notice.
+    return !!root.__cockpitNativeQuotaSuppression && mode?.nativePatchState === 'active'
+      && (mode.quotaCompat === true || mode.apiService === true)
+      && scope?.compatible === true && host === 'local' && scope.host === host
+      && imageLimit == null && usage?.rate_limit?.allowed === false
+      && usage?.rate_limit_upsell?.model_slug == null && usage?.rate_limit_upsell?.blocked_model_slug == null
+      && usageBannerTypes.has(usage?.rate_limit_upsell?.banner_type);
+  }
+  function transformAdapter(source, url, initialUrl, primaryUrl, bindings) {
+    return root.__cockpitQuotaCurrent?.adapter(source, url, initialUrl, primaryUrl, bindings)
+      ?? { ok: false, patchedSource: source, diagnostics: { reason: 'quota-current-runtime-missing' } };
+  }
+  const api = { enabledFor, enabledForCurrent, enabledForComposer, wrapComposer, wrapCurrentComposer, useBannerScope, shouldHideBanner,
+    shouldHideCurrentBanner, transformSharedBanner, transformAdapter,
+    originalUsage, getBannerContext: () => bannerContext, getComposerRefreshers: () => composerRefreshers,
+    refreshCurrentComposers, transform, transformComposer,
     prepareLiveQuotaGate, installLiveQuotaGuard, disposeLiveQuotaGuard };
   root.__cockpitQuotaCompat = api;
+  root.queueMicrotask?.(refreshCurrentComposers);
   if (typeof module === 'object' && module.exports) module.exports = api;
 })();

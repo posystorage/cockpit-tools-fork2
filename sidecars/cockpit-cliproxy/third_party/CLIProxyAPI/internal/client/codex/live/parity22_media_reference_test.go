@@ -99,7 +99,8 @@ func parity22MediaFixture(t *testing.T, name string, value any) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if !bytes.Equal(saved, encoded) {
+				// Git may check out the JSON fixture with CRLF on Windows.
+				if !bytes.Equal(bytes.ReplaceAll(saved, []byte("\r\n"), []byte("\n")), encoded) {
 					t.Fatalf("Go media fixture drift: %s; regenerate with COCKPIT_UPDATE_PARITY22_MEDIA=1", path)
 				}
 			}

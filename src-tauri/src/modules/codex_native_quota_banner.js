@@ -12,7 +12,7 @@
     'go_trial_rate_limit_reached', 'free_or_go_rate_limit_reached',
     'business_rate_limit_reached', 'cbp_rate_limit_reached', 'legacy_rate_limit_reached',
   ]);
-  const VERSION = 3;
+  const VERSION = 4;
   const previous = window[KEY];
   if (!enabled) {
     if (previous?.session === session) previous.destroy();
@@ -163,7 +163,10 @@
     if (frame !== null) window.cancelAnimationFrame(frame);
     window.clearInterval(watchdog);
     restoreAll();
-    if (window[KEY] === runtime) delete window[KEY];
+    if (window[KEY] === runtime) {
+      delete window[KEY];
+      window.__cockpitQuotaCompat?.refreshCurrentComposers?.();
+    }
   }
   const runtime = {
     version: VERSION,
@@ -174,6 +177,7 @@
     destroy,
   };
   window[KEY] = runtime;
+  window.__cockpitQuotaCompat?.refreshCurrentComposers?.();
   // Fails open visually if Cockpit crashes, disconnects, or exits before cleanup.
   // This timer only restores; it is not another injection/scanning loop.
   watchdog = window.setInterval(() => {
