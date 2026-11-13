@@ -1865,12 +1865,15 @@ export function useCodexAccountsLocalAccessController(context: Pick<ReturnType<t
     );
   
     const handleExecuteLocalAccessLaunchPreview =
-      useCallback(async (): Promise<boolean | { projectStateDeferred: true }> => {
+      useCallback(async (_launchAfterSwitch?: boolean, _launchOptions?: unknown,
+        isCurrent: () => boolean = () => true): Promise<boolean | { projectStateDeferred: true }> => {
+        if (!isCurrent()) return false;
         persistCodexLaunchPreviewLastInstanceId(
           CODEX_LAUNCH_PREVIEW_API_SERVICE_CARD_KEY,
           launchPreviewInstanceId,
         );
-        const activateSelectedTarget = async () => {
+        const activateSelectedTarget = async (checkPreview = true) => {
+          if (checkPreview && !isCurrent()) return null;
           if (launchPreviewInstanceId !== DEFAULT_CODEX_INSTANCE_ID) {
             await codexInstanceStore.updateInstance({
               instanceId: launchPreviewInstanceId,
@@ -1878,12 +1881,14 @@ export function useCodexAccountsLocalAccessController(context: Pick<ReturnType<t
               deferBindAccountApplication: true,
             });
           }
+          if (checkPreview && !isCurrent()) return null;
           return await handleActivateLocalAccess({
             instanceId: launchPreviewInstanceId,
           });
         };
         try {
           const state = await activateSelectedTarget();
+          if (!isCurrent()) return false;
           if (!state) {
             return false;
           }
@@ -1891,6 +1896,7 @@ export function useCodexAccountsLocalAccessController(context: Pick<ReturnType<t
           setLocalAccessLaunchPreviewOpen(false);
           return true;
         } catch (error) {
+          if (!isCurrent()) return false;
           if (isCodexLaunchUnconfirmed(error)) {
             setLocalAccessLaunchPreviewOpen(false);
             void reloadLocalAccessState();
@@ -1902,7 +1908,7 @@ export function useCodexAccountsLocalAccessController(context: Pick<ReturnType<t
               operation: "start_sidecar",
               summary: t("codex.localAccess.activateAction", "启动 API 服务"),
               retry: async () => {
-                await activateSelectedTarget();
+                await activateSelectedTarget(false);
               },
             })
           ) {

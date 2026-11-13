@@ -47,7 +47,7 @@ const settings = () => ({ isConfigDataPending: false, resolvedConfig: {
     experimental_bearer_token: 'fixture-key', base_url: 'http://127.0.0.1:58554/v1' } },
 } });
 function harness({ compat = false, hide = false } = {}) {
-  const raw = { rate_limit: { allowed: false, limit_reached: true, primary_window: { used_percent: 100 } },
+  const raw = { user_id: 'user', account_id: 'account', plan_type: 'pro', rate_limit: { allowed: false, limit_reached: true, primary_window: { used_percent: 100 } },
     rate_limit_upsell: { banner_type: 'pro_rate_limit_reached' }, credits: { balance: 0 },
     spend_control: { limit_reached: true }, additional_rate_limits: [{ limit_name: 'image', rate_limit: { allowed: false } }] };
   const query = { queryKey: ['rate-limit-status'], state: { data: raw } };
@@ -76,7 +76,7 @@ function harness({ compat = false, hide = false } = {}) {
   const a = api.transformAdapter(adapter, adapterUrl, initialUrl, primaryUrl, p.diagnostics.bindings);
   assert.equal(a.ok, true, JSON.stringify(a.diagnostics));
   for (const result of [i, p, a]) parse(result.patchedSource, { sourceType: 'module' });
-  const values = { provider: 'relay', host: 'local', generic: true, reserve: true,
+  const values = { provider: 'relay', host: 'local',
     scope: { value: { kind: 'local', conversationId: 'test-thread' } } };
   let shared = false;
   Object.assign(root, { React, JSX: { jsx(type, props) {
@@ -88,11 +88,17 @@ function harness({ compat = false, hide = false } = {}) {
     if (typeof type !== 'string') return React.createElement(type, props);
     // Drop diagnostic-only fixture props from actual DOM elements.
     return React.createElement(type, null, props.children);
-  } }, store: {}, identity: {}, status: {}, atom: () => ({}), reserveAtom: 'reserve', hostAtom: 'host',
+  } }, store: {}, identity: 'identity', account: 'identity', status: 'status',
+  atom: (store, read) => read ?? store, familyAtom: (_store, read) => read,
+  usageWindows: () => [{ remainingPercent: 0, windowMinutes: 300, resetsAt: 123 }], reserveAtom: 'reserve', hostAtom: 'host',
   __cockpitQuotaProviderAtom: 'provider', nativeNoticeAtom: 'notice',
-  readScope: () => values.scope, useValue: () => values.generic,
-  useFamily: atom => values[atom] });
+  readScope: () => values.scope, useValue: atom => atom ? root.quotaGuard({ get: read }) : false,
+  useFamily: (atom, host) => atom === 'reserve' ? root.hardSelector(host, { get: read }) : values[atom] });
+  const read = (atom, host) => typeof atom === 'function' ? atom(host, { get: read })
+    : atom === 'status' ? { data: query.state.data }
+      : { userId: 'user', authenticatedAccountId: 'account', authMethod: 'chatgpt' };
   const withoutEdges = value => value.replace(/^import[^;]+;/gm, '').replace(/^export\{[^}]+\};/gm, '');
+  vm.runInNewContext(withoutEdges(i.patchedSource) + '\ninitialize();', root);
   vm.runInNewContext(withoutEdges(p.patchedSource), root);
   vm.runInNewContext(withoutEdges(a.patchedSource), root);
   return { root, api, i, p, a, raw, query, image, client, setter, values,
@@ -106,8 +112,9 @@ test('adapter-v1 keeps send, hide and cache independent for all four preference 
     const h = harness({ compat, hide }), state = JSON.stringify(h.root.__cockpitEnhancements);
     assert.equal(h.api.installLiveQuotaGuard({}).preservedNativeModule, true);
     assert.equal(JSON.stringify(h.root.__cockpitEnhancements), state, 'cache installation preserves the complete graph state');
-    assert.equal(h.query.state.data.rate_limit.allowed, compat);
-    assert.equal(h.query.state.data.rate_limit.limit_reached, !compat);
+    assert.equal(h.query.state.data.rate_limit.allowed, false);
+    assert.equal(h.root.__cockpitEnhancements.nativeQuotaDisplayPatchState, compat ? 'unsupported' : 'disabled');
+    assert.equal(h.query.state.data.rate_limit.limit_reached, true);
     for (const key of ['credits', 'spend_control', 'additional_rate_limits']) assert.equal(h.query.state.data[key], h.raw[key]);
     assert.equal(h.query.state.data.rate_limit.primary_window, h.raw.rate_limit.primary_window);
     assert.equal(h.image.state.data, h.raw);
@@ -121,12 +128,14 @@ test('adapter-v1 keeps send, hide and cache independent for all four preference 
     h.api.disposeLiveQuotaGuard();
     assert.equal(h.client.setQueryData, h.setter);
     assert.equal(h.query.state.data, h.raw);
-    assert.equal(h.unsubscribed(), Number(compat));
+    assert.equal(h.unsubscribed(), 0);
   }
 });
 
 test('current automatic send preserves official, remote, cloud, direct, pending and missing-provider gates', () => {
-  const h = harness();
+  for (const compat of [false, true]) {
+  const h = harness({ compat });
+  h.api.installLiveQuotaGuard({});
   for (const props of [{ useAsbDirect: true }, { selectedProject: { type: 'remote' } },
     { homeRunLocationRemoteProject: {} }, { settings: { ...settings(), isConfigDataPending: true } }])
     assert.match(h.render(props), /data-disabled="true"/);
@@ -137,6 +146,39 @@ test('current automatic send preserves official, remote, cloud, direct, pending 
   }
   const mixed = settings(); mixed.resolvedConfig.model_providers.relay.requires_openai_auth = true;
   assert.match(h.render({ settings: mixed }), /data-disabled="false"/, 'mixed API routes also send without cache opt-in');
+  assert.equal(h.query.state.data, h.raw, 'send atoms and quota UI both consume the untouched shared snapshot');
+  h.values.provider = 'openai';
+  assert.match(h.render(), /native notice/, 'official quota UI keeps exhaustion when display compatibility is requested');
+  }
+});
+
+test('requested display compatibility cannot change isolated native atoms or quota UI through shared cache', () => {
+  for (const [route, change, props] of [
+    ['official', { provider: 'openai' }, {}],
+    ['remote', { host: 'remote' }, {}],
+    ['cloud', { scope: { value: { kind: 'cloud' } } }, {}],
+    ['direct', {}, { useAsbDirect: true }],
+  ]) {
+    const h = harness({ compat: true, hide: true });
+    Object.assign(h.values, change);
+    const result = h.api.installLiveQuotaGuard({});
+    assert.equal(result.displayState, 'unsupported');
+    assert.equal(result.displayReason, 'shared-usage-cache-unscoped');
+    assert.equal(h.query.state.data, h.raw, route);
+    assert.equal(h.client.setQueryData, h.setter, route);
+    for (const shared of [false, true]) {
+      const html = h.render(props, shared);
+      assert.match(html, /data-disabled="true"/, `${route}: native atom callbacks read exhausted shared usage`);
+      assert.match(html, /native notice/, `${route}: native quota presenter reads the same raw usage`);
+    }
+    const latest = { ...h.raw, credits: { balance: 7 } };
+    h.client.setQueryData(['rate-limit-status'], latest);
+    assert.equal(h.query.state.data, latest, `${route}: subsequent server updates stay untouched`);
+    assert.match(h.render(props), /data-disabled="true"/, route);
+    const recovered = { ...latest, rate_limit: { ...latest.rate_limit, allowed: true, limit_reached: false } };
+    h.client.setQueryData(['rate-limit-status'], recovered);
+    assert.match(h.render(props), /data-disabled="false"/, `${route}: native atoms follow actual server recovery`);
+  }
 });
 
 test('complete current graph survives owner and cache preference changes and restores latest server data', () => {
@@ -148,12 +190,15 @@ test('complete current graph survives owner and cache preference changes and res
     nativeFast: false, quotaCompat: compat, apiKeyAuthVerified: false, apiService: true, owner: `worker-${compat}` })), h.root);
   configure(true);
   assert.equal(h.root.__cockpitEnhancements.nativePatchState, 'active');
+  assert.equal(h.root.__cockpitEnhancements.nativeQuotaDisplayPatchState, 'unsupported');
+  assert.equal(h.root.__cockpitEnhancements.nativeQuotaDisplayPatchReason, 'shared-usage-cache-unscoped');
   h.api.installLiveQuotaGuard({});
   const fresh = { ...h.raw, rate_limit: { ...h.raw.rate_limit, primary_window: { used_percent: 95 } } };
   h.update(fresh);
-  assert.equal(h.query.state.data.rate_limit.allowed, true);
+  assert.equal(h.query.state.data.rate_limit.allowed, false);
   assert.match(h.render(), /native notice/);
   h.api.disposeLiveQuotaGuard(); configure(false); h.api.installLiveQuotaGuard({});
+  assert.equal(h.root.__cockpitEnhancements.nativeQuotaDisplayPatchState, 'disabled');
   assert.equal(h.query.state.data, fresh);
   assert.equal(h.client.setQueryData, h.setter);
   assert.match(h.render(), /data-disabled="false"/);

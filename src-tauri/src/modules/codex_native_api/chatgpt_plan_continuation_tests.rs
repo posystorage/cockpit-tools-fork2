@@ -30,6 +30,7 @@ impl Host for PlanHost {
         Box::pin(async move {
             Ok(Route {
                 account_id: "chatgpt_plan_synthetic".into(),
+                account_email: None,
                 owner_id: "plan-owner".into(),
                 continuity_account_id: None,
                 installation_profile: None,
@@ -537,6 +538,7 @@ async fn chatgpt_plan_live_public_discovery_and_tool_result_roundtrip() {
                 headers.insert("authorization", format!("Bearer {token}").parse().unwrap());
                 Ok(Route {
                     account_id: format!("chatgpt_plan_{}", self.registration),
+                    account_email: None,
                     owner_id: self.registration.clone(),
                     continuity_account_id: None,
                     installation_profile: None,

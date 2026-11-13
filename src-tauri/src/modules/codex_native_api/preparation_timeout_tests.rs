@@ -69,6 +69,7 @@ impl Host for PreparationHost {
                 official_fallback_failure: None,
                 transport_identity: None,
                 account_id: "a".into(),
+                account_email: None,
                 owner_id: "owner-a".into(),
                 base_url: self.base.clone(),
                 model: request.model,

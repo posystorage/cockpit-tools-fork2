@@ -32,6 +32,7 @@ fn prepared_history() -> Prepared {
                 official_fallback_failure: None,
             transport_identity: None,
             account_id: "a".into(),
+            account_email: None,
             owner_id: "owner".into(),
             base_url: "http://127.0.0.1:1/v1".into(),
             model: "m".into(),

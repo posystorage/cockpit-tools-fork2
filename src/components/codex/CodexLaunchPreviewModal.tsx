@@ -200,6 +200,7 @@ interface CodexLaunchPreviewModalProps {
   onExecute: (
     launchAfterSwitch: boolean,
     launchOptions?: CodexLaunchPreviewLaunchOptions,
+    isCurrent?: () => boolean,
   ) => Promise<boolean | { projectStateDeferred: true }>;
 }
 
@@ -1064,7 +1065,7 @@ export function CodexLaunchPreviewModal({
           await cliAction.onAction(launchOptions ?? {}, () => session === configSession.current);
           if (session === configSession.current) onClose();
         } else {
-          const result = await onExecute(launchAfterSwitch, launchOptions);
+          const result = await onExecute(launchAfterSwitch, launchOptions, () => session === configSession.current);
           if (session !== configSession.current) return;
           if (typeof result === "object" && result.projectStateDeferred) {
             setError(t("codex.sessionManager.repairModal.switchProjectsDeferred"));
@@ -2033,7 +2034,7 @@ export function CodexLaunchPreviewModal({
               <section className="codex-launch-preview-tool-row" style={{ paddingLeft: 36 }}>
                 <div className="codex-launch-preview-tool-copy">
                   <h3>{t("codex.launchPreview.quotaDisplayCompatibilityTitle", "额度显示兼容")}</h3>
-                  <p>{t("codex.launchPreview.quotaDisplayCompatibilityDescription", "默认关闭。仅兼容桌面主额度的允许／阻止显示状态，不改用量数字、余额或图片额度。与提示隐藏及 API 服务本地发送解锁独立，按实例保存。")}</p>
+                  <p>{t("codex.launchPreview.quotaDisplayCompatibilityDescription", "当前版本暂不支持额度显示改写，此开关仅保留实例偏好。API 服务本地发送解锁与提示隐藏仍正常独立生效。")}</p>
                 </div>
                 <label className="codex-launch-preview-checkbox">
                   <input type="checkbox" checked={quotaDisplayCompatibility}

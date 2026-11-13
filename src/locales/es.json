@@ -2969,7 +2969,7 @@
       "hideNativeQuotaBannerTitle": "Ocultar el aviso de cuota nativo de Codex",
       "hideNativeQuotaBannerDescription": "Oculta el aviso de cuota agotada del cliente de escritorio sin modificar la cuota ni el estado del servicio. Activado por defecto al iniciar desde el servicio API en modo escritorio; desactivado en otros casos. La elección se guarda por instancia. No modifica la interfaz en modo CLI.",
       "quotaDisplayCompatibilityTitle": "Compatibilidad de visualización de cuota",
-      "quotaDisplayCompatibilityDescription": "Desactivada por defecto. Adapta solo el estado permitido/bloqueado de la cuota principal de escritorio, sin cambiar cifras de uso, saldo ni cuota de imágenes. Independiente de ocultar avisos y del desbloqueo de envío local del servicio API. Se guarda por instancia."
+      "quotaDisplayCompatibilityDescription": "Esta versión no admite temporalmente cambios en la visualización de cuota. Este interruptor solo guarda la preferencia de la instancia. El desbloqueo del envío local del servicio API y la ocultación de avisos siguen funcionando de forma independiente."
     },
     "switch": "Cambiar",
     "switched": "Cambiado a {{email}}",

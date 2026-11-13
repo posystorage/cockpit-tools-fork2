@@ -7,6 +7,7 @@ import {
   APIKEY_FUN_FAMILIES,
   buildApiKeyFunClientPreview,
   detectApiKeyFunPlatform,
+  normalizeApiKeyFunClientBaseUrl,
   resolveApiKeyFunFamily,
   resolveDefaultModel,
   type ApiKeyFunClientId,
@@ -18,6 +19,7 @@ import './ApiKeyFunKeyConfigModal.css';
 export interface ApiKeyFunKeyConfigModalProps {
   keyName: string;
   apiKey: string;
+  baseUrl?: string;
   models: readonly string[];
   modelsLoading: boolean;
   onClose: () => void;
@@ -34,12 +36,14 @@ const ALL_CLIENTS: ApiKeyFunClientId[] = [
 export function ApiKeyFunKeyConfigModal({
   keyName,
   apiKey,
+  baseUrl,
   models,
   modelsLoading,
   onClose,
 }: ApiKeyFunKeyConfigModalProps) {
   const { t } = useTranslation();
   const platform = useMemo(() => detectApiKeyFunPlatform(), []);
+  const clientBaseUrl = useMemo(() => normalizeApiKeyFunClientBaseUrl(baseUrl), [baseUrl]);
   const detectedFamily = useMemo<ApiKeyFunFamilyPreset | null>(
     () => resolveApiKeyFunFamily(models),
     [models],
@@ -72,15 +76,16 @@ export function ApiKeyFunKeyConfigModal({
   const [copiedLabel, setCopiedLabel] = useState<string | null>(null);
 
   const preview = useMemo(() => {
-    if (!family) return null;
+    if (!family || !clientBaseUrl) return null;
     return buildApiKeyFunClientPreview({
       family,
       client,
       apiKey,
+      baseUrl: clientBaseUrl,
       model: model || family.fallbackModel,
       platform,
     });
-  }, [apiKey, client, family, model, platform]);
+  }, [apiKey, clientBaseUrl, client, family, model, platform]);
 
   const modelOptions = useMemo(
     () =>
@@ -119,7 +124,9 @@ export function ApiKeyFunKeyConfigModal({
         </header>
 
         <div className="apikey-fun-config-body">
-          {modelsLoading && !family ? (
+          {!clientBaseUrl ? (
+            <p role="alert">{t('apiKeyFun.error.missingBaseUrl', 'Please enter a provider Base URL.')}</p>
+          ) : modelsLoading && !family ? (
             <div className="apikey-fun-config-loading">
               <RefreshCw size={18} className="loading-spinner" />
               <strong>{t('apiKeyFun.models.loading', '读取中')}</strong>

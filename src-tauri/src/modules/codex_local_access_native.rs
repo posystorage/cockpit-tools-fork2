@@ -196,8 +196,6 @@ struct NativeHostBridge {
     collection_override: Option<CodexLocalAccessCollection>,
     profile_dir: Option<PathBuf>,
     account_overrides: HashMap<String, CodexAccount>,
-    // Keep selected account labels after deletion so completed history remains identifiable.
-    account_emails: Mutex<HashMap<String, String>>,
     bindings: TokioMutex<HashMap<String, (String, i64)>>,
     session_affinity_enabled: AtomicBool,
     binding_epoch: AtomicU64,
@@ -345,13 +343,6 @@ fn native_report_model_unavailable(report: &native_contract::RequestReport) -> b
 }
 
 impl NativeHostBridge {
-    fn account_email(&self, id: &str) -> Option<String> {
-        self.account_emails
-            .lock()
-            .ok()
-            .and_then(|labels| labels.get(id).cloned())
-    }
-
     fn record_failure_cooldown(&self, report: &native_contract::RequestReport) {
         if report.official_registration_id.is_some() {
             return;
@@ -769,6 +760,7 @@ impl native_contract::Host for NativeHostBridge {
         request_id: &'a str,
         caller: &'a native_contract::Caller,
         account_id: &'a str,
+        account_email: Option<&'a str>,
         model: &'a str,
         operation: &'static str,
     ) -> futures_util::future::BoxFuture<'a, ()> {
@@ -805,7 +797,7 @@ impl native_contract::Host for NativeHostBridge {
                 RequestActivitySelection {
                     request_id: request_id.into(),
                     account_id: account_id.to_owned(),
-                    email: self.account_email(account_id).unwrap_or_default(),
+                    email: account_email.unwrap_or_default().to_owned(),
                     api_key_id: caller.id.clone(),
                     api_key_label: caller.label.clone(),
                     model_id: model.to_owned(),
@@ -1470,9 +1462,6 @@ impl native_contract::Host for NativeHostBridge {
         report: native_contract::RequestReport,
     ) -> futures_util::future::BoxFuture<'_, ()> {
         Box::pin(async move {
-            // Capture the selected label before feedback can reload a deleted
-            // or reimported account with the same local ID.
-            let account_email = self.account_email(&report.account_id);
             if let Some(context) = &report.diagnostics {
                 native_contract::Host::activity_finished(self, &context.request_id).await;
             }
@@ -1627,7 +1616,7 @@ impl native_contract::Host for NativeHostBridge {
             };
             if let Err(error) = record_request_stats_with_meta(
                 (!report.account_id.is_empty()).then_some(report.account_id.as_str()),
-                account_email.as_deref(),
+                report.account_email.as_deref(),
                 Some(&report.caller.id),
                 Some(&report.caller.label),
                 Some(&report.upstream_model),

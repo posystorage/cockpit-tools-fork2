@@ -161,6 +161,7 @@ impl Host for HostFixture {
             );
             Ok(Route {
                 account_id: "fixture".into(),
+                account_email: None,
                 owner_id: "same-owner".into(),
                 continuity_account_id: None,
                 installation_profile: None,

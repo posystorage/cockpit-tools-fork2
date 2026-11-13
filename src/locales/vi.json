@@ -2969,7 +2969,7 @@
       "hideNativeQuotaBannerTitle": "Ẩn thông báo hạn mức gốc của Codex",
       "hideNativeQuotaBannerDescription": "Ẩn thông báo hết hạn mức trong ứng dụng máy tính mà không thay đổi hạn mức tài khoản hay trạng thái dịch vụ. Mặc định bật khi khởi chạy ứng dụng máy tính qua dịch vụ API, tắt trong các trường hợp khác. Lựa chọn được lưu theo từng phiên bản ứng dụng. Chế độ CLI không thay đổi giao diện.",
       "quotaDisplayCompatibilityTitle": "Tương thích hiển thị hạn mức",
-      "quotaDisplayCompatibilityDescription": "Mặc định tắt. Chỉ điều chỉnh trạng thái cho phép/chặn của hạn mức chính trên ứng dụng máy tính, không đổi số liệu sử dụng, số dư hoặc hạn mức ảnh. Độc lập với việc ẩn cảnh báo và mở khóa gửi cục bộ của Dịch vụ API. Lưu riêng cho từng phiên bản."
+      "quotaDisplayCompatibilityDescription": "Phiên bản này tạm thời chưa hỗ trợ thay đổi hiển thị hạn mức. Công tắc này chỉ lưu tùy chọn của phiên bản ứng dụng. Mở khóa gửi cục bộ của Dịch vụ API và ẩn cảnh báo vẫn hoạt động độc lập."
     },
     "switch": "Chuyển",
     "switched": "Đã chuyển sang {{email}}",

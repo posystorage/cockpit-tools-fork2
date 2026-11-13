@@ -2969,7 +2969,7 @@
       "hideNativeQuotaBannerTitle": "隱藏 Codex 官方額度提示",
       "hideNativeQuotaBannerDescription": "僅隱藏桌面用戶端的額度耗盡提示，不修改帳戶額度或服務狀態。API 服務的桌面啟動預設開啟，其他啟動預設關閉；手動選擇按執行個體儲存。CLI 不執行顯示注入。",
       "quotaDisplayCompatibilityTitle": "額度顯示相容",
-      "quotaDisplayCompatibilityDescription": "預設關閉。僅調整桌面主額度的允許／阻止顯示狀態，不變更用量數字、餘額或圖片額度。與提示隱藏及 API 服務本機傳送解鎖獨立，依執行個體儲存。"
+      "quotaDisplayCompatibilityDescription": "目前版本暫不支援額度顯示改寫，此開關僅保留執行個體偏好。API 服務本機傳送解鎖與提示隱藏仍正常獨立生效。"
     },
     "switch": "切換",
     "switched": "已切換至 {{email}}",

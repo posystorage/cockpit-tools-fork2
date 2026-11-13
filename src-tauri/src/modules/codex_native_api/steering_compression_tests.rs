@@ -88,9 +88,15 @@ async fn subscription_steering_keeps_client_event_id_out_of_strict_upstream_payl
         })
     }))).await;
     let (mut handle, host, path) = native(addr, true, false, Options::default()).await;
+    *host.route_identity.lock().unwrap() = (
+        Some("original@example.invalid".into()), Some("original-official".into()),
+    );
     let mut socket = connect(&handle).await;
     socket.send(ClientMessage::Text(json!({"type":"response.create","model":"m","input":[]}).to_string().into())).await.unwrap();
     assert_eq!(ws_json(&mut socket).await["response"]["id"], "p");
+    *host.route_identity.lock().unwrap() = (
+        Some("replacement@example.invalid".into()), Some("replacement-official".into()),
+    );
     socket.send(ClientMessage::Text(json!({"type":"response.steer","event_id":"client-control","previous_response_id":"p","input":"new direction"}).to_string().into())).await.unwrap();
     let ack = ws_json(&mut socket).await;
     assert_eq!(ack["type"], "response.steer.accepted");
@@ -101,6 +107,15 @@ async fn subscription_steering_keeps_client_event_id_out_of_strict_upstream_payl
     socket.close(None).await.unwrap();
     handle.shutdown(Duration::from_secs(2)).await.unwrap();
     assert_eq!(host.capacity.available_permits(), 1);
+    let reports = host.reports.lock().unwrap();
+    assert_eq!(reports.len(), 2);
+    for report in reports.iter() {
+        assert_eq!(report.account_email.as_deref(), Some("original@example.invalid"));
+        let attempt = &report.diagnostics.as_ref().unwrap().attempts[0];
+        assert_eq!(attempt.account_email.as_deref(), Some("original@example.invalid"));
+        assert_eq!(attempt.upstream_chatgpt_account_id.as_deref(), Some("original-official"));
+    }
+    drop(reports);
     task.abort();
     let _ = std::fs::remove_dir_all(path);
 }

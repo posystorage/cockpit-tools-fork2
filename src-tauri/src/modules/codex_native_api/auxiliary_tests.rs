@@ -84,6 +84,7 @@ impl Host for TestHost {
                 official_fallback_failure: None,
                 transport_identity: None,
                 account_id: "account-a".into(),
+                account_email: None,
                 owner_id: if self.owner_changed.load(Ordering::SeqCst) {
                     "changed"
                 } else {

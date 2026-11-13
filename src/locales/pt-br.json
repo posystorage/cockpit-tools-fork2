@@ -2969,7 +2969,7 @@
       "hideNativeQuotaBannerTitle": "Ocultar o aviso de cota nativo do Codex",
       "hideNativeQuotaBannerDescription": "Oculta o aviso de cota esgotada no cliente de desktop sem alterar a cota ou o estado do serviço. Ativado por padrão ao iniciar pelo serviço API no desktop; desativado nos demais casos. A escolha é salva por instância. O modo CLI não altera a interface.",
       "quotaDisplayCompatibilityTitle": "Compatibilidade da exibição de cota",
-      "quotaDisplayCompatibilityDescription": "Desativada por padrão. Adapta apenas o estado permitido/bloqueado da cota principal do desktop, sem alterar números de uso, créditos ou cota de imagens. Independente de ocultar avisos e do desbloqueio de envio local do serviço API. Salva por instância."
+      "quotaDisplayCompatibilityDescription": "Esta versão ainda não oferece alterações na exibição da cota. Este botão apenas salva a preferência da instância. O desbloqueio de envio local do serviço API e a ocultação de avisos continuam funcionando de forma independente."
     },
     "switch": "Alternar",
     "switched": "Alternado para {{email}}",

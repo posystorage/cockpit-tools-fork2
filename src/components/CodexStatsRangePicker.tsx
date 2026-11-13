@@ -54,12 +54,19 @@ export function CodexStatsRangePicker({
       }, 5_000);
       return () => window.clearInterval(timer);
     }
-    const nextMidnight = new Date();
-    nextMidnight.setHours(24, 0, 0, 50);
-    const timer = window.setTimeout(() => {
-      onPresetChange(value, buildCodexStatsTimeRange(value));
-    }, Math.max(nextMidnight.getTime() - Date.now(), 50));
-    return () => window.clearTimeout(timer);
+    let disposed = false;
+    let timer: number;
+    const scheduleMidnight = () => {
+      if (disposed) return;
+      const nextMidnight = new Date();
+      nextMidnight.setHours(24, 0, 0, 50);
+      timer = window.setTimeout(() => {
+        onPresetChange(value, buildCodexStatsTimeRange(value));
+        scheduleMidnight();
+      }, Math.max(nextMidnight.getTime() - Date.now(), 50));
+    };
+    scheduleMidnight();
+    return () => { disposed = true; window.clearTimeout(timer); };
     // The preset key is the only input that should reset the midnight timer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);

@@ -1,6 +1,6 @@
 (() => {
   const root = typeof window === 'object' ? window : globalThis;
-  // A replacement owner must restore the previous wrapper before replacing its raw-snapshot map.
+  // Restore any shared-cache wrapper from an earlier runtime before replacing its API.
   root.__cockpitQuotaCompat?.disposeLiveQuotaGuard?.();
   const identifier = '[A-Za-z_$][\\w$]*';
   const selector = new RegExp(
@@ -63,133 +63,23 @@
       && usageBannerTypes.has(usage?.rate_limit_upsell?.banner_type);
   }
 
-  const liveQuota = {
-    client: null,
-    originalSetQueryData: null,
-    unsubscribe: null,
-    observer: null,
-    timer: null,
-    retries: 0,
-    rewriting: false,
-    raw: new WeakMap(),
-  };
-  const liveQuotaEnabled = () => root.__cockpitEnhancements?.apiService === true
-    && root.__cockpitEnhancements?.quotaCompat === true;
-  const isMainUsage = value => !!value && typeof value === 'object'
-    && !!value.rate_limit && typeof value.rate_limit.allowed === 'boolean';
-  function rewriteLiveUsage(value) {
-    if (!liveQuotaEnabled() || !isMainUsage(value)) return value;
-    let next = value;
-    if (value.rate_limit.allowed !== true || value.rate_limit.limit_reached === true) {
-      next = { ...next, rate_limit: { ...next.rate_limit, allowed: true, limit_reached: false } };
+  // Main usage queries are shared by official, remote, cloud and direct routes.
+  // Changing them also changes native send atoms before Composer can check its
+  // route. No validated display-only consumer exists in the supported graphs.
+  // Keep the preference and report this separately from send/banner readiness.
+  const originalUsage = value => value;
+  function displayCompatibility() {
+    const state = root.__cockpitEnhancements;
+    const requested = state?.apiService === true && state?.quotaCompat === true;
+    const result = { displayState: requested ? 'unsupported' : 'disabled',
+      displayReason: requested ? 'shared-usage-cache-unscoped' : undefined };
+    if (state) {
+      state.nativeQuotaDisplayPatchState = result.displayState;
+      state.nativeQuotaDisplayPatchReason = result.displayReason;
     }
-    // Preserve native notice metadata, numerical usage, credits and image quota.
-    // Banner suppression belongs exclusively to the independent instance switch.
-    if (next !== value) liveQuota.raw.set(next, liveQuota.raw.get(value) || value);
-    return next;
+    return result;
   }
-  const originalUsage = value => liveQuota.raw.get(value) || value;
-  const trackedLiveUsage = value => rewriteLiveUsage(liveQuota.raw.get(value) || value);
-  const mainUsageQueries = client => client?.getQueryCache?.()?.findAll?.({ queryKey: ['rate-limit-status'] })
-    ?.filter?.(query => Array.isArray(query?.queryKey) && query.queryKey[1] !== 'image-generation') ?? [];
-
-  function findLiveQueryClient() {
-    if (liveQuota.client?.getQueryCache?.() && typeof liveQuota.client.setQueryData === 'function')
-      return liveQuota.client;
-    const looksLikeClient = value => !!value && typeof value.getQueryCache === 'function'
-      && typeof value.setQueryData === 'function';
-    const seen = new Set();
-    const stack = [];
-    for (const item of [root.document?.getElementById?.('root'), root.document?.body,
-      root.document?.documentElement]) {
-      if (!item) continue;
-      const key = Object.keys(item).find(name => name.startsWith('__reactContainer$')
-        || name.startsWith('__reactFiber$'));
-      if (!key) continue;
-      let fiber = item[key];
-      if (fiber?.stateNode?.current) fiber = fiber.stateNode.current;
-      stack.push(fiber);
-    }
-    let visited = 0;
-    while (stack.length && visited < 10000) {
-      const node = stack.pop();
-      if (!node || typeof node !== 'object' || seen.has(node)) continue;
-      seen.add(node);
-      visited++;
-      const candidates = [
-        node.memoizedProps?.client,
-        node.memoizedProps?.value,
-        node.stateNode,
-        node.memoizedState?.memoizedState,
-      ];
-      const found = candidates.find(looksLikeClient);
-      if (found) return found;
-      if (node.child) stack.push(node.child);
-      if (node.sibling) stack.push(node.sibling);
-    }
-    return null;
-  }
-
-  function patchLiveQueryClient(client) {
-    if (!client || client.__cockpitLiveQuotaClient) return client;
-    liveQuota.client = client;
-    liveQuota.originalSetQueryData = client.setQueryData;
-    client.setQueryData = function cockpitLiveSetQueryData(queryKey, updater, ...rest) {
-      if (!liveQuotaEnabled() || queryKey?.[0] !== 'rate-limit-status'
-        || queryKey?.[1] === 'image-generation') {
-        return liveQuota.originalSetQueryData.call(this, queryKey, updater, ...rest);
-      }
-      const next = typeof updater === 'function'
-        ? previous => rewriteLiveUsage(updater(liveQuota.raw.get(previous) || previous))
-        : rewriteLiveUsage(updater);
-      liveQuota.rewriting = true;
-      try {
-        return liveQuota.originalSetQueryData.call(this, queryKey, next, ...rest);
-      } finally {
-        liveQuota.rewriting = false;
-      }
-    };
-    Object.defineProperty(client, '__cockpitLiveQuotaClient', {
-      value: true, configurable: true,
-    });
-    const cache = client.getQueryCache?.();
-    if (cache?.subscribe) {
-      liveQuota.unsubscribe = cache.subscribe(event => {
-        if (liveQuota.rewriting || !liveQuotaEnabled()
-          || event?.query?.queryKey?.[0] !== 'rate-limit-status'
-          || event.query.queryKey[1] === 'image-generation') return;
-        const current = event.query.state?.data;
-        const next = trackedLiveUsage(current);
-        if (next !== current) {
-          liveQuota.rewriting = true;
-          try {
-            liveQuota.originalSetQueryData.call(client, event.query.queryKey, next);
-          } finally {
-            liveQuota.rewriting = false;
-          }
-        }
-      });
-    }
-    return client;
-  }
-
-  function rewriteCachedLiveUsage(client) {
-    let changed = 0;
-    for (const query of mainUsageQueries(client)) {
-      const current = query.state?.data;
-      const next = trackedLiveUsage(current);
-      if (next !== current) {
-        liveQuota.rewriting = true;
-        try {
-          liveQuota.originalSetQueryData?.call(client, query.queryKey, next);
-        } finally {
-          liveQuota.rewriting = false;
-        }
-        changed++;
-      }
-    }
-    return changed;
-  }
+  displayCompatibility();
 
   function refreshLiveComposers(plan) {
     let refreshed = 0;
@@ -216,37 +106,22 @@
 
   function installLiveQuotaGuard(plan) {
     if (root.__cockpitEnhancements?.apiService !== true) return { ok: false, reason: 'disabled' };
-    root.clearTimeout?.(liveQuota.timer);
-    liveQuota.timer = null;
+    const display = displayCompatibility();
     const active = root.__cockpitEnhancements;
     const preservedNativeModule = active.nativePatchState === 'active'
       && (['full', 'rspack'].includes(active.nativePatchMode) && /^[01]{4,5}$/.test(active.nativePatchFeatures || '')
         || ['fast-only', 'prediction-only'].includes(active.nativePatchMode));
-    // A Fast-only fallback has no transformed presenters to recover raw usage.
-    // Keep that graph intact; cache compatibility must not suppress its notice.
+    // Preserve Fast/prediction and incomplete Rspack graphs independently from
+    // the unsupported optional display adaptation.
     if (preservedNativeModule && (['fast-only', 'prediction-only'].includes(active.nativePatchMode)
       || active.nativePatchMode === 'rspack' && root.__cockpitNativeEvaluatedGraph?.quota !== true)) {
-      return { ok: true, preservedNativeModule: true,
+      return { ok: true, ...display, preservedNativeModule: true,
         ...(active.nativePatchFeatures?.startsWith('1') ? { preservedNativeFast: true } : {}) };
     }
-    const apply = () => {
-      const client = liveQuotaEnabled() ? patchLiveQueryClient(findLiveQueryClient()) : null;
-      const changed = client ? rewriteCachedLiveUsage(client) : 0;
-      const refreshed = preservedNativeModule ? 0 : refreshLiveComposers(plan);
-      return { client: !!client, changed, refreshed };
-    };
-    let applied = apply();
-    if (liveQuotaEnabled() && !applied.client && liveQuota.retries < 20) {
-      root.clearTimeout?.(liveQuota.timer);
-      liveQuota.timer = root.setTimeout(() => {
-        liveQuota.retries++;
-        // Recheck activation before touching the page: Fast may have finished
-        // loading while this older quota retry was waiting.
-        installLiveQuotaGuard(plan);
-      }, 250);
-    }
+    const applied = { client: false, changed: 0,
+      refreshed: preservedNativeModule ? 0 : refreshLiveComposers(plan) };
     const config = root.__cockpitEnhancements;
-    if (preservedNativeModule) return { ok: true, ...applied, preservedNativeModule: true,
+    if (preservedNativeModule) return { ok: true, ...display, ...applied, preservedNativeModule: true,
       ...(active.nativePatchFeatures?.startsWith('1') ? { preservedNativeFast: true } : {}) };
     if (config) {
       config.nativePatchMode = 'live-quota';
@@ -256,31 +131,14 @@
       config.nativePatchState = 'active';
       config.nativePatchReason = 'quota-breakpoint-armed';
     }
-    return { ok: true, ...applied };
+    return { ok: true, ...display, ...applied };
   }
 
   function disposeLiveQuotaGuard() {
-    liveQuota.observer?.disconnect();
-    liveQuota.observer = null;
-    root.clearTimeout?.(liveQuota.timer);
-    liveQuota.timer = null;
     for (const aside of root.document?.querySelectorAll?.('[data-cockpit-hidden-usage="true"]') ?? []) {
       aside.style.removeProperty('display');
       aside.removeAttribute('data-cockpit-hidden-usage');
     }
-    liveQuota.unsubscribe?.();
-    liveQuota.unsubscribe = null;
-    const client = liveQuota.client;
-    if (client) {
-      for (const query of mainUsageQueries(client)) {
-        const raw = liveQuota.raw.get(query.state?.data);
-        if (raw) liveQuota.originalSetQueryData?.call(client, query.queryKey, raw);
-      }
-      if (liveQuota.originalSetQueryData) client.setQueryData = liveQuota.originalSetQueryData;
-      delete client.__cockpitLiveQuotaClient;
-    }
-    liveQuota.client = null;
-    liveQuota.originalSetQueryData = null;
   }
 
   async function prepareLiveQuotaGate() {

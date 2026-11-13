@@ -299,10 +299,12 @@ export function CodexInstancesContent({
     async (
       _launchAfterSwitch: boolean,
       launchOptions?: CodexLaunchPreviewLaunchOptions,
+      isCurrent: () => boolean = () => true,
     ) => {
       const preview = launchPreview;
       const resolve = pendingLaunchResolve.current;
-      if (!preview || !resolve) return false;
+      if (!preview || !resolve || !isCurrent()) return false;
+      const ownsPreview = () => isCurrent() && pendingLaunchResolve.current === resolve;
       const { instance, account } = preview;
       let launchAccount = account;
       if (
@@ -318,6 +320,7 @@ export function CodexInstancesContent({
             launchOptions.imageGenerationAccountModels,
         );
       }
+      if (!ownsPreview()) return false;
       if (launchAccount && launchOptions?.providerAccessMode) {
         const nextBindId = resolveCodexProviderBindAccountId(launchAccount);
         if ((instance.bindAccountId || null) !== nextBindId) {
@@ -328,6 +331,7 @@ export function CodexInstancesContent({
           });
         }
       }
+      if (!ownsPreview()) return false;
       pendingLaunchResolve.current = null;
       setLaunchPreview(null);
       resolve(true);

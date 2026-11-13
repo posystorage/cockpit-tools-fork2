@@ -2969,7 +2969,7 @@
       "hideNativeQuotaBannerTitle": "Codex 標準の利用上限通知を非表示",
       "hideNativeQuotaBannerDescription": "アカウントの利用枠やサービスの状態を変更せず、デスクトップの利用枠超過通知だけを非表示にします。API サービス経由のデスクトップ起動では既定でオン、それ以外はオフです。選択はインスタンスごとに保存されます。CLI 起動では表示を変更しません。",
       "quotaDisplayCompatibilityTitle": "使用量表示の互換性",
-      "quotaDisplayCompatibilityDescription": "既定ではオフです。デスクトップのメイン使用量の許可・ブロック状態のみを調整し、使用量の数値、残高、画像の制限は変更しません。警告の非表示や API サービスのローカル送信の解除とは独立し、インスタンスごとに保存されます。"
+      "quotaDisplayCompatibilityDescription": "現在のバージョンでは使用量表示の変更に対応していません。このスイッチはインスタンスの設定のみを保存します。API サービスのローカル送信の解除と警告の非表示は引き続き独立して動作します。"
     },
     "switch": "切替",
     "switched": "{{email}} に切り替えました",

@@ -52,6 +52,7 @@ impl Host for PlanHost {
             );
             Ok(Route {
                 account_id: "chatgpt_plan_registration".into(),
+                account_email: None,
                 owner_id: "plan-owner".into(),
                 continuity_account_id: None,
                 installation_profile: None,

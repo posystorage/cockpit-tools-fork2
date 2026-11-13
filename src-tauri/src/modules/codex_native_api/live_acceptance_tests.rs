@@ -115,6 +115,7 @@ impl Host for LiveHost {
             ]);
             Ok(Route {
                 account_id: account.id.clone(),
+                account_email: None,
                 owner_id: account.owner.clone(),
                 continuity_account_id: None,
                 installation_profile: Some(account.installation.clone()),

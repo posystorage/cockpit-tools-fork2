@@ -86,6 +86,43 @@ test('provider targets preserve explicit Anthropic authentication and distinct p
   }
 });
 
+test('fingerprint targets deduplicate identical final endpoints for every supported protocol', () => {
+  for (const protocol of ['responses', 'chat_completions', 'anthropic'] as const) {
+    for (const suffix of ['', '/responses', '/chat/completions', '/messages']) {
+      const providers = [{ id: 'provider', name: 'Relay', baseUrl: `https://RELAY.example.test:443/tenant/v1${suffix}/?ignored=1#fragment`,
+        wireApi: protocol, apiKeys: [{ id: 'key', apiKey: 'same-key' }] }] as CodexModelProvider[];
+      const accounts = [{ id: 'account', auth_mode: 'apikey', openai_api_key: 'same-key',
+        api_base_url: 'https://relay.example.test/tenant/v1', api_wire_api: protocol }] as CodexAccount[];
+      assert.deepEqual(buildFingerprintTargets(accounts, providers).map((target) => target.id), ['provider:provider:key'], `${protocol} ${suffix}`);
+    }
+    const provider = { id: 'root', name: 'Root', baseUrl: 'https://relay.example.test/',
+      wireApi: protocol, apiKeys: [{ id: 'key', apiKey: 'same-key' }] } as CodexModelProvider;
+    const account = { id: 'root-account', auth_mode: 'apikey', openai_api_key: 'same-key',
+      api_base_url: 'https://relay.example.test/v1', api_wire_api: protocol } as CodexAccount;
+    assert.equal(buildFingerprintTargets([account], [provider]).length, 1, protocol);
+  }
+});
+
+test('fingerprint target identity keeps distinct prefixes, protocols and effective authentication', () => {
+  const makeProvider = (id: string, baseUrl: string, wireApi: 'responses' | 'chat_completions' | 'anthropic', authScheme?: 'x-api-key' | 'bearer') => ({
+    id, name: id, baseUrl, wireApi, authScheme, apiKeys: [{ id: 'key', apiKey: 'same-key' }],
+  }) as CodexModelProvider;
+  const targets = buildFingerprintTargets([], [
+    makeProvider('a', 'https://relay.example.test/a/v1', 'anthropic'),
+    makeProvider('a-x-key', 'https://relay.example.test/a/v1/messages', 'anthropic', 'x-api-key'),
+    makeProvider('a-bearer', 'https://relay.example.test/a/v1/messages', 'anthropic', 'bearer'),
+    makeProvider('b', 'https://relay.example.test/b/v1/messages', 'anthropic'),
+    makeProvider('a-chat', 'https://relay.example.test/a/v1/messages', 'chat_completions'),
+    makeProvider('a-responses', 'https://relay.example.test/a/v1/messages', 'responses'),
+    makeProvider('a-responses-ignored-scheme', 'https://relay.example.test/a/v1/responses', 'responses', 'x-api-key'),
+    makeProvider('nested-messages', 'https://relay.example.test/a/v1/messages/responses', 'anthropic'),
+  ]);
+  assert.deepEqual(targets.map((target) => target.id), [
+    'provider:a:key', 'provider:a-bearer:key', 'provider:b:key',
+    'provider:a-chat:key', 'provider:a-responses:key', 'provider:nested-messages:key',
+  ]);
+});
+
 test('the batch never exceeds its parallel limit and runs each group once', async () => {
   let active = 0; let peak = 0; const completed: number[] = [];
   await runFingerprintQueue([0, 1, 2, 3, 4, 5, 6], 3, () => false, async (job) => {

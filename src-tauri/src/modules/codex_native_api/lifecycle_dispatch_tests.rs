@@ -1,6 +1,7 @@
 fn dispatch_route(account_id: &str) -> Route {
     Route {
         account_id: account_id.into(),
+        account_email: None,
         continuity_account_id: None,
         owner_id: account_id.into(),
         installation_profile: None,
@@ -130,6 +131,145 @@ async fn native_lifecycle_first_dispatch_commits_only_the_selected_candidate() {
     assert_eq!(context.attempts[0].account_id, "sent");
     assert_eq!(context.attempts[0].transport, "http");
     assert_eq!(context.attempts[0].status, Some(200));
+}
+
+#[tokio::test]
+async fn fork_native_inflight_email_snapshot_survives_concurrent_same_id_updates() {
+    for (transport, cancel) in [("http", false), ("websocket", false), ("websocket", true)] {
+        let (mut first, host, activity, stop) = unsent_fixture();
+        let caller = Caller { id: "caller".into(), label: "test".into() };
+        let mut route = dispatch_route("same-local-id");
+        route.account_email = Some("original@example.invalid".into());
+        route.headers.insert("chatgpt-account-id", "original-official".parse().unwrap());
+        first.routed(&caller, &route, "requested");
+        first.begin_attempt(transport).await;
+        first.upstream_headers(&route.headers);
+        let release = Arc::new(Notify::new());
+        let waiting = release.clone();
+        let first_task = tokio::spawn(async move {
+            waiting.notified().await;
+            if cancel {
+                drop(first);
+            } else {
+                first.complete(200, true, Some(usage()), None).await;
+            }
+        });
+
+        // Another request reloads the same local ID while the first is still
+        // running. Its new credential/label snapshot belongs only to that send.
+        route.account_email = Some("replacement@example.invalid".into());
+        route.headers.insert("chatgpt-account-id", "replacement-official".parse().unwrap());
+        let mut second = RequestTracker::new(
+            activity, host.clone(), StopSignal(stop.subscribe()), None,
+        );
+        second.context("POST", "/v1/responses", &axum::http::HeaderMap::new(), false);
+        second.authorized(&caller, "requested");
+        second.routed(&caller, &route, "requested");
+        second.begin_attempt(transport).await;
+        second.upstream_headers(&route.headers);
+        second.complete(200, true, Some(usage()), None).await;
+        let replacement = recorded(&host).await;
+        assert_eq!(replacement.account_email.as_deref(), Some("replacement@example.invalid"));
+        release.notify_one();
+        first_task.await.unwrap();
+        let original = recorded(&host).await;
+        assert_eq!(original.account_email.as_deref(), Some("original@example.invalid"));
+        let original_attempt = &original.diagnostics.as_ref().unwrap().attempts[0];
+        assert_eq!(original_attempt.account_email.as_deref(), Some("original@example.invalid"));
+        assert_eq!(original_attempt.upstream_chatgpt_account_id.as_deref(), Some("original-official"));
+        assert_eq!(original.status, if cancel { 499 } else { 200 });
+        assert_eq!(*host.selection_emails.lock().unwrap(), [
+            Some("original@example.invalid".into()), Some("replacement@example.invalid".into()),
+        ]);
+    }
+}
+
+#[tokio::test]
+async fn fork_native_unsent_same_id_replacement_keeps_previous_email_snapshot() {
+    for original_email in [Some("original@example.invalid"), None] {
+        for transport in ["http", "websocket"] {
+            let (mut tracker, host, _, _stop) = unsent_fixture();
+            let caller = Caller { id: "caller".into(), label: "test".into() };
+            let mut route = dispatch_route("same-local-id");
+            route.account_email = original_email.map(str::to_owned);
+            route.headers.insert("chatgpt-account-id", "original-official".parse().unwrap());
+            tracker.routed(&caller, &route, "requested");
+            tracker.begin_attempt(transport).await;
+            tracker.upstream_headers(&route.headers);
+            tracker.attempt_error(&ServiceError::new(429, "upstream_rate_limited", "real rejection"));
+            route.account_email = Some("replacement@example.invalid".into());
+            route.headers.insert("chatgpt-account-id", "replacement-official".parse().unwrap());
+            tracker.routed(&caller, &route, "requested");
+            tracker.begin_attempt(transport).await;
+            tracker.upstream_headers(&route.headers);
+            if transport == "websocket" {
+                assert!(tracker.discard_unstarted_websocket_attempt().await);
+            } else {
+                assert!(tracker.discard_unsent_attempt().await);
+            }
+            tracker.fail(&ServiceError::new(502, "upstream_unavailable", "replacement not sent")).await;
+            let report = recorded(&host).await;
+            assert_eq!(report.status, 429);
+            assert_eq!(report.account_email.as_deref(), original_email);
+            let attempt = &report.diagnostics.as_ref().unwrap().attempts[0];
+            assert_eq!(attempt.account_email.as_deref(), original_email);
+            assert_eq!(attempt.upstream_chatgpt_account_id.as_deref(), Some("original-official"));
+        }
+    }
+}
+
+#[tokio::test]
+async fn fork_websocket_opening_header_stop_or_storage_error_discards_unsent_inference() {
+    for stopping in [false, true] {
+        for previous_sent in [false, true] {
+            let (mut tracker, host, activity, stop) = unsent_fixture();
+            if previous_sent {
+                select_candidate(&mut tracker, "previous-real-send");
+                tracker.begin_attempt("websocket").await;
+                tracker.attempt_error(&ServiceError::new(429, "upstream_rate_limited", "real rejection"));
+            }
+            select_candidate(&mut tracker, "upgraded-without-create");
+            tracker.begin_attempt("websocket").await;
+            let request_id = tracker.diagnostic_request_id().to_owned();
+
+            // Exercise the real identity observer and blocking worker. Its
+            // header write fails locally after a successful network upgrade.
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("identity.sqlite");
+            let store = super::super::identity::IdentityStore::open(path.clone()).unwrap();
+            let mut headers = axum::http::HeaderMap::new();
+            let mut body = json!({"model":"test","input":[],"client_metadata":{"session_id":"opening","thread_id":"opening"}});
+            let context = store.inspect("caller", &headers, &body).unwrap();
+            let binding = store.rewrite(&context, "upgraded-without-create", "owner", &mut headers, &mut body).unwrap();
+            headers.insert("x-codex-turn-state", "upgraded-state".parse().unwrap());
+            if stopping {
+                stop.send(true).unwrap();
+            } else {
+                rusqlite::Connection::open(&path).unwrap().execute_batch(
+                    "CREATE TRIGGER fail_opening_header BEFORE INSERT ON native_opaque_v1 BEGIN SELECT RAISE(ABORT, 'synthetic storage failure'); END;",
+                ).unwrap();
+            }
+            let observe = super::super::blocking::run(
+                StopSignal(stop.subscribe()), Duration::from_secs(1),
+                move || store.observe_headers(&binding, &headers),
+            );
+            let error = super::super::websocket::observe_opening_headers(&mut tracker, observe).await.unwrap_err();
+            assert_eq!(error.code, if stopping { "service_stopping" } else { "identity_store_unavailable" });
+            assert_eq!(tracker.upstream_attempt_count(), usize::from(previous_sent));
+            assert_eq!(*host.finishes.lock().unwrap(), [request_id]);
+            assert!(host.quota_requests.lock().unwrap().is_empty(), "no inference frame was sent");
+            tracker.fail(&error).await;
+            drop(tracker);
+            if previous_sent {
+                let report = recorded(&host).await;
+                assert_eq!(report.account_id, "previous-real-send");
+                assert_eq!(report.status, 429);
+                assert_eq!(report.diagnostics.unwrap().attempts.len(), 1);
+            } else {
+                assert_no_dispatch_records(&host, &activity).await;
+            }
+        }
+    }
 }
 
 #[tokio::test]

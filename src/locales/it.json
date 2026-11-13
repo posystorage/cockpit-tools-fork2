@@ -2969,7 +2969,7 @@
       "hideNativeQuotaBannerTitle": "Nascondi l'avviso di quota nativo di Codex",
       "hideNativeQuotaBannerDescription": "Nasconde l'avviso di quota esaurita nel client desktop senza modificare la quota o lo stato del servizio. Attivo per impostazione predefinita per gli avvii desktop tramite il servizio API, altrimenti disattivo. La scelta viene salvata per istanza. Nessuna modifica all'interfaccia in modalità CLI.",
       "quotaDisplayCompatibilityTitle": "Compatibilità della visualizzazione quota",
-      "quotaDisplayCompatibilityDescription": "Disattivata per impostazione predefinita. Adatta solo lo stato consentito/bloccato della quota principale desktop, senza modificare dati di utilizzo, credito o quota immagini. Indipendente dalla visualizzazione degli avvisi e dallo sblocco dell’invio locale del servizio API. Salvata per istanza."
+      "quotaDisplayCompatibilityDescription": "Questa versione non supporta temporaneamente le modifiche alla visualizzazione quota. Questo interruttore salva solo la preferenza dell’istanza. Lo sblocco dell’invio locale del servizio API e la disattivazione degli avvisi continuano a funzionare in modo indipendente."
     },
     "switch": "Cambia",
     "switched": "Passato a {{email}}",

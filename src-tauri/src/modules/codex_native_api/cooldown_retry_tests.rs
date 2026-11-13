@@ -149,6 +149,7 @@ impl Host for CooldownHost {
                 official_fallback_failure: None,
                 transport_identity: None,
                 account_id: account.into(),
+                account_email: None,
                 owner_id: format!("owner-{account}"),
                 base_url: self.bases[usize::from(second)].clone(),
                 model: request.model,

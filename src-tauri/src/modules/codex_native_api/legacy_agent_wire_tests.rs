@@ -76,6 +76,7 @@ impl Host for LegacyHost {
         Box::pin(async move {
             Ok(Route {
                 account_id: "legacy-account".into(),
+                account_email: None,
                 owner_id: "legacy-owner".into(),
                 continuity_account_id: None,
                 installation_profile: None,

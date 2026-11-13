@@ -103,6 +103,7 @@ fn report(
         operation: "responses",
         caller: caller("caller-a"),
         account_id: account.into(),
+        account_email: None,
         requested_model: request.model.clone(),
         upstream_model: request.model.clone(),
         status,

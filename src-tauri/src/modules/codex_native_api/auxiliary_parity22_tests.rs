@@ -7,6 +7,7 @@ fn reference() -> Value {
 fn route(base: &str, client: reqwest::Client) -> Route {
     Route {
         account_id: "account-a".into(),
+        account_email: None,
         owner_id: "owner-a".into(),
         base_url: base.into(),
         model: "gpt-realtime".into(),

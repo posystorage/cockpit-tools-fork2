@@ -40,6 +40,7 @@ impl FallbackHost {
     fn selected(&self, request: &RouteRequest, route: &str) -> Route {
         let official = route == "official";
         Route {
+            account_email: None,
             account_id: if route == "backup" {
                 "backup"
             } else {

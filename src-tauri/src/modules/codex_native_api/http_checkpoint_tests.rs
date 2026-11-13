@@ -163,6 +163,7 @@ impl Host for TestHost {
             Ok(Route {
                 continuity_account_id: None,
                 account_id: account.into(),
+                account_email: None,
                 owner_id: format!("owner-{account}"),
                 base_url: self.base.clone(),
                 model: request.model,

@@ -12,6 +12,7 @@ struct Recorder {
     invalidations: Mutex<Vec<String>>,
     changed: Notify,
     selections: Mutex<Vec<(String, String)>>,
+    selection_emails: Mutex<Vec<Option<String>>>,
     finishes: Mutex<Vec<String>>,
     quota_checks: Mutex<Vec<String>>,
     quota_denied: Mutex<Vec<String>>,
@@ -25,6 +26,7 @@ impl Host for Recorder {
         id: &'a str,
         _: &'a Caller,
         account_id: &'a str,
+        account_email: Option<&'a str>,
         _: &'a str,
         _: &'static str,
     ) -> BoxFuture<'a, ()> {
@@ -37,6 +39,7 @@ impl Host for Recorder {
                 .lock()
                 .unwrap()
                 .push((id.into(), account_id.to_owned()));
+            self.selection_emails.lock().unwrap().push(account_email.map(str::to_owned));
         })
     }
     fn activity_finished<'a>(&'a self, id: &'a str) -> BoxFuture<'a, ()> {

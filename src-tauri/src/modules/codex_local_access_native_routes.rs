@@ -2099,6 +2099,7 @@ async fn native_route_for_reserved_account(
                 .map(str::to_owned)
         }),
         account_id: account.id.clone(),
+        account_email: Some(account.email.clone()),
         owner_id,
         // The final Cockpit host owns account installation rewriting. Preserve
         // the client's installation until that host records its request scope.

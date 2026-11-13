@@ -3016,7 +3016,7 @@
       "hideNativeQuotaBannerTitle": "Sembunyikan pemberitahuan kuota bawaan Codex",
       "hideNativeQuotaBannerDescription": "Menyembunyikan pemberitahuan kuota habis di klien desktop tanpa mengubah kuota akun atau status layanan. Aktif secara bawaan saat desktop dimulai melalui layanan API, nonaktif pada kondisi lain. Pilihan disimpan per instans. Mode CLI tidak mengubah tampilan.",
       "quotaDisplayCompatibilityTitle": "Kompatibilitas tampilan kuota",
-      "quotaDisplayCompatibilityDescription": "Nonaktif secara default. Hanya menyesuaikan status diizinkan/diblokir pada kuota utama desktop, tanpa mengubah angka penggunaan, kredit, atau kuota gambar. Terpisah dari penyembunyian peringatan dan pembukaan pengiriman lokal Layanan API. Disimpan per instans."
+      "quotaDisplayCompatibilityDescription": "Perubahan tampilan kuota sementara belum didukung dalam versi ini. Sakelar ini hanya menyimpan preferensi instans. Pembukaan kunci pengiriman lokal Layanan API dan penyembunyian peringatan tetap berfungsi secara independen."
     },
     "switch": "Ganti",
     "switched": "Beralih ke {{email}}",

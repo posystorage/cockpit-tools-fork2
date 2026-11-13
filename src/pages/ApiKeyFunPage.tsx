@@ -22,6 +22,7 @@ import {
   type ModelProviderUsageSummary,
 } from '../services/modelProviderUsageService';
 import { APIKEY_FUN_SOURCE_TAG } from '../utils/apikeyFunLinks';
+import { normalizeApiKeyFunClientBaseUrl } from '../utils/apikeyFunClientConfigs';
 import {
   dispatchApiKeyFunPrefillEvent,
   getApiKeyFunPrefillPage,
@@ -159,6 +160,7 @@ export function ApiKeyFunPage() {
   const [configKey, setConfigKey] = useState<ManagedApiKey | null>(null);
   const [configModels, setConfigModels] = useState<string[]>([]);
   const [configModelsLoading, setConfigModelsLoading] = useState(false);
+  const configRequestSeqRef = useRef(0);
 
   const providerBaseUrl = useMemo(
     () => normalizeProviderBaseUrlInput(providerBaseUrlInput),
@@ -285,6 +287,7 @@ export function ApiKeyFunPage() {
     }
 
     let cancelled = false;
+    setUsage(null);
     setUsageError(null);
     setModelsError(null);
     setApiKeyModels([]);
@@ -432,7 +435,7 @@ export function ApiKeyFunPage() {
     item: ManagedApiKey,
   ) => {
     const key = item.key.trim();
-    const baseUrl = normalizeProviderBaseUrlInput(item.baseUrl ?? providerBaseUrl);
+    const baseUrl = normalizeApiKeyFunClientBaseUrl(item.baseUrl);
     if (!key) {
       setManagedKeyAction(item.id, {
         target,
@@ -475,25 +478,30 @@ export function ApiKeyFunPage() {
         target: targetName,
       }),
     });
-  }, [apiKeyFunModelCatalog, providerBaseUrl, setManagedKeyAction, t]);
+  }, [apiKeyFunModelCatalog, setManagedKeyAction, t]);
 
   /** 「使用密钥」：按这把 Key 真实返回的模型渲染配置弹窗（只读 + 复制）。 */
   const handleOpenKeyConfig = useCallback(async (item: ManagedApiKey) => {
+    const requestSeq = ++configRequestSeqRef.current;
+    const baseUrl = normalizeApiKeyFunClientBaseUrl(item.baseUrl);
     setConfigKey(item);
     setConfigModels([]);
-    setConfigModelsLoading(true);
+    setConfigModelsLoading(Boolean(baseUrl));
+    if (!baseUrl) return;
     try {
       const { models } = await listModelProviderModels({
-        baseUrl: providerBaseUrl,
+        baseUrl,
         apiKey: item.key,
       });
-      setConfigModels([...new Set(models.map((model) => model.id.trim()).filter(Boolean))]);
+      if (requestSeq === configRequestSeqRef.current) {
+        setConfigModels([...new Set(models.map((model) => model.id.trim()).filter(Boolean))]);
+      }
     } catch {
-      setConfigModels([]);
+      if (requestSeq === configRequestSeqRef.current) setConfigModels([]);
     } finally {
-      setConfigModelsLoading(false);
+      if (requestSeq === configRequestSeqRef.current) setConfigModelsLoading(false);
     }
-  }, [providerBaseUrl]);
+  }, []);
 
   // 切换密钥
   const handleUseManagedKey = useCallback((item: ManagedApiKey) => {
@@ -983,9 +991,10 @@ export function ApiKeyFunPage() {
         <ApiKeyFunKeyConfigModal
           keyName={configKey.name}
           apiKey={configKey.key}
+          baseUrl={configKey.baseUrl}
           models={configModels}
           modelsLoading={configModelsLoading}
-          onClose={() => setConfigKey(null)}
+          onClose={() => { configRequestSeqRef.current++; setConfigKey(null); }}
         />
       )}
     </div>

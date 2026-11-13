@@ -25,6 +25,7 @@ fn profile() -> InstallationProfile {
 fn route() -> Route {
     Route {
         account_id: "a".into(),
+        account_email: None,
         owner_id: "owner-a".into(),
         continuity_account_id: None,
         installation_profile: Some(profile()),

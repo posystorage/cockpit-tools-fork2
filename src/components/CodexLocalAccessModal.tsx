@@ -338,9 +338,10 @@ export function CodexLocalAccessModal({
   const [copiedField, setCopiedField] = useState<CopyableField | null>(null);
   const [selectedModelId, setSelectedModelId] = useState("");
   const savedStatsRange = useDurableUiSetting(CODEX_LOCAL_ACCESS_STATS_RANGE_STORAGE_KEY);
+  const [statsRangeRefresh, setStatsRangeRefresh] = useState(0);
   const statsSelection = useMemo(
     () => readCodexStatsRangeSelection(savedStatsRange),
-    [savedStatsRange, isOpen],
+    [savedStatsRange, isOpen, statsRangeRefresh],
   );
   const { key: statsRange, range: statsTimeRange } = statsSelection;
   const [filteredStatsWindow, setFilteredStatsWindow] =
@@ -636,23 +637,26 @@ export function CodexLocalAccessModal({
 
   useEffect(() => {
     if (!isOpen) return;
+    let disposed = false;
     const requestSeq = ++statsRequestSeqRef.current;
     setStatsRangeError("");
     void queryCodexLocalAccessStats(statsTimeRange.startAt, statsTimeRange.endAt)
       .then((window) => {
-        if (requestSeq === statsRequestSeqRef.current) setFilteredStatsWindow(window);
+        if (!disposed && requestSeq === statsRequestSeqRef.current) setFilteredStatsWindow(window);
       })
       .catch((err) => {
-        if (requestSeq === statsRequestSeqRef.current) {
+        if (!disposed && requestSeq === statsRequestSeqRef.current) {
           setStatsRangeError(String(err).replace(/^Error:\s*/, ""));
         }
       });
+    return () => { disposed = true; };
   }, [isOpen, stats?.updatedAt, statsTimeRange.endAt, statsTimeRange.startAt]);
 
   const handleStatsPresetChange = (
     key: Exclude<CodexStatsRangeKey, "custom">,
     range: CodexStatsTimeRange,
   ) => {
+    setStatsRangeRefresh((value) => value + 1);
     const saved = serializeCodexStatsRangeSelection({ key, range });
     if (saved !== null) previewDurableUiSetting(CODEX_LOCAL_ACCESS_STATS_RANGE_STORAGE_KEY, saved);
   };

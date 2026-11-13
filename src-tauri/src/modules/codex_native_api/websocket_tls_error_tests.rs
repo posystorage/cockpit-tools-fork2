@@ -102,6 +102,7 @@ async fn websocket_http_bridge_preserves_tls_type_before_and_after_canonical_con
 fn route(base_url: String) -> Route {
     Route {
         account_id: "synthetic".into(),
+        account_email: None,
         owner_id: "synthetic-owner".into(),
         continuity_account_id: None,
         installation_profile: None,

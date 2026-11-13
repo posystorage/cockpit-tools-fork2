@@ -1,8 +1,7 @@
 /**
- * APIKEY.FUN「使用 API 密钥」弹窗的配置模板。
+ * 自定义中转「使用 API 密钥」弹窗的配置模板。
  *
- * 模板按官网弹窗（2026-09-21 采集，见 docs/apikey-fun-client-configs.md）整理：
- * 分组 → 默认模型 / 上下文 / Base URL，客户端 → 写入哪个文件。
+ * 分组决定默认模型和上下文，地址始终来自用户保存的密钥记录。
  * 只保留我们已经支持的一键落盘客户端：Codex App / Codex CLI / Claude Code / Claude Desktop。
  */
 
@@ -43,10 +42,6 @@ export interface ApiKeyFunFamilyPreset {
   /** 官网模板给出的默认模型（真实列表里没有时兜底）。 */
   fallbackModel: string;
   contextWindow: number;
-  /** Codex 的 base_url：GPT 组用不带 /v1 的地址。 */
-  codexBaseUrl: string;
-  /** 官网在 GPT 组额外注入的请求头。 */
-  codexHttpHeaders?: Record<string, string>;
   /** 官网在 GPT 组写入的 [features]。 */
   codexFeatureGoals?: boolean;
   /** 支持一键落盘的客户端。 */
@@ -61,7 +56,6 @@ export const APIKEY_FUN_FAMILIES: readonly ApiKeyFunFamilyPreset[] = [
     preferredModels: ["gemini-3-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"],
     fallbackModel: "gemini-2.0-flash",
     contextWindow: 1048576,
-    codexBaseUrl: "https://api.apikey.fan/v1",
     clients: [],
   },
   {
@@ -71,7 +65,6 @@ export const APIKEY_FUN_FAMILIES: readonly ApiKeyFunFamilyPreset[] = [
     preferredModels: ["grok-4.7", "grok-4.6", "grok-4.3", "grok-build-0.1"],
     fallbackModel: "grok-4.7",
     contextWindow: 500000,
-    codexBaseUrl: "https://api.apikey.fan/v1",
     clients: ["codex_app", "codex_cli", "claude_code", "claude_desktop"],
   },
   {
@@ -81,7 +74,6 @@ export const APIKEY_FUN_FAMILIES: readonly ApiKeyFunFamilyPreset[] = [
     preferredModels: ["glm-5.2", "glm-5.1", "glm-4.6"],
     fallbackModel: "glm-5.2",
     contextWindow: 1000000,
-    codexBaseUrl: "https://api.apikey.fan/v1",
     clients: ["codex_app", "codex_cli", "claude_code"],
   },
   {
@@ -91,7 +83,6 @@ export const APIKEY_FUN_FAMILIES: readonly ApiKeyFunFamilyPreset[] = [
     preferredModels: ["kimi-k3", "kimi-k2.6"],
     fallbackModel: "kimi-k3",
     contextWindow: 1000000,
-    codexBaseUrl: "https://api.apikey.fan/v1",
     clients: ["codex_app", "codex_cli", "claude_code"],
   },
   {
@@ -101,7 +92,6 @@ export const APIKEY_FUN_FAMILIES: readonly ApiKeyFunFamilyPreset[] = [
     preferredModels: ["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-chat"],
     fallbackModel: "deepseek-v4-pro",
     contextWindow: 1000000,
-    codexBaseUrl: "https://api.apikey.fan/v1",
     clients: ["codex_app", "codex_cli", "claude_code"],
   },
   {
@@ -111,8 +101,6 @@ export const APIKEY_FUN_FAMILIES: readonly ApiKeyFunFamilyPreset[] = [
     preferredModels: ["gpt-5.6-sol", "gpt-5.6-luna"],
     fallbackModel: "gpt-5.6-sol",
     contextWindow: 272000,
-    codexBaseUrl: "https://api.apikey.fan",
-    codexHttpHeaders: { "x-openai-actor-authorization": "apikey.fan" },
     codexFeatureGoals: true,
     clients: ["codex_app", "codex_cli"],
   },
@@ -123,12 +111,31 @@ export const APIKEY_FUN_FAMILIES: readonly ApiKeyFunFamilyPreset[] = [
     preferredModels: ["claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-5"],
     fallbackModel: "claude-opus-4-6",
     contextWindow: 200000,
-    codexBaseUrl: "https://api.apikey.fan",
     clients: ["claude_code", "claude_desktop"],
   },
 ] as const;
 
-export const APIKEY_FUN_ANTHROPIC_BASE_URL = "https://api.apikey.fan";
+/** Old vault entries may omit the address; never guess a destination for their keys. */
+export function normalizeApiKeyFunClientBaseUrl(value?: string): string {
+  try {
+    const url = new URL(value?.trim() ?? '');
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return '';
+    return `${url.origin}${url.pathname}`.replace(/\/+$/, '');
+  } catch {
+    return '';
+  }
+}
+
+function requireClientBaseUrl(value: string): string {
+  const baseUrl = normalizeApiKeyFunClientBaseUrl(value);
+  if (!baseUrl) throw new Error('Please enter a provider Base URL.');
+  return baseUrl;
+}
+
+function anthropicClientBaseUrl(value: string): string {
+  // Anthropic clients append /v1/messages themselves. Keep custom path prefixes.
+  return requireClientBaseUrl(value).replace(/\/v1$/i, '');
+}
 
 /** 客户端展示名（品牌名，不翻译）。 */
 export const APIKEY_FUN_CLIENT_LABELS: Record<ApiKeyFunClientId, string> = {
@@ -187,8 +194,10 @@ export function buildCodexConfigToml(input: {
   family: ApiKeyFunFamilyPreset;
   client: "codex_app" | "codex_cli";
   model: string;
+  baseUrl: string;
 }): string {
   const { family, client, model } = input;
+  const baseUrl = requireClientBaseUrl(input.baseUrl);
   const contextWindow = getCodexModelContextTemplate(model)?.context_window ?? family.contextWindow;
   const supportsWebsockets = client === "codex_app" && family.id === "codex";
   const lines: string[] = [
@@ -211,17 +220,11 @@ export function buildCodexConfigToml(input: {
     "",
     "[model_providers.codex]",
     'name = "codex"',
-    `base_url = "${escapeToml(family.codexBaseUrl)}"`,
+    `base_url = "${escapeToml(baseUrl)}"`,
     'wire_api = "responses"',
     "supports_websockets = " + (supportsWebsockets ? "true" : "false"),
     "requires_openai_auth = true",
   );
-  if (family.codexHttpHeaders) {
-    const pairs = Object.entries(family.codexHttpHeaders)
-      .map(([key, value]) => `"${escapeToml(key)}" = "${escapeToml(value)}"`)
-      .join(", ");
-    lines.push(`http_headers = { ${pairs} }`);
-  }
   const features: string[] = [];
   if (supportsWebsockets) features.push("responses_websockets_v2 = true");
   if (family.codexFeatureGoals) features.push("goals = true");
@@ -233,10 +236,11 @@ export function buildCodexConfigToml(input: {
 
 export function buildClaudeCodeSettingsJson(input: {
   apiKey: string;
+  baseUrl: string;
   extraEnv?: Record<string, string>;
 }): { json: string; env: Record<string, string> } {
   const env: Record<string, string> = {
-    ANTHROPIC_BASE_URL: APIKEY_FUN_ANTHROPIC_BASE_URL,
+    ANTHROPIC_BASE_URL: anthropicClientBaseUrl(input.baseUrl),
     ANTHROPIC_AUTH_TOKEN: input.apiKey,
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
     CLAUDE_CODE_ATTRIBUTION_HEADER: "0",
@@ -280,10 +284,12 @@ export function buildApiKeyFunClientPreview(input: {
   family: ApiKeyFunFamilyPreset;
   client: ApiKeyFunClientId;
   apiKey: string;
+  baseUrl: string;
   model: string;
   platform: ApiKeyFunPlatform;
 }): ApiKeyFunClientPreview {
   const { family, client, apiKey, model, platform } = input;
+  const baseUrl = requireClientBaseUrl(input.baseUrl);
   if (client === "codex_app" || client === "codex_cli") {
     const scope = platform === "windows" ? "C:\\Users\\<你>\\.codex" : "~/.codex";
     return {
@@ -293,7 +299,7 @@ export function buildApiKeyFunClientPreview(input: {
         {
           label: `${scope}/config.toml`,
           language: "toml",
-          text: buildCodexConfigToml({ family, client, model }),
+          text: buildCodexConfigToml({ family, client, model, baseUrl }),
         },
         {
           label: `${scope}/auth.json`,
@@ -305,7 +311,7 @@ export function buildApiKeyFunClientPreview(input: {
   }
   if (client === "claude_code") {
     const scope = platform === "windows" ? "%USERPROFILE%\\.claude" : "~/.claude";
-    const { json, env } = buildClaudeCodeSettingsJson({ apiKey });
+    const { json, env } = buildClaudeCodeSettingsJson({ apiKey, baseUrl });
     return {
       client,
       applyKind: "claude_code",
@@ -330,7 +336,7 @@ export function buildApiKeyFunClientPreview(input: {
       {
         label: "Gateway Base URL",
         language: "text",
-        text: APIKEY_FUN_ANTHROPIC_BASE_URL,
+        text: anthropicClientBaseUrl(baseUrl),
       },
       { label: "Gateway API Key", language: "text", text: apiKey },
     ],

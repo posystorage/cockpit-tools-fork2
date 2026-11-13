@@ -37,6 +37,7 @@ impl Host for RuntimeWireHost {
                 official_fallback_failure: None,
                 transport_identity: None,
                 account_id: "runtime-a".into(),
+                account_email: None,
                 owner_id: "runtime-owner".into(),
                 base_url: self.base.clone(),
                 model: request.model,

@@ -2969,7 +2969,7 @@
       "hideNativeQuotaBannerTitle": "Natives Kontingentbanner von Codex ausblenden",
       "hideNativeQuotaBannerDescription": "Blendet den Hinweis auf verbrauchtes Kontingent im Desktop-Client aus, ohne Kontingent oder Dienststatus zu ändern. Bei Desktop-Starts über den API-Dienst standardmäßig an, sonst aus. Ihre Auswahl wird pro Instanz gespeichert. CLI-Starts ändern die Oberfläche nicht.",
       "quotaDisplayCompatibilityTitle": "Kompatibilität der Kontingentanzeige",
-      "quotaDisplayCompatibilityDescription": "Standardmäßig deaktiviert. Passt nur den Freigabe-/Sperrstatus des Desktop-Hauptkontingents an; Verbrauchswerte, Guthaben und Bildkontingente bleiben erhalten. Unabhängig vom Ausblenden des Hinweises und der lokalen Sendefreigabe des API-Dienstes. Wird pro Instanz gespeichert."
+      "quotaDisplayCompatibilityDescription": "Änderungen der Kontingentanzeige werden in dieser Version vorübergehend nicht unterstützt. Dieser Schalter speichert nur die Instanzeinstellung. Die lokale Sendefreigabe des API-Dienstes und das Ausblenden des Hinweises funktionieren weiterhin unabhängig."
     },
     "switch": "Wechseln",
     "switched": "Gewechselt zu {{email}}",

@@ -40,6 +40,19 @@ struct ConnectionIdentity {
     codex_routing_hint: Option<HeaderValue>,
 }
 
+pub(super) async fn observe_opening_headers(
+    tracker: &mut RequestTracker,
+    observe: impl std::future::Future<Output = Result<(), ServiceError>>,
+) -> Result<(), ServiceError> {
+    if let Err(error) = observe.await {
+        // The upgrade completed, but local identity storage failed before any
+        // response.create frame. Preserve an earlier real attempt, if present.
+        tracker.discard_unstarted_websocket_attempt().await;
+        return Err(error);
+    }
+    Ok(())
+}
+
 pub(super) async fn upgrade(
     State(state): State<Arc<AppState>>,
     peer: Option<axum::Extension<axum::extract::ConnectInfo<std::net::SocketAddr>>>,
@@ -743,6 +756,7 @@ async fn run(
                                         tracker.routing_identity(&prepared.request);
                                         tracker.prepared_metadata(&prepared);
                                         tracker.begin_attempt("websocket").await;
+                                        if let Some(identity) = &connection_identity { tracker.upstream_identity(identity.diagnostic.clone()); }
                                         observation = ResponseObservation::default();
                                         output_items = super::output_items::OutputCollector::new();
                                         wire = super::response_wire::ResponseWire::default();
@@ -1318,7 +1332,7 @@ async fn open_response(
         };
         tracker.quota_headers(&response_headers);
         tracker.upstream_response_headers(&response_headers);
-        mapping::observe_headers(state, prepared, &response_headers).await?;
+        observe_opening_headers(tracker, mapping::observe_headers(state, prepared, &response_headers)).await?;
         let wire_text = wire_body.to_string();
         tracker.upstream_request_bytes(wire_text.len());
         tracker.payload("upstream_request", "websocket", &wire_headers, &wire_text);

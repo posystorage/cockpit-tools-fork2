@@ -237,6 +237,7 @@ fn official_host_report(
         }),
         caller: caller(),
         account_id: route.account_id.clone(),
+        account_email: route.account_email.clone(),
         requested_model: route.model.clone(),
         upstream_model: route.model.clone(),
         status: 502,

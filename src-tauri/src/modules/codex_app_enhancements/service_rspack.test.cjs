@@ -103,7 +103,7 @@ function completeQuotaSources(h) {
   }
 }
 
-test('Rspack validates every lazy source and evaluates the actual composer plus raw presenter before cache compatibility', async () => {
+test('Rspack validates every lazy source and evaluates its composer plus raw presenter independently of display fallback', async () => {
   for (const compat of [false, true]) for (const hide of [false, true]) for (const route of [543778, 634303]) {
     const h = setup({ quotaCompat: compat, owner: 'browser' });
     completeQuotaSources(h);
@@ -134,7 +134,8 @@ test('Rspack validates every lazy source and evaluates the actual composer plus 
     ]);
     assert.equal(h.root.__cockpitEnhancements.nativeQuotaPatchState, 'active');
     h.root.__cockpitQuotaCompat.installLiveQuotaGuard({});
-    assert.equal(query.state.data.rate_limit.allowed, compat);
+    assert.equal(query.state.data.rate_limit.allowed, false);
+    assert.equal(h.root.__cockpitEnhancements.nativeQuotaDisplayPatchState, compat ? 'unsupported' : 'disabled');
     assert.equal(query.state.data.rate_limit.primary_window, raw.rate_limit.primary_window);
     assert.equal(query.state.data.credits, raw.credits);
     assert.equal(query.state.data.spend_control, raw.spend_control);
@@ -145,7 +146,8 @@ test('Rspack validates every lazy source and evaluates the actual composer plus 
     const latest = { ...raw, rate_limit: { ...raw.rate_limit, primary_window: { used_percent: 73 } } };
     query.state.data = latest;
     subscriber?.({ query });
-    assert.equal(query.state.data.rate_limit.allowed, compat);
+    assert.equal(query.state.data.rate_limit.allowed, false);
+    assert.equal(h.root.__cockpitEnhancements.nativeQuotaDisplayPatchState, compat ? 'unsupported' : 'disabled');
     assert.equal(query.state.data.rate_limit.primary_window, latest.rate_limit.primary_window);
     const rust = fs.readFileSync(path.join(__dirname, 'fast.rs'), 'utf8');
     const state = rust.match(/const STATE_SCRIPT: &str = r#"([\s\S]*?)"#;/)[1];
@@ -158,8 +160,8 @@ test('Rspack validates every lazy source and evaluates the actual composer plus 
     assert.equal(h.root.__cockpitEnhancements.nativeQuotaPatchState, 'active');
     assert.equal(query.state.data, latest, 'owner and preference changes restore the latest server snapshot');
     assert.equal(client.setQueryData, setter);
-    assert.equal(unsubscribed, Number(compat));
-    assert.equal(subscriber, compat ? null : undefined);
+    assert.equal(unsubscribed, 0);
+    assert.equal(subscriber, undefined);
   }
 });
 
@@ -189,7 +191,7 @@ test('a failed Rspack quota preload cannot acquire a receipt from late module co
   assert.equal(h.root.__cockpitEnhancements.nativeQuotaPatchReason, 'rspack-module-preload-failed');
 });
 
-test('a later lazy-route preload failure revokes the quota receipt and restores the current cache', async () => {
+test('a later lazy-route preload failure revokes the quota receipt and preserves the raw cache', async () => {
   const h = setup({ quotaCompat: true });
   completeQuotaSources(h);
   const raw = { rate_limit: { allowed: false, limit_reached: true } };
@@ -201,7 +203,7 @@ test('a later lazy-route preload failure revokes the quota receipt and restores 
   await h.exports(543778);
   await h.exports(39017);
   h.root.__cockpitQuotaCompat.installLiveQuotaGuard({});
-  assert.equal(query.state.data.rate_limit.allowed, true);
+  assert.equal(query.state.data.rate_limit.allowed, false);
   const alternate = h.root.imports['app://-/assets/async/634303.abcdef1234.js'];
   h.preloads.find(node => node.href === alternate).onerror();
   assert.equal(h.root.__cockpitNativeEvaluatedGraph, undefined);

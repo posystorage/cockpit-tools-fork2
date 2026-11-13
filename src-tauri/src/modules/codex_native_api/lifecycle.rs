@@ -379,6 +379,7 @@ impl RequestTracker {
                 diagnostics: None,
                 caller: caller.clone(),
                 account_id: String::new(),
+                account_email: None,
                 requested_model: model.into(),
                 upstream_model: model.into(),
                 status: 499,
@@ -426,7 +427,7 @@ impl RequestTracker {
         if let (Some(context), Some(report)) = (&self.diagnostics, selected) {
             self.observed_request_id = Some(context.request_id.clone());
             self.host.activity_selected(
-                &context.request_id, &report.caller, &report.account_id,
+                &context.request_id, &report.caller, &report.account_id, report.account_email.as_deref(),
                 &report.upstream_model, report.operation,
             ).await;
         }
@@ -482,6 +483,7 @@ impl RequestTracker {
                 service_tier_adaptation: previous.and_then(|attempt| attempt.service_tier_adaptation.clone()),
                 account_identity: self.installation_profile.clone(),
                 account_id: report.account_id.clone(),
+                account_email: report.account_email.clone(),
                 model_id: report.upstream_model.clone(),
                 ..Default::default()
             });
@@ -971,6 +973,7 @@ impl RequestTracker {
                 .map(|failure| super::official_fallback::trace(&route.account_id, failure))).flatten(),
             account_identity: route.installation_profile.clone(),
             account_id: route.account_id.clone(),
+            account_email: route.account_email.clone(),
             model_id: route.model.clone(),
             ..Default::default()
         };
@@ -989,6 +992,7 @@ impl RequestTracker {
             diagnostics: None,
             caller: caller.clone(),
             account_id: route.account_id.clone(),
+            account_email: route.account_email.clone(),
             requested_model: model.to_string(),
             upstream_model: route.model.clone(),
             status: 499,

@@ -150,17 +150,6 @@ impl NativeHostBridge {
             ids.iter()
                 .filter_map(|id| self.account_overrides.get(id).cloned()),
         );
-        if let Ok(mut labels) = self.account_emails.lock() {
-            for account in &accounts {
-                if !labels.contains_key(&account.id) && labels.len() >= NATIVE_SELECTION_GATE_LIMIT
-                {
-                    if let Some(oldest) = labels.keys().next().cloned() {
-                        labels.remove(&oldest);
-                    }
-                }
-                labels.insert(account.id.clone(), account.email.clone());
-            }
-        }
         for account in &mut accounts {
             if let Some(remote) = crate::modules::codex_remote_service::for_routing_account(account) {
                 for model in remote.image_models {

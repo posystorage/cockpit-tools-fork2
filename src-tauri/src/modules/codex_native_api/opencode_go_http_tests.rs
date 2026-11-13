@@ -50,6 +50,7 @@ impl Host for OpenCodeFixture {
             };
             Ok(Route {
                 account_id: account_id.into(),
+                account_email: None,
                 owner_id: account_id.into(),
                 continuity_account_id: None,
                 installation_profile: None,

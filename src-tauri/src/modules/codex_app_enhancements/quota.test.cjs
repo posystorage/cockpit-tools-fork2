@@ -363,86 +363,31 @@ test('live quota condition updates evaluated V8 locals without pausing or reload
   }
 });
 
-test('live quota install rewrites only the main usage snapshot and refreshes the mounted composer', () => {
+test('live quota keeps shared usage and its setter intact while refreshing send guards', () => {
   const { api, context } = load();
   Object.assign(context.__cockpitEnhancements, { apiService: true });
-  let dispatched = 0;
+  let dispatched = 0, cacheReads = 0;
   const hook = { memoizedState: vm.runInNewContext('new Set()', context),
     queue: { dispatch: () => { dispatched++; } }, next: null };
   const type = function Composer() {};
   type.toString = () => 'function Composer(){let disabled=other||reserve||generic,next;return{submitDisabled:disabled}}';
   const composer = { __reactFiber$test: { type, memoizedState: hook, return: null } };
-  const aside = {
-    innerText: 'Codex 和工作使用额度已用完 工作空间额度已用完',
-    style: { setProperty() {}, removeProperty() {} },
-    setAttribute() {}, removeAttribute() {},
-  };
-  const usage = {
-    user_id: 'user',
-    rate_limit: { allowed: false, limit_reached: true, primary_window: { used_percent: 100 } },
-    rate_limit_reached_type: { type: 'workspace_member_credits_depleted' },
-    rate_limit_upsell: { banner_type: 'workspace_member_credits_depleted', model_slug: null },
-    credits: { balance: 0 },
-  };
-  const query = { queryKey: ['rate-limit-status'], state: { data: usage } };
-  const imageQuery = { queryKey: ['rate-limit-status', 'image-generation'], state: { data: { rate_limit: { allowed: false } } } };
-  let subscribed = 0, unsubscribed = 0, published = usage, cacheListener;
-  const client = {
-    getQueryCache: () => ({ findAll: () => [query, imageQuery],
-      subscribe: listener => { cacheListener = listener; subscribed++; return () => { unsubscribed++; }; } }),
-    setQueryData(key, value) {
-      const target = key[1] === 'image-generation' ? imageQuery : query;
-      target.state.data = typeof value === 'function' ? value(target.state.data) : value;
-      if (target === query) published = target.state.data;
-    },
-  };
-  const originalSetter = client.setQueryData;
-  Object.assign(context, {
-    document: {
-      body: { innerText: aside.innerText },
-      documentElement: {},
-      querySelectorAll(selector) {
-        if (selector === '[data-codex-composer-root]') return [composer];
-        if (selector === 'aside[role="status"]') return [aside];
-        if (selector === '[data-cockpit-hidden-usage="true"]') return [aside];
-        return [];
-      },
-    },
-    MutationObserver: class { observe() {} disconnect() {} },
-  });
-  const finder = { __reactFiber$test: null };
-  finder.__reactFiber$test = { child: null, sibling: null, memoizedProps: { client }, return: null };
-  context.document.getElementById = () => finder;
-  const result = api.installLiveQuotaGuard({
-    hardVariable: 'reserve', guardVariable: 'generic', hostVariable: 'host',
-  });
+  const usage = { rate_limit: { allowed: false, limit_reached: true }, credits: { balance: 0 } };
+  const client = { getQueryCache() { cacheReads++; throw Error('shared usage must not be touched'); }, setQueryData() {} };
+  const setter = client.setQueryData;
+  context.document = { getElementById: () => ({ __reactFiber$test: { memoizedProps: { client } } }),
+    querySelectorAll: selector => selector === '[data-codex-composer-root]' ? [composer] : [] };
+  const result = api.installLiveQuotaGuard({ hardVariable: 'reserve', guardVariable: 'generic', hostVariable: 'host' });
   assert.equal(result.ok, true);
-  assert.equal(result.client, true);
-  assert.equal(published.rate_limit.allowed, true);
-  assert.equal(published.rate_limit.limit_reached, false);
-  assert.equal(published.rate_limit_upsell, usage.rate_limit_upsell);
-  assert.equal(published.rate_limit_reached_type, usage.rate_limit_reached_type);
-  assert.deepEqual(published.credits, { balance: 0 });
-  assert.equal(imageQuery.state.data.rate_limit.allowed, false, 'image quota data is never changed');
+  assert.equal(result.displayState, 'unsupported');
+  assert.equal(result.displayReason, 'shared-usage-cache-unscoped');
+  assert.equal(result.client, false);
   assert.equal(dispatched, 1);
-  assert.equal(subscribed, 1);
-  assert.equal(context.__cockpitEnhancements.nativePatchState, 'active');
+  assert.equal(cacheReads, 0);
+  assert.equal(api.originalUsage(usage), usage);
   assert.equal(context.__cockpitEnhancements.nativePatchMode, 'live-quota');
-  const updatedUsage = { ...usage, credits: { balance: 7 } };
-  query.state.data = updatedUsage;
-  cacheListener({ query });
-  assert.equal(published.rate_limit.allowed, true, 'fresh cache updates retain compatibility');
-  assert.equal(published.credits.balance, 7, 'real balances remain intact');
-  client.setQueryData(['rate-limit-status'], previous => {
-    assert.equal(previous.rate_limit.allowed, false, 'updaters receive the original snapshot');
-    return { ...previous, credits: { balance: 8 } };
-  });
-  assert.equal(published.rate_limit.allowed, true);
-  context.__cockpitQuotaCompat.disposeLiveQuotaGuard();
-  assert.equal(unsubscribed, 1);
-  assert.equal(published.rate_limit.allowed, false, 'cleanup restores the latest original quota');
-  assert.equal(published.credits.balance, 8, 'cleanup preserves newer data');
-  assert.equal(client.setQueryData, originalSetter);
+  api.disposeLiveQuotaGuard();
+  assert.equal(client.setQueryData, setter);
 });
 
 function bundleBrowser() {
@@ -782,52 +727,20 @@ test('installed desktop initial and primary modules validate and parse together'
   for (const module of bundle.modules) new vm.SourceTextModule(module.source);
 });
 
-test('a pending live-quota retry cannot overwrite newly activated Fast features', () => {
-  for (const mode of ['full', 'fast-only']) {
+test('shared-cache fallback never schedules discovery or overwrites installed graphs', () => {
+  for (const [mode, features] of [['full', '1111'], ['full', '0101'], ['fast-only', '1010'], ['prediction-only', '00001']]) {
     const { api, context } = load();
-    const timers = new Map(); let serial = 0;
-    Object.assign(context.__cockpitEnhancements, { apiService: true });
-    Object.assign(context, { setTimeout(fn) { timers.set(++serial, fn); return serial; },
-      clearTimeout(id) { timers.delete(id); }, document: { querySelectorAll: () => [] } });
-    api.installLiveQuotaGuard({ hardVariable: 'h', guardVariable: 'g', hostVariable: 'host' });
-    assert.equal(timers.size, 1);
-    const pending = [...timers.values()][0];
-    const state = context.__cockpitEnhancements;
-    Object.assign(state, { nativePatchState: 'active', nativePatchMode: mode,
-      nativePatchFeatures: mode === 'full' ? '1111' : '1010', nativePatchRequestedFeatures: '1111',
-      nativeQuotaPatchState: mode === 'full' ? 'active' : 'unsupported',
-      nativeQuotaPatchReason: mode === 'full' ? undefined : 'quota-shared-banner-contract-mismatch' });
-    const before = JSON.stringify(state);
-    pending();
-    assert.equal(timers.size, mode === 'full' ? 1 : 0, 'a full graph may continue optional cache discovery');
-    assert.equal(JSON.stringify(state), before);
-    assert.equal(api.installLiveQuotaGuard({}).preservedNativeFast, true);
-    assert.equal(JSON.stringify(state), before);
+    Object.assign(context.__cockpitEnhancements, { apiService: true, nativePatchState: 'active',
+      nativePatchMode: mode, nativePatchFeatures: features, nativePatchRequestedFeatures: features });
+    context.setTimeout = () => { throw Error('unscoped cache discovery must not retry'); };
+    const result = api.installLiveQuotaGuard({});
+    assert.equal(result.preservedNativeModule, true);
+    assert.equal(result.displayState, 'unsupported');
+    assert.equal(result.displayReason, 'shared-usage-cache-unscoped');
+    assert.equal(context.__cockpitEnhancements.nativePatchMode, mode);
+    assert.equal(context.__cockpitEnhancements.nativePatchFeatures, features);
   }
 });
-
-
-test('a late live-quota retry preserves quota-only full modules without claiming Fast', () => {
-  const { api, context } = load(), timers = new Map(); let serial = 0;
-  Object.assign(context.__cockpitEnhancements, { apiService: true });
-  Object.assign(context, { setTimeout(fn) { timers.set(++serial, fn); return serial; },
-    clearTimeout(id) { timers.delete(id); }, document: { querySelectorAll: () => [] } });
-  api.installLiveQuotaGuard({ hardVariable: 'h', guardVariable: 'g', hostVariable: 'host' });
-  const pending = [...timers.values()][0];
-  assert.equal(typeof pending, 'function');
-  Object.assign(context.__cockpitEnhancements, { nativeFast: false, nativePatchState: 'active',
-    nativePatchMode: 'full', nativePatchFeatures: '0101', nativePatchRequestedFeatures: '0101',
-    nativePatchReason: 'module-evaluated' });
-  const before = JSON.stringify(context.__cockpitEnhancements);
-  pending();
-  assert.equal(timers.size, 1, 'quota-only full modules still honor optional cache compatibility');
-  assert.equal(JSON.stringify(context.__cockpitEnhancements), before);
-  const retained = api.installLiveQuotaGuard({});
-  assert.equal(retained.preservedNativeModule, true);
-  assert.equal(retained.preservedNativeFast, undefined);
-  assert.equal(JSON.stringify(context.__cockpitEnhancements), before);
-});
-
 
 test('all four instance display combinations retain notices and numerical quota independently of send unlock', () => {
   for (const compatibility of [false, true]) for (const hide of [false, true]) {
@@ -850,31 +763,32 @@ test('all four instance display combinations retain notices and numerical quota 
     context.document = { getElementById: () => ({ __reactFiber$test: { memoizedProps: { client } } }), querySelectorAll: () => [] };
     const result = api.installLiveQuotaGuard({ hardVariable: 'hard', guardVariable: 'guard' });
     assert.equal(result.ok, true, 'send guard can arm with compatibility disabled');
-    assert.equal(query.state.data.rate_limit.allowed, compatibility);
-    assert.equal(query.state.data.rate_limit.limit_reached, !compatibility);
+    assert.equal(query.state.data.rate_limit.allowed, false);
+    assert.equal(result.displayState, compatibility ? 'unsupported' : 'disabled');
+    assert.equal(query.state.data.rate_limit.limit_reached, true);
     assert.equal(query.state.data.rate_limit_upsell, usage.rate_limit_upsell, 'notice metadata stays native');
     assert.equal(api.originalUsage(query.state.data), usage, 'native warning renderers can access the original snapshot');
     assert.equal(api.shouldHideBanner(null, 'local', query.state.data, null), hide);
     assert.equal(query.state.data.credits, usage.credits);
     assert.equal(query.state.data.rate_limit.primary_window, usage.rate_limit.primary_window);
     assert.equal(image.state.data, usage, 'image query is untouched');
-    assert.equal(subscriptions, Number(compatibility));
+    assert.equal(subscriptions, 0);
     context.__cockpitEnhancements.quotaCompat = false;
     api.disposeLiveQuotaGuard();
     assert.equal(client.setQueryData, setter);
     assert.equal(query.state.data, usage, 'disabling compatibility restores the original snapshot');
-    assert.equal(unsubscribed, Number(compatibility));
+    assert.equal(unsubscribed, 0);
     assert.equal(context.__cockpitEnhancements.apiService, true, 'send unlock remains authorized');
     assert.equal(!!context.__cockpitNativeQuotaSuppression, hide, 'banner preference is independent');
     api.installLiveQuotaGuard({ hardVariable: 'hard', guardVariable: 'guard' });
     assert.equal(client.setQueryData, setter, 'disabled compatibility installs no cache wrapper');
-    assert.equal(subscriptions, Number(compatibility));
+    assert.equal(subscriptions, 0);
     api.disposeLiveQuotaGuard();
   }
 });
 
 
-test('live presenter breakpoints render original exhausted notices while shared cache stays compatible', async () => {
+test('live presenter breakpoints preserve original exhausted notices with shared cache untouched', async () => {
   const { api, context } = load();
   Object.assign(context.__cockpitEnhancements, { apiService: true, quotaCompat: true });
   delete context.__cockpitNativeQuotaSuppression;
@@ -894,7 +808,7 @@ test('live presenter breakpoints render original exhausted notices while shared 
     JSX: { jsx: (_name, props) => props.rateLimitStatus.rate_limit.allowed ? '' : '<aside>exhausted</aside>' },
     document: { getElementById: () => ({ __reactFiber$test: { memoizedProps: { client } } }), querySelectorAll: () => [] } });
   api.installLiveQuotaGuard({ hardVariable: 'reserve', guardVariable: 'generic' });
-  assert.equal(query.state.data.rate_limit.allowed, true);
+  assert.equal(query.state.data.rate_limit.allowed, false);
   const { Session } = require('node:inspector');
   const session = new Session(); session.connect();
   const post = (method, params = {}) => new Promise((resolve, reject) => session.post(method, params, (error, result) => error ? reject(error) : resolve(result)));
@@ -904,16 +818,16 @@ test('live presenter breakpoints render original exhausted notices while shared 
     await post('Debugger.enable');
     vm.runInNewContext(source.replace(/^import[^;]+;/m, match => ' '.repeat(match.length)), context, { filename: primaryUrl });
     const render = () => context.UsageBanner({ canShowUsageBanners: true, rateLimit: query.state.data, lowerPriorityContent: '' });
-    assert.equal(render(), '', 'native allowed check reproduces the disappearing notice');
+    assert.equal(render(), '<aside>exhausted</aside>', 'native UI consumes the original exhausted snapshot');
     const { breakpointId } = await post('Debugger.setBreakpointByUrl', {
       url: location.url, lineNumber: location.lineNumber, columnNumber: location.columnNumber,
       condition: `(window.__cockpitEnhancements?.apiService===true&&(${location.usageVariable}=window.__cockpitQuotaCompat.originalUsage(${location.usageVariable})),false)`,
     });
     assert.equal(render(), '<aside>exhausted</aside>', 'native presenter sees the raw exhausted snapshot');
-    assert.equal(query.state.data.rate_limit.allowed, true, 'the compatible shared cache remains intact');
+    assert.equal(query.state.data.rate_limit.allowed, false, 'the shared cache remains original');
     assert.equal(pauses, 0);
     await post('Debugger.removeBreakpoint', { breakpointId });
-    assert.equal(render(), '');
+    assert.equal(render(), '<aside>exhausted</aside>', 'removing live hooks keeps native quota UI intact');
   } finally {
     await post('Debugger.disable'); session.disconnect(); api.disposeLiveQuotaGuard();
   }

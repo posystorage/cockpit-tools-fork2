@@ -674,10 +674,16 @@ test('a late desktop project-recovery result cannot update a closed launch previ
   const h = harness();
   h.c.dirty = false;
   const execution = deferred<{ projectStateDeferred: boolean }>();
-  h.c.onExecute = () => execution.promise;
+  let isCurrent!: () => boolean;
+  h.c.onExecute = (_launch: boolean, _options: unknown, fence: () => boolean) => {
+    isCurrent = fence;
+    return execution.promise;
+  };
   const pending = h.c.handlers.handleExecute(true);
   await settlePromises();
+  assert.equal(isCurrent(), true);
   h.c.handlers.requestClose();
+  assert.equal(isCurrent(), false);
   execution.resolve({ projectStateDeferred: true });
   await pending;
   assert.deepEqual(h.lateUpdates, []);

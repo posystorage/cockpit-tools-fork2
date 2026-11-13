@@ -66,6 +66,7 @@ impl Host for ImageReadHost {
             Ok(ImageRoute {
                 route: Route {
                     account_id: "image-read-account".into(),
+                    account_email: None,
                     owner_id: "image-read-owner".into(),
                     continuity_account_id: None,
                     installation_profile: None,

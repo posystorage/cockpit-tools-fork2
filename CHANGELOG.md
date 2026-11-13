@@ -13,10 +13,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fork integration
 
 - Merge upstream 1.3.76–1.3.82 and use Rust exclusively. Migrate retired Go/Legacy settings while preserving accounts, keys, budgets and instance preferences. Allow startup model catalog downloads with cached and embedded fallbacks.
-- Preserve actual outbound account activity, strict historical identities, deleted-account history, usage windows for all current accounts, rolling ranges, independent backup-dispatch pauses and Sub2API queries; adapt queued usage writes and Terra historical repricing.
-- Adopt Desktop speed, prediction and Rspack support while retaining independent local send unlocking, native quota notice hiding and quota display compatibility, which defaults off. Restore original quota state when disabled and preserve drafts and session isolation.
+- Preserve actual outbound account activity, strict historical identities, deleted-account history, usage windows for all current accounts, rolling ranges, independent backup-dispatch pauses and Sub2API queries; adapt queued usage writes and Terra historical repricing. Capture email with the dispatched identity, including WebSocket successor turns, so reimporting an account cannot relabel an in-flight request.
+- Adopt Desktop speed, prediction and Rspack support while retaining independent local send unlocking and native quota notice hiding. Keep the optional quota display preference, but suspend display rewriting in this beta because the shared cache also affects official and remote routes; report it as unsupported and preserve the original quota data and drafts.
 - Update ModelTrace to the complete paired 18-candidate bank, adding Claude Sonnet 5.5 and Haiku 5.5. Retain seven request options including GPT-6.1 Sol; this bank still has no calibrated GPT-6.1 reference. Support Anthropic fingerprint requests and explicit authentication.
-- Preserve custom API endpoints through the encrypted APIKEY.FUN vault migration; keep promotions, remote announcements, remote switches and runtime updates disabled.
+- Preserve custom API endpoints through the encrypted APIKEY.FUN vault migration, model discovery, account prefill and copied client configurations. Never pair a saved key with another provider's current address; reject missing destinations and ignore stale model-discovery responses. Keep promotions, remote announcements, remote switches and runtime updates disabled.
+- Protect replacement Desktop launch previews from late callbacks, refresh calendar statistics across repeated midnights, and deduplicate fingerprint targets by their final transport endpoint.
 - Upload Windows MSI/NSIS/portable and macOS ARM/Intel/Universal assets to the same actual beta draft tag, including correct beta manifest URLs. Run Apple signing only when explicitly enabled with complete fork-owned credentials.
 
 ### Added

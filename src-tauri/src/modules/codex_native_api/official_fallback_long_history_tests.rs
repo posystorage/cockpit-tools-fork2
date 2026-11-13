@@ -39,6 +39,7 @@ impl LongHistoryHost {
     fn selected(&self, request: &RouteRequest, account: &str, official: bool) -> Route {
         Route {
             account_id: account.into(),
+            account_email: None,
             owner_id: if official {
                 "official-owner".into()
             } else {

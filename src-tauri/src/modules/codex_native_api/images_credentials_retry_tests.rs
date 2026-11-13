@@ -116,6 +116,7 @@ impl Host for CredentialHost {
                 official_fallback_failure: None,
                     transport_identity: None,
                     account_id: account.into(),
+                    account_email: None,
                     owner_id: if request.force_refresh && self.change_refresh_owner {
                         "different-owner".into()
                     } else {

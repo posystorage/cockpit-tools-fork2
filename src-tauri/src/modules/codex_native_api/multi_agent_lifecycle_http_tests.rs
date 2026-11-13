@@ -66,6 +66,7 @@ impl Host for LifecycleHost {
         Box::pin(async move {
             Ok(Route {
                 account_id: "lifecycle-account".into(),
+                account_email: None,
                 owner_id: "lifecycle-owner".into(),
                 continuity_account_id: None,
                 installation_profile: None,

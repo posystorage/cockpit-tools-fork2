@@ -17,11 +17,30 @@ export async function fingerprintExcludedAccountIds(accounts: CodexAccount[], pr
   return excluded;
 }
 
+/** Match fingerprint_endpoint in Rust, including explicit endpoint suffixes and custom prefixes. */
+function fingerprintEndpointIdentity(baseUrl: string, protocol: string): string {
+  const suffix = protocol === 'responses' ? '/responses'
+    : protocol === 'chat_completions' ? '/chat/completions'
+      : protocol === 'anthropic' ? '/messages' : null;
+  if (!suffix) return baseUrl.trim();
+  try {
+    const url = new URL(baseUrl.trim());
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return baseUrl.trim();
+    const path = url.pathname.replace(/\/+$/, '').replace(/\/(?:chat\/completions|responses|messages)$/, '');
+    url.pathname = `${path || '/v1'}${suffix}`;
+    url.search = '';
+    url.hash = '';
+    return url.href;
+  } catch {
+    return baseUrl.trim();
+  }
+}
+
 export function buildFingerprintTargets(accounts: CodexAccount[], providers: CodexModelProvider[], excludedAccountIds: string[] = []): FingerprintTarget[] {
   const targets: FingerprintTarget[] = [];
   const seen = new Set<string>();
   const identity = (url: string, key: string, protocol?: string | null, scheme?: string | null) =>
-    JSON.stringify([url.trim().replace(/\/$/, ''), key.trim(), protocol || 'responses', protocol === 'anthropic' ? scheme || 'x-api-key' : 'bearer']);
+    JSON.stringify([fingerprintEndpointIdentity(url, protocol || 'responses'), key.trim(), protocol || 'responses', protocol === 'anthropic' ? scheme || 'x-api-key' : 'bearer']);
   for (const provider of providers) for (const key of provider.apiKeys) {
     if (!key.apiKey.trim() || !provider.baseUrl.trim()) continue;
     const signature = identity(provider.baseUrl, key.apiKey, provider.wireApi, provider.authScheme);

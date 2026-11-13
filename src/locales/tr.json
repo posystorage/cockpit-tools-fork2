@@ -2969,7 +2969,7 @@
       "hideNativeQuotaBannerTitle": "Codex yerel kota bildirimini gizle",
       "hideNativeQuotaBannerDescription": "Hesap kotasını veya hizmet durumunu değiştirmeden masaüstü istemcisindeki tükenen kota bildirimini gizler. API hizmeti üzerinden masaüstü başlatmalarında varsayılan olarak açık, diğer durumlarda kapalıdır. Seçiminiz her örnek için kaydedilir. CLI modunda arayüz değişmez.",
       "quotaDisplayCompatibilityTitle": "Kota görüntüleme uyumluluğu",
-      "quotaDisplayCompatibilityDescription": "Varsayılan olarak kapalıdır. Kullanım sayılarını, bakiyeyi veya görsel kotasını değiştirmeden yalnızca masaüstü ana kotasının izin/engel durumunu uyarlar. Uyarı gizlemeden ve API Hizmeti yerel gönderim kilidinin açılmasından bağımsızdır. Her örnek için kaydedilir."
+      "quotaDisplayCompatibilityDescription": "Bu sürümde kota görünümünü değiştirme geçici olarak desteklenmiyor. Bu anahtar yalnızca örnek tercihini kaydeder. API Hizmeti yerel gönderim kilidini açma ve uyarıları gizleme bağımsız olarak çalışmaya devam eder."
     },
     "switch": "Değiştir",
     "switched": "{{email}} hesabına geçildi",

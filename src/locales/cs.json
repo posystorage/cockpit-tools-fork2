@@ -2969,7 +2969,7 @@
       "hideNativeQuotaBannerTitle": "Skrýt nativní upozornění Codex na vyčerpanou kvótu",
       "hideNativeQuotaBannerDescription": "Skryje upozornění na vyčerpanou kvótu v desktopovém klientu, aniž by změnilo kvótu nebo stav služby. Ve výchozím nastavení zapnuto při spuštění desktopu přes službu API, jinak vypnuto. Volba se ukládá pro každou instanci. Režim CLI nemění rozhraní.",
       "quotaDisplayCompatibilityTitle": "Kompatibilita zobrazení kvóty",
-      "quotaDisplayCompatibilityDescription": "Ve výchozím stavu vypnuto. Upravuje pouze stav povolení či blokování hlavní kvóty desktopové aplikace, nikoli využití, kredit nebo kvótu obrázků. Nezávisí na skrytí upozornění ani odblokování místního odesílání služby API. Ukládá se pro každou instanci."
+      "quotaDisplayCompatibilityDescription": "Tato verze dočasně nepodporuje změny zobrazení kvóty. Přepínač pouze ukládá nastavení instance. Odblokování místního odesílání služby API a skrytí upozornění nadále fungují nezávisle."
     },
     "switch": "Přepnout",
     "switched": "Přepnuto na {{email}}",

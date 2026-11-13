@@ -76,6 +76,7 @@ impl Host for FixtureHost {
                 official_fallback_failure: None,
                 transport_identity: None,
                 account_id: index.to_string(),
+                account_email: None,
                 owner_id: format!("owner-{index}"),
                 base_url: format!("{}/{}", self.base, index),
                 model: request.model,

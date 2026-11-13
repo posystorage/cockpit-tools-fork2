@@ -101,6 +101,7 @@ impl Host for FallbackHost {
             headers.insert("x-test-account", id.parse().unwrap());
             Ok(Route {
                 account_id: id.into(),
+                account_email: None,
                 owner_id: format!("owner-{id}"),
                 continuity_account_id: None,
                 installation_profile: None,

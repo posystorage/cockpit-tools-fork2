@@ -136,6 +136,8 @@ impl ExecutionPolicy {
 #[derive(Clone)]
 pub struct Route {
     pub account_id: String,
+    /// Label from the same final credential snapshot as this route, never reloaded at completion.
+    pub account_email: Option<String>,
     /// Credential namespace for continuation state; business membership remains account_id.
     pub continuity_account_id: Option<String>,
     /// Stable owner identity (including workspace), independent of token refreshes.
@@ -321,6 +323,8 @@ pub struct RequestReport {
     pub diagnostics: Option<super::diagnostics::DiagnosticContext>,
     pub caller: Caller,
     pub account_id: String,
+    /// Immutable label of the last dispatched route; absent stays unknown.
+    pub account_email: Option<String>,
     pub requested_model: String,
     pub upstream_model: String,
     pub status: u16,
@@ -352,6 +356,7 @@ pub trait Host: Send + Sync + 'static {
         _request_id: &'a str,
         _caller: &'a Caller,
         _account_id: &'a str,
+        _account_email: Option<&'a str>,
         _model: &'a str,
         _operation: &'static str,
     ) -> BoxFuture<'a, ()> {

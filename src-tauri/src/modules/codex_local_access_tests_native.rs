@@ -1441,12 +1441,20 @@ fn fork_exact_completion_does_not_remove_another_concurrent_request() {
 }
 
 #[tokio::test]
-async fn fork_native_history_retains_email_after_account_deletion() {
+async fn fork_native_route_email_survives_same_id_reload_and_account_deletion() {
     let mut host = native_test_routing_host();
-    let loaded = host.load_accounts(vec!["pool-a".into()]).await.unwrap();
-    let expected = loaded[0].email.clone();
+    let caller = native_test_caller(NATIVE_PRIMARY_CALLER);
+    let mut request = native_test_route_request("email-snapshot");
+    request.preferred_account_id = Some("pool-a".into());
+    request.requires_permit = false;
+    let original_email = host.account_overrides["pool-a"].email.clone();
+    let original = native_select_route(&host, &caller, request.clone()).await.unwrap();
+    host.account_overrides.get_mut("pool-a").unwrap().email = "replacement@example.invalid".into();
+    let replacement = native_select_route(&host, &caller, request).await.unwrap();
+    assert_eq!(replacement.account_email.as_deref(), Some("replacement@example.invalid"));
     host.account_overrides.remove("pool-a");
-    assert_eq!(host.account_email("pool-a"), Some(expected));
+    assert_eq!(original.account_email.as_deref(), Some(original_email.as_str()));
+    assert_eq!(replacement.account_email.as_deref(), Some("replacement@example.invalid"));
 }
 
 #[test]

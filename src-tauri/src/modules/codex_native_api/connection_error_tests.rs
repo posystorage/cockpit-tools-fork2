@@ -13,6 +13,7 @@ fn route(proxy: Option<&str>, name: &str) -> Route {
     }
     Route {
         account_id: name.into(),
+        account_email: None,
         continuity_account_id: None,
         owner_id: name.into(),
         installation_profile: None,

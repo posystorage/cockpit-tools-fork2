@@ -3204,7 +3204,7 @@
       "hideNativeQuotaBannerTitle": "Hide Codex native quota banner",
       "hideNativeQuotaBannerDescription": "Hide the desktop client's depleted-usage banner without changing account quota or service status. On by default for API Service desktop launches, off otherwise; your choice is saved per instance. CLI launches do not inject UI changes.",
       "quotaDisplayCompatibilityTitle": "Quota display compatibility",
-      "quotaDisplayCompatibilityDescription": "Off by default. Adapts only the desktop main quota allowed/blocked state, without changing usage numbers, credits or image quota. Independent of banner hiding and API Service local send unlock; saved per instance."
+      "quotaDisplayCompatibilityDescription": "Quota display changes are temporarily unsupported in this version. This switch only saves the instance preference. API Service local send unlock and banner hiding continue to work independently."
     },
     "switch": "Switch",
     "switched": "Switched to {{email}}",

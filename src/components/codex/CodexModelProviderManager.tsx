@@ -3091,9 +3091,10 @@ export function useCodexModelProviderManagerController({
     async (
       launchAfterSwitch: boolean,
       launchOptions?: CodexLaunchPreviewLaunchOptions,
+      isCurrent: () => boolean = () => true,
     ): Promise<boolean | { projectStateDeferred: true }> => {
       const preview = providerLaunchPreview;
-      if (!preview) return false;
+      if (!preview || !isCurrent()) return false;
       setNotice(null);
       try {
         let account = preview.account;
@@ -3105,6 +3106,7 @@ export function useCodexModelProviderManagerController({
             launchOptions.imageGenerationAccountIds,
             launchOptions.imageGenerationAccountModels,
           );
+          if (!isCurrent()) return false;
         }
         const presetId = resolveCodexApiProviderPresetId(preview.provider.baseUrl);
         const isOpenAIOfficial = presetId === "openai_official";
@@ -3124,13 +3126,18 @@ export function useCodexModelProviderManagerController({
             followLocalAccount: false,
             deferBindAccountApplication: true,
           });
+          if (!isCurrent()) return false;
           await startCodexInstance(preview.instanceId);
         } else {
           deferred = await switchInstanceAccount(preview.instanceId, bindAccountId);
         }
+        if (!isCurrent()) return false;
         await reloadCurrentAccount();
+        if (!isCurrent()) return false;
         await reloadLocalAccessState();
+        if (!isCurrent()) return false;
         await reloadCodexInstances();
+        if (!isCurrent()) return false;
         setLastEnabledProviderId(`${preview.instanceId}:${preview.provider.id}`);
         if (deferred) return { projectStateDeferred: true };
         setProviderLaunchPreview(null);
@@ -3146,6 +3153,7 @@ export function useCodexModelProviderManagerController({
         }
         return true;
       } catch (err) {
+        if (!isCurrent()) return false;
         if (!launchAfterSwitch) throw err;
         setNotice({
           tone: "error",

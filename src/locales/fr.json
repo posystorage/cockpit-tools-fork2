@@ -2969,7 +2969,7 @@
       "hideNativeQuotaBannerTitle": "Masquer la bannière de quota native de Codex",
       "hideNativeQuotaBannerDescription": "Masque l'avertissement de quota épuisé du client de bureau sans modifier le quota ni l'état du service. Activé par défaut pour les lancements de bureau via le service API, désactivé sinon. Le choix est enregistré par instance. Aucun changement d'affichage en mode CLI.",
       "quotaDisplayCompatibilityTitle": "Compatibilité de l’affichage du quota",
-      "quotaDisplayCompatibilityDescription": "Désactivée par défaut. Adapte uniquement l’état autorisé/bloqué du quota principal de bureau, sans modifier les chiffres d’utilisation, les crédits ni le quota d’images. Indépendante du masquage des alertes et du déblocage de l’envoi local du service API. Enregistrée par instance."
+      "quotaDisplayCompatibilityDescription": "La modification de l’affichage du quota n’est pas disponible dans cette version. Ce bouton enregistre uniquement la préférence de l’instance. Le déblocage de l’envoi local du service API et le masquage des alertes restent indépendants."
     },
     "switch": "Basculer",
     "switched": "Basculé vers {{email}}",

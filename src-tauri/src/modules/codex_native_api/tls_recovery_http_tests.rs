@@ -125,6 +125,7 @@ impl Host for TlsHost {
                 }),
                 transport_identity: Some(identity),
                 account_id: "account-a".into(),
+                account_email: None,
                 owner_id: if reselected_official { "official-owner" } else { "owner-a" }.into(),
                 base_url: self.base.clone(),
                 model: request.model,

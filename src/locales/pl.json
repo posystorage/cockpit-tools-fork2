@@ -2969,7 +2969,7 @@
       "hideNativeQuotaBannerTitle": "Ukryj natywny komunikat o limicie Codex",
       "hideNativeQuotaBannerDescription": "Ukrywa komunikat o wyczerpaniu limitu w aplikacji komputerowej bez zmiany limitu ani stanu usługi. Domyślnie włączone przy uruchamianiu aplikacji przez usługę API, poza tym wyłączone. Wybór jest zapisywany dla każdej instancji. Tryb CLI nie zmienia interfejsu.",
       "quotaDisplayCompatibilityTitle": "Zgodność wyświetlania limitu",
-      "quotaDisplayCompatibilityDescription": "Domyślnie wyłączona. Dostosowuje tylko stan zezwolenia/blokady głównego limitu aplikacji, bez zmiany zużycia, salda ani limitu obrazów. Działa niezależnie od ukrywania ostrzeżeń i odblokowania lokalnego wysyłania usługi API. Zapisywana dla każdej instancji."
+      "quotaDisplayCompatibilityDescription": "Ta wersja tymczasowo nie obsługuje zmian wyświetlania limitu. Przełącznik zapisuje jedynie preferencję instancji. Odblokowanie lokalnego wysyłania usługi API i ukrywanie ostrzeżeń nadal działają niezależnie."
     },
     "switch": "Przełącz",
     "switched": "Przełączono na {{email}}",

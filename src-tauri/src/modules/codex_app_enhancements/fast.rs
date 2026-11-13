@@ -64,6 +64,8 @@ const STATE_SCRIPT: &str = r#";(() => {
   }
   window.__cockpitEnhancements = {
     ...previous, ...next, apiDictation: false,
+    nativeQuotaDisplayPatchState: next.apiService && next.quotaCompat ? 'unsupported' : 'disabled',
+    nativeQuotaDisplayPatchReason: next.apiService && next.quotaCompat ? 'shared-usage-cache-unscoped' : undefined,
     ...(reusableApiGraph ? { nativePatchMode: graph.mode || 'full', nativePatchFeatures: features,
       nativePatchRequestedFeatures: features } : {}),
     nativePatchState: reusableApiGraph ? 'active' : active ? previous.nativePatchState : preserveLoadingState ? previous.nativePatchState : 'pending',
@@ -398,6 +400,7 @@ struct Registration {
     bootstrapped: bool,
     active: bool,
     native_module_active: bool,
+    quota_display_requested: bool,
     quota_unsupported_reason: Option<String>,
     prediction_unsupported_reason: Option<String>,
     capability_only: bool,
@@ -438,6 +441,10 @@ impl Registration {
             "pending"
         };
         let mut diagnostic = json!({"state":state,"phase":phase,"reason":reason});
+        if self.quota_display_requested {
+            diagnostic["quotaDisplayState"] = json!("unsupported");
+            diagnostic["quotaDisplayReason"] = json!("shared-usage-cache-unscoped");
+        }
         if let Some(quota_reason) = &self.quota_unsupported_reason {
             diagnostic["quotaState"] = json!("unsupported");
             diagnostic["quotaReason"] = json!(quota_reason);
@@ -452,6 +459,9 @@ impl Registration {
         self.last_diagnostic = Some(diagnostic.clone());
         let mut message =
             format!("[CodexEnhancements] Native compatibility {phase}: {reason}; state={state}");
+        if self.quota_display_requested {
+            message.push_str("; quota-display=unsupported:shared-usage-cache-unscoped");
+        }
         if self.live_quota {
             crate::modules::logger::log_codex_quota_diagnostic(&format!(
                 "[Input Unlock] owner={} phase={phase} reason={reason} state={state}",
@@ -1601,6 +1611,7 @@ async fn run_with_live_quota(
         bootstrapped: false,
         active: false,
         native_module_active: false,
+        quota_display_requested: api_service && quota_compat,
         quota_unsupported_reason: None,
         prediction_unsupported_reason: None,
         capability_only: false,

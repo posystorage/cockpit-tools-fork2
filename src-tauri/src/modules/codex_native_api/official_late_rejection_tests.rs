@@ -38,6 +38,7 @@ impl Host for TestHost {
         Box::pin(async move {
             Ok(Route {
                 account_id: "source".into(),
+                account_email: None,
                 owner_id: "owner".into(),
                 continuity_account_id: self.official.then(|| "chatgpt_plan_grant".into()),
                 installation_profile: None,

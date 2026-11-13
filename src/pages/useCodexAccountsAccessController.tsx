@@ -697,9 +697,10 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
       async (
         launchAfterSwitch: boolean,
         launchOptions?: CodexLaunchPreviewLaunchOptions,
+        isCurrent: () => boolean = () => true,
       ): Promise<boolean | { projectStateDeferred: true }> => {
        const account = activeLaunchPreviewAccount;
-       if (!account) return false;
+       if (!account || !isCurrent()) return false;
         persistCodexLaunchPreviewLastInstanceId(account.id, launchPreviewInstanceId);
         let launchAccount = account;
         if (isCodexApiKeyAccount(account) && launchOptions?.providerAccessMode) {
@@ -711,6 +712,7 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
             launchOptions.imageGenerationAccountModels,
           );
         }
+        if (!isCurrent()) return false;
         if (launchPreviewCliIntent) {
           const presentation = buildCodexAccountPresentation(launchAccount, t);
           setPendingCliLaunchTarget({
@@ -729,27 +731,32 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
             const deferred = await codexInstanceService.switchInstanceAccount(
               launchPreviewInstanceId, bindAccountId, launchAccount.app_speed ?? "standard",
             );
+            if (!isCurrent()) return false;
             await codexInstanceStore.fetchInstances();
+            if (!isCurrent()) return false;
             if (deferred) return { projectStateDeferred: true };
             setLaunchPreviewAccount(null);
             return true;
           }
-          // 先关闭预览弹框再执行启动事务：启动链路本身可能耗时数十秒，
-          // 弹框停在原地会让主按钮和“关闭”看起来卡死。
-          setLaunchPreviewAccount(null);
+          // Finish binding while this preview still owns the target, then hand
+          // the dispatched launch to its progress UI before closing the preview.
           await codexInstanceStore.updateInstance({
             instanceId: launchPreviewInstanceId,
             bindAccountId,
             appSpeed: launchAccount.app_speed ?? "standard",
             deferBindAccountApplication: true,
           });
-          await codexInstanceStore.startInstance(launchPreviewInstanceId);
+          if (!isCurrent()) return false;
+          const launch = codexInstanceStore.startInstance(launchPreviewInstanceId);
+          setLaunchPreviewAccount(null);
+          await launch;
           return true;
         }
         setLaunchPreviewAccount(null);
         try {
           await executeCodexAccountSwitch(account.id, { launchAfterSwitch });
         } catch (error) {
+          if (!isCurrent()) return false;
           if (error instanceof CodexSwitchAccountError && error.authFailure) {
             return true;
           }

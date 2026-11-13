@@ -13,6 +13,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 fn route(base_url: &str, account: &str) -> Route {
     Route {
         account_id: account.into(),
+        account_email: None,
         continuity_account_id: None,
         owner_id: account.into(),
         installation_profile: None,

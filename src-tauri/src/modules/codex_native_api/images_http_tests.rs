@@ -184,6 +184,7 @@ impl Host for ImageHost {
                 official_fallback_failure: None,
                     transport_identity: None,
                     account_id: account_id.into(),
+                    account_email: None,
                     owner_id: format!("{account_id}-owner"),
                     base_url: self.base_url.clone(),
                     model: if self.oauth {

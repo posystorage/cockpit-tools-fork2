@@ -47,6 +47,7 @@ mod remote_gateway_tests;
 
 struct TestHost {
     base_url: String,
+    route_identity: Mutex<(Option<String>, Option<String>)>,
     chatgpt: bool,
     proxy_url: Mutex<Option<String>>,
     ws_enabled: AtomicBool,
@@ -137,6 +138,10 @@ impl Host for TestHost {
                 "authorization",
                 HeaderValue::from_static("Bearer upstream-test-key"),
             );
+            let (account_email, official_id) = self.route_identity.lock().unwrap().clone();
+            if let Some(official_id) = official_id {
+                headers.insert("chatgpt-account-id", official_id.parse().unwrap());
+            }
             Ok(Route {
                 continuity_account_id: None,
                 installation_profile: None,
@@ -147,6 +152,7 @@ impl Host for TestHost {
                 authorization_scope_fingerprint: None,
                 official_fallback_failure: None,
                 transport_identity: None,
+                account_email,
                 account_id: if self.route_by_model.load(Ordering::SeqCst) {
                     format!("account-{}", request.model)
                 } else {
@@ -240,6 +246,7 @@ async fn native(
 ) -> (Handle, Arc<TestHost>, PathBuf) {
     let host = Arc::new(TestHost {
         base_url: format!("http://{addr}/v1"),
+        route_identity: Mutex::new((None, None)),
         chatgpt,
         proxy_url: Mutex::new(proxy.then(|| "http://127.0.0.1:9".to_string())),
         ws_enabled: AtomicBool::new(true),

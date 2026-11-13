@@ -33,6 +33,7 @@ impl Host for HostFixture {
         Box::pin(async move {
             Ok(Route {
                 account_id: "grok-fixture".into(),
+                account_email: None,
                 owner_id: "grok-owner".into(),
                 continuity_account_id: None,
                 installation_profile: None,

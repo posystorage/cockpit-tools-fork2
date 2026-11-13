@@ -14,6 +14,7 @@ fn native_cooldown_report(status: u16, error: &str) -> native_contract::RequestR
         diagnostics: None,
         caller: native_test_caller("fixture-key-id"),
         account_id: "pool-a".into(),
+        account_email: None,
         requested_model: "fixture-model".into(),
         upstream_model: "fixture-model".into(),
         status,
