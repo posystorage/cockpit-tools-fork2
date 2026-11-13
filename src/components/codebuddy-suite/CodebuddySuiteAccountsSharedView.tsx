@@ -1,3 +1,4 @@
+import { useAccountsOverviewFilterState } from '../../hooks/useAccountsOverviewFilterState';
 import {
   useMemo,
   useCallback,
@@ -57,6 +58,8 @@ import {
 import { KNOWN_PLAN_FILTERS } from "./CodebuddySuiteConfig";
 import { DosageNotifyUsageStatus } from "../platform/DosageNotifyUsageStatus";
 import { CodeBuddyQuotaCategoryList } from "../codebuddy/CodeBuddyQuotaCategoryList";
+import { AccountLastUsed } from "../AccountLastUsed";
+import { useUiConfigStore } from "../../stores/useUiConfigStore";
 import {
   MultiSelectFilterDropdown,
   type MultiSelectFilterOption,
@@ -69,8 +72,6 @@ import type {
 import { buildValidAccountsFilterOption } from "../../utils/accountValidityFilter";
 import {
   readAccountsOverviewFilterStringArray,
-  removeAccountsOverviewFilterField,
-  writeAccountsOverviewFilterField,
 } from "../../utils/accountsOverviewFilterPersistence";
 import { getAccountQuotaUpdatedAtMs } from "../../utils/codebuddy-suite/parser";
 
@@ -86,7 +87,10 @@ export interface CodebuddySuiteAccountsPlatformConfig<
   TAccount extends CodebuddySuiteAccountBase,
 > {
   pageClassName: string;
-  quickSettingsType?: "codebuddy_cn" | "workbuddy" | "zcode" | "grok";
+  quickSettingsType?: "codebuddy_cn" | "workbuddy" | "zcode" | "grok" | "minimaxcode";
+  /** 签到按钮 tooltip 的 i18n key，默认沿用 workbuddy */
+  checkinModalTitleKey?: string;
+  checkinModalTitleDefault?: string;
   searchPlaceholderKey: string;
   searchPlaceholderDefault: string;
   flowNotice: {
@@ -168,6 +172,14 @@ export interface CodebuddySuiteAccountsPlatformConfig<
     t: (key: string, defaultValue?: string) => string,
   ) => QuotaCategoryGroup[];
   hasQuotaData: (account: TAccount, groups: QuotaCategoryGroup[]) => boolean;
+  renderQuotaSummary?: (account: TAccount) => ReactNode;
+  renderQuotaAction?: (account: TAccount) => ReactNode;
+  /** 积分到期时间（用于卡片时间区的「到期时间」选项）；不实现则该项不显示 */
+  /** 卡片底部时间区旁的提示（如「包含即将到期的积分」） */
+  /** 卡片内、配额区上方的提示条（如模型受限警示） */
+  renderCardNotice?: (account: TAccount) => ReactNode;
+  /** 卡片操作按钮组里的额外按钮（如单账号探测） */
+  renderCardActionExtra?: (account: TAccount) => ReactNode;
   usagePrefix: string;
   quotaPrefix: string;
   tableUsageClassName: string;
@@ -206,7 +218,7 @@ export function CodebuddySuiteAccountsSharedView<
   platformConfig,
   onRefreshAccounts,
 }: CodebuddySuiteAccountsSharedViewProps<TAccount>) {
-  const [filterTypes, setFilterTypes] = useState<string[]>(() =>
+  const [filterTypes, setFilterTypes] = useAccountsOverviewFilterState<string[]>(page.filterPersistenceScope, FILTER_TYPES_FIELD, () =>
     page.filterPersistenceEnabled
       ? readAccountsOverviewFilterStringArray(
           page.filterPersistenceScope,
@@ -219,6 +231,8 @@ export function CodebuddySuiteAccountsSharedView<
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [showCheckinModal, setShowCheckinModal] = useState(false);
 
+  const timeDisplayMode = useUiConfigStore((s) => s.timeDisplayMode);
+
   const {
     t,
     locale,
@@ -229,8 +243,6 @@ export function CodebuddySuiteAccountsSharedView<
     setViewMode,
     searchQuery,
     setSearchQuery,
-    filterPersistenceEnabled,
-    filterPersistenceScope,
     sortDirection,
     selected,
     toggleSelect,
@@ -377,21 +389,6 @@ export function CodebuddySuiteAccountsSharedView<
     void confirmDeleteTag();
   });
   useEscClose(showCheckinModal, () => setShowCheckinModal(false));
-
-  useEffect(() => {
-    if (!filterPersistenceEnabled) {
-      removeAccountsOverviewFilterField(
-        filterPersistenceScope,
-        FILTER_TYPES_FIELD,
-      );
-      return;
-    }
-    writeAccountsOverviewFilterField(
-      filterPersistenceScope,
-      FILTER_TYPES_FIELD,
-      filterTypes,
-    );
-  }, [filterPersistenceEnabled, filterPersistenceScope, filterTypes]);
 
   const toggleFilterTypeValue = useCallback((value: string) => {
     setFilterTypes((prev) => {
@@ -568,11 +565,12 @@ export function CodebuddySuiteAccountsSharedView<
         return platformConfig.renderQuotaSection(account, variant);
       }
 
-      const groups = platformConfig.getQuotaGroups(
+      const quotaSummary = platformConfig.renderQuotaSummary?.(account);
+      const groups = quotaSummary != null ? [] : platformConfig.getQuotaGroups(
         account,
         t as (key: string, defaultValue?: string) => string,
       );
-      const hasQuotaData = platformConfig.hasQuotaData(account, groups);
+      const hasQuotaData = quotaSummary != null || platformConfig.hasQuotaData(account, groups);
       const refreshFailed = !!account.quota_query_last_error?.trim();
       const reauthorizationReason =
         platformConfig.getReauthorizationReason?.(account) || null;
@@ -625,22 +623,25 @@ export function CodebuddySuiteAccountsSharedView<
           <div
             className={`quota-item ${platformConfig.usagePrefix}-quota-item`}
           >
-            <div
-              className={`quota-header ${platformConfig.usagePrefix}-quota-header`}
-            >
-              <span className="quota-name">
-                {t(
-                  `${platformConfig.quotaPrefix}.quotaQuery.sectionTitle`,
-                  "配额查询",
-                )}
-              </span>
-            </div>
+            {quotaSummary == null && (
+              <div
+                className={`quota-header ${platformConfig.usagePrefix}-quota-header`}
+              >
+                <span className="quota-name">
+                  {t(
+                    `${platformConfig.quotaPrefix}.quotaQuery.sectionTitle`,
+                    "配额查询",
+                  )}
+                </span>
+                {platformConfig.renderQuotaAction?.(account)}
+              </div>
+            )}
             {refreshFailed && hasQuotaData && (
               <div className={`quota-cache-warning ${variant === "table" ? "table" : ""}`} role="status">
                 <CircleAlert size={14} />
                 <div className="quota-cache-warning-content">
                   <span className="quota-cache-warning-title">{cachedWarningText}</span>
-                  {updatedAtText && (
+                  {timeDisplayMode === "refresh" && updatedAtText && (
                     <span className="quota-cache-warning-time">
                       {t("common.shared.quota.lastSuccessfulQuery", "上次成功：{{time}}", {
                         time: updatedAtText,
@@ -651,7 +652,7 @@ export function CodebuddySuiteAccountsSharedView<
               </div>
             )}
             {shouldShowQuota ? (
-              renderResourceQuotaItems(account, variant)
+              quotaSummary ?? renderResourceQuotaItems(account, variant)
             ) : (
               <div
                 className={`quota-empty quota-query-state ${refreshFailed ? "error" : "empty"}`}
@@ -714,12 +715,12 @@ export function CodebuddySuiteAccountsSharedView<
                 {t("accounts.status.current", "当前")}
               </span>
             )}
-            <span
+            {planBadge && <span
               className={`tier-badge ${tierBadgeClass}`}
               title={planBadgeTitle}
             >
               {planBadge}
-            </span>
+            </span>}
           </div>
           {accountTags.length > 0 && (
             <div className="card-tags">
@@ -733,11 +734,18 @@ export function CodebuddySuiteAccountsSharedView<
               )}
             </div>
           )}
+          {platformConfig.renderCardNotice?.(account)}
           <div className="ghcp-quota-section">
             {renderQuotaQuerySection(account, "card")}
           </div>
           <div className="card-footer">
-            <span className="card-date">{formatDate(account.created_at)}</span>
+            <AccountLastUsed
+              accountId={account.id}
+              lastSwitchedAt={account.last_switched_at}
+              createdAt={account.created_at}
+              formatDate={formatDate}
+              refreshAt={getAccountQuotaUpdatedAtMs(account)}
+            />
             <div className="card-actions">
               <button
                 className="card-action-btn success"
@@ -781,7 +789,7 @@ export function CodebuddySuiteAccountsSharedView<
                   className="card-action-btn"
                   onClick={() => handleOpenWebview(account.id)}
                   disabled={webviewing === account.id}
-                  title={t("workbuddy.webview.open", "打开网页会话")}
+                  title={t("common.shared.webSession.open")}
                 >
                   {webviewing === account.id ? (
                     <RefreshCw size={14} className="loading-spinner" />
@@ -790,6 +798,7 @@ export function CodebuddySuiteAccountsSharedView<
                   )}
                 </button>
               )}
+              {platformConfig.renderCardActionExtra?.(account)}
               <button
                 className="card-action-btn danger"
                 onClick={() => handleDelete(account.id)}
@@ -840,17 +849,26 @@ export function CodebuddySuiteAccountsSharedView<
             )}
           </td>
           <td>
-            <span
+            {planBadge && <span
               className={`tier-badge ${tierBadgeClass}`}
               title={planBadgeTitle}
             >
               {planBadge}
-            </span>
+            </span>}
           </td>
           <td>
             <div className={platformConfig.tableUsageClassName}>
               {renderQuotaQuerySection(account, "table")}
             </div>
+          </td>
+          <td>
+            <AccountLastUsed
+              accountId={account.id}
+              lastSwitchedAt={account.last_switched_at}
+              createdAt={account.created_at}
+              formatDate={formatDate}
+              refreshAt={getAccountQuotaUpdatedAtMs(account)}
+            />
           </td>
           <td className="sticky-action-cell table-action-cell">
             <div className="action-buttons">
@@ -888,7 +906,7 @@ export function CodebuddySuiteAccountsSharedView<
                   className="action-btn"
                   onClick={() => handleOpenWebview(account.id)}
                   disabled={webviewing === account.id}
-                  title={t("workbuddy.webview.open", "打开网页会话")}
+                  title={t("common.shared.webSession.open")}
                 >
                   {webviewing === account.id ? (
                     <RefreshCw size={14} className="loading-spinner" />
@@ -1111,7 +1129,10 @@ export function CodebuddySuiteAccountsSharedView<
               className="btn btn-secondary icon-only"
               onClick={() => setShowCheckinModal(true)}
               disabled={accounts.length === 0}
-              title={t("workbuddy.checkin.modalTitle", "每日签到")}
+              title={t(
+                platformConfig.checkinModalTitleKey ?? "workbuddy.checkin.modalTitle",
+                platformConfig.checkinModalTitleDefault ?? "每日签到",
+              )}
             >
               <CalendarCheck size={14} />
             </button>
@@ -1265,6 +1286,7 @@ export function CodebuddySuiteAccountsSharedView<
                   {t("common.shared.columns.plan", "套餐")}
                 </th>
                 <th>{t("instances.labels.quota", "配额")}</th>
+                <th style={{ width: 140 }}>{t("accounts.lastSwitchTime", "最后切换")}</th>
                 <th className="sticky-action-header table-action-header">
                   {t("common.shared.columns.actions", "操作")}
                 </th>
@@ -1310,6 +1332,7 @@ export function CodebuddySuiteAccountsSharedView<
                   {t("common.shared.columns.plan", "套餐")}
                 </th>
                 <th>{t("instances.labels.quota", "配额")}</th>
+                <th style={{ width: 140 }}>{t("accounts.lastSwitchTime", "最后切换")}</th>
                 <th className="sticky-action-header table-action-header">
                   {t("common.shared.columns.actions", "操作")}
                 </th>

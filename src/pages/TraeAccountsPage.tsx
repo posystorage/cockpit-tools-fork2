@@ -1,4 +1,8 @@
-import { useState, useMemo, useCallback, useEffect, Fragment } from 'react';
+import { CURRENT_ACCOUNT_CHANGED_EVENT, type AccountSyncEventPayload } from '../utils/accountSyncEvents';
+import type { FlowNoticeSettingKey } from '../utils/durableUiSettings';
+import { useAccountsOverviewFilterState } from '../hooks/useAccountsOverviewFilterState';
+import { useState, useMemo, useCallback, useEffect, useRef, Fragment } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import {
   Plus,
   RefreshCw,
@@ -24,7 +28,9 @@ import {
   Eye,
   EyeOff,
   BookOpen,
+  CalendarCheck,
 } from 'lucide-react';
+import { AccountLastUsed } from '../components/AccountLastUsed';
 import { TagEditModal } from '../components/TagEditModal';
 import { ExportJsonModal } from '../components/ExportJsonModal';
 import { ModalErrorMessage } from '../components/ModalErrorMessage';
@@ -49,6 +55,7 @@ import {
   getTraeAccountDisplayEmail,
   getTraeAccountDisplayName,
   getTraeAccountPlatformId,
+  getTraeCreditCategoryGroups,
   getTraeLoginProvider,
   getTraePlanBadge,
   getTraePlanBadgeClass,
@@ -58,7 +65,11 @@ import {
   isTraeCnAccountPlatform,
   TRAE_PRODUCT_TYPE,
 } from '../types/trae';
+import { CodeBuddyQuotaCategoryList } from '../components/codebuddy/CodeBuddyQuotaCategoryList';
+import { TraeCheckinModal } from '../components/codebuddy-suite/TraeCheckinModal';
+import { TRAE_AUTO_CHECKIN_ACCOUNTS_CHANGED_EVENT } from '../services/traeAutoCheckinService';
 import { compareCurrentAccountFirst } from '../utils/currentAccountSort';
+import { getPlatformLabel } from '../utils/platformMeta';
 import {
   buildValidAccountsFilterOption,
   splitValidityFilterValues,
@@ -74,44 +85,38 @@ import {
   normalizeAccountsOverviewScope,
   readAccountsOverviewFilterPersistenceEnabled,
   readAccountsOverviewFilterStringArray,
-  removeAccountsOverviewFilterField,
-  writeAccountsOverviewFilterField,
 } from '../utils/accountsOverviewFilterPersistence';
 
 const FILTER_TYPES_FIELD = 'filter_types';
 const TRAE_KNOWN_SORT_KEYS = ['created_at', 'plan', 'quota'] as const;
 
 const TRAE_PLATFORM_PAGE_CONFIG: Record<TraePlatformId, {
+  // Existing account filters and pagination preferences use this name as their key.
   platformKey: string;
-  currentAccountIdKey: string;
-  flowNoticeCollapsedKey: string;
+  flowNoticeCollapsedKey: FlowNoticeSettingKey;
   exportFilePrefix: string;
   networkNoticeKey: string;
 }> = {
   trae: {
     platformKey: 'Trae',
-    currentAccountIdKey: 'agtools.trae.current_account_id',
     flowNoticeCollapsedKey: 'agtools.trae.flow_notice_collapsed',
     exportFilePrefix: 'trae_accounts',
     networkNoticeKey: 'trae.flowNotice.networkGlobal',
   },
   trae_solo: {
     platformKey: 'TRAE SOLO',
-    currentAccountIdKey: 'agtools.trae_solo.current_account_id',
     flowNoticeCollapsedKey: 'agtools.trae_solo.flow_notice_collapsed',
     exportFilePrefix: 'trae_solo_accounts',
     networkNoticeKey: 'trae.flowNotice.networkGlobal',
   },
   trae_cn: {
     platformKey: 'Trae CN',
-    currentAccountIdKey: 'agtools.trae_cn.current_account_id',
     flowNoticeCollapsedKey: 'agtools.trae_cn.flow_notice_collapsed',
     exportFilePrefix: 'trae_cn_accounts',
     networkNoticeKey: 'trae.flowNotice.networkCn',
   },
   trae_solo_cn: {
     platformKey: 'TRAE SOLO CN',
-    currentAccountIdKey: 'agtools.trae_solo_cn.current_account_id',
     flowNoticeCollapsedKey: 'agtools.trae_solo_cn.flow_notice_collapsed',
     exportFilePrefix: 'trae_solo_cn_accounts',
     networkNoticeKey: 'trae.flowNotice.networkCn',
@@ -170,10 +175,12 @@ function getTraeAccountSwitchLabel(account: TraeAccount): string {
 
 export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps) {
   const platformConfig = TRAE_PLATFORM_PAGE_CONFIG[platformId];
+  const isCnPlatform = platformId === 'trae_cn' || platformId === 'trae_solo_cn';
   const filterPersistenceScopeSeed = platformConfig.platformKey;
   const targetFilterPersistenceScope = normalizeAccountsOverviewScope(filterPersistenceScopeSeed);
   const [activeTab, setActiveTab] = useState<PlatformOverviewTab>('overview');
-  const [filterTypes, setFilterTypes] = useState<string[]>(() =>
+  const [showCheckinModal, setShowCheckinModal] = useState(false);
+  const [filterTypes, setFilterTypes] = useAccountsOverviewFilterState<string[]>(targetFilterPersistenceScope, FILTER_TYPES_FIELD, () =>
     readAccountsOverviewFilterPersistenceEnabled(targetFilterPersistenceScope)
       ? readAccountsOverviewFilterStringArray(targetFilterPersistenceScope, FILTER_TYPES_FIELD)
       : [],
@@ -185,42 +192,46 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
     () => store.accounts.filter((account) => getTraeAccountPlatformId(account) === platformId),
     [platformId, store.accounts],
   );
-  const [targetCurrentAccountId, setTargetCurrentAccountIdState] = useState<string | null>(() => {
-    try {
-      const value = localStorage.getItem(platformConfig.currentAccountIdKey);
-      return value && value.trim() ? value : null;
-    } catch {
-      return null;
-    }
-  });
-  const setTargetCurrentAccountId = useCallback(
-    (accountId: string | null) => {
-      const normalized = accountId?.trim() || null;
-      setTargetCurrentAccountIdState(normalized);
-      try {
-        if (normalized) {
-          localStorage.setItem(platformConfig.currentAccountIdKey, normalized);
-        } else {
-          localStorage.removeItem(platformConfig.currentAccountIdKey);
-        }
-      } catch {
-        // ignore local cache failures
-      }
-    },
-    [platformConfig.currentAccountIdKey],
-  );
+  const [currentAccountIds, setCurrentAccountIds] =
+    useState<Partial<Record<TraePlatformId, string | null>>>({});
+  const currentReadVersion = useRef<Partial<Record<TraePlatformId, number>>>({});
+  const targetCurrentAccountId = currentAccountIds[platformId] ?? null;
+  const setTargetCurrentAccountId = useCallback((accountId: string | null) => {
+    currentReadVersion.current[platformId] = (currentReadVersion.current[platformId] ?? 0) + 1;
+    setCurrentAccountIds(previous => ({ ...previous, [platformId]: accountId?.trim() || null }));
+  }, [platformId]);
+
   const loadTargetCurrentAccountId = useCallback(async () => {
+    const requestVersion = (currentReadVersion.current[platformId] ?? 0) + 1;
+    currentReadVersion.current[platformId] = requestVersion;
     try {
-      setTargetCurrentAccountId(await traeService.getTraeCurrentAccountId(platformId));
+      const id = await traeService.getTraeCurrentAccountId(platformId);
+      if (currentReadVersion.current[platformId] === requestVersion) {
+        setTargetCurrentAccountId(id);
+      }
     } catch (error) {
       console.warn('[Trae Accounts] Failed to load target current account:', error);
-      setTargetCurrentAccountId(null);
     }
   }, [platformId, setTargetCurrentAccountId]);
 
   useEffect(() => {
     void loadTargetCurrentAccountId();
   }, [loadTargetCurrentAccountId, platformAccounts.length]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen<AccountSyncEventPayload>(CURRENT_ACCOUNT_CHANGED_EVENT, ({ payload }) => {
+      if (payload.platformId === platformId) void loadTargetCurrentAccountId();
+    }).then(stop => {
+      if (disposed) stop();
+      else unlisten = stop;
+    }).catch(error => console.warn('[Trae Accounts] Failed to listen for current account changes:', error));
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [platformId, loadTargetCurrentAccountId]);
 
   const pageStore = useMemo(
     () => ({
@@ -268,7 +279,6 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
     platformKey: platformConfig.platformKey,
     oauthLogPrefix: 'TraeOAuth',
     flowNoticeCollapsedKey: platformConfig.flowNoticeCollapsedKey,
-    currentAccountIdKey: platformConfig.currentAccountIdKey,
     exportFilePrefix: platformConfig.exportFilePrefix,
     store: pageStore,
     oauthService: {
@@ -293,8 +303,6 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
     setViewMode,
     searchQuery,
     setSearchQuery,
-    filterPersistenceEnabled,
-    filterPersistenceScope,
     sortBy,
     setSortBy,
     sortDirection,
@@ -392,16 +400,9 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
     formatDate,
     normalizeTag,
   } = page;
+  const platformLabel = getPlatformLabel(platformId, t);
 
   const grouping = usePlatformAccountGroups(platformId, () => toggleSelectAll(Array.from(selected)));
-
-  useEffect(() => {
-    if (!filterPersistenceEnabled) {
-      removeAccountsOverviewFilterField(filterPersistenceScope, FILTER_TYPES_FIELD);
-      return;
-    }
-    writeAccountsOverviewFilterField(filterPersistenceScope, FILTER_TYPES_FIELD, filterTypes);
-  }, [filterPersistenceEnabled, filterPersistenceScope, filterTypes]);
 
   const toggleFilterTypeValue = useCallback((value: string) => {
     setFilterTypes((prev) => {
@@ -418,6 +419,33 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
 
   const accounts = platformAccounts;
   const loading = store.loading;
+  const fetchAccounts = store.fetchAccounts;
+
+  // 后台自动签到成功后会刷新额度：重取账号列表，避免积分停在旧值
+  useEffect(() => {
+    if (!isCnPlatform) {
+      return;
+    }
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen(TRAE_AUTO_CHECKIN_ACCOUNTS_CHANGED_EVENT, () => {
+      void fetchAccounts();
+    })
+      .then((stopListening) => {
+        if (disposed) {
+          stopListening();
+        } else {
+          unlisten = stopListening;
+        }
+      })
+      .catch((err) => {
+        console.warn('[TraeAutoCheckin] 监听后台签到完成事件失败:', err);
+      });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [fetchAccounts, isCnPlatform]);
 
   const isAbnormalAccount = useCallback(
     (account: TraeAccount) => (account.status || '').toLowerCase() === 'error',
@@ -604,6 +632,22 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
         typeof usage.usedPercent === 'number' && Number.isFinite(usage.usedPercent)
           ? Math.max(0, Math.min(100, Math.round(usage.usedPercent)))
           : null;
+
+      if (usage.usageModel === 'credits') {
+        const limit = usage.creditsUnlimited
+          ? t('common.shared.quota.unlimited') : formatNumber(usage.creditsLimit);
+        const known = usage.creditsUsed != null;
+        return {
+          percentage, percentageText: usage.creditsUnlimited ? t('common.shared.quota.unlimited') : percentage == null ? '--' : `${percentage}%`,
+          quotaClass: computeQuotaClass(percentage),
+          costText: `${t('common.shared.columns.credits')}: ${formatNumber(usage.creditsUsed)} / ${limit}`,
+          statusText: !known ? t('trae.quota.statusUnknown') : usage.usageExhausted
+            ? t('trae.quota.statusExhaustedFree') : t('trae.quota.statusSynced'),
+          statusTone: !known ? 'unknown' : usage.usageExhausted ? 'warning' : 'normal',
+          resetText: usage.resetAt ? t('trae.quota.resetAt', { date: formatTraeResetAt(usage.resetAt) }) : t('trae.quota.resetUnknown'),
+          bonusText: '', packageText: '', payAsYouGoText: '',
+        };
+      }
 
       const isFreePlan = (usage.identityStr ?? account.plan_type ?? '')
         .trim()
@@ -844,13 +888,48 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
     [t],
   );
 
+  const isCnAccount = useCallback(
+    (account: TraeAccount) =>
+      platformId === 'trae_cn' ||
+      platformId === 'trae_solo_cn' ||
+      isTraeCnAccountPlatform(account),
+    [platformId],
+  );
+
+  const formatTraeCreditDateTime = useCallback((timeMs: number | null) => {
+    if (timeMs == null || !Number.isFinite(timeMs)) return '';
+    return formatTraeResetAt(Math.floor(timeMs / 1000));
+  }, []);
+
+  // CN 积分账号按 CodeBuddy CN 的积分分组组件渲染；CN 遗留 fast_request/unknown 及国际站沿用紧凑配额卡
+  const renderAccountQuota = useCallback(
+    (account: TraeAccount, variant: 'card' | 'table') => {
+      if (isCnAccount(account) && getTraeUsage(account).usageModel === 'credits') {
+        return (
+          <CodeBuddyQuotaCategoryList
+            groups={getTraeCreditCategoryGroups(
+              account,
+              t as (key: string, defaultValue?: string) => string,
+            )}
+            formatNumber={formatNumber}
+            formatDateTime={formatTraeCreditDateTime}
+          />
+        );
+      }
+      if (!hasTraeQuotaData(account)) {
+        return <div className="quota-empty">{t('common.shared.quota.noData', '暂无配额数据')}</div>;
+      }
+      return renderCompactQuota(resolveQuotaSummary(account), variant);
+    },
+    [formatTraeCreditDateTime, isCnAccount, renderCompactQuota, resolveQuotaSummary, t],
+  );
+
   const renderGridCards = useCallback(
     (items: TraeAccount[], groupKey?: string) =>
       items.map((account) => {
         const displayName = resolveDisplayName(account);
         const displayEmail = resolveDisplayEmail(account);
         const showDisplayEmail = displayEmail !== 'unknown' && displayEmail !== displayName;
-        const quota = resolveQuotaSummary(account);
         const planLabel = resolvePlanLabel(account);
         const planClass = getTraePlanBadgeClass(planLabel);
         const accountTags = (account.tags || []).map((tag) => tag.trim()).filter(Boolean);
@@ -863,7 +942,6 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
         const signedInWithText = resolveSignedInWithText(account);
         const userIdText = account.user_id || '--';
         const quotaError = account.quota_query_last_error?.trim();
-        const hasQuotaData = hasTraeQuotaData(account);
 
         return (
           <div
@@ -925,15 +1003,11 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
             )}
 
             <div className="ghcp-quota-section">
-              {hasQuotaData ? (
-                renderCompactQuota(quota, 'card')
-              ) : (
-                <div className="quota-empty">{t('common.shared.quota.noData', '暂无配额数据')}</div>
-              )}
+              {renderAccountQuota(account, 'card')}
             </div>
 
             <div className="card-footer">
-              <span className="card-date">{formatDate(account.created_at)}</span>
+              <AccountLastUsed accountId={account.id} lastSwitchedAt={account.last_switched_at} createdAt={account.created_at} formatDate={formatDate} />
               <div className="card-actions">
                 <button
                   className="card-action-btn success"
@@ -997,12 +1071,11 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
       maskAccountText,
       openTagModal,
       refreshing,
-      renderCompactQuota,
+      renderAccountQuota,
       resolveDisplayName,
       resolveDisplayEmail,
       resolveSignedInWithText,
       resolvePlanLabel,
-      resolveQuotaSummary,
       resolveSingleExportBaseName,
       selected,
       t,
@@ -1016,7 +1089,6 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
         const displayName = resolveDisplayName(account);
         const displayEmail = resolveDisplayEmail(account);
         const showDisplayEmail = displayEmail !== 'unknown' && displayEmail !== displayName;
-        const quota = resolveQuotaSummary(account);
         const planLabel = resolvePlanLabel(account);
         const planClass = getTraePlanBadgeClass(planLabel);
         const accountTags = (account.tags || []).map((tag) => tag.trim()).filter(Boolean);
@@ -1028,7 +1100,6 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
         const signedInWithText = resolveSignedInWithText(account);
         const userIdText = account.user_id || '--';
         const quotaError = account.quota_query_last_error?.trim();
-        const hasQuotaData = hasTraeQuotaData(account);
 
         return (
           <tr key={groupKey ? `${groupKey}-${account.id}` : account.id} className={isCurrent ? 'current' : ''}>
@@ -1092,13 +1163,9 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
               </div>
             </td>
             <td>
-              {hasQuotaData ? (
-                renderCompactQuota(quota, 'table')
-              ) : (
-                <div className="quota-empty">{t('common.shared.quota.noData', '暂无配额数据')}</div>
-              )}
+              {renderAccountQuota(account, 'table')}
             </td>
-            <td>{formatDate(account.created_at)}</td>
+            <td>{account.last_used > 0 ? formatDate(account.last_used) : '—'}</td>
             <td className="sticky-action-cell table-action-cell">
               <div className="action-buttons">
                 <button
@@ -1163,12 +1230,11 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
       maskAccountText,
       openTagModal,
       refreshing,
-      renderCompactQuota,
+      renderAccountQuota,
       resolveDisplayName,
       resolveDisplayEmail,
       resolveSignedInWithText,
       resolvePlanLabel,
-      resolveQuotaSummary,
       resolveSingleExportBaseName,
       selected,
       t,
@@ -1200,7 +1266,7 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
             <CircleAlert size={16} />
             <span>
               {t('trae.flowNotice.titleWithPlatform', {
-                platform: platformConfig.platformKey,
+                platform: platformLabel,
                 defaultValue: '{{platform}} 账号接入说明（点击展开/收起）',
               })}
             </span>
@@ -1216,7 +1282,7 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
               {t(
                 'trae.flowNotice.descWithPlatform',
                 {
-                  platform: platformConfig.platformKey,
+                  platform: platformLabel,
                   defaultValue:
                     '支持 {{platform}} 官方 OAuth 授权、本机导入、JSON 导入与本地注入切号；切号过程按 {{platform}} 客户端真实落盘规则写回。',
                 },
@@ -1227,7 +1293,7 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
                 {t(
                   'trae.flowNotice.permissionWithPlatform',
                   {
-                    platform: platformConfig.platformKey,
+                    platform: platformLabel,
                     defaultValue:
                       '权限范围：读取并写入本机 {{platform}} 配置目录中的 storage.json 登录相关字段，用于账号导入、切号注入与套餐信息展示；所有数据仅在本机处理。',
                   },
@@ -1237,7 +1303,7 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
                 {t(
                   platformConfig.networkNoticeKey,
                   {
-                    platform: platformConfig.platformKey,
+                    platform: platformLabel,
                     defaultValue:
                       '网络范围：{{platform}} OAuth 登录、令牌刷新和套餐查询会请求 Trae 官方接口；不会向第三方服务上传本地账号文件或原始存储内容。',
                   },
@@ -1406,6 +1472,17 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
               >
                 <Plus size={14} />
               </button>
+              {isCnPlatform && (
+                <button
+                  className="btn btn-secondary icon-only"
+                  onClick={() => setShowCheckinModal(true)}
+                  disabled={accounts.length === 0}
+                  title={t('trae.checkin.modalTitle', '每日签到')}
+                  aria-label={t('trae.checkin.modalTitle', '每日签到')}
+                >
+                  <CalendarCheck size={14} />
+                </button>
+              )}
               <button
                 className="btn btn-secondary icon-only"
                 onClick={handleRefreshAll}
@@ -1495,7 +1572,7 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
               <h3>{t('common.shared.empty.title', '暂无账号')}</h3>
               <p>
                 {t('trae.empty.descriptionWithPlatform', {
-                  platform: platformConfig.platformKey,
+                  platform: platformLabel,
                   defaultValue:
                     '点击“添加账号”开始管理您的 {{platform}} 账号，也可以从本机 {{platform}} 数据或 JSON 文件导入。',
                 })}
@@ -1627,7 +1704,7 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
                   <button className="btn btn-secondary icon-only" onClick={closeAddModal} title={t('common.back', '返回')} aria-label={t('common.back', '返回')}><ChevronLeft size={14} /></button>
                   <h2>
                     {t('trae.addModal.titleWithPlatform', {
-                      platform: platformConfig.platformKey,
+                      platform: platformLabel,
                       defaultValue: '添加 {{platform}} 账号',
                     })}
                   </h2>
@@ -1670,7 +1747,7 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
                     <div className="add-section">
                       <p className="section-desc">
                         {t('trae.oauth.descWithPlatform', {
-                          platform: platformConfig.platformKey,
+                          platform: platformLabel,
                           defaultValue:
                             '点击下方按钮，在浏览器中完成 {{platform}} OAuth 授权登录。',
                         })}
@@ -1802,7 +1879,7 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
                     <div className="add-section">
                       <p className="section-desc">
                         {t('trae.import.localDescWithPlatform', {
-                          platform: platformConfig.platformKey,
+                          platform: platformLabel,
                           defaultValue:
                             '支持从本机 {{platform}} 配置目录读取当前登录账号、套餐信息和配额缓存数据。',
                         })}
@@ -1966,6 +2043,17 @@ export function TraeAccountsPage({ platformId = 'trae' }: TraeAccountsPageProps)
             onClose={() => setShowTagModal(null)}
             onSave={handleSaveTags}
           />
+
+          {isCnPlatform && showCheckinModal && (
+            <TraeCheckinModal
+              accounts={accounts}
+              platformLabel={platformLabel}
+              onClose={() => setShowCheckinModal(false)}
+              onCheckinComplete={() => {
+                void store.fetchAccounts();
+              }}
+            />
+          )}
         </>
       )}
 

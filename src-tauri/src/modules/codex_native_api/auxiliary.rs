@@ -37,7 +37,7 @@ pub(super) async fn http(State(state): State<Arc<AppState>>, request: Request) -
         .unwrap_or_else(IntoResponse::into_response)
 }
 async fn handle(state: Arc<AppState>, request: Request) -> Result<Response, ServiceError> {
-    let mut tracker = Some(state.begin()?);
+    let mut tracker = Some(state.begin_with_peer(super::server::request_peer(request.extensions()))?);
     let result = handle_tracked(state, request, &mut tracker).await;
     if let (Err(error), Some(tracker)) = (&result, tracker.as_mut()) {
         tracker.fail(error).await;
@@ -60,6 +60,7 @@ async fn handle_tracked(
     tracker.set_operation(auxiliary_operation(&path));
     let auth = bindings::authorize(&state, request.headers(), allow_secret).await?;
     tracker.authorized(&auth.caller, "");
+    tracker.admit(&auth.caller).await?;
     if path.contains("/translations") && path.contains("realtime")
         || path.ends_with("/transcription_sessions")
         || ["/accept", "/reject", "/refer"]
@@ -73,6 +74,16 @@ async fn handle_tracked(
         ));
     }
     let headers = request.headers().clone();
+    // The Desktop bridge maps AVAS creation to /v1/live. Validate its
+    // original target here before selecting or contacting an upstream.
+    if let Some(target) = headers.get("x-cockpit-voice-target") {
+        if path != "/v1/live"
+            || request.method() != axum::http::Method::POST
+            || target.as_bytes() != b"/wham/realtime/calls?intent=quicksilver&architecture=avas"
+        {
+            return Err(invalid("Unsupported Desktop voice request target"));
+        }
+    }
     let mime = headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
@@ -81,7 +92,7 @@ async fn handle_tracked(
     let mut stop = state.stop.clone();
     let bytes = tokio::select! {
         _=stop.wait()=>return Err(stopping_error()),
-        result=tokio::time::timeout_at(audio_deadline.unwrap_or_else(|| Instant::now() + state.options.request_timeout),to_bytes(request.into_body(),if is_audio(&path) {state.options.max_upload_bytes.min(26 * 1024 * 1024)} else {state.options.max_body_bytes}))=>result.map_err(|_|ServiceError::new(408,"request_body_timeout","Request body timed out"))?.map_err(super::request_body::read_error)?,
+        result=tokio::time::timeout_at(audio_deadline.unwrap_or_else(|| Instant::now() + state.options.body_timeout()),to_bytes(request.into_body(),if is_audio(&path) {state.options.max_upload_bytes.min(26 * 1024 * 1024)} else {state.options.max_body_bytes}))=>result.map_err(|_|ServiceError::new(408,"request_body_timeout","Request body timed out"))?.map_err(super::request_body::read_error)?,
     };
     let bytes = super::http::decode_body_with_limit(
         &state,
@@ -471,7 +482,7 @@ pub(super) async fn websocket(
     State(state): State<Arc<AppState>>,
     request: Request,
 ) -> Result<Response, ServiceError> {
-    let mut tracker = Some(state.begin()?);
+    let mut tracker = Some(state.begin_with_peer(super::server::request_peer(request.extensions()))?);
     let result = websocket_tracked(state, request, &mut tracker).await;
     if let (Err(error), Some(tracker)) = (&result, tracker.as_mut()) {
         tracker.fail(error).await;
@@ -491,6 +502,7 @@ async fn websocket_tracked(
     tracker.set_operation(auxiliary_operation(request.uri().path()));
     let auth = bindings::authorize(&state, request.headers(), true).await?;
     tracker.authorized(&auth.caller, "");
+    tracker.admit(&auth.caller).await?;
     let headers = request.headers().clone();
     let query: std::collections::HashMap<String, String> =
         url::form_urlencoded::parse(request.uri().query().unwrap_or_default().as_bytes())
@@ -581,6 +593,7 @@ async fn websocket_tracked(
                     url.as_str(),
                     mapped,
                     state.options.max_body_bytes,
+                    policy.websocket_fragment_timeout,
                     remaining_open.min(policy.websocket_connect_timeout),
                     state.stop.clone(),
                     |headers| async move {
@@ -649,7 +662,7 @@ async fn relay(
     model: String,
     connection: Option<bindings::CallConnection>,
     mut client: WebSocket,
-    mut upstream: tokio_tungstenite::WebSocketStream<reqwest::Upgraded>,
+    mut upstream: super::websocket_io::UpstreamSocket,
     mut tracker: RequestTracker,
 ) {
     use tokio_tungstenite::tungstenite::Message as U;
@@ -689,7 +702,7 @@ async fn relay(
         Ok(()) => tracker.complete(200, true, usage, None).await,
         Err(error) => tracker.fail(&error).await,
     }
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(1), upstream.close(None)).await;
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(1), upstream.close()).await;
     let _ = tokio::time::timeout(std::time::Duration::from_secs(1), client.close()).await;
 }
 use axum::extract::FromRequestParts;
@@ -747,12 +760,13 @@ fn auth_headers(incoming: &HeaderMap, route: &Route) -> Result<HeaderMap, Servic
     let mut headers = outbound_headers(incoming);
     headers.remove(header::CONTENT_TYPE);
     // Realtime uses x-session-id; normalize it through the shared identity map.
-    if let Some(value) = headers.remove("x-session-id") {
-        if !headers.contains_key("session-id") {
-            headers.insert("session-id", value);
+    if route.uses_codex_session_mapping() {
+        if let Some(value) = headers.remove("x-session-id") {
+            headers.entry("session-id").or_insert(value);
         }
     }
     headers.extend(route.headers.clone());
+    super::server::forward_remote_scope_headers(incoming,route,&mut headers);
     if !route.chatgpt && route.installation_profile.is_some() {
         // API-key audio is a provider-native endpoint. Its client is still
         // isolated by account, but no Codex installation is sent to it.
@@ -915,6 +929,7 @@ async fn send_until(
             tracker.check_quota_before_send()?;
             tracker.begin_attempt("http").await;
             tracker.upstream_headers(request.headers());
+            tracker.quota_request_started();
             client.execute(request).await.map_err(|error| {
                 ServiceError::new(502,"upstream_unavailable","Unable to connect to upstream")
                     .with_upstream_not_sent(error.is_connect() || error.is_builder())
@@ -928,6 +943,7 @@ async fn send_until(
             return Err(error);
         }
     };
+    let response = super::http_compression::decode_response(response)?;
     tracker.quota_headers(response.headers());
     tracker.upstream_response_headers(response.headers());
     Ok(response)
@@ -1056,13 +1072,16 @@ async fn rewrite_realtime_message(
             // Direct/sideband WebSockets preserve the authorized client model.
             // The Codex model mapping belongs only to WebRTC call bootstrap.
         }
-        if let Some(id) = session.get("id").cloned() {
+        if let Some(id) = session
+            .get("id")
+            .filter(|_| route.uses_codex_session_mapping())
+            .cloned()
+        {
             let mut metadata = json!({"client_metadata":{"session_id":id}});
             let headers = rewrite(state, auth, route, &HeaderMap::new(), &mut metadata).await?;
-            session["id"] = json!(headers
-                .get("session-id")
-                .and_then(|value| value.to_str().ok())
-                .ok_or_else(|| invalid("Invalid Realtime session id"))?);
+            if let Some(mapped) = headers.get("session-id").and_then(|value| value.to_str().ok()) {
+                session["id"] = json!(mapped);
+            }
         }
     }
     Ok(())

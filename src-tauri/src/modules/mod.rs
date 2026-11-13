@@ -1,10 +1,30 @@
 pub mod account;
+pub(crate) mod account_groups_store;
 pub mod account_index_repair;
+#[path = "../../../crates/cockpit-core/src/modules/account_query_identity.rs"]
+pub(crate) mod account_query_identity;
+pub(crate) use background_maintenance::schedule as schedule_identity_job;
+pub(crate) mod background_maintenance;
+#[path = "../../../crates/cockpit-core/src/modules/legacy_json_input.rs"]
+pub(crate) mod legacy_json_input;
+#[path = "../../../crates/cockpit-core/src/modules/antigravity_account_index_store.rs"]
+pub(crate) mod antigravity_account_index_store;
+#[path = "../../../crates/cockpit-core/src/modules/codex_account_index_store.rs"]
+pub(crate) mod codex_account_index_store;
+#[path = "../../../crates/cockpit-core/src/modules/provider_account_index.rs"]
+pub(crate) mod provider_account_index;
+#[path = "../../../crates/cockpit-core/src/modules/query_identity.rs"]
+pub(crate) mod query_identity;
+pub(crate) mod provider_index_maintenance;
+pub(crate) mod checkin_state_store;
+pub(crate) mod usage_rollup;
 pub mod announcement;
 pub mod apikey_fun_links;
+pub(crate) mod apikey_fun_vault;
 pub mod antigravity_credential;
 pub mod antigravity_legacy_instance;
 pub mod antigravity_paths;
+pub(crate) mod antigravity_shared_switch;
 pub mod antigravity_switch_history;
 pub mod app_lifecycle;
 pub mod atomic_write;
@@ -25,6 +45,7 @@ pub mod codebuddy_oauth;
 pub mod codebuddy_session;
 pub mod codebuddy_session_transfer;
 pub mod codex_account;
+pub mod codex_device_restrictions;
 pub mod chatgpt_plan;
 pub mod chatgpt_plan_service;
 pub mod codex_account_proxy;
@@ -46,6 +67,7 @@ pub mod codex_config_format;
 pub mod codex_instance;
 pub mod codex_profile_copy;
 pub mod codex_local_access;
+pub(crate) mod codex_remote_service;
 pub(crate) mod codex_request_summary;
 pub mod codex_native_api;
 pub(crate) mod codex_continuity_worker;
@@ -53,12 +75,19 @@ pub mod codex_api_identity;
 pub mod codex_managed_model_catalog_version;
 pub mod codex_oauth;
 pub(crate) mod codex_provider_protocol;
+pub(crate) mod codex_provider_discovered_models;
 pub mod codex_pelican;
 pub mod codex_pelican_preview;
 pub mod codex_official_app_server;
 pub mod codex_protocol;
+pub(crate) mod codex_model_catalog;
 pub mod codex_quota;
+pub(crate) mod codex_reset_automation;
+pub(crate) mod codex_provider_pool_quota;
+pub(crate) mod codex_quota_recovery;
 pub(crate) mod codex_quota_sync;
+pub(crate) mod codex_quota_history;
+pub(crate) mod codex_subscription_refresh;
 pub mod codex_temp_login;
 pub(crate) mod codex_quota_refresh_scheduler;
 pub(crate) mod codex_session_display;
@@ -69,9 +98,10 @@ pub mod codex_session_rollout_sanitize;
 pub mod codex_session_manager;
 pub mod codex_session_usage;
 pub mod codex_session_visibility;
+mod codex_session_rollout_records;
 pub(crate) mod codex_history_projection_repair;
 pub mod codex_speed;
-pub(crate) mod codex_native_speed_catalog;
+pub(crate) mod codex_model_catalog_capabilities;
 pub mod codex_ssh;
 pub mod codex_thread_sync;
 pub mod codex_wakeup;
@@ -79,6 +109,9 @@ pub mod codex_wakeup_scheduler;
 pub mod codex_wakeup_confirmation;
 pub mod config;
 pub mod cursor_account;
+mod cursor_usage;
+#[path = "../../../crates/cockpit-core/src/modules/cursor_account_recovery.rs"]
+pub(crate) mod cursor_account_recovery;
 pub mod cursor_instance;
 pub mod cursor_oauth;
 #[path = "../../../crates/cockpit-core/src/modules/data_paths.rs"]
@@ -102,14 +135,22 @@ pub mod import;
 pub mod instance;
 pub mod instance_storage_cleanup;
 pub mod instance_directory_ownership;
+#[path = "../../../crates/cockpit-core/src/modules/instance_registry.rs"]
+pub(crate) mod instance_registry;
 pub mod instance_store;
 pub mod kiro_account;
 pub mod kiro_instance;
 pub mod kiro_oauth;
+pub mod minimax_code_account;
+pub mod minimax_code_api;
+pub mod minimax_code_auto_checkin;
+pub mod minimax_code_instance;
+pub mod minimax_code_oauth;
 pub mod linux_updater;
 pub mod logger;
 pub mod macos_native_menu;
 pub mod main_window_state;
+pub(crate) mod mfa_vault_store;
 pub mod oauth;
 pub mod oauth_pending_state;
 pub mod oauth_server;
@@ -122,18 +163,26 @@ pub mod process_timeout;
 pub mod provider_current_state;
 pub mod provider_token_keeper;
 pub mod qoder_account;
+#[path = "../../../crates/cockpit-core/src/modules/qoder_identity.rs"]
+mod qoder_identity;
 pub mod qoder_instance;
+#[path = "../../../crates/cockpit-core/src/modules/qoder_oauth.rs"]
 pub mod qoder_oauth;
+#[path = "../../../crates/cockpit-core/src/modules/qoder_paths.rs"]
+pub(crate) mod qoder_paths;
 pub mod quota;
 pub mod quota_cache;
 pub mod remote_config;
 pub mod secure_account_storage;
+#[path = "../../../crates/cockpit-core/src/modules/account_file_crypto.rs"]
+mod account_file_crypto;
 pub mod sponsor_route_sync;
 pub mod ssh_server;
 pub mod sync_settings;
 #[cfg(test)]
 pub mod test_support;
 pub mod trae_account;
+pub mod trae_auto_checkin;
 pub mod trae_instance;
 pub mod trae_oauth;
 pub mod trae_session_transfer;
@@ -147,12 +196,16 @@ pub mod vscode_paths;
 pub mod wakeup;
 pub mod wakeup_gateway;
 pub mod wakeup_history;
+pub(crate) mod wakeup_history_store;
+#[path = "../../../crates/cockpit-core/src/modules/local_history_store.rs"]
+pub(crate) mod local_history_store;
 pub mod wakeup_scheduler;
 pub mod wakeup_verification;
 pub mod web_report;
 pub mod webdav_domain;
 pub mod webdav_sync;
 pub mod webkit_cache_maintenance;
+pub(crate) mod webkit_legacy_vault;
 pub mod websocket;
 pub mod windows_operation;
 pub mod windsurf_account;
@@ -164,6 +217,7 @@ pub(crate) mod workbuddy_auth_crypto;
 pub mod workbuddy_auto_checkin;
 pub mod workbuddy_instance;
 pub mod workbuddy_oauth;
+pub mod workbuddy_model_probe;
 pub mod workbuddy_session_transfer;
 pub mod workbuddy_webview;
 pub mod zcode_account;
@@ -185,4 +239,10 @@ pub mod codex_proxy_catalog_binding;
 pub mod codex_proxy_subscription_parser;
 
 pub mod codex_client_proxy;
+pub(crate) mod codex_proxy_direct_hosts;
 pub mod codex_proxy_targets;
+
+pub mod buddy_resource_api;
+
+#[path = "../../../crates/cockpit-core/src/modules/qoder_usage.rs"]
+pub mod qoder_usage;

@@ -1,6 +1,9 @@
 import { CodexAppEnhancementSettings } from '../components/codex/CodexAppEnhancementSettings';
 import { CodexRefreshPlanScopeControl } from '../components/CodexRefreshPlanScopeControl';
 import { CodexRequestPayloadSetting } from '../components/codex/CodexRequestPayloadSetting';
+import { CodexOverloadRetrySetting } from '../components/codex/CodexOverloadRetrySetting';
+import { CodexQuotaRecoverySettings } from '../components/codex/CodexQuotaRecoverySettings';
+import { CodexQuotaHistorySettings } from '../components/codex/CodexQuotaHistorySettings';
 import { AutoSwitchAccountScopeSelector } from '../components/AutoSwitchAccountScopeSelector';
 import { CodexContextManagementControl } from '../components/codex/CodexContextManagementControl';
 import { CodexSshSyncSettingsControl } from '../components/codex/CodexSshSyncSettingsControl';
@@ -8,6 +11,7 @@ import './settings/Settings.css';
 import { RefreshCw } from 'lucide-react';
 import type { SettingsPageViewProps } from "./SettingsPageView";
 import { useRemoteConfigStore } from '../stores/useRemoteConfigStore';
+import { PlatformSettingsSection } from "./settings/PlatformSettingsSection";
 
 /** 渲染 SettingsGeneralPanel 的 jsx:platformSettingsOrder.codex 业务面板。 */
 export function SettingsCodexPlatformPanel(props: SettingsPageViewProps) {
@@ -86,7 +90,7 @@ export function SettingsCodexPlatformPanel(props: SettingsPageViewProps) {
   const remoteCodexOAuthAppVersion = useRemoteConfigStore(
     (state) => state.state.codexOAuthAppVersion,
   );
-  return <div style={{ order: platformSettingsOrder.codex }}>
+  return <PlatformSettingsSection platformId={'codex'} order={platformSettingsOrder.codex}>
                 <div className="group-title">{t('settings.general.codexSettingsTitle', 'Codex 设置')}</div>
                 <div className="settings-group">
               <div className="settings-row">
@@ -180,6 +184,7 @@ export function SettingsCodexPlatformPanel(props: SettingsPageViewProps) {
 
               <CodexRefreshPlanScopeControl value={codexAutoRefreshPlanTypes} onChange={setCodexAutoRefreshPlanTypes} />
               <CodexRequestPayloadSetting />
+              <CodexOverloadRetrySetting />
               {renderCurrentAccountRefreshRow('codex')}
               {renderAccountLevelRefreshConfig('codex')}
 
@@ -603,6 +608,8 @@ export function SettingsCodexPlatformPanel(props: SettingsPageViewProps) {
                   </label>
                 </div>
               </div>
+              <CodexQuotaRecoverySettings />
+              <CodexQuotaHistorySettings />
               {codexQuotaAlertEnabled && (
                 <div className="settings-row" style={{ animation: 'fadeUp 0.3s ease both' }}>
                   <div className="row-label">
@@ -668,12 +675,12 @@ export function SettingsCodexPlatformPanel(props: SettingsPageViewProps) {
               <div className="settings-row">
                 <div className="row-label">
                   <div className="row-title">
-                    {t('settings.general.codexHideRelayQuota', '隐藏中转站额度')}
+                    {t('settings.general.codexHideRelayQuota', '余额开关')}
                   </div>
                   <div className="row-desc">
                     {t(
                       'settings.general.codexHideRelayQuotaDesc',
-                      '开启后，Codex 账号总览隐藏中转 / New API 类额度面板，减轻列表重叠与视觉干扰。',
+                      '关闭后，隐藏 Codex 中转站余额，并停止自动和手动余额查询。',
                     )}
                   </div>
                 </div>
@@ -681,8 +688,8 @@ export function SettingsCodexPlatformPanel(props: SettingsPageViewProps) {
                   <label className="switch">
                     <input
                       type="checkbox"
-                      checked={codexHideRelayQuota}
-                      onChange={(e) => setCodexHideRelayQuota(e.target.checked)}
+                      checked={!codexHideRelayQuota}
+                      onChange={(e) => setCodexHideRelayQuota(!e.target.checked)}
                     />
                     <span className="slider"></span>
                   </label>
@@ -690,5 +697,5 @@ export function SettingsCodexPlatformPanel(props: SettingsPageViewProps) {
               </div>
             </div>
 
-              </div>;
+              </PlatformSettingsSection>;
 }

@@ -48,6 +48,9 @@ pub struct CodexExperimentalModelDefinition {
     /// None preserves the official catalog default; explicit values must be supported.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_reasoning_effort: Option<String>,
+    /// Request effort used when the client selects Ultra. None inherits the model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ultra_reasoning_effort: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_window: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -212,6 +215,8 @@ pub struct CodexAccount {
     /// Last applied Grok default catalog revision; prevents restoring user-deleted models.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grok_model_catalog_version: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opencode_go_model_catalog_version: Option<u32>,
     /// 供应商目录里按模型覆盖的 `context_window`。未填写时走官方值或全局兜底。
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub api_model_context_windows: HashMap<String, i64>,
@@ -222,6 +227,8 @@ pub struct CodexAccount {
     pub api_sync_model_catalog_to_codex: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_wire_api: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_auth_scheme: Option<String>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub api_supports_websockets: bool,
     #[serde(default)]
@@ -348,18 +355,6 @@ pub struct CodexAccount {
     pub requires_reauth: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reauth_reason: Option<String>,
-    /// 官方客户端实际页面认证状态，由实例 CDP 只读观察更新。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub client_auth_status: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_client_auth_observed_at: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_client_login_redirect_at: Option<i64>,
-    /// 最近一次启动并开始观测该 Codex 实例的时间（Unix seconds）。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_client_launch_at: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_client_auth_instance_id: Option<String>,
     pub quota: Option<CodexQuota>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub team_quota_history: Option<CodexTeamQuotaHistory>,
@@ -378,6 +373,9 @@ pub struct CodexAccount {
     pub tags: Option<Vec<String>>,
     pub created_at: i64,
     pub last_used: i64,
+    /// Last successful credential switch; absent for historical/imported accounts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_switched_at: Option<i64>,
 }
 
 /// Codex Token 数据
@@ -537,6 +535,8 @@ pub struct CodexAccountIndex {
     pub detail_schema_version: u32,
     pub accounts: Vec<CodexAccountSummary>,
     pub current_account_id: Option<String>,
+    #[serde(skip)]
+    pub(crate) storage_revision: Option<u64>,
 }
 
 /// 账号摘要信息
@@ -558,6 +558,7 @@ impl CodexAccountIndex {
             detail_schema_version: 2,
             accounts: Vec::new(),
             current_account_id: None,
+            storage_revision: None,
         }
     }
 }
@@ -664,6 +665,7 @@ impl CodexAccount {
     pub fn new(id: String, email: String, tokens: CodexTokens) -> Self {
         let now = chrono::Utc::now().timestamp();
         Self {
+        last_switched_at: None,
             id,
             email,
             auth_mode: CodexAuthMode::OAuth,
@@ -674,10 +676,12 @@ impl CodexAccount {
             api_provider_name: None,
             api_model_catalog: Vec::new(),
             grok_model_catalog_version: None,
+            opencode_go_model_catalog_version: None,
             api_model_context_windows: HashMap::new(),
             api_model_mappings: Vec::new(),
             api_sync_model_catalog_to_codex: false,
             api_wire_api: None,
+            api_auth_scheme: None,
             api_supports_websockets: false,
             api_supports_vision: false,
             api_model_vision_support: HashMap::new(),
@@ -718,11 +722,6 @@ impl CodexAccount {
             authorization_status: None,
             requires_reauth: false,
             reauth_reason: None,
-            client_auth_status: None,
-            last_client_auth_observed_at: None,
-            last_client_login_redirect_at: None,
-            last_client_launch_at: None,
-            last_client_auth_instance_id: None,
             quota: None,
             team_quota_history: None,
             quota_error: None,

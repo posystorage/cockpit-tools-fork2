@@ -39,7 +39,10 @@ async fn handle(
     request: Request,
     compact: bool,
 ) -> Result<Response, ServiceError> {
-    let input = read_request(&state, request).await?;
+    let mut input = read_request(&state, request).await?;
+    if !compact {
+        input.tracker.start_response_clock();
+    }
     dispatch(state, input, compact).await
 }
 
@@ -55,8 +58,11 @@ pub(super) async fn read_request(
     state: &AppState,
     request: Request,
 ) -> Result<Input, ServiceError> {
-    let mut tracker = state.begin()?;
-    let (parts, body) = request.into_parts();
+    let mut tracker = state.begin_with_peer(super::server::request_peer(request.extensions()))?;
+    let (mut parts, body) = request.into_parts();
+    parts.headers.remove("x-cockpit-compat-source");
+    parts.headers.remove(super::compat_http::CLAUDE_CACHE_SCOPE);
+    super::websocket::clear_routing_header_markers(&mut parts.headers);
     let capture = tokio::time::timeout(
         state.options.request_timeout,
         state.host.payload_logging_enabled(),
@@ -72,21 +78,25 @@ pub(super) async fn read_request(
     let result=async {
         let caller = state.authorize(&parts.headers).await?;
         tracker.authorized(&caller,"");
+        tracker.admit(&caller).await?;
         let mut stop = state.stop.clone();
         let bytes = tokio::select! {
             _ = stop.wait() => return Err(stopping_error()),
-            result = tokio::time::timeout(state.options.request_timeout, to_bytes(body, state.options.max_body_bytes)) =>
+            result = tokio::time::timeout(state.options.body_timeout(), to_bytes(body, state.options.max_body_bytes)) =>
                 result.map_err(|_| ServiceError::new(408, "request_body_timeout", "Timed out reading request body"))?
                     .map_err(super::request_body::read_error)?,
         };
         let bytes = decode_body(state, bytes, &parts.headers).await?;
         let small = bytes.len() <= 64 * 1024;
         let parse = move || {
-            serde_json::from_slice(&bytes).map_err(|_| ServiceError::new(400,"invalid_json","Request body must be a JSON object"))
+            let body: Value = serde_json::from_slice(&bytes).map_err(|_| ServiceError::new(400,"invalid_json","Request body must be a JSON object"))?;
+            let size = super::request_metrics::measure(&body, bytes.len());
+            Ok((body, size))
         };
-        let body: Value = if small { parse()? } else {
+        let (body, size) = if small { parse()? } else {
             super::blocking::run(state.stop.clone(), state.options.request_timeout, parse).await?
         };
+        tracker.request_size(size);
         if !body.is_object() { return Err(ServiceError::new(400,"invalid_json","Request body must be a JSON object")); }
         Ok((caller,body))
     }.await;
@@ -126,9 +136,30 @@ pub(super) async fn dispatch(
     {
         policy = policy.for_images();
     }
-    let immediate =
-        !compact && input.body["stream"].as_bool().unwrap_or(false) && policy.immediate_sse;
     let codex_client = super::output_error::is_codex_client(&input.headers);
+    // Codex needs the HTTP status to stop retrying an invalid continuation.
+    // An SSE failure sent after committing 200 cannot convey that status.
+    let codex_continuation = codex_client && input.body["previous_response_id"].is_string();
+    let immediate = !compact
+        && input.body["stream"].as_bool().unwrap_or(false)
+        && policy.immediate_sse
+        && !codex_continuation;
+    // A restricted key must receive a real policy error before response
+    // headers are committed, including when the final wire differs.
+    let immediate = if immediate {
+        match super::execution::within(&state, state.host.reasoning_ceiling(&input.caller)).await {
+            Ok(ceiling) => ceiling.is_none(),
+            Err(error) => {
+                input.tracker.fail(&error).await;
+                return Err(error);
+            }
+        }
+    } else {
+        false
+    };
+    if !compact && policy.continuous_overload_retry && policy.keepalive.is_zero() {
+        policy.keepalive = std::time::Duration::from_secs(10);
+    }
     let keepalive = policy.keepalive;
     // The outer stream covers selection and credentials, so selected transports
     // must not wrap a second immediate stream around their own opening stage.
@@ -294,12 +325,12 @@ pub(super) async fn decode_body_with_limit(
         .collect::<Vec<_>>();
     if encodings
         .iter()
-        .any(|encoding| !matches!(encoding.as_str(), "identity" | "gzip" | "zstd"))
+        .any(|encoding| !matches!(encoding.as_str(), "identity" | "gzip" | "zstd" | "deflate" | "br"))
     {
         return Err(ServiceError::new(
             415,
             "unsupported_content_encoding",
-            "Supported content encodings are identity, gzip and zstd",
+            "Supported content encodings are identity, gzip, deflate, br and zstd",
         ));
     }
     if encodings.iter().all(|encoding| encoding == "identity") {
@@ -317,7 +348,11 @@ pub(super) async fn decode_body_with_limit(
                     continue;
                 }
                 let reader: Box<dyn Read + '_> = if encoding == "gzip" {
-                    Box::new(flate2::read::GzDecoder::new(input.as_slice()))
+                    Box::new(flate2::read::MultiGzDecoder::new(input.as_slice()))
+                } else if encoding == "deflate" {
+                    Box::new(flate2::read::ZlibDecoder::new(input.as_slice()))
+                } else if encoding == "br" {
+                    Box::new(brotli::Decompressor::new(input.as_slice(), 4096))
                 } else {
                     Box::new(
                         zstd::stream::read::Decoder::new(input.as_slice()).map_err(|_| {
@@ -448,6 +483,7 @@ async fn forward_with_policy(
             prepared,
             upstream,
             decoder: SseDecoder::new(event_limit),
+            wire: super::response_wire::ResponseWire::default(),
             observation: ResponseObservation {
                 retry_after: retry_after_headers(&headers),
                 ..Default::default()
@@ -463,20 +499,25 @@ async fn forward_with_policy(
             deadline,
             policy,
         };
-        let body = Body::from_stream(stream::unfold(stream_state, |mut current| async move {
+        let continuous = stream_state.policy.continuous_overload_retry;
+        let keepalive = stream_state.policy.keepalive;
+        let body = Body::from_stream(stream::unfold(stream_state, move |mut current| async move {
             loop {
                 if current.finished {
                     return None;
                 }
                 let mut stop = current.state.stop.clone();
+                let read_deadline = if current.fence.active() {
+                    current.tracker.overload.deadline(current.deadline)
+                } else { current.deadline };
                 let next = if let Some(error) = current.pending_error.take() {
                     Err(error)
                 } else {
                     tokio::select! {
                         _ = stop.wait() => Err(stopping_error()),
-                        _ = deadline::sleep_until(current.deadline) => Err(super::retry::total_timeout()),
+                        _ = deadline::sleep_until(read_deadline) => Err(super::retry::total_timeout()),
                         _ = deadline::sleep_until(current.idle_deadline) => Err(ServiceError::new(504, "upstream_idle_timeout", "Upstream stream stopped responding")),
-                        _ = deadline::sleep_until(current.keepalive_deadline), if !current.policy.keepalive.is_zero() => {
+                        _ = deadline::sleep_until(current.keepalive_deadline), if !continuous && !current.policy.keepalive.is_zero() => {
                             current.keepalive_deadline = tokio::time::Instant::now() + current.policy.keepalive;
                             return Some((Ok::<_, std::io::Error>(Bytes::from_static(b": keep-alive\n\n")), current));
                         },
@@ -486,7 +527,6 @@ async fn forward_with_policy(
                 let outcome = match next {
                     Ok(Some(Ok(bytes))) => {
                         if !bytes.is_empty() {
-                            current.tracker.first_response();
                             current.idle_deadline =
                                 tokio::time::Instant::now() + current.policy.idle_timeout;
                         }
@@ -541,17 +581,26 @@ async fn forward_with_policy(
                         let codex =
                             super::output_error::is_codex_client(&current.prepared.source_headers);
                         return Some((
-                            Ok(super::output_error::responses_sse(
-                                &error,
-                                codex,
-                                current.sequence,
-                            )),
+                            Ok(super::output_error::event_sse(&current.wire.failure(&error, codex, current.sequence))),
                             current,
                         ));
                     }
                 }
             }
         }));
+        let body = if continuous && !keepalive.is_zero() {
+            let mut tick = tokio::time::interval_at(tokio::time::Instant::now() + keepalive, keepalive);
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            Body::from_stream(stream::unfold((body.into_data_stream(), tick), |(mut output, mut tick)| async move {
+                let item = tokio::select! {
+                    item = output.next() => item?,
+                    _ = tick.tick() => Ok(Bytes::from_static(b": keep-alive\n\n")),
+                };
+                Some((item, (output, tick)))
+            }))
+        } else {
+            body
+        };
         return Ok(downstream_response(status, &headers, body));
     }
     if is_sse && status.is_success() {
@@ -564,7 +613,7 @@ async fn forward_with_policy(
                     return Err(error);
                 }
             };
-        let Some(response) = observation.response.take().filter(|_| observation.terminal) else {
+        let Some(mut response) = observation.response.take().filter(|_| observation.terminal) else {
             let error = ServiceError::new(
                 502,
                 "incomplete_upstream_stream",
@@ -580,6 +629,9 @@ async fn forward_with_policy(
             tracker.fail(&error).await;
             return Err(error);
         }
+        super::replay_wire::instructions(&prepared.source_body, &mut response);
+        tracker.record_response_model(&prepared.route, &response);
+        super::response_wire::ResponseWire::default().stamp_response(&mut response);
         tracker.payload("upstream_response", "http", &headers, &response.to_string());
         tracker.set_retry_after(observation.retry_after);
         tracker.response_tier(observation.service_tier.as_deref());
@@ -588,6 +640,7 @@ async fn forward_with_policy(
             observation.credential_scope,
         );
         tracker.capture_request_fault(observation.request_scoped);
+                                tracker.capture_transient_rate_limit(observation.transient_rate_limit);
         tracker
             .complete(
                 observation.http_status.unwrap_or(status.as_u16()),
@@ -625,9 +678,14 @@ async fn forward_with_policy(
     if !compact {
         if let Some(value) = &mut value {
             normalized = super::output_usage::normalize_usage_details(value);
+            if status.is_success() { normalized |= super::replay_wire::instructions(&prepared.source_body,value); normalized |= super::response_wire::ResponseWire::default().stamp_response(value); }
         }
     }
     if let Some(value) = &value {
+        if let Some(code) = super::quota_exhaustion::code(value) {
+            let wait = retry_after_headers(&headers).max(super::events::retry_after_event(value));
+            super::quota_exhaustion::record(&state, &mut tracker, &prepared.route, code, status.as_u16(), wait, deadline).await?;
+        }
         tracker.capture_upstream_error(status.as_u16(), value);
         if status.is_success() {
             if super::upstream_errors::chat_failure(value, 502).is_some() {
@@ -648,6 +706,9 @@ async fn forward_with_policy(
     {
         tracker.capture_response_error(Some("cloudflare challenge"), false);
         tracker.capture_request_fault(false);
+    } else if value.is_none() {
+        let message = super::diagnostics::cloudflare_gateway_message(status, &headers);
+        tracker.capture_response_error(message.as_deref(), false);
     }
     if status.is_success()
         && !value.as_ref().is_some_and(|value| {
@@ -667,6 +728,9 @@ async fn forward_with_policy(
         return Err(error);
     }
     if let Some(value) = &value {
+        if status.is_success() {
+            tracker.record_response_model(&prepared.route, value);
+        }
         tracker.response_tier(value.get("service_tier").and_then(Value::as_str));
         if let Err(error) = mapping::observe_event(&state, &prepared, value).await {
             tracker.fail(&error).await;
@@ -725,7 +789,7 @@ pub(super) async fn open_response_stream(
         let mut stop = state.stop.clone();
         let mut upstream = tokio::select! {
             _ = stop.wait() => Err(stopping_error()),
-            result = deadline::timeout_at(deadline, super::upstream::canonical_stream(state, response, &prepared.route, compact, prepared.grok_context.clone(), prepared.plan_tools_context.clone(), prepared.multi_agent_context.clone(), &prepared.body, policy.idle_timeout)) => result.map_err(|_| super::retry::total_timeout()).and_then(|value| value),
+            result = deadline::timeout_at(deadline, super::upstream::canonical_stream(state, response, &prepared.route, compact, prepared.grok_context.clone(), prepared.plan_tools_context.clone(), prepared.multi_agent_context.clone(), &prepared.body, super::anthropic_search_cache::scope(prepared), policy.idle_timeout)) => result.map_err(|_| super::retry::total_timeout()).and_then(|value| value),
         }?;
         if upstream.is_sse && status.is_success() && client_stream {
             match prefetch(state, upstream.bytes, policy, deadline).await {
@@ -765,6 +829,7 @@ struct StreamingResponse {
     prepared: Prepared,
     upstream: super::upstream::ByteStream,
     decoder: SseDecoder,
+    wire: super::response_wire::ResponseWire,
     observation: ResponseObservation,
     tracker: RequestTracker,
     finished: bool,
@@ -787,11 +852,15 @@ impl StreamingResponse {
                 self.recovery_generation=self.recovery_generation.saturating_add(1);
                 self.upstream=opened.bytes;
                 self.decoder=SseDecoder::new(self.state.options.max_event_bytes);
+                self.wire=super::response_wire::ResponseWire::default();
                 self.observation=ResponseObservation { retry_after:retry_after_headers(&opened.headers),..Default::default() };
                 self.idle_deadline=tokio::time::Instant::now()+self.policy.idle_timeout;
                 return Ok(bytes.into());
             }
-            if let Some(event) = frame.value {
+            let public_frame = super::response_wire::visible_frame(&frame.bytes, super::output_error::is_codex_client(&self.prepared.source_headers));
+            let mut outgoing = frame.bytes.clone();
+            if let Some(mut event) = frame.value {
+                self.tracker.first_response_event(&event);
                 if self.prepared.route.chatgpt_plan {
                     super::chatgpt_plan_wire::validate_event(frame.identity_event.as_ref().unwrap_or(&event))?;
                 }
@@ -822,9 +891,14 @@ impl StreamingResponse {
                 .await?;
                 self.tracker.quota_event(&event);
                 self.observation.observe(&event);
+                if self.observation.succeeded {
+                    self.tracker.record_response_model(&self.prepared.route, frame.identity_event.as_ref().unwrap_or(&event));
+                }
+                if super::replay_wire::instructions(&self.prepared.source_body, &mut event) | self.wire.stamp_event(&mut event) { outgoing = super::response_wire::rewrite_frame(&frame.bytes, &event); }
                 self.tracker
                     .response_tier(self.observation.service_tier.as_deref());
                 self.tracker.capture_usage(&self.observation.usage);
+                self.tracker.capture_transient_rate_limit(self.observation.transient_rate_limit);
                 if matches!(
                     super::events::response_terminal_kind(&event),
                     Some("error" | "response.failed")
@@ -834,15 +908,14 @@ impl StreamingResponse {
                         self.observation.http_status.unwrap_or(502),
                     );
                     let codex = super::output_error::is_codex_client(&self.prepared.source_headers);
-                    bytes.extend_from_slice(&super::output_error::responses_sse(
-                        &error,
-                        codex,
-                        event_sequence,
-                    ));
+                    bytes.extend_from_slice(&super::output_error::event_sse(&self.wire.failure(&error, codex, event_sequence)));
                     break;
                 }
+                if !super::response_wire::visible(&event, super::output_error::is_codex_client(&self.prepared.source_headers)) { continue; }
             }
-            bytes.extend_from_slice(&frame.bytes);
+            if public_frame {
+                bytes.extend_from_slice(&outgoing);
+            }
             if self.observation.terminal {
                 break;
             }
@@ -931,6 +1004,7 @@ async fn collect_sse(
     initial_retry_after: Option<std::time::Duration>,
 ) -> Result<ResponseObservation, ServiceError> {
     let mut decoder = SseDecoder::new(state.options.max_event_bytes);
+    let mut wire = super::response_wire::ResponseWire::default();
     let mut observation = ResponseObservation {
         retry_after: initial_retry_after,
         ..Default::default()
@@ -939,17 +1013,15 @@ async fn collect_sse(
     let mut total = 0usize;
     let mut stop = state.stop.clone();
     'read: loop {
+        let read_deadline = if fence.active() { tracker.overload.deadline(deadline) } else { deadline };
         let next = tokio::select! {
             _ = stop.wait() => return Err(stopping_error()),
-            _ = deadline::sleep_until(deadline) => return Err(super::retry::total_timeout()),
+            _ = deadline::sleep_until(read_deadline) => return Err(super::retry::total_timeout()),
             result = tokio::time::timeout(policy.idle_timeout, stream.next()) =>
                 result.map_err(|_| ServiceError::new(504, "upstream_idle_timeout", "Upstream response stopped responding"))?,
         };
         match next {
             Some(Ok(chunk)) => {
-                if !chunk.is_empty() {
-                    tracker.first_response();
-                }
                 total = total.saturating_add(chunk.len());
                 if total > state.options.max_response_bytes {
                     return Err(ServiceError::new(
@@ -967,7 +1039,8 @@ async fn collect_sse(
                         total=0;
                         continue 'read;
                     }
-                    let Some(event) = frame.value else { continue };
+                    let Some(mut event) = frame.value else { continue };
+                    tracker.first_response_event(&event);
                     if prepared.route.chatgpt_plan {
                         super::chatgpt_plan_wire::validate_event(frame.identity_event.as_ref().unwrap_or(&event))?;
                     }
@@ -985,6 +1058,7 @@ async fn collect_sse(
                     )
                     .await?;
                     tracker.quota_event(&event);
+                    wire.stamp_event(&mut event);
                     observation.observe(&event);
                     if observation.terminal && observation.response.is_none() {
                         observation.response =
@@ -1013,7 +1087,8 @@ async fn collect_sse(
                         total=0;
                         continue 'read;
                     }
-                    let Some(event) = frame.value else { continue };
+                    let Some(mut event) = frame.value else { continue };
+                    tracker.first_response_event(&event);
                     if prepared.route.chatgpt_plan {
                         super::chatgpt_plan_wire::validate_event(frame.identity_event.as_ref().unwrap_or(&event))?;
                     }
@@ -1031,6 +1106,7 @@ async fn collect_sse(
                     )
                     .await?;
                     tracker.quota_event(&event);
+                    wire.stamp_event(&mut event);
                     observation.observe(&event);
                     if observation.terminal && observation.response.is_none() {
                         observation.response =
@@ -1062,6 +1138,9 @@ async fn observe_late_official_rejection(
     if !prepared.route.chatgpt_plan || !matches!(
         super::events::response_terminal_kind(event), Some("error" | "response.failed")
     ) {
+        return Ok(());
+    }
+    if super::quota_exhaustion::code(event).is_some() {
         return Ok(());
     }
     let Some((code, status)) = super::official_fallback::explicit_rejection(event) else {

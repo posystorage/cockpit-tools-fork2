@@ -37,6 +37,12 @@ export function loadHookModule(file: URL, imports: Record<string, unknown>, glob
       return values[index];
     },
     useCallback(callback: unknown, deps?: unknown[]) { return hooks.useMemo(() => callback, deps); },
+    useSyncExternalStore(subscribe: (listener: () => void) => () => void, getSnapshot: () => unknown) {
+      const latest = hooks.useRef(getSnapshot) as { current: () => unknown };
+      latest.current = getSnapshot;
+      hooks.useEffect(() => subscribe(() => { dirty = true; }), [subscribe]);
+      return latest.current();
+    },
   };
   const exports: Record<string, any> = {};
   const require = createRequire(file);
@@ -46,8 +52,8 @@ export function loadHookModule(file: URL, imports: Record<string, unknown>, glob
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
   } }).outputText;
   vm.runInNewContext(compiled, { exports, crypto: globalThis.crypto, setTimeout, clearTimeout, ...globals, require(name: string) {
-    if (name === 'react') return { ...hooks, createContext };
     if (name in imports) return imports[name];
+    if (name === 'react') return { ...hooks, createContext };
     if (name.endsWith('.css')) return {};
     return require(name);
   } });
@@ -62,7 +68,7 @@ export function loadHookModule(file: URL, imports: Record<string, unknown>, glob
     } while (dirty);
     return output;
   }
-  return { exports, flush, render(callback: () => any) { renderCurrent = callback; return flush(); },
+  return { exports, hooks, flush, render(callback: () => any) { renderCurrent = callback; return flush(); },
     unmount() { cleanups.forEach((cleanup) => cleanup?.()); },
   };
 }

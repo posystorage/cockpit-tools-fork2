@@ -296,6 +296,7 @@
             display_name: "GPT-5".to_string(),
             reasoning_efforts: None,
             default_reasoning_effort: None,
+            ultra_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         }];
@@ -438,6 +439,7 @@
         for expected in [
             "gpt-6.1-sol",
             "gpt-6-astra",
+            "gpt-6.1-terra",
             "gpt-6-sol",
             "gpt-6-luna",
             "gpt-5.6-sol",
@@ -628,8 +630,8 @@
             .filter_map(|model| model["slug"].as_str())
             .collect::<Vec<_>>();
         assert_eq!(
-            slugs.iter().take(4).copied().collect::<Vec<_>>(),
-            vec!["gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]
+            slugs.iter().take(5).copied().collect::<Vec<_>>(),
+            vec!["gpt-6.1-sol", "gpt-6-astra", "gpt-6.1-terra", "gpt-6-sol", "gpt-6-luna"]
         );
         let luna_index = slugs.iter().position(|slug| *slug == "gpt-6-luna");
         let legacy_sol_index = slugs.iter().position(|slug| *slug == "gpt-5.6-sol");
@@ -682,6 +684,7 @@
             display_name: model_id.to_string(),
             reasoning_efforts: None,
             default_reasoning_effort: None,
+            ultra_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         })
@@ -807,6 +810,7 @@
                 display_name: "Custom Model A".to_string(),
                 reasoning_efforts: None,
                 default_reasoning_effort: None,
+                ultra_reasoning_effort: None,
                 context_window: None,
                 auto_compact_token_limit: None,
             },
@@ -815,6 +819,7 @@
                 display_name: "Custom Model B".to_string(),
                 reasoning_efforts: None,
                 default_reasoning_effort: None,
+                ultra_reasoning_effort: None,
                 context_window: None,
                 auto_compact_token_limit: None,
             },
@@ -835,6 +840,7 @@
             display_name: "GPT-5.6 Reserve".to_string(),
             reasoning_efforts: None,
             default_reasoning_effort: None,
+            ultra_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         });
@@ -883,6 +889,7 @@
             display_name: "Custom Reasoning Model".to_string(),
             reasoning_efforts: Some(vec!["low".to_string(), "high".to_string()]),
             default_reasoning_effort: None,
+            ultra_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         }];
@@ -926,6 +933,7 @@
             display_name: "5.6 Sol".to_string(),
             reasoning_efforts: None,
             default_reasoning_effort: None,
+            ultra_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         }];
@@ -1019,6 +1027,7 @@
             display_name: "Sol".into(),
             reasoning_efforts: None,
             default_reasoning_effort: None,
+            ultra_reasoning_effort: None,
             context_window: Some(800_000),
             auto_compact_token_limit: Some(700_000),
         };
@@ -1062,7 +1071,7 @@
         ] {
             let definition = CodexExperimentalModelDefinition {
                 model_id: "custom-model".into(), display_name: "Custom".into(),
-                reasoning_efforts: None, default_reasoning_effort: None, context_window: window, auto_compact_token_limit: compact,
+                reasoning_efforts: None, default_reasoning_effort: None, ultra_reasoning_effort: None, context_window: window, auto_compact_token_limit: compact,
             };
             assert_eq!(super::normalize_experimental_model_definitions(vec![definition]).unwrap_err(), error);
         }
@@ -1071,7 +1080,7 @@
         let derived = super::normalize_experimental_model_definitions(vec![
             CodexExperimentalModelDefinition {
                 model_id: "custom-model".into(), display_name: "Custom".into(),
-                reasoning_efforts: None, default_reasoning_effort: None, context_window: Some(516_000),
+                reasoning_efforts: None, default_reasoning_effort: None, ultra_reasoning_effort: None, context_window: Some(516_000),
                 auto_compact_token_limit: None,
             },
         ])
@@ -1089,6 +1098,7 @@
             display_name: "Custom Model".to_string(),
             reasoning_efforts: None,
             default_reasoning_effort: None,
+            ultra_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         }];
@@ -1109,6 +1119,7 @@
             display_name: "GPT-5.6 Reserve".to_string(),
             reasoning_efforts: None,
             default_reasoning_effort: None,
+            ultra_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         });
@@ -1141,6 +1152,7 @@
             display_name: "Custom Model".to_string(),
             reasoning_efforts: None,
             default_reasoning_effort: None,
+            ultra_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         }];
@@ -1174,6 +1186,7 @@
             display_name: "Custom Model".to_string(),
             reasoning_efforts: None,
             default_reasoning_effort: None,
+            ultra_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         }];
@@ -1531,6 +1544,7 @@
             display_name: String::new(),
             reasoning_efforts: Some(vec!["not-a-real-effort".to_string()]),
             default_reasoning_effort: None,
+            ultra_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         }];

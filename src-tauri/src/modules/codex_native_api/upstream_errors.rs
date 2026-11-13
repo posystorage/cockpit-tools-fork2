@@ -50,7 +50,8 @@ pub(crate) fn request_fault(status: u16, body: &Value) -> bool {
     if codes.iter().any(|code| {
         matches!(
             code.as_str(),
-            "cyber_policy"
+            "image_generation_user_error"
+                | "cyber_policy"
                 | "context_length_exceeded"
                 | "message_too_big"
                 | "string_above_max_length"
@@ -323,7 +324,7 @@ pub(super) fn chat_failure(value: &Value, fallback: u16) -> Option<ServiceError>
     {
         return None;
     }
-    let status = [
+    let mut status = [
         "/status",
         "/status_code",
         "/error/status",
@@ -352,6 +353,7 @@ pub(super) fn chat_failure(value: &Value, fallback: u16) -> Option<ServiceError>
                 401
             }
             "account_deactivated" | "account_suspended" => 403,
+            "image_generation_user_error" => 400,
             code if super::chatgpt_plan_wire::error_status(code).is_some() => {
                 super::chatgpt_plan_wire::error_status(code).unwrap()
             }
@@ -366,6 +368,7 @@ pub(super) fn chat_failure(value: &Value, fallback: u16) -> Option<ServiceError>
             }
         }
     });
+    if super::transient_rate_limit::applies(value) { status = 429; }
     let (message, scope) = super::diagnostics::upstream_error_metadata_status(status, value);
     let extracted = super::diagnostics::error_object(value);
     let details = (!std::ptr::eq(extracted, value) && extracted.is_object())

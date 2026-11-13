@@ -11,6 +11,7 @@ import { CodebuddyIcon } from '../icons/CodebuddyIcon';
 import { QoderIcon } from '../icons/QoderIcon';
 import { TraeCnIcon, TraeIcon, TraeSoloCnIcon, TraeSoloIcon } from '../icons/TraeIcon';
 import { WorkbuddyIcon } from '../icons/WorkbuddyIcon';
+import { MinimaxCodeIcon } from '../icons/MinimaxCodeIcon';
 import { ZedIcon } from '../icons/ZedIcon';
 import { ZcodeIcon } from '../icons/ZcodeIcon';
 import { ManualHelpIconButton } from '../ManualHelpIconButton';
@@ -31,6 +32,7 @@ export type PlatformOverviewTab =
   | 'sessions'
   | 'providers'
   | 'proxy'
+  | 'quota-history'
   | 'top-layout';
 export type PlatformOverviewHeaderId =
   | 'codex'
@@ -49,7 +51,8 @@ export type PlatformOverviewHeaderId =
   | 'trae_solo'
   | 'trae_cn'
   | 'trae_solo_cn'
-  | 'workbuddy';
+  | 'workbuddy'
+  | 'minimaxcode';
 
 interface PlatformOverviewTabsHeaderProps<T extends string> {
   platform: PlatformOverviewHeaderId;
@@ -125,7 +128,7 @@ const CONFIGS: Record<PlatformOverviewHeaderId, PlatformOverviewConfig> = {
     overviewIcon: <TraeIcon className="tab-icon" />,
   },
   trae_solo: {
-    platformLabel: 'TRAE SOLO',
+    platformLabel: 'TraeWork',
     overviewIcon: <TraeSoloIcon className="tab-icon" />,
   },
   trae_cn: {
@@ -133,12 +136,16 @@ const CONFIGS: Record<PlatformOverviewHeaderId, PlatformOverviewConfig> = {
     overviewIcon: <TraeCnIcon className="tab-icon" />,
   },
   trae_solo_cn: {
-    platformLabel: 'TRAE SOLO CN',
+    platformLabel: 'TraeWork CN',
     overviewIcon: <TraeSoloCnIcon className="tab-icon" />,
   },
   workbuddy: {
     platformLabel: 'WorkBuddy',
     overviewIcon: <WorkbuddyIcon className="tab-icon" />,
+  },
+  minimaxcode: {
+    platformLabel: 'MiniMax Code',
+    overviewIcon: <MinimaxCodeIcon className="tab-icon" />,
   },
 };
 

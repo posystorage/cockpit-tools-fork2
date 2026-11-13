@@ -58,7 +58,7 @@ function harness({ compat = false, hide = false } = {}) {
     setQueryData(key, next) { const target = key[1] === 'image-generation' ? image : query;
       target.state.data = typeof next === 'function' ? next(target.state.data) : next; } };
   const setter = client.setQueryData;
-  const root = { URL, module: { exports: {} }, setTimeout: () => 1, clearTimeout() {},
+  const root = { URL, AbortSignal, module: { exports: {} }, setTimeout: () => 1, clearTimeout() {},
     __cockpitEnhancements: { apiService: true, quotaCompat: compat, apiKeyAuthVerified: false,
       nativeFast: false, nativePatchState: 'active', nativePatchMode: 'full',
       nativePatchFeatures: `0${Number(compat)}01`, nativePatchRequestedFeatures: `0${Number(compat)}01` },

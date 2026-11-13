@@ -53,3 +53,19 @@ junction = "2.0"
 # Backport only the upstream Windows input-lock fix; see vendor/tao/COCKPIT-PATCH.md.
 [patch.crates-io]
 tao = { path = "vendor/tao" }
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package.cockpit-tools]
+# Keep macOS rebuilds from retaining a fresh set of .rcgu.o files (rust-lang/rust#161824).
+split-debuginfo = "packed"
+
+[profile.ci]
+inherits = "release"
+opt-level = 0
+debug = 0
+lto = "off"
+codegen-units = 256
+incremental = false
+panic = "abort"

@@ -1,3 +1,4 @@
+import { hydrateDurableUiSettings, previewDurableUiSetting, readDurableUiSetting, saveDurableUiSetting } from "./durableUiSettings";
 import { getCodexAccountQuotaError } from "./codexProxyRuntimeError";
 import type { TFunction } from "i18next";
 import type { CodexAccount } from "../types/codex";
@@ -13,13 +14,18 @@ import type { CodexAccountGroup } from "../services/codexAccountGroupService";
 import { splitValidityFilterValues } from "./accountValidityFilter";
 import { compareCurrentAccountFirst } from "./currentAccountSort";
 import {
-  isCodexClientReauthNoticeOnly,
+  isCodexApiUsableReauthNotice,
   isCodexRefreshTokenReusedAccount,
 } from "./codexSwitchAuthFailure";
-import { normalizeAccountsOverviewScope } from "./accountsOverviewFilterPersistence";
+import {
+  normalizeAccountsOverviewScope,
+  readAccountsOverviewFilterField,
+  saveAccountsOverviewFilterField,
+} from "./accountsOverviewFilterPersistence";
 import {
   persistUserMemoryList,
   readUserMemoryList,
+  restoreUserMemoryList,
   USER_MEMORY_LISTS,
 } from "./userMemory";
 
@@ -56,8 +62,9 @@ export const CODEX_OVERVIEW_FILTER_FIELDS = {
   sortDirection: "sort_direction",
 } as const;
 
-const CODEX_CUSTOM_SORT_ACTIVE_KEY =
+export const CODEX_CUSTOM_SORT_ACTIVE_KEY =
   "agtools.codex.accounts.custom_sort_active.v1";
+export const CODEX_CUSTOM_SORT_RESTORED_EVENT = "codex:custom-sort-restored";
 
 export type CodexOverviewSortDirection = "asc" | "desc";
 
@@ -267,7 +274,7 @@ export function buildCodexOverviewSortOptions(
     },
     {
       value: "custom",
-      label: t("codex.sort.custom", "自定义顺序"),
+      label: t("common.shared.sort.custom"),
     },
   ];
 }
@@ -303,7 +310,7 @@ export function isCodexOverviewAccountAbnormal(
   if (isCodexRefreshTokenReusedAccount(account)) return false;
   // refresh_token 失效只影响官方客户端切号。只要 access_token 仍在 API
   // 服务的安全有效期内，该账号就仍是可用账号，不应计入“授权失败”。
-  if (isCodexClientReauthNoticeOnly(account)) return false;
+  if (isCodexApiUsableReauthNotice(account)) return false;
   if (account.requires_reauth === true) return true;
 
   const rawMessage = getCodexAccountQuotaError(account.quota_error)?.message?.trim() ?? "";
@@ -564,17 +571,25 @@ export function writeCodexCustomSortOrder(accountIds: string[]): void {
 }
 
 export function readCodexCustomSortActive(): boolean {
-  try {
-    return localStorage.getItem(CODEX_CUSTOM_SORT_ACTIVE_KEY) === "1";
-  } catch {
-    return false;
-  }
+  return readDurableUiSetting(CODEX_CUSTOM_SORT_ACTIVE_KEY) === "1";
 }
 
 export function writeCodexCustomSortActive(active: boolean): void {
-  try {
-    localStorage.setItem(CODEX_CUSTOM_SORT_ACTIVE_KEY, active ? "1" : "0");
-  } catch {
-    // ignore persistence failures
+  const value = active ? "1" : "0";
+  if (readDurableUiSetting(CODEX_CUSTOM_SORT_ACTIVE_KEY) !== value) {
+    previewDurableUiSetting(CODEX_CUSTOM_SORT_ACTIVE_KEY, value);
   }
+}
+
+export async function restoreCodexCustomSortOrder(accountIds: string[], active: boolean): Promise<void> {
+  await hydrateDurableUiSettings();
+  await restoreUserMemoryList(USER_MEMORY_LISTS.codexCustomSort, accountIds);
+  const savedSort = readAccountsOverviewFilterField<string>(
+    CODEX_OVERVIEW_FILTER_SCOPE, CODEX_OVERVIEW_FILTER_FIELDS.sortBy, "created_at",
+  );
+  const sortBy = active ? "custom" : savedSort === "custom" ? "created_at" : savedSort;
+  await saveAccountsOverviewFilterField(CODEX_OVERVIEW_FILTER_SCOPE, CODEX_OVERVIEW_FILTER_FIELDS.sortBy, sortBy);
+  // Imports must surface failures instead of reporting that the mode was restored.
+  await saveDurableUiSetting(CODEX_CUSTOM_SORT_ACTIVE_KEY, active ? "1" : "0", true);
+  window.dispatchEvent(new Event(CODEX_CUSTOM_SORT_RESTORED_EVENT));
 }

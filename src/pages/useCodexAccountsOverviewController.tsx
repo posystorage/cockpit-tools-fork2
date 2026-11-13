@@ -1,12 +1,14 @@
+import { formatOpenAIUsageMoney, currentOpenAIUsageState, isOpenAIOfficialUsageAccount } from "../utils/openaiOfficialUsage";
 import { codexOverviewMutableAccountIds } from "../utils/chatgptPlanOverview";
 import { resolveCodexAccountDisplayName } from "../utils/codexAccountDisplayName";
-import { useEffect, useMemo, useCallback, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useCallback, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { RefreshCw, RotateCw } from "lucide-react";
 import { CodexResetCreditExpiry } from '../components/CodexResetCreditExpiry';
+import { CodexResetAutomationStatus } from '../components/codex/CodexResetAutomation';
 import * as codexService from "../services/codexService";
 import * as codexLocalAccessService from "../services/codexLocalAccessService";
 import { type CodexAccountGroup } from "../services/codexAccountGroupService";
-import { hasCodexAccountStructure, hasCodexAccountName, isCodexApiKeyAccount, isCodexChatgptPlanAccount, isCodexAgentIdentityAccount, isCodexNewApiAccount, isCodexTeamLikePlan } from "../types/codex";
+import { hasCodexAccountStructure, hasCodexAccountName, isCodexApiKeyAccount, isCodexChatgptPlanAccount, isCodexAgentIdentityAccount, isCodexWebSessionAccount, isCodexNewApiAccount, isCodexTeamLikePlan } from "../types/codex";
 import { summarizeCodexQuotaErrorMessage } from "../utils/codexQuotaError";
 import { buildCodexAccountPresentation } from "../presentation/platformAccountPresentation";
 import { formatCodexWindowStatsText } from "../utils/codexWindowStats";
@@ -19,7 +21,7 @@ import { useEnterConfirm } from "../hooks/useEnterConfirm";
 import type { CodexAccount } from "../types/codex";
 import { CODEX_LOCAL_ACCESS_STATUS_KEYS, resolveCodexLocalAccessRuntimeStatus } from "../utils/codexLocalAccessStatus";
 import { CODEX_API_SERVICE_BIND_ID } from "../types/instance";
-import { createCodexOverviewAccountComparator, filterAndSortCodexOverviewAccounts } from "../utils/codexAccountOverview";
+import { createCodexOverviewAccountComparator, filterAndSortCodexOverviewAccounts, writeCodexCustomSortActive, writeCodexCustomSortOrder } from "../utils/codexAccountOverview";
 import { buildPaginatedGroups, buildPaginationPageSizeStorageKey, isEveryIdSelected, usePagination } from "../hooks/usePagination";
 import { formatCockpitApiInteger, formatCockpitApiTokenCount, getCodexAccountNoteTitle, isPendingOAuthCodexAccount, resolveApiKeyUsageMode, shouldAutoHideBatchDeleteJob } from "./codexAccountsControllerModel";
 import type { useCodexAccountsBaseController } from "./useCodexAccountsBaseController";
@@ -64,7 +66,7 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
   | "handleAddLocalAccessAccount"
   | "handleExportByIds"
   | "handleHideLocalAccessEntry"
-  | "handleKillLocalAccessPort"
+  | "openLocalAccessPortRecovery"
   | "handleLaunchCodexCli"
   | "handleLaunchLocalAccessCli"
   | "handleQuickRefreshLocalAccessQuota"
@@ -129,6 +131,7 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
   | "setRefreshingGroupId"
   | "setSelected"
   | "setShowCustomSortModal"
+  | "showCustomSortModal"
   | "setSortBy"
   | "showAdditionalQuota"
   | "showCodeReviewQuota"
@@ -178,7 +181,7 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
     handleAddLocalAccessAccount,
     handleExportByIds,
     handleHideLocalAccessEntry,
-    handleKillLocalAccessPort,
+    openLocalAccessPortRecovery,
     handleLaunchCodexCli,
     handleLaunchLocalAccessCli,
     handleQuickRefreshLocalAccessQuota,
@@ -243,6 +246,7 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
     setRefreshingGroupId,
     setSelected,
     setShowCustomSortModal,
+    showCustomSortModal,
     setSortBy,
     showAdditionalQuota,
     showCodeReviewQuota,
@@ -321,7 +325,10 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
         const providerName = isApiKey
           ? resolveApiProviderDisplayName(account)
           : "";
-        const usage = isApiKey ? apiKeyUsageMap[account.id]?.summary : undefined;
+        const usageProvider = resolveUsageProviderForApiKeyAccount(account);
+        const usage = isApiKey ? (isOpenAIOfficialUsageAccount(account, usageProvider?.baseUrl)
+          ? currentOpenAIUsageState(usageProvider, account.openai_api_key ?? '', apiKeyUsageMap[account.id])
+          : apiKeyUsageMap[account.id])?.summary : undefined;
         const useTodayUsage =
           usage?.todayRequests != null ||
           usage?.todayTotalTokens != null ||
@@ -348,12 +355,10 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
                 .join(" · "),
           statusLabel: account.requires_reauth
             ? t("codex.authError.badge", "授权异常")
-            : account.client_auth_status === "login_required"
-              ? t("codex.switchAuth.apiOnlyBadge", "客户端需授权")
-              : overviewCurrentAccountId === account.id
+            : overviewCurrentAccountId === account.id
                 ? t("codex.current", "当前")
                 : undefined,
-          statusTone: account.requires_reauth || account.client_auth_status === "login_required"
+          statusTone: account.requires_reauth
             ? "warning"
             : overviewCurrentAccountId === account.id
               ? "success"
@@ -417,7 +422,7 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
                       : null,
                   cost:
                     cost != null
-                      ? formatApiKeyUsageMoney(cost, usage.unit)
+                      ? usage.mode === 'openai_official' ? formatOpenAIUsageMoney(cost) : formatApiKeyUsageMoney(cost, usage.unit)
                       : null,
                   extraLabel: usage.planName
                     ? t("codex.modelProviders.usage.fields.planName", "订阅")
@@ -426,7 +431,7 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
                 }
               : null,
           tags: account.tags,
-          footerText: formatDate(account.created_at),
+          footerText: account.last_used > 0 ? formatDate(account.last_used) : '—',
         };
       },
       [
@@ -435,6 +440,7 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
         overviewCurrentAccountId,
         resolveAccountMeta,
         resolveApiProviderDisplayName,
+        resolveUsageProviderForApiKeyAccount,
         resolvePresentation,
         resolveSubscriptionPresentation,
         showAdditionalQuota,
@@ -486,7 +492,7 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
       if (
         subscription &&
         !isPendingOAuthCodexAccount(account) &&
-        (subscription.bucket === "missing" || subscription.bucket === "expired")
+        subscription.bucket !== "access_token_only"
       ) {
         actions.push({
           id: "subscription",
@@ -786,6 +792,7 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
             plan_high_first: "planHighFirst",
             plan_low_first: "planLowFirst",
             expiry_soon_first: "expirySoonFirst",
+            five_hour_reset_soon_first: "fiveHourResetSoonFirst",
             custom: "custom",
           }[routingStrategy] ?? "auto";
         const requestCount = totals?.requestCount ?? 0;
@@ -988,13 +995,13 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
         if (localAccessState?.lastError) {
           actions.push({
             id: "clear-port",
-            label: t("codex.localAccess.killPortAction", "清理端口"),
+            label: t("codex.localAccess.portRecoveryTitle"),
             description: summarizeCodexQuotaErrorMessage(
               localAccessState.lastError,
             ),
-            actionLabel: t("codex.localAccess.killPortAction", "清理端口"),
+            actionLabel: t("codex.localAccess.portRecoveryTitle"),
             onAction: async () => {
-              await handleKillLocalAccessPort();
+              openLocalAccessPortRecovery();
             },
           });
         }
@@ -1200,6 +1207,7 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
       () => customSortAccounts.map((account) => account.id),
       [customSortAccounts],
     );
+    const draggedOrder = useRef<string[] | null>(null);
     const moveCustomSortAccount = useCallback(
       (accountId: string, direction: "up" | "down") => {
         const currentIndex = customSortAccountIds.indexOf(accountId);
@@ -1211,10 +1219,15 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
         const [moved] = next.splice(currentIndex, 1);
         next.splice(targetIndex, 0, moved);
         setCustomSortOrder(next);
+        writeCodexCustomSortOrder(next);
       },
       [customSortAccountIds],
     );
     const stopCustomSortDragging = useCallback(() => {
+      if (draggedOrder.current) {
+        writeCodexCustomSortOrder(draggedOrder.current);
+        draggedOrder.current = null;
+      }
       setDraggedCustomSortAccountId(null);
       setCustomSortDropTargetId(null);
     }, []);
@@ -1244,16 +1257,30 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
         const next = [...customSortAccountIds];
         const [moved] = next.splice(fromIndex, 1);
         next.splice(toIndex, 0, moved);
+        draggedOrder.current = next;
         setCustomSortOrder(next);
       },
       [customSortAccountIds, draggedCustomSortAccountId],
     );
     const resetCustomSortOrder = useCallback(() => {
-      setCustomSortOrder(overviewAccounts.map((account) => account.id));
+      const next = overviewAccounts.map((account) => account.id);
+      setCustomSortOrder(next);
+      writeCodexCustomSortOrder(next);
     }, [overviewAccounts]);
+    useEffect(() => {
+      if (!showCustomSortModal || !draggedCustomSortAccountId) return;
+      window.addEventListener("mouseup", stopCustomSortDragging);
+      return () => window.removeEventListener("mouseup", stopCustomSortDragging);
+    }, [showCustomSortModal, draggedCustomSortAccountId, stopCustomSortDragging]);
+
+    useEffect(() => {
+      if (!showCustomSortModal) stopCustomSortDragging();
+    }, [showCustomSortModal, stopCustomSortDragging]);
+
     const handleSortByChange = useCallback(
       (value: string) => {
         setSortBy(value);
+        writeCodexCustomSortActive(value === "custom");
         if (value === "custom") {
           setShowCustomSortModal(true);
         }
@@ -1656,20 +1683,21 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
   
       const creditDetails = getResetCreditDetails(account);
       const availableCount = getResetCreditsAvailable(account);
-      if (availableCount == null && creditDetails.length === 0) return null;
   
       const displayCount =
         availableCount ?? creditDetails.filter(isAvailableResetCredit).length;
       const isResetting = resettingResetCreditAccountId === account.id;
       const isDisabled = isResetting;
       if (mode === 'expiry') {
-        return displayCount > 0 ? (
+        return (
           <div className="codex-account-reset-expiry-line">
-            <CodexResetCreditExpiry key={account.id} accountId={account.id} quota={account.quota}
+            {displayCount > 0 ? <CodexResetCreditExpiry key={account.id} accountId={account.id} quota={account.quota}
               disabled={isDisabled} onClick={() => openResetCreditConfirmModal(account)} />
+              : <span className="reset-automation-hint">{t(availableCount === 0 ? 'codex.resetAutomation.noCredits' : 'codex.quota.resetCreditTimeUnknown')}</span>}
           </div>
-        ) : null;
+        );
       }
+      if (availableCount == null && creditDetails.length === 0) return null;
       const titleText =
         displayCount > 0
           ? buildResetCreditsTitle(account, displayCount)
@@ -1692,6 +1720,7 @@ export function useCodexAccountsOverviewController(context: Pick<ReturnType<type
               <RotateCw size={13} />
             )}
             {t("codex.quota.resetCredits", { count: displayCount })}
+            {!isCodexWebSessionAccount(account) && <CodexResetAutomationStatus accountId={account.id} />}
           </button>
         </div>
       );

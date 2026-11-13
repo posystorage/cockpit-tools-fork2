@@ -14,6 +14,8 @@ import { StartupPageSetting } from "./settings/StartupPageSetting";
 import { ThemeColorSetting } from './settings/ThemeColorSetting';
 import { AppBackgroundSettings } from './settings/AppBackgroundSettings';
 import { SettingsCodexPlatformPanel } from "./SettingsCodexPlatformPanel";
+import { PlatformSettingsSection } from "./settings/PlatformSettingsSection";
+import { useUiConfigStore } from "../stores/useUiConfigStore";
 
 
 /** 渲染 SettingsPageView 的 activeTab === 'general' 业务面板。 */
@@ -21,6 +23,7 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
   const {
     antigravityAccountGroups,
     antigravityAppPath,
+    antigravityLegacyAppPath,
     antigravityDualSwitchNoRestartEnabled,
     antigravityLaunchOnSwitch,
     antigravityScopeAccounts,
@@ -162,6 +165,7 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
     sanitizeNumberInput,
     saveGrokCliPath,
     setAntigravityAppPath,
+    setAntigravityLegacyAppPath,
     setAntigravityDualSwitchNoRestartEnabled,
     setAntigravityLaunchOnSwitch,
     setAppAutoLaunchEnabled,
@@ -225,6 +229,7 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
     setGrokQuotaAlertThreshold,
     setGrokSyncOfficialAuthOnSwitch,
     setHideDockIcon,
+    setShowTrayIcon,
     setKiroAppPath,
     setKiroAutoRefresh,
     setKiroAutoRefreshCustomMode,
@@ -341,6 +346,7 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
     traeSoloQuotaAlertThresholdCustomMode,
     traeSoloQuotaAlertThresholdIsPreset,
     trayIconStyle,
+    showTrayIcon,
     uiScale,
     updateRemindersEnabled,
     updateRemindersLoaded,
@@ -365,6 +371,20 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
     workbuddyQuotaAlertThresholdCustomMode,
     workbuddyQuotaAlertThresholdIsPreset,
     workbuddyShareSessionsOnSwitch,
+    minimaxCodeAppPath,
+    minimaxCodeAutoRefresh,
+    minimaxCodeAutoRefreshCustomMode,
+    minimaxCodeAutoRefreshIsPreset,
+    minimaxCodeQuotaAlertEnabled,
+    minimaxCodeQuotaAlertThreshold,
+    minimaxCodeQuotaAlertThresholdCustomMode,
+    minimaxCodeQuotaAlertThresholdIsPreset,
+    setMinimaxCodeAppPath,
+    setMinimaxCodeAutoRefresh,
+    setMinimaxCodeAutoRefreshCustomMode,
+    setMinimaxCodeQuotaAlertEnabled,
+    setMinimaxCodeQuotaAlertThreshold,
+    setMinimaxCodeQuotaAlertThresholdCustomMode,
     zcodeAppPath,
     zcodeAutoRefresh,
     zcodeAutoRefreshCustomMode,
@@ -378,6 +398,8 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
     zedQuotaAlertThresholdCustomMode,
     zedQuotaAlertThresholdIsPreset,
   } = props;
+
+  const { timeDisplayMode, setTimeDisplayMode } = useUiConfigStore();
   return (
           <>
           {(generalLoadFailed || updateSettingsLoadFailed) && (
@@ -531,7 +553,9 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                     onChange={(e) => setCloseBehavior(e.target.value as 'ask' | 'minimize' | 'quit')}
                   >
                     <option value="ask">{t('settings.general.closeBehaviorAsk')}</option>
-                    <option value="minimize">{t('settings.general.closeBehaviorMinimize')}</option>
+                    <option value="minimize">
+                      {t(showTrayIcon ? 'settings.general.closeBehaviorMinimize' : 'closeDialog.minimizeWindow')}
+                    </option>
                     <option value="quit">{t('settings.general.closeBehaviorQuit')}</option>
                   </select>
                 </div>
@@ -587,6 +611,23 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
 
               <div className="settings-row">
                 <div className="row-label">
+                  <div className="row-title">{t('settings.general.timeDisplayMode', '时间显示')}</div>
+                  <div className="row-desc">{t('settings.general.timeDisplayModeDesc', '账号卡片与列表中的时间区域显示内容（默认切换时间）')}</div>
+                </div>
+                <div className="row-control">
+                  <select
+                    className="settings-select"
+                    value={timeDisplayMode}
+                    onChange={(e) => setTimeDisplayMode(e.target.value as "switch" | "refresh")}
+                  >
+                    <option value="switch">{t('accounts.lastSwitchTime', '切换时间')}</option>
+                    <option value="refresh">{t('accounts.refreshTime', '刷新时间')}</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="settings-row">
+                <div className="row-label">
                   <div className="row-title">{t('settings.general.autoUpdate')}</div>
                   <div className="row-desc">{t('settings.general.autoUpdateDesc')}</div>
                 </div>
@@ -627,6 +668,24 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                 </div>
               </div>
 
+              <div className="settings-row">
+                <div className="row-label">
+                  <div className="row-title">{t('settings.general.showTrayIcon')}</div>
+                  <div className="row-desc">{t('settings.general.showTrayIconDesc')}</div>
+                </div>
+                <div className="row-control">
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      aria-label={t('settings.general.showTrayIcon')}
+                      checked={showTrayIcon}
+                      onChange={(event) => setShowTrayIcon(event.target.checked)}
+                    />
+                    <span className="slider"></span>
+                  </label>
+                </div>
+              </div>
+
               {isMacOS && (
                 <>
                   <div className="settings-row">
@@ -644,7 +703,8 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                     <div className="row-control">
                       <select
                         className="settings-select"
-                        value={hideDockIcon ? 'true' : 'false'}
+                        value={showTrayIcon && hideDockIcon ? 'true' : 'false'}
+                        disabled={!showTrayIcon}
                         onChange={(e) => setHideDockIcon(e.target.value === 'true')}
                       >
                         <option value="false">
@@ -673,6 +733,7 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                       <select
                         className="settings-select"
                         value={trayIconStyle}
+                        disabled={!showTrayIcon}
                         onChange={(e) =>
                           setTrayIconStyle(e.target.value === 'color' ? 'color' : 'template')
                         }
@@ -693,7 +754,7 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                         {t('settings.general.menuBarQuota', '菜单栏显示实时额度')}
                       </div>
                       <div className="row-desc">
-                        {menuBarQuotaEnabled
+                        {showTrayIcon && menuBarQuotaEnabled
                           ? t(
                               'settings.general.menuBarQuotaEnabledDesc',
                               '已启用 · {{platform}} · 显示该平台当前账号剩余额度（多条取最低）',
@@ -713,7 +774,8 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                     <div className="row-control">
                       <select
                         className="settings-select"
-                        value={menuBarQuotaEnabled ? 'true' : 'false'}
+                        value={showTrayIcon && menuBarQuotaEnabled ? 'true' : 'false'}
+                        disabled={!showTrayIcon}
                         onChange={(e) => {
                           if (e.target.value === 'true') {
                             openMenuBarQuotaModal(menuBarQuotaEnabled ? 'edit' : 'enable');
@@ -725,7 +787,7 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                         <option value="false">{t('common.disable', '停用')}</option>
                         <option value="true">{t('common.enable', '启用')}</option>
                       </select>
-                      {menuBarQuotaEnabled ? (
+                      {showTrayIcon && menuBarQuotaEnabled ? (
                         <button
                           type="button"
                           className="btn btn-secondary"
@@ -1028,7 +1090,7 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
               </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <div style={{ order: platformSettingsOrder.antigravity }}>
+              <PlatformSettingsSection platformId={'antigravity'} order={platformSettingsOrder.antigravity}>
                 <div className="group-title">{t('settings.general.antigravitySettingsTitle', 'Antigravity IDE 设置')}</div>
                 <div className="settings-group">
               <div className="settings-row">
@@ -1145,40 +1207,45 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                 </div>
               </div>
 
-	              <div className="settings-row">
-	                <div className="row-label">
-	                  <div className="row-title">{t('settings.general.antigravityAppPath', 'Antigravity IDE 启动路径')}</div>
-                  <div className="row-desc">{t('settings.general.codexAppPathDesc', '留空则使用默认路径')}</div>
-                </div>
-                <div className="row-control row-control--grow">
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1 }}>
-                    <input
-                      type="text"
-                      className="settings-input settings-input--path"
-                      value={antigravityAppPath}
-                      placeholder={t('settings.general.codexAppPathPlaceholder', '默认路径')}
-                      onChange={(e) => setAntigravityAppPath(e.target.value)}
-                    />
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => handlePickAppPath('antigravity')}
-                      disabled={isAppPathResetDetecting('antigravity')}
-                    >
-                      {t('settings.general.codexPathSelect', '选择')}
-                    </button>
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => handleResetAppPath('antigravity')}
-                      disabled={isAppPathResetDetecting('antigravity')}
-                    >
-                      <RefreshCw size={16} className={isAppPathResetDetecting('antigravity') ? 'spin' : undefined} />
-                      {isAppPathResetDetecting('antigravity')
-                        ? t('common.loading', '加载中...')
-                        : getResetLabelByTarget('antigravity')}
-                    </button>
+              {([
+                ['antigravity_legacy', 'Antigravity', antigravityLegacyAppPath, setAntigravityLegacyAppPath],
+                ['antigravity', 'Antigravity IDE', antigravityAppPath, setAntigravityAppPath],
+              ] as const).map(([target, appName, path, setPath]) => (
+                <div className="settings-row" key={target}>
+                  <div className="row-label">
+                    <div className="row-title">{t('settings.general.antigravityAppPath', { appName })}</div>
+                    <div className="row-desc">{t('settings.general.codexAppPathDesc', '留空则使用默认路径')}</div>
+                  </div>
+                  <div className="row-control row-control--grow">
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1 }}>
+                      <input
+                        type="text"
+                        className="settings-input settings-input--path"
+                        value={path}
+                        placeholder={t('settings.general.codexAppPathPlaceholder', '默认路径')}
+                        onChange={(e) => setPath(e.target.value)}
+                      />
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => handlePickAppPath(target)}
+                        disabled={isAppPathResetDetecting(target)}
+                      >
+                        {t('settings.general.codexPathSelect', '选择')}
+                      </button>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => handleResetAppPath(target)}
+                        disabled={isAppPathResetDetecting(target)}
+                      >
+                        <RefreshCw size={16} className={isAppPathResetDetecting(target) ? 'spin' : undefined} />
+                        {isAppPathResetDetecting(target)
+                          ? t('common.loading', '加载中...')
+                          : getResetLabelByTarget(target)}
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
+              ))}
 
               {antigravitySeamlessSwitchUnlocked && (
                 <div className="settings-row">
@@ -1481,11 +1548,11 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
               )}
             </div>
 
-              </div>
+              </PlatformSettingsSection>
 
               <SettingsCodexPlatformPanel {...props} />
 
-              <div style={{ order: platformSettingsOrder.claude_manager }}>
+              <PlatformSettingsSection platformId={'claude_manager'} order={platformSettingsOrder.claude_manager}>
                 <div className="group-title">
                   {t('settings.general.claudeSettingsTitle', 'Claude 设置')}
                 </div>
@@ -1628,9 +1695,9 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                     isPreset: claudeQuotaAlertThresholdIsPreset,
                   })}
                 </div>
-              </div>
+              </PlatformSettingsSection>
 
-              <div style={{ order: platformSettingsOrder['github-copilot'] }}>
+              <PlatformSettingsSection platformId={'github-copilot'} order={platformSettingsOrder['github-copilot']}>
                 <div className="group-title">{t('settings.general.githubCopilotSettingsTitle', 'GitHub Copilot 设置')}</div>
                 <div className="settings-group">
               <div className="settings-row">
@@ -1816,9 +1883,9 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
               )}
             </div>
 
-              </div>
+              </PlatformSettingsSection>
 
-              <div style={{ order: platformSettingsOrder.windsurf }}>
+              <PlatformSettingsSection platformId={'windsurf'} order={platformSettingsOrder.windsurf}>
                 <div className="group-title">{t('settings.general.windsurfSettingsTitle', 'Windsurf 设置')}</div>
                 <div className="settings-group">
               <div className="settings-row">
@@ -2004,9 +2071,9 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
               )}
             </div>
 
-              </div>
+              </PlatformSettingsSection>
 
-              <div style={{ order: platformSettingsOrder.kiro }}>
+              <PlatformSettingsSection platformId={'kiro'} order={platformSettingsOrder.kiro}>
                 <div className="group-title">{t('settings.general.kiroSettingsTitle', 'Kiro 设置')}</div>
                 <div className="settings-group">
               <div className="settings-row">
@@ -2191,9 +2258,9 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                 </div>
               )}
             </div>
-              </div>
+              </PlatformSettingsSection>
 
-              <div style={{ order: platformSettingsOrder.codebuddy }}>
+              <PlatformSettingsSection platformId={'codebuddy'} order={platformSettingsOrder.codebuddy}>
                 <div className="group-title">{t('settings.general.codebuddySettingsTitle', 'CodeBuddy 设置')}</div>
                 <div className="settings-group">
               <div className="settings-row">
@@ -2403,9 +2470,9 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                 </div>
               )}
             </div>
-              </div>
+              </PlatformSettingsSection>
 
-              <div style={{ order: platformSettingsOrder.codebuddy_cn }}>
+              <PlatformSettingsSection platformId={'codebuddy_cn'} order={platformSettingsOrder.codebuddy_cn}>
                 <div className="group-title">{t('settings.general.codebuddyCnSettingsTitle', 'CodeBuddy CN 设置')}</div>
                 <div className="settings-group">
                   <div className="settings-row">
@@ -2600,9 +2667,9 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                     </div>
                   )}
                 </div>
-              </div>
+              </PlatformSettingsSection>
 
-              <div style={{ order: platformSettingsOrder.qoder }}>
+              <PlatformSettingsSection platformId={'qoder'} order={platformSettingsOrder.qoder}>
                 <div className="group-title">{t('quickSettings.qoder.title', 'Qoder 设置')}</div>
                 <div className="settings-group">
                   <div className="settings-row">
@@ -2791,9 +2858,9 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                     </div>
                   )}
                 </div>
-              </div>
+              </PlatformSettingsSection>
 
-              <div style={{ order: platformSettingsOrder.zcode }}>
+              <PlatformSettingsSection platformId={'zcode'} order={platformSettingsOrder.zcode}>
                 <div className="group-title">{t('quickSettings.zcode.title', 'ZCode 设置')}</div>
                 <div className="settings-group">
                   <div className="settings-row">
@@ -2909,9 +2976,9 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                     </div>
                   </div>
                 </div>
-              </div>
+              </PlatformSettingsSection>
 
-              <div style={{ order: platformSettingsOrder.trae }}>
+              <PlatformSettingsSection platformId={'trae'} order={platformSettingsOrder.trae}>
                 <div className="group-title">{t('quickSettings.trae.title', 'Trae 设置')}</div>
                 <div className="settings-group">
                   <div className="settings-row">
@@ -3122,15 +3189,15 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                     </div>
                   )}
                 </div>
-              </div>
+              </PlatformSettingsSection>
 
               {renderTraeVariantSettingsGroup({
                 target: 'trae_solo',
                 order: platformSettingsOrder.trae_solo,
                 titleKey: 'quickSettings.traeSolo.title',
-                titleDefault: 'TRAE SOLO 设置',
+                titleDefault: 'TraeWork 设置',
                 appPathTitleKey: 'settings.general.traeSoloAppPath',
-                appPathTitleDefault: 'TRAE SOLO 启动路径',
+                appPathTitleDefault: 'TraeWork 启动路径',
                 autoRefresh: traeSoloAutoRefresh,
                 setAutoRefresh: setTraeSoloAutoRefresh,
                 autoRefreshCustomMode: traeSoloAutoRefreshCustomMode,
@@ -3170,9 +3237,9 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                 target: 'trae_solo_cn',
                 order: platformSettingsOrder.trae_solo_cn,
                 titleKey: 'quickSettings.traeSoloCn.title',
-                titleDefault: 'TRAE SOLO CN 设置',
+                titleDefault: 'TraeWork CN 设置',
                 appPathTitleKey: 'settings.general.traeSoloCnAppPath',
-                appPathTitleDefault: 'TRAE SOLO CN 启动路径',
+                appPathTitleDefault: 'TraeWork CN 启动路径',
                 autoRefresh: traeSoloCnAutoRefresh,
                 setAutoRefresh: setTraeSoloCnAutoRefresh,
                 autoRefreshCustomMode: traeSoloCnAutoRefreshCustomMode,
@@ -3187,7 +3254,7 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                 quotaAlertThresholdIsPreset: traeSoloCnQuotaAlertThresholdIsPreset,
               })}
 
-              <div style={{ order: platformSettingsOrder.workbuddy }}>
+              <PlatformSettingsSection platformId={'workbuddy'} order={platformSettingsOrder.workbuddy}>
                 <div className="group-title">{t('quickSettings.workbuddy.title', 'WorkBuddy 设置')}</div>
                 <div className="settings-group">
                   <div className="settings-row">
@@ -3286,7 +3353,7 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
 
                   <div className="settings-row">
                     <div className="row-label">
-                      <div className="row-title">{t('settings.general.workbuddyAppPath', 'WorkBuddy 启动路径')}</div>
+                      <div className="row-title">{t('settings.general.workbuddyAppPath')}</div>
                       <div className="row-desc">{t('settings.general.workbuddyAppPathDesc', '留空则使用默认路径')}</div>
                     </div>
                     <div className="row-control row-control--grow">
@@ -3399,9 +3466,200 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                     </div>
                   )}
                 </div>
-              </div>
+              </PlatformSettingsSection>
 
-              <div style={{ order: platformSettingsOrder.zed }}>
+              <PlatformSettingsSection platformId={'minimaxcode'} order={platformSettingsOrder.minimaxcode}>
+                <div className="group-title">{t('quickSettings.minimaxCode.title', 'MiniMax Code 设置')}</div>
+                <div className="settings-group">
+                  <div className="settings-row">
+                    <div className="row-label">
+                      <div className="row-title">{t('settings.general.minimaxCodeAutoRefresh', 'MiniMax Code 自动刷新配额')}</div>
+                      <div className="row-desc">{t('settings.general.minimaxCodeAutoRefreshDesc', '后台自动更新频率')}</div>
+                    </div>
+                    <div className="row-control">
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        {minimaxCodeAutoRefreshCustomMode ? (
+                          <div className="settings-inline-input" style={{ minWidth: '120px', width: 'auto' }}>
+                            <input
+                              type="number"
+                              min={1}
+                              max={999}
+                              className="settings-select settings-select--input-mode settings-select--with-unit"
+                              value={minimaxCodeAutoRefresh}
+                              placeholder={t('quickSettings.inputMinutes', '输入分钟数')}
+                              onChange={(e) => setMinimaxCodeAutoRefresh(sanitizeNumberInput(e.target.value))}
+                              onBlur={() => {
+                                const normalized = normalizeNumberInput(minimaxCodeAutoRefresh, 1, 999);
+                                if (REFRESH_PRESET_VALUES.includes(normalized)) {
+                                  setMinimaxCodeAutoRefreshCustomMode(false);
+                                }
+                                setMinimaxCodeAutoRefresh(normalized);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  const normalized = normalizeNumberInput(minimaxCodeAutoRefresh, 1, 999);
+                                  setMinimaxCodeAutoRefreshCustomMode(false);
+                                  setMinimaxCodeAutoRefresh(normalized);
+                                }
+                              }}
+                            />
+                            <span className="settings-input-unit">{t('settings.general.minutes')}</span>
+                          </div>
+                        ) : (
+                          <select
+                            className="settings-select"
+                            style={{ minWidth: '120px', width: 'auto' }}
+                            value={minimaxCodeAutoRefresh}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === 'custom') {
+                                setMinimaxCodeAutoRefreshCustomMode(true);
+                                setMinimaxCodeAutoRefresh(minimaxCodeAutoRefresh !== '-1' ? minimaxCodeAutoRefresh : '1');
+                                return;
+                              }
+                              setMinimaxCodeAutoRefreshCustomMode(false);
+                              setMinimaxCodeAutoRefresh(val);
+                            }}
+                          >
+                            {!minimaxCodeAutoRefreshIsPreset && (
+                              <option value={minimaxCodeAutoRefresh}>
+                                {minimaxCodeAutoRefresh} {t('settings.general.minutes')}
+                              </option>
+                            )}
+                            <option value="-1">{t('settings.general.autoRefreshDisabled')}</option>
+                            <option value="2">2 {t('settings.general.minutes')}</option>
+                            <option value="5">5 {t('settings.general.minutes')}</option>
+                            <option value="10">10 {t('settings.general.minutes')}</option>
+                            <option value="15">15 {t('settings.general.minutes')}</option>
+                            <option value="custom">{t('settings.general.autoRefreshCustom')}</option>
+                          </select>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {renderCurrentAccountRefreshRow('minimaxcode')}
+                  {renderAccountLevelRefreshConfig('minimaxcode')}
+
+                  <div className="settings-row">
+                    <div className="row-label">
+                      <div className="row-title">{t('settings.general.minimaxCodeAppPath', 'MiniMax Code 启动路径')}</div>
+                      <div className="row-desc">{t('settings.general.minimaxCodeAppPathDesc', '留空则使用默认路径')}</div>
+                    </div>
+                    <div className="row-control row-control--grow">
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1 }}>
+                        <input
+                          type="text"
+                          className="settings-input settings-input--path"
+                          value={minimaxCodeAppPath}
+                          placeholder={t('settings.general.minimaxCodeAppPathPlaceholder', '默认路径')}
+                          onChange={(e) => setMinimaxCodeAppPath(e.target.value)}
+                        />
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => handlePickAppPath('minimaxcode')}
+                          disabled={isAppPathResetDetecting('minimaxcode')}
+                        >
+                          {t('settings.general.minimaxCodePathSelect', '选择')}
+                        </button>
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => handleResetAppPath('minimaxcode')}
+                          disabled={isAppPathResetDetecting('minimaxcode')}
+                        >
+                          <RefreshCw size={16} className={isAppPathResetDetecting('minimaxcode') ? 'spin' : undefined} />
+                          {isAppPathResetDetecting('minimaxcode')
+                            ? t('common.loading', '加载中...')
+                            : getResetLabelByTarget('minimaxcode')}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="settings-row">
+                    <div className="row-label">
+                      <div className="row-title">{t('quickSettings.quotaAlert.enable', '超额预警')}</div>
+                      <div className="row-desc">{t('quickSettings.quotaAlert.hint', '当当前账号任意模型配额低于阈值时，发送原生通知并在页面提示快捷切号。')}</div>
+                    </div>
+                    <div className="row-control">
+                      <label className="switch">
+                        <input
+                          type="checkbox"
+                          checked={minimaxCodeQuotaAlertEnabled}
+                          onChange={(e) => setMinimaxCodeQuotaAlertEnabled(e.target.checked)}
+                        />
+                        <span className="slider"></span>
+                      </label>
+                    </div>
+                  </div>
+                  {minimaxCodeQuotaAlertEnabled && (
+                    <div className="settings-row" style={{ animation: 'fadeUp 0.3s ease both' }}>
+                      <div className="row-label">
+                        <div className="row-title">{t('quickSettings.quotaAlert.threshold', '预警阈值')}</div>
+                        <div className="row-desc">{t('quickSettings.quotaAlert.thresholdDesc', '任意模型配额低于此百分比时触发预警')}</div>
+                      </div>
+                      <div className="row-control">
+                        {minimaxCodeQuotaAlertThresholdCustomMode ? (
+                          <div className="settings-inline-input">
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              className="settings-select settings-select--input-mode settings-select--with-unit"
+                              value={minimaxCodeQuotaAlertThreshold}
+                              placeholder={t('quickSettings.inputPercent', '输入百分比')}
+                              onChange={(e) => setMinimaxCodeQuotaAlertThreshold(sanitizeNumberInput(e.target.value))}
+                              onBlur={() => {
+                                const normalized = normalizeNumberInput(minimaxCodeQuotaAlertThreshold, 0, 100);
+                                if (THRESHOLD_PRESET_VALUES.includes(normalized)) {
+                                  setMinimaxCodeQuotaAlertThresholdCustomMode(false);
+                                }
+                                setMinimaxCodeQuotaAlertThreshold(normalized);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  const normalized = normalizeNumberInput(minimaxCodeQuotaAlertThreshold, 0, 100);
+                                  setMinimaxCodeQuotaAlertThresholdCustomMode(false);
+                                  setMinimaxCodeQuotaAlertThreshold(normalized);
+                                }
+                              }}
+                            />
+                            <span className="settings-input-unit">%</span>
+                          </div>
+                        ) : (
+                          <select
+                            className="settings-select"
+                            value={minimaxCodeQuotaAlertThreshold}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === 'custom') {
+                                setMinimaxCodeQuotaAlertThresholdCustomMode(true);
+                                setMinimaxCodeQuotaAlertThreshold(minimaxCodeQuotaAlertThreshold || '20');
+                                return;
+                              }
+                              setMinimaxCodeQuotaAlertThresholdCustomMode(false);
+                              setMinimaxCodeQuotaAlertThreshold(val);
+                            }}
+                          >
+                            {!minimaxCodeQuotaAlertThresholdIsPreset && (
+                              <option value={minimaxCodeQuotaAlertThreshold}>{minimaxCodeQuotaAlertThreshold}%</option>
+                            )}
+                            <option value="0">0%</option>
+                            <option value="20">20%</option>
+                            <option value="40">40%</option>
+                            <option value="60">60%</option>
+                            <option value="custom">{t('settings.general.autoRefreshCustom')}</option>
+                          </select>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </PlatformSettingsSection>
+
+              <PlatformSettingsSection platformId={'zed'} order={platformSettingsOrder.zed}>
                 <div className="group-title">{t('quickSettings.zed.title', 'Zed 设置')}</div>
                 <div className="settings-group">
                   <div className="settings-row">
@@ -3586,9 +3844,9 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                     </div>
                   )}
                 </div>
-              </div>
+              </PlatformSettingsSection>
 
-              <div style={{ order: platformSettingsOrder.cursor }}>
+              <PlatformSettingsSection platformId={'cursor'} order={platformSettingsOrder.cursor}>
                 <div className="group-title">{t('quickSettings.cursor.title', 'Cursor 设置')}</div>
                 <div className="settings-group">
               <div className="settings-row">
@@ -3773,8 +4031,8 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                 </div>
               )}
             </div>
-              </div>
-<div style={{ order: platformSettingsOrder.grok }}>
+              </PlatformSettingsSection>
+<PlatformSettingsSection platformId={'grok'} order={platformSettingsOrder.grok}>
                 <div className="group-title">{t('quickSettings.grok.title', 'Grok CLI 设置')}</div>
                 <div className="settings-group">
                   <div className="settings-row">
@@ -3968,7 +4226,7 @@ export function SettingsGeneralPanel(props: SettingsPageViewProps) {
                     </div>
                   )}
                 </div>
-              </div>
+              </PlatformSettingsSection>
             </div>
 
           </fieldset>

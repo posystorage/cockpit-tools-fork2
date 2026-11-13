@@ -87,6 +87,31 @@ test('builds a macOS target manifest from the raw Tauri updater archive', () => 
   assert.equal(manifest.signature, 'mac-signature');
 });
 
+test('draft manifests retain the actual beta tag and reject another application version', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cockpit-beta-manifest-'));
+  try {
+    const asset = 'Cockpit.Tools_1.3.82_x64-setup.exe';
+    fs.writeFileSync(path.join(root, asset), 'installer');
+    fs.writeFileSync(path.join(root, `${asset}.sig`), 'signature');
+    const notesFile = path.join(root, 'notes.md');
+    fs.writeFileSync(notesFile, 'Draft notes');
+    const options = {
+      version: '1.3.82', repo: 'posystorage/cockpit-tools-fork2', assetsDir: root,
+      notesFile, publishedAt: '2026-11-13T00:00:00Z', outputDir: path.join(root, 'output'),
+      targets: ['windows-x86_64-nsis'],
+    };
+    for (const releaseTag of ['1.3.82b1', '1.3.82', 'v1.3.82']) {
+      const [file] = buildTargetManifests({ ...options, releaseTag });
+      const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
+      assert.equal(manifest.version, '1.3.82');
+      assert.equal(manifest.url, `https://github.com/${options.repo}/releases/download/${releaseTag}/${asset}`);
+    }
+    for (const releaseTag of ['1.3.75b1', '1.3.82/other', 'v1.3.82b1']) {
+      assert.throws(() => buildTargetManifests({ ...options, releaseTag }), /tag must match/);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('rejects updater assets that bypass stable staging', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cockpit-target-manifest-'));
   const assetsDir = path.join(root, 'bundle');

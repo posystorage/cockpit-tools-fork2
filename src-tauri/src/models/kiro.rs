@@ -67,10 +67,15 @@ pub struct KiroAccount {
 
     pub created_at: i64,
     pub last_used: i64,
+    /// Last successful credential switch; absent for historical/imported accounts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_switched_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KiroAccountSummary {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query_identity: Option<crate::modules::account_query_identity::QueryIdentity>,
     pub id: String,
     pub email: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -83,15 +88,24 @@ pub struct KiroAccountSummary {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KiroAccountIndex {
+    #[serde(default)]
+    pub identity_revision: u64,
+    #[serde(default)]
+    pub identity_maintenance_version: u32,
     pub version: String,
     pub accounts: Vec<KiroAccountSummary>,
+    #[serde(skip)]
+    pub(crate) storage_revision: crate::modules::provider_account_index::Revision,
 }
 
 impl KiroAccountIndex {
     pub fn new() -> Self {
         Self {
+            identity_revision: 0,
+            identity_maintenance_version: 0,
             version: "1.0".to_string(),
             accounts: Vec::new(),
+            storage_revision: Default::default(),
         }
     }
 }
@@ -162,6 +176,7 @@ pub struct KiroOAuthCompletePayload {
 impl KiroAccount {
     pub fn summary(&self) -> KiroAccountSummary {
         KiroAccountSummary {
+            query_identity: Some(crate::modules::kiro_account::query_identity(self)),
             id: self.id.clone(),
             email: self.email.clone(),
             tags: self.tags.clone(),

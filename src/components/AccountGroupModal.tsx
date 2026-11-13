@@ -1,3 +1,5 @@
+import { ModalErrorMessage } from "./ModalErrorMessage";
+import { useDialogSession } from "../hooks/useDialogSession";
 /**
  * 账号分组管理弹窗
  * - 创建 / 重命名 / 删除分组
@@ -23,6 +25,7 @@ import { listAccounts } from '../services/accountService';
 import { getAntigravityTierBadge } from '../utils/account';
 import { SingleSelectDropdown } from './SingleSelectDropdown';
 import {
+  moveAccountsBetweenCodexGroups,
   setCodexGroupQuotaAutoRefreshMinutes,
   resolveCodexGroupQuotaAutoRefreshMinutes,
   normalizeCodexGroupQuotaAutoRefreshMinutes,
@@ -398,7 +401,7 @@ export const AccountGroupModal = ({
                     {/* 拖动手柄 */}
                     <div
                       className="group-drag-handle"
-                      title={t('accounts.groups.dragToSort', '按住拖动排序')}
+                      title={t('common.shared.sort.dragToReorder', '按住拖动排序')}
                     >
                       <GripVertical size={14} />
                     </div>
@@ -477,7 +480,7 @@ export const AccountGroupModal = ({
                             className="group-action-btn"
                             disabled={busy || loading || loadFailed || index === 0}
                             onClick={() => handleMove(index, 'up')}
-                            title={t('accounts.groups.moveUp', '上移')}
+                            title={t('common.shared.sort.moveUp', '上移')}
                           >
                             <ChevronUp size={14} />
                           </button>
@@ -486,7 +489,7 @@ export const AccountGroupModal = ({
                             className="group-action-btn"
                             disabled={busy || loading || loadFailed || index === groups.length - 1}
                             onClick={() => handleMove(index, 'down')}
-                            title={t('accounts.groups.moveDown', '下移')}
+                            title={t('common.shared.sort.moveDown', '下移')}
                           >
                             <ChevronDown size={14} />
                           </button>
@@ -604,13 +607,11 @@ export function UniversalGroupAccountPickerModal({
   const [error, setError] = useState('');
   const selectAllCheckboxRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    if (!isOpen || !targetGroup) return;
+  useDialogSession(isOpen && targetGroup ? targetGroup.id : null, () => {
     setQuery('');
-    const validIds = new Set(accounts.map((a) => a.id));
-    setSelected(new Set((targetGroup.accountIds || []).filter((id) => validIds.has(id))));
+    setSelected(new Set(targetGroup?.accountIds ?? []));
     setError('');
-  }, [isOpen, targetGroup, accounts]);
+  });
 
   const groupsByAccountId = useMemo(() => {
     const result = new Map<string, AccountGroup[]>();
@@ -842,7 +843,7 @@ export function UniversalGroupAccountPickerModal({
             )}
           </div>
 
-          {error && <div className="group-account-error">{error}</div>}
+          <ModalErrorMessage message={error} className="group-account-error" />
         </div>
 
         <div className="modal-footer group-account-picker-footer">
@@ -940,7 +941,9 @@ export const AddToGroupModal = ({ isOpen, onClose, accountIds, sourceGroupId, on
     clearErrors();
     try {
       const groupId = await operation();
-      const updated = await assignAccountsToPlatformGroup(platformKey, groupId, accountIds);
+      const updated = platformKey === 'codex' && sourceGroupId
+        ? await moveAccountsBetweenCodexGroups(sourceGroupId, groupId, accountIds)
+        : await assignAccountsToPlatformGroup(platformKey, groupId, accountIds);
       if (!updated) throw new Error(t('accounts.groups.error.notFound'));
       await onAdded();
       onClose();

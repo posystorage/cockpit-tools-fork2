@@ -18,6 +18,22 @@ fn collection() -> CodexLocalAccessCollection {
     serde_json::from_value(json!({"enabled":true,"port":19001,"apiKey":"local-test-key","accountIds":["chatgpt_plan_test-registration"],"createdAt":0,"updatedAt":0})).unwrap()
 }
 
+#[test]
+fn official_authorization_account_model_mapping_preserves_upstream_catalog_scope() {
+    let mut account = account();
+    account.api_model_mappings = serde_json::from_value(json!([
+        {"client_model": "official-alias", "upstream_model": "gpt-account-exclusive"},
+        {"client_model": "ungranted-alias", "upstream_model": "gpt-5.6-sol"}
+    ])).unwrap();
+    let collection = collection();
+    let plan = |model| native_model_route_plan(&collection, None, model).unwrap();
+    assert_eq!(
+        native_plan_account_model(&plan("official-alias"), &account).as_deref(),
+        Some("gpt-account-exclusive")
+    );
+    assert_eq!(native_plan_account_model(&plan("ungranted-alias"), &account), None);
+}
+
 fn mixed_oauth_host(projection: CodexAccount, scope: Vec<String>) -> NativeHostBridge {
     let collection = serde_json::from_value(json!({
         "enabled":true,"port":19009,"apiKey":"synthetic-mixed-key",
@@ -376,7 +392,7 @@ fn chatgpt_plan_refresh_network_failures_do_not_require_reauthorization() {
 }
 
 #[test]
-fn chatgpt_plan_engine_mode_guards_preserve_disk_config_on_failure() {
+fn chatgpt_plan_legacy_config_migrates_to_native_before_saving_grants() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("collection.json");
     let mut collection = collection();
@@ -393,18 +409,18 @@ fn chatgpt_plan_engine_mode_guards_preserve_disk_config_on_failure() {
         );
     }
     assert!(native_patch_mode(&original, CodexLocalAccessGatewayMode::Native).is_ok());
-    // Joining with a stale Native snapshot after Sidecar was persisted cannot
-    // write an unsupported grant into that engine's collection.
+    // Saving a grant migrates the old engine before publishing the collection.
     let mut existing = collection.clone();
     existing.account_ids.clear();
     existing.gateway_mode = CodexLocalAccessGatewayMode::Sidecar;
     let existing = serde_json::to_string(&existing).unwrap();
     std::fs::write(&path, &existing).unwrap();
-    assert_eq!(
-        save_collection_to_path(&path, &collection).unwrap_err(),
-        "CHATGPT_PLAN_NATIVE_REQUIRED"
-    );
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), existing);
+    save_collection_to_path(&path, &collection).unwrap();
+    let migrated = load_collection_for_runtime_from_path(&path).unwrap().unwrap();
+    assert_eq!(migrated.gateway_mode, CodexLocalAccessGatewayMode::Native);
+    assert_eq!(migrated.account_ids, collection.account_ids);
+    assert_eq!(migrated.api_key, collection.api_key);
+    assert_eq!(migrated.port, collection.port);
 }
 
 #[test]
@@ -460,4 +476,17 @@ async fn chatgpt_plan_same_native_host_reads_updated_catalog_without_listener_re
     std::fs::write(&path, serde_json::to_vec(&account).unwrap()).unwrap();
     let next = host.load_accounts(vec![account.id.clone()]).await.unwrap();
     assert_eq!(next[0].api_model_catalog, vec!["fresh-account-model"]);
+}
+
+#[test]
+fn device_restriction_is_limited_to_local_oauth_credentials() {
+    let mut account = CodexAccount::new("device-fixture".into(), "fixture@example.invalid".into(),
+        crate::models::codex::CodexTokens { access_token: "synthetic-unused".into(), id_token: String::new(), refresh_token: None });
+    assert!(native_device_restriction_applies(&account));
+    account.auth_mode = crate::models::codex::CodexAuthMode::Apikey;
+    account.openai_api_key = Some("synthetic-unused-key".into());
+    assert!(!native_device_restriction_applies(&account));
+    account.api_provider_id = Some("cockpit_chatgpt_plan".into());
+    account.official_registration_id = Some("synthetic-grant".into());
+    assert!(!native_device_restriction_applies(&account));
 }

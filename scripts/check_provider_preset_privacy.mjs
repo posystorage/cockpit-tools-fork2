@@ -24,10 +24,11 @@ const TRACKING_QUERY_KEY =
 const server = await createServer({
   appType: "custom",
   logLevel: "error",
+  cacheDir: `node_modules/.vite-tests/provider-presets-${process.pid}`,
   // This script only loads SSR modules; scanning ignored local toolchain HTML
   // as browser entry points adds unrelated dependency errors on Windows.
   optimizeDeps: { noDiscovery: true, include: [] },
-  server: { middlewareMode: true },
+  server: { middlewareMode: true, watch: null, hmr: false, ws: false },
 });
 
 try {

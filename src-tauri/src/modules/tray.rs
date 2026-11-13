@@ -166,7 +166,11 @@ fn configure_macos_status_item_identity<R: Runtime>(tray: &TrayIcon<R>) {
 
 #[cfg(target_os = "macos")]
 pub fn apply_tray_icon_style<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<(), String> {
-    let style = crate::modules::config::get_user_config().tray_icon_style;
+    let config = crate::modules::config::get_user_config();
+    if !config.show_tray_icon {
+        return Ok(());
+    }
+    let style = config.tray_icon_style;
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         let (icon, icon_as_template) =
             macos_tray_icon_for_style(app, style).map_err(|err| err.to_string())?;
@@ -192,6 +196,27 @@ pub fn apply_tray_icon_style<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<()
     Ok(())
 }
 
+pub(crate) fn set_tray_visibility<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    visible: bool,
+) -> Result<(), String> {
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        tray.set_visible(visible).map_err(|err| err.to_string())?;
+        #[cfg(target_os = "macos")]
+        if visible {
+            // Showing the icon again creates a new native status item.
+            configure_macos_status_item_identity(&tray);
+            apply_tray_icon_style(app)?;
+        }
+    } else if visible {
+        create_tray_skeleton(app).map_err(|err| err.to_string())?;
+    }
+    if visible {
+        update_tray_menu(app)?;
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum PlatformId {
     Antigravity,
@@ -213,10 +238,11 @@ pub(crate) enum PlatformId {
     TraeCn,
     TraeSoloCn,
     Workbuddy,
+    MinimaxCode,
 }
 
 impl PlatformId {
-    pub(crate) fn default_order() -> [Self; 18] {
+    pub(crate) fn default_order() -> [Self; 19] {
         [
             Self::Claude,
             Self::Codex,
@@ -236,6 +262,7 @@ impl PlatformId {
             Self::TraeCn,
             Self::TraeSoloCn,
             Self::Workbuddy,
+            Self::MinimaxCode,
         ]
     }
 
@@ -259,6 +286,7 @@ impl PlatformId {
             crate::modules::tray_layout::PLATFORM_TRAE_CN => Some(Self::TraeCn),
             crate::modules::tray_layout::PLATFORM_TRAE_SOLO_CN => Some(Self::TraeSoloCn),
             crate::modules::tray_layout::PLATFORM_WORKBUDDY => Some(Self::Workbuddy),
+            crate::modules::tray_layout::PLATFORM_MINIMAX_CODE => Some(Self::MinimaxCode),
             _ => None,
         }
     }
@@ -283,6 +311,7 @@ impl PlatformId {
             Self::TraeCn => crate::modules::tray_layout::PLATFORM_TRAE_CN,
             Self::TraeSoloCn => crate::modules::tray_layout::PLATFORM_TRAE_SOLO_CN,
             Self::Workbuddy => crate::modules::tray_layout::PLATFORM_WORKBUDDY,
+            Self::MinimaxCode => crate::modules::tray_layout::PLATFORM_MINIMAX_CODE,
         }
     }
 
@@ -302,10 +331,11 @@ impl PlatformId {
             Self::Qoder => "Qoder",
             Self::Zcode => "ZCode",
             Self::Trae => "Trae",
-            Self::TraeSolo => "TRAE SOLO",
+            Self::TraeSolo => super::trae_account::TraePlatformKind::TraeSolo.display_name(),
             Self::TraeCn => "Trae CN",
-            Self::TraeSoloCn => "TRAE SOLO CN",
+            Self::TraeSoloCn => super::trae_account::TraePlatformKind::TraeSoloCn.display_name(),
             Self::Workbuddy => "WorkBuddy",
+            Self::MinimaxCode => "MiniMax Code",
         }
     }
 
@@ -329,6 +359,7 @@ impl PlatformId {
             Self::TraeCn => "trae-cn",
             Self::TraeSoloCn => "trae-solo-cn",
             Self::Workbuddy => "workbuddy",
+            Self::MinimaxCode => "minimaxcode",
         }
     }
 }
@@ -798,6 +829,17 @@ fn build_platform_details_submenu_from_snapshot<R: Runtime>(
 fn resolve_tray_entries() -> Vec<TrayMenuEntry> {
     let layout = crate::modules::tray_layout::load_tray_layout();
     let visible = sanitize_platform_list(&layout.tray_platform_ids);
+    // 被隐藏或被禁用的平台都不出现在托盘菜单中，也不触发其账号读取/修复
+    let hidden_set: HashSet<PlatformId> = layout
+        .hidden_platform_ids
+        .iter()
+        .chain(layout.disabled_platform_ids.iter())
+        .filter_map(|p| PlatformId::from_str(p.trim()))
+        .collect();
+    let visible = visible
+        .into_iter()
+        .filter(|p| !hidden_set.contains(p))
+        .collect::<Vec<_>>();
     let visible_set: HashSet<PlatformId> = visible.iter().copied().collect();
 
     if visible_set.is_empty() {
@@ -933,6 +975,7 @@ fn get_account_display_info(platform: PlatformId, lang: &str) -> AccountDisplayI
             build_trae_display_info(lang, platform)
         }
         PlatformId::Workbuddy => build_workbuddy_display_info(lang),
+        PlatformId::MinimaxCode => build_minimax_code_display_info(lang),
     }
 }
 
@@ -1704,6 +1747,74 @@ fn build_workbuddy_usage_status_line(
         account.dosage_notify_code.as_deref(),
         account.dosage_notify_zh.as_deref(),
         account.dosage_notify_en.as_deref(),
+    )
+}
+
+#[cfg(not(target_os = "macos"))]
+fn build_minimax_code_display_info(lang: &str) -> AccountDisplayInfo {
+    let accounts = crate::modules::minimax_code_account::list_accounts();
+    build_minimax_code_family_display_info(lang, resolve_minimax_code_current_account(&accounts))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn build_minimax_code_family_display_info(
+    lang: &str,
+    account: Option<crate::models::minimax_code::MinimaxCodeAccount>,
+) -> AccountDisplayInfo {
+    let Some(account) = account else {
+        return AccountDisplayInfo {
+            account: format!("📧 {}", get_text("not_logged_in", lang)),
+            quota_lines: vec!["—".to_string()],
+        };
+    };
+
+    let display_email = first_non_empty(&[
+        Some(account.email.as_str()),
+        account.nickname.as_deref(),
+        account.uid.as_deref(),
+        Some(account.id.as_str()),
+    ])
+    .unwrap_or("—");
+
+    AccountDisplayInfo {
+        account: format!("📧 {}", display_email),
+        quota_lines: vec![build_minimax_code_usage_status_line(lang, &account)],
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn build_minimax_code_usage_status_line(
+    lang: &str,
+    account: &crate::models::minimax_code::MinimaxCodeAccount,
+) -> String {
+    let label = get_text("plan", lang);
+    let value = account
+        .plan_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            account
+                .status
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+        })
+        .unwrap_or("--");
+    format!("{}: {}", label, value)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn resolve_minimax_code_current_account(
+    accounts: &[crate::models::minimax_code::MinimaxCodeAccount],
+) -> Option<crate::models::minimax_code::MinimaxCodeAccount> {
+    crate::modules::minimax_code_account::resolve_current_account_id(accounts).and_then(
+        |account_id| {
+            accounts
+                .iter()
+                .find(|account| account.id == account_id)
+                .cloned()
+        },
     )
 }
 
@@ -3688,16 +3799,9 @@ fn handle_tray_event<R: Runtime>(tray: &TrayIcon<R>, event: TrayIconEvent) {
         } => {
             #[cfg(target_os = "macos")]
             {
-                if button == MouseButton::Left {
-                    if let Err(err) =
-                        crate::modules::floating_card_window::show_main_window(tray.app_handle())
-                    {
-                        logger::log_warn(&format!("[Tray] 左键恢复主窗口失败: {}", err));
-                    }
-                    return;
-                }
-
-                if button == MouseButton::Right && button_state == MouseButtonState::Down {
+                if matches!(button, MouseButton::Left | MouseButton::Right)
+                    && button_state == MouseButtonState::Down
+                {
                     let app = tray.app_handle().clone();
                     let app_for_menu = app.clone();
                     let _ = app.run_on_main_thread(move || {

@@ -1,5 +1,6 @@
 //! Bounded local failure details. Never retain URLs, credentials or authorization values.
 use super::super::contract::{ServiceError, TransportFailureKind};
+use axum::http::{header, HeaderMap, StatusCode};
 use regex::Regex;
 use serde_json::Value;
 use std::{error::Error, sync::LazyLock};
@@ -9,7 +10,26 @@ pub(crate) fn is_cloudflare_challenge(message: &str) -> bool {
     lower.contains("challenge-platform")
         || lower.contains("cf-mitigated")
         || lower.contains("cloudflare challenge")
-        || (lower.contains("cloudflare") && lower.contains("<html"))
+        || (lower.contains("cloudflare") && lower.contains("<html")
+            && (lower.contains("just a moment") || lower.contains("attention required")))
+}
+
+pub(crate) fn cloudflare_gateway_message(status: StatusCode, headers: &HeaderMap) -> Option<String> {
+    if !matches!(status, StatusCode::BAD_GATEWAY | StatusCode::GATEWAY_TIMEOUT)
+        || !headers.get(header::CONTENT_TYPE).and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.split(';').next().is_some_and(|mime| mime.trim().eq_ignore_ascii_case("text/html")))
+    {
+        return None;
+    }
+    let ray = headers.get("cf-ray")?.to_str().ok()?.trim();
+    if ray.is_empty() || ray.len() > 64 || !ray.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-') {
+        return None;
+    }
+    Some(crate::modules::i18n::translate(
+        &crate::modules::config::get_user_config().language,
+        "codex.requestDiagnostics.cloudflareGatewayError",
+        &[("status", status.as_str()), ("ray", ray)],
+    ))
 }
 
 pub(crate) fn sanitize_error_text(message: &str) -> String {
@@ -40,6 +60,7 @@ pub(crate) fn transport_failure(
     let mut current = Some(error);
     let mut timed_out = false;
     let mut tls_decrypt = false;
+    let mut http2_decrypt = false;
     // Bootstrap can rewrap a reqwest body before canonical adaptation. Its
     // real TLS cause sits deeper than eight wrappers; still bound traversal
     // so a malformed/cyclic Error implementation cannot block the request.
@@ -56,6 +77,12 @@ pub(crate) fn transport_failure(
             error.downcast_ref::<rustls::Error>(),
             Some(rustls::Error::DecryptError)
         );
+        // h2 stores IO causes as (kind, string), and its Error::source is empty.
+        // Only recognize this exact local IO signature, never upstream JSON/text.
+        http2_decrypt |= error.downcast_ref::<h2::Error>()
+            .and_then(h2::Error::get_io)
+            .is_some_and(|io| io.kind() == std::io::ErrorKind::InvalidData
+                && io.to_string() == "cannot decrypt peer's message");
         let detail = sanitize_error_text(&error.to_string());
         timed_out |= error
             .downcast_ref::<std::io::Error>()
@@ -70,6 +97,8 @@ pub(crate) fn transport_failure(
             .downcast_ref::<std::io::Error>()
             .and_then(std::io::Error::get_ref)
             .map(|inner| inner as &(dyn Error + 'static))
+            .or_else(|| error.downcast_ref::<h2::Error>().and_then(h2::Error::get_io)
+                .map(|inner| inner as &(dyn Error + 'static)))
             .or_else(|| error.source());
     }
     // A transport deadline is different from EOF or a missing terminal event.
@@ -85,7 +114,11 @@ pub(crate) fn transport_failure(
     // generic transport layers when a more specific cause is available.
     let message = concise_transport_details(&details);
     let mut error = ServiceError::new(status, code, format!("{context}: {message}"));
-    error.transport_failure = tls_decrypt.then_some(TransportFailureKind::TlsDecrypt);
+    error.transport_failure = if http2_decrypt {
+        Some(TransportFailureKind::TlsDecryptHttp2)
+    } else {
+        tls_decrypt.then_some(TransportFailureKind::TlsDecrypt)
+    };
     error
 }
 
@@ -198,6 +231,7 @@ pub(crate) fn failure_phase(code: &str) -> &'static str {
             "stream_read"
         }
         "upstream_idle_timeout" => "stream_idle",
+        "image_output_missing" => "upstream_response",
         "upstream_total_timeout" => "total_timeout",
         "client_cancelled" | "client_disconnected" | "client_interrupted" => "client_cancelled",
         "identity_store_unavailable" | "identity_store_full" | "unknown_upstream_state" => {

@@ -154,7 +154,7 @@ test("binding and reserve dialogs keep focus and Escape with only the active lay
   h.unmount();
 });
 
-test("quota protection is built in and validates its margin for both engines", () => {
+test("Rust quota protection is built in and validates its margin", () => {
   const h = modalHarness();
   const saved: unknown[] = [];
   const props: any = {
@@ -187,7 +187,6 @@ test("quota protection is built in and validates its margin for both engines", (
   assert.equal((saved[0] as any).strict, undefined);
   assert.equal((saved[0] as any).safetyMarginPercent, 5);
   assert.doesNotMatch(text(h.flush()), /safetyMarginInvalid/);
-  props.localAccessState = { collection: { gatewayMode: "sidecar" } };
   tree = nodes(h.flush());
   assert.equal(tree.some((node) => node.props?.type === "checkbox"), false);
   assert.equal(tree.some((node) => node.type === "input" && node.props.maxLength === 2), true);

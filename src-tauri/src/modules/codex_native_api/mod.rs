@@ -7,6 +7,12 @@
 mod agent_communication;
 mod account_installation;
 mod auxiliary;
+pub(crate) mod anthropic;
+mod anthropic_code_mode;
+mod anthropic_compact;
+mod anthropic_search;
+mod anthropic_search_cache;
+mod anthropic_models;
 mod blocking;
 mod capabilities;
 #[cfg(test)]
@@ -19,6 +25,7 @@ mod chatgpt_plan_wire;
 pub(super) mod chatgpt_plan_tools;
 mod client_tool_discovery;
 mod codex_wire;
+mod codex_hosted_images;
 mod codex_cpa_wire;
 mod compat;
 mod compat_http;
@@ -30,12 +37,15 @@ pub mod diagnostics;
 mod deadline;
 mod edge;
 mod events;
+pub(super) mod provider_test_stream;
+mod event_documents;
 pub(crate) mod execution;
 pub(crate) mod gpt_thinking;
 pub(crate) mod grok_thinking;
 mod grok_errors;
 mod grok_wire;
 mod http;
+mod http_compression;
 pub mod identity;
 mod images;
 mod lifecycle;
@@ -49,24 +59,39 @@ mod multi_agent_lifecycle_http_tests;
 #[cfg(test)]
 mod tls_recovery_http_tests;
 mod native_chat;
+mod opencode_go;
+#[cfg(test)]
+mod opencode_go_http_tests;
 mod official_fallback;
 #[cfg(test)]
 mod official_fallback_http_tests;
 mod output_error;
 mod output_items;
 mod output_usage;
+pub(crate) mod overload;
 pub mod recovery;
+mod quota_exhaustion;
 pub mod rate_limits;
 mod request_body;
+mod request_compat;
+mod encrypted_reasoning;
+mod request_metrics;
+mod response_wire;
+mod replay_wire;
+mod responses_custom_results;
 mod responses_host_results;
+mod responses_http_input;
 mod responses_tool_history;
 mod retry;
+mod reasoning_policy;
 mod server;
 mod token_count;
 mod transport;
+pub(crate) mod transient_rate_limit;
 mod upstream;
 pub(crate) mod upstream_errors;
 mod websocket;
+mod websocket_io;
 
 pub use server::{start, Handle, Options};
 
@@ -103,6 +128,8 @@ mod grok_error_http_tests;
 
 #[cfg(test)]
 mod live_acceptance_tests;
+#[cfg(test)]
+pub(crate) mod live_protocol;
 
 #[cfg(test)]
 mod chatgpt_plan_http_tests;

@@ -1,0 +1,9 @@
+{
+  "sourceCommit": "6cd4a8ff0f3f4e49d6d6969dd2fbadfa1569fde2",
+  "builtAt": "2026-10-09T06:24:27.469312+00:00",
+  "modelCount": 18,
+  "sourceBankSha256": "f267d0513aa06981d024ec5394746fceddf44e4e8a75fa6bf8304255f4b32d6d",
+  "packagedBankSha256": "3c8e4fc34a49ac6d41c7da7cda41e2851bfa5c233deb81d670420bfab805011a",
+  "scorerSha256": "83fa5bd611e18f8339122582335123c8ea168ed242298bb31f4e363abeeb6e4a",
+  "challengeSha256": "4a3868c9fe237cabde92f0d2bffaf32118f558f7a43fcc336874fecd2bf6be39"
+}

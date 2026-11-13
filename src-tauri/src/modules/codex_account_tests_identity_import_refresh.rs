@@ -3,7 +3,7 @@
 use super::{
     authority_projection_dirs_for_account, build_account_storage_id,
     build_agent_identity_account_draft, build_auth_file_value,
-    build_legacy_agent_identity_account_id, clear_client_auth_observation,
+    build_legacy_agent_identity_account_id,
     clear_retired_app_server_preflight_reauth, decode_jwt_payload_value,
     detect_auth_file_plan_type_from_path, ensure_managed_account_fresh,
     extract_codex_import_candidate_from_value, extract_codex_tokens_from_value, extract_user_info,
@@ -625,12 +625,17 @@ fn portable_api_key_import_projects_its_own_relay_credentials() {
     )
     .expect("parse imported auth");
     assert_eq!(auth["OPENAI_API_KEY"], "sk-imported-relay");
+    let runtime = read_api_provider_from_config_toml(&profile_dir);
+    assert_eq!(runtime.base_url.as_deref(), Some("https://imported-relay.example.com/v1"));
     let config = fs::read_to_string(profile_dir.join("config.toml")).expect("read imported config");
-    assert!(config.contains("openai_base_url = \"https://imported-relay.example.com/v1\""));
-    assert!(!config.contains("codex_local_access"));
-    assert!(!config.contains("[model_providers.imported_relay]"));
+    let doc = crate::modules::codex_config_format::read_codex_config_doc_from_str(&config).unwrap();
+    if let Some(provider) = doc.get("model_provider").and_then(|item| item.as_str()).filter(|id| *id != "openai") {
+        assert_eq!(provider, CODEX_RUNTIME_MODEL_PROVIDER_ID);
+        assert_eq!(doc["model_providers"][provider]["experimental_bearer_token"].as_str(), Some("sk-imported-relay"));
+    }
 
-    sync_api_key_account_from_local_state(&mut imported, &profile_dir);
+    sync_api_key_account_from_local_state(&mut imported, &profile_dir).unwrap();
+    assert_eq!(imported.api_base_url.as_deref(), Some("https://imported-relay.example.com/v1"));
     assert_eq!(imported.api_provider_mode, CodexApiProviderMode::Custom);
     assert_eq!(imported.api_provider_id.as_deref(), Some("imported_relay"));
     assert_eq!(
@@ -1447,7 +1452,7 @@ fn reauth_switch_preserves_new_tokens_and_marks_account_current() {
         "rt-old",
     ))
     .expect("seed old account");
-    let mut index = build_test_account_index(&old_account);
+    let mut index = super::read_saved_account_index().unwrap().unwrap();
     index.current_account_id = Some(old_account.id.clone());
     save_account_index(&index).expect("save old current account");
 
@@ -3005,6 +3010,15 @@ fn reauth_updates_explicit_target_account_even_when_identity_changes() {
         email, "acc-old", "org-old", "old", "rt-old",
     ))
     .expect("seed existing account");
+    let wrong_account = upsert_account_for_reauth(
+        make_codex_tokens("other@example.com", "acc-other", "org-other", "other", "rt-other"),
+        &existing.id,
+    )
+    .expect_err("reauth must reject a different email");
+    assert!(wrong_account.starts_with("CODEX_OAUTH_RESTART_REQUIRED: "));
+    let unchanged = load_account(&existing.id).expect("original account remains available");
+    assert_eq!(unchanged.tokens.refresh_token.as_deref(), Some("rt-old"));
+
     let generated_new_id = build_account_storage_id(email, Some("acc-new"), Some("org-new"));
     assert_ne!(existing.id, generated_new_id);
 
@@ -3043,7 +3057,7 @@ fn reauth_preserves_note_details_when_target_is_missing_from_index() {
     detail.phone_number = Some("13800000000".to_string());
     save_account(&detail).expect("save noted account");
 
-    let mut broken_index = CodexAccountIndex::new();
+    let mut broken_index = load_account_index();
     broken_index.accounts.clear();
     broken_index.current_account_id = None;
     save_account_index(&broken_index).expect("save broken index");
@@ -3340,64 +3354,27 @@ fn switch_auth_error_treats_server_revocation_as_terminal_without_quota_error() 
     assert_eq!(payload["apiOnlyAvailable"], false);
 }
 
-#[tokio::test(flavor = "current_thread")]
-async fn clearing_client_auth_observation_preserves_credentials_and_reauth_state() {
-    let _lock = crate::modules::test_support::env_lock()
-        .lock()
-        .unwrap_or_else(|err| err.into_inner());
-    let _env = TestEnvGuard::new("codex-skip-auth-check-clears-observation-test");
-    let mut account = seed_oauth_account(make_codex_tokens(
-        "skip-observation@example.com",
-        "acc-skip-observation",
-        "org-skip-observation",
-        "skip-observation",
-        "rt-skip-observation",
-    ));
-    account.client_auth_status = Some("login_required".to_string());
-    account.last_client_auth_observed_at = Some(100);
-    account.last_client_login_redirect_at = Some(101);
-    account.last_client_launch_at = Some(99);
-    account.last_client_auth_instance_id = Some("default".to_string());
-    account.requires_reauth = true;
-    account.reauth_reason = Some("真实 Token Authority 授权异常".to_string());
-    save_account(&account).expect("save observed account");
-
-    assert!(clear_client_auth_observation(&account.id)
-        .await
-        .expect("clear client observation"));
-    let persisted = load_account(&account.id).expect("load cleared account");
-    assert_eq!(persisted.client_auth_status, None);
-    assert_eq!(persisted.last_client_auth_observed_at, None);
-    assert_eq!(persisted.last_client_login_redirect_at, None);
-    assert_eq!(persisted.last_client_launch_at, None);
-    assert_eq!(persisted.last_client_auth_instance_id, None);
-    assert!(persisted.requires_reauth);
-    assert_eq!(
-        persisted.reauth_reason.as_deref(),
-        Some("真实 Token Authority 授权异常")
-    );
-}
-
 #[test]
-fn client_auth_observation_does_not_wrap_switch_errors() {
-    let _lock = crate::modules::test_support::env_lock()
-        .lock()
-        .unwrap_or_else(|err| err.into_inner());
-    let _env = TestEnvGuard::new("codex-client-auth-observation-no-switch-block-test");
-    let mut account = seed_oauth_account(make_codex_tokens(
-        "client-observation@example.com",
-        "acc-client-observation",
-        "org-client-observation",
-        "client-observation",
-        "rt-client-observation",
-    ));
-    account.client_auth_status = Some("login_required".to_string());
-    save_account(&account).expect("save observed account");
-
-    assert_eq!(
-        format_account_switch_error(&account.id, "ordinary switch error".to_string()),
-        "ordinary switch error"
-    );
+fn retired_client_login_observations_are_ignored_without_clearing_real_auth_errors() {
+    let account = CodexAccount::new("legacy-observation".into(), "fixture@example.test".into(),
+        make_codex_tokens("fixture@example.test", "acc-fixture", "org-fixture", "fixture", "rt-fixture"));
+    let mut raw = serde_json::to_value(&account).unwrap();
+    raw["client_auth_status"] = serde_json::json!("login_required");
+    raw["last_client_auth_observed_at"] = serde_json::json!(100);
+    raw["last_client_login_redirect_at"] = serde_json::json!(101);
+    raw["last_client_launch_at"] = serde_json::json!(99);
+    raw["last_client_auth_instance_id"] = serde_json::json!("default");
+    raw["requires_reauth"] = serde_json::json!(true);
+    raw["reauth_reason"] = serde_json::json!("refresh_token_invalidated");
+    let decoded: CodexAccount = serde_json::from_value(raw).unwrap();
+    assert!(decoded.requires_reauth);
+    assert_eq!(decoded.reauth_reason.as_deref(), Some("refresh_token_invalidated"));
+    assert_eq!(decoded.tokens.access_token, account.tokens.access_token);
+    assert_eq!(decoded.tokens.refresh_token, account.tokens.refresh_token);
+    let saved = serde_json::to_value(decoded).unwrap();
+    for key in ["client_auth_status", "last_client_auth_observed_at", "last_client_login_redirect_at", "last_client_launch_at", "last_client_auth_instance_id"] {
+        assert!(saved.get(key).is_none(), "retired field persisted: {key}");
+    }
 }
 
 #[test]

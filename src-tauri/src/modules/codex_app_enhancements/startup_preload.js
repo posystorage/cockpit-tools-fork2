@@ -27,17 +27,16 @@
     if (!fast || !quota) return fail('runtime-unavailable');
     const indexUrl = 'app://-/index.html';
     const html = read(indexUrl);
+    const rspack = root.__cockpitServiceRspack?.preload(html, read);
+    if (rspack) return record(rspack);
     const entries = [...html.matchAll(/<script\b[^>]*\bsrc=(["'])(.*?)\1/g)]
       .map(match => new URL(match[2], indexUrl).href)
       .filter(url => fast.localAsset(url, true));
     if (entries.length < 1 || entries.length > 4) return fail('unsupported-entry');
-    const candidates = new Set();
-    for (const entry of entries) {
-      for (const match of read(entry).matchAll(/["'`]\.\/app-initial-[A-Za-z0-9_-]+\.js["'`]/g))
-        candidates.add(new URL(match[0].slice(1, -1), entry).href);
-    }
-    if (candidates.size !== 1) return fail('ambiguous-module');
-    const initialUrl = [...candidates][0], initialSource = read(initialUrl);
+    const discovered = fast.resolveInitialModuleSync(entries, read);
+    if (!discovered.ok) return fail(discovered.reason);
+    const initialUrl = discovered.url, initialSource = read(initialUrl);
+    const predictionSeeds = entries.map(entry => ({url: entry, source: read(entry)}));
     let initial = fast.prepareLive(initialSource, initialUrl);
     if (!initial.ok) return fail(initial.diagnostics?.reason || 'initial-transform-failed');
     const modules = [];
@@ -85,6 +84,28 @@
         modules.length = 0;
       }
     }
+    if (root.__cockpitEnhancements?.nativePredictions === true
+      && (root.__cockpitEnhancements?.apiKeyAuthVerified === true || root.__cockpitEnhancements?.apiService === true)) {
+      try {
+        const prediction = fast.preparePredictionGraphSync(initial.patchedSource, initialUrl, read,
+          [{url: initialUrl, source: initialSource}, ...predictionSeeds]);
+        if (!prediction?.ok) throw Error(prediction?.reason || 'prediction-contract-failed');
+        const preparedModules = prediction.modules.map(module => ({ ...module,
+          source: `${fast.rewriteModuleSync(module.source, module.url)}
+${fast.predictionMarker}
+//# sourceURL=${module.url}
+`,
+        }));
+        // Publish none of these sources until every companion contract passes.
+        initial.patchedSource = prediction.patchedSource;
+        modules.push(...preparedModules);
+        fast.predictionState('ready', 'prediction-graph-prepared');
+      } catch (error) {
+        const reason = typeof error?.message === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(error.message)
+          ? error.message : 'prediction-graph-failed';
+        fast.predictionState('unsupported', reason);
+      }
+    }
     const initialPrepared = `${fast.rewriteModuleSync(initial.patchedSource, initialUrl)}
 ;window.__cockpitNativeFastComplete?.();
 //# sourceURL=${initialUrl}
@@ -96,7 +117,7 @@
       reason: installed.reason || 'preloaded-before-document',
       initialUrl,
       primaryUrls: modules.map(module => module.url),
-      ...(mode === 'fast-only' ? { mode, quotaReason: initial.quotaReason } : {}),
+      ...(mode !== 'full' ? { mode, quotaReason: initial.quotaReason } : {}),
     });
   } catch {
     return fail('startup-preload-failed');

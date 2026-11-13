@@ -23,6 +23,7 @@ static REQUEST_LOG_RECORDS_CLEARED_BEFORE: std::sync::atomic::AtomicI64 =
     std::sync::atomic::AtomicI64::new(0);
 static REQUEST_PAYLOAD_LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
 include!("codex_local_access_request_identity.rs");
+include!("codex_local_access_session_index.rs");
 static REQUEST_FIRST_RESPONSE_CACHE: std::sync::LazyLock<Mutex<HashMap<String, (u64, i64)>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 static REQUEST_PAYLOAD_SETTING_WRITE_LOCK: std::sync::LazyLock<TokioMutex<()>> =
@@ -63,6 +64,8 @@ pub fn get_local_access_request_payload_logging_status() -> RequestPayloadLoggin
 
 enum RequestDiagnosticWrite {
     Usage(Box<CodexLocalAccessUsageEvent>, u64),
+    OverloadAttempt(Box<LocalAccessOverloadAttempt>, u64),
+    OverloadOutcome(String, String, Option<String>, u64),
     Detail(Box<CodexLocalAccessRequestDetail>, u64, u64),
 }
 
@@ -104,30 +107,7 @@ fn queue_request_diagnostic(write: RequestDiagnosticWrite) {
     }
 }
 
-fn queue_local_access_usage_event(event: CodexLocalAccessUsageEvent) {
-    // Existing usage logs retain their persistence guarantee, independently of the
-    // lossy optional body/trace queue. A full diagnostic queue must never drop usage.
-    let epoch = REQUEST_LOG_WRITE_EPOCH.load(Ordering::SeqCst);
-    tauri::async_runtime::spawn(async move {
-        let result = tauri::async_runtime::spawn_blocking(move || {
-            let (_guard, conn) = open_local_access_logs_db_for_write()?;
-            if epoch == REQUEST_LOG_WRITE_EPOCH.load(Ordering::SeqCst) {
-                insert_live_local_access_usage_event(&conn, &event)?;
-            }
-            Ok::<_, String>(())
-        })
-        .await;
-        match result {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => {
-                logger::log_codex_api_warn(&format!("请求日志写入失败，已保留内存统计: {error}"))
-            }
-            Err(error) => logger::log_codex_api_warn(&format!(
-                "请求日志写入任务失败，已保留内存统计: {error}"
-            )),
-        }
-    });
-}
+include!("codex_local_access_usage_writer.rs");
 
 fn cached_request_first_response(request_id: Option<&str>) -> Option<u64> {
     let request_id = request_id.filter(|id| !id.is_empty())?;
@@ -240,7 +220,8 @@ fn create_request_diagnostics_table(conn: &Connection) -> Result<(), SqliteError
             ON request_diagnostics(captured_at_ms);
     "#,
     )?;
-    ensure_request_identity_columns(conn)
+    ensure_request_identity_columns(conn)?;
+    ensure_session_query_index(conn)
 }
 
 fn diagnostics_table_exists(conn: &Connection) -> Result<bool, SqliteError> {
@@ -349,6 +330,13 @@ fn normalize_request_diagnostics(
         attempt.account_id = diagnostic_truncate(&attempt.account_id, 256);
         attempt.account_email = diagnostic_optional(attempt.account_email.take(), 256);
         attempt.model_id = diagnostic_truncate(&attempt.model_id, 256);
+        attempt.response_model = diagnostic_optional(attempt.response_model.take(), 256);
+        if let Some(models) = &mut attempt.image_request {
+            models.requested_model = diagnostic_optional(models.requested_model.take(), 256);
+            models.upstream_model = diagnostic_truncate(&models.upstream_model, 256);
+            models.responses_model = diagnostic_optional(models.responses_model.take(), 256);
+            models.upstream_status = models.upstream_status.filter(|status| (100..=599).contains(status));
+        }
         attempt.transport = diagnostic_truncate(&attempt.transport, 32);
         attempt.error_category = diagnostic_optional(attempt.error_category.take(), 128);
         attempt.error_message = diagnostic_optional(attempt.error_message.take(), 1024);
@@ -597,12 +585,14 @@ fn merge_request_diagnostics(
                     attempt.authorization_route = attempt.authorization_route.or_else(|| old.authorization_route.clone());
                     attempt.authorization_fallback = attempt.authorization_fallback.or_else(|| old.authorization_fallback.clone());
                     attempt.upstream_request_id = attempt.upstream_request_id.or_else(|| old.upstream_request_id.clone());
+                    attempt.response_model = attempt.response_model.or_else(|| old.response_model.clone());
                     attempt.transport_error = attempt.transport_error.or_else(|| old.transport_error.clone());
                     attempt.transport_pool_retired = match (old.transport_pool_retired, attempt.transport_pool_retired) {
                         (Some(old), Some(new)) => Some(old || new),
                         (old, new) => new.or(old),
                     };
                     attempt.upstream_http_version = attempt.upstream_http_version.or_else(|| old.upstream_http_version.clone());
+                    attempt.transport_http1_fallback = attempt.transport_http1_fallback.or(old.transport_http1_fallback);
                 }
                 if same_attempt
                     && old.model_id == attempt.model_id
@@ -731,6 +721,17 @@ fn apply_request_diagnostic_write(
     write: RequestDiagnosticWrite,
 ) -> Result<(), String> {
     match write {
+        RequestDiagnosticWrite::OverloadAttempt(attempt, epoch) => {
+            if epoch == REQUEST_LOG_WRITE_EPOCH.load(Ordering::SeqCst) {
+                write_overload_attempt(conn, &attempt).map_err(|error| error.to_string())?;
+            }
+        }
+        RequestDiagnosticWrite::OverloadOutcome(request_id, outcome, account_id, epoch) => {
+            if epoch == REQUEST_LOG_WRITE_EPOCH.load(Ordering::SeqCst) {
+                conn.execute("UPDATE overload_attempts_v1 SET outcome=?2, final_account_id=?3 WHERE request_id=?1",
+                    params![request_id, outcome, account_id]).map_err(|error| error.to_string())?;
+            }
+        }
         RequestDiagnosticWrite::Usage(event, epoch) => {
             if epoch == REQUEST_LOG_WRITE_EPOCH.load(Ordering::SeqCst) {
                 insert_live_local_access_usage_event(conn, &event)?;
@@ -782,6 +783,7 @@ fn run_request_diagnostics_writer(receiver: std::sync::mpsc::Receiver<RequestDia
             }
             create_request_diagnostics_table(opened).map_err(|error| error.to_string())?;
             prune_request_diagnostics(opened, now_ms())?;
+            prune_overload_attempts(opened, now_ms()).map_err(|error| error.to_string())?;
             Ok::<(), String>(())
         })();
         if let Err(error) = result {

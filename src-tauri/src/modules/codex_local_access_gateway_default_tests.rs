@@ -18,37 +18,37 @@ fn old_collection(mode: Option<&str>) -> Value {
 }
 
 #[test]
-fn native_gateway_default_new_collections_use_go_without_starting_service() {
+fn native_gateway_default_new_collections_use_rust_without_starting_service() {
     assert_eq!(
         CodexLocalAccessGatewayMode::default(),
-        CodexLocalAccessGatewayMode::Sidecar
+        CodexLocalAccessGatewayMode::Native
     );
     for collection in [
         new_local_access_collection().unwrap(),
         new_empty_local_access_collection().unwrap(),
     ] {
-        assert_eq!(collection.gateway_mode, CodexLocalAccessGatewayMode::Sidecar);
+        assert_eq!(collection.gateway_mode, CodexLocalAccessGatewayMode::Native);
         assert!(collection.native_gateway_default_migrated);
         assert!(!collection.enabled);
     }
 }
 
 #[test]
-fn native_gateway_default_first_runtime_load_preserves_engine_choices_and_preserves_data() {
+fn native_gateway_default_first_runtime_load_migrates_all_old_modes_and_preserves_data() {
     for mode in [None, Some("legacy"), Some("sidecar"), Some("native")] {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("collection.json");
         let mut original = old_collection(mode);
         original["enabled"] = json!(mode != Some("sidecar"));
+        original["nativeGatewayDefaultMigrated"] = json!(mode.is_some());
         std::fs::write(&path, serde_json::to_vec(&original).unwrap()).unwrap();
         let loaded = load_collection_for_runtime_from_path(&path)
             .unwrap()
             .unwrap();
-        let expected = if mode == Some("native") { CodexLocalAccessGatewayMode::Native } else { CodexLocalAccessGatewayMode::Sidecar };
-        assert_eq!(loaded.gateway_mode, expected);
+        assert_eq!(loaded.gateway_mode, CodexLocalAccessGatewayMode::Native);
         assert!(loaded.native_gateway_default_migrated);
         let persisted: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        assert_eq!(persisted["gatewayMode"], if mode == Some("native") { "native" } else { "sidecar" });
+        assert_eq!(persisted["gatewayMode"], "native");
         assert_eq!(persisted["nativeGatewayDefaultMigrated"], true);
         for key in [
             "enabled",
@@ -72,7 +72,7 @@ fn native_gateway_default_first_runtime_load_preserves_engine_choices_and_preser
 }
 
 #[test]
-fn native_gateway_default_keeps_later_go_choice_after_stale_save_and_restart() {
+fn native_gateway_default_migrates_explicit_go_choice_after_stale_save_and_restart() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("collection.json");
     std::fs::write(&path, old_collection(Some("sidecar")).to_string()).unwrap();
@@ -92,7 +92,7 @@ fn native_gateway_default_keeps_later_go_choice_after_stale_save_and_restart() {
     let loaded = load_collection_for_runtime_from_path(&path)
         .unwrap()
         .unwrap();
-    assert_eq!(loaded.gateway_mode, CodexLocalAccessGatewayMode::Sidecar);
+    assert_eq!(loaded.gateway_mode, CodexLocalAccessGatewayMode::Native);
     assert!(loaded.native_gateway_default_migrated);
     assert_eq!(loaded.debug_logs, stale.debug_logs);
     assert_eq!(loaded.port, 18555);
@@ -101,7 +101,7 @@ fn native_gateway_default_keeps_later_go_choice_after_stale_save_and_restart() {
 }
 
 #[test]
-fn native_gateway_default_migration_and_explicit_go_choice_are_serialized() {
+fn native_gateway_default_migration_serializes_with_legacy_writer() {
     for _ in 0..8 {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("collection.json");
@@ -125,7 +125,7 @@ fn native_gateway_default_migration_and_explicit_go_choice_are_serialized() {
         let loaded = load_collection_for_runtime_from_path(&path)
             .unwrap()
             .unwrap();
-        assert_eq!(loaded.gateway_mode, CodexLocalAccessGatewayMode::Sidecar);
+        assert_eq!(loaded.gateway_mode, CodexLocalAccessGatewayMode::Native);
         assert!(loaded.native_gateway_default_migrated);
     }
 }
@@ -145,7 +145,7 @@ fn native_gateway_default_migration_failure_keeps_original_file_retryable() {
         migrate_native_gateway_default_on_disk(&path)
             .unwrap()
             .gateway_mode,
-        CodexLocalAccessGatewayMode::Sidecar
+        CodexLocalAccessGatewayMode::Native
     );
 }
 
@@ -164,7 +164,7 @@ fn native_gateway_default_catalog_reads_do_not_migrate_revision_snapshots() {
         .unwrap();
     assert_eq!(
         initialized.gateway_mode,
-        CodexLocalAccessGatewayMode::Sidecar
+        CodexLocalAccessGatewayMode::Native
     );
     assert!(initialized.native_gateway_default_migrated);
 }

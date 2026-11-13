@@ -185,7 +185,7 @@
     let host = document.querySelector('[data-cockpit-quota-footer]');
     let details = document.querySelector('[data-cockpit-quota-details]');
     const card = usageMetrics.visibleCard(root.card);
-    const footer = card?.querySelector('[class*="_ComposerLayoutFooter_"], [class*="_footer_"]') || card;
+    const footer = usageMetrics.composerFooter(card);
     const permissions = footer && [...footer.querySelectorAll('[data-composer-navigation-target="permissions"]')].find(node => node.getClientRects().length > 0);
     if (!card || !permissions) {
       if (host) host.style.display = 'none';
@@ -316,7 +316,13 @@
     const cache = cacheMeasurement === null ? missingLabel : formatCachePercent(cacheMeasurement);
     const averageCache = cache;
     const fields = [];
-    if (badgeKind === 'deepseek') {
+    const remote = root.usageState?.__remoteService;
+    if (remote?.product === 'cockpit-tools') {
+      const amount = remote.budget?.remainingMicrousd;
+      const value = Number.isFinite(amount) ? formatMoney(amount / 1000000, 'USD') : usageLabels.remoteUnlimited;
+      fields.push(metricField('remote-budget', usageLabels.remoteBudget, value, usageLabels.remoteBudgetHint,
+        { unknown: !remote.budget }));
+    } else if (badgeKind === 'deepseek') {
       const line = balanceLines[0];
       const text = balanceLabel + ' ' + (line ? formatMoney(line.totalBalance, line.currency) : missingLabel);
       fields.push(metricField('deepseek', balanceLabel, line ? formatMoney(line.totalBalance, line.currency) : missingLabel, text,

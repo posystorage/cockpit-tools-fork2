@@ -23,6 +23,8 @@ pub fn save_tray_platform_layout(
     tray_platform_ids: Vec<String>,
     ordered_entry_ids: Option<Vec<String>>,
     platform_groups: Option<Vec<modules::tray_layout::TrayLayoutGroup>>,
+    hidden_platform_ids: Option<Vec<String>>,
+    disabled_platform_ids: Option<Vec<String>>,
 ) -> Result<(), String> {
     modules::tray_layout::save_tray_layout(
         sort_mode,
@@ -30,6 +32,8 @@ pub fn save_tray_platform_layout(
         tray_platform_ids,
         ordered_entry_ids,
         platform_groups,
+        hidden_platform_ids,
+        disabled_platform_ids,
     )?;
     modules::tray::update_tray_menu(&app)?;
     Ok(())
@@ -77,9 +81,10 @@ pub async fn set_app_path(app: String, path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         config::patch_user_config(move |current| {
             match app.as_str() {
-                "antigravity" | "antigravity_ide" | "antigravity_legacy" => {
+                "antigravity" | "antigravity_ide" => {
                     current.antigravity_app_path = normalized_path
                 }
+                "antigravity_legacy" => current.antigravity_legacy_app_path = normalized_path,
                 "codex" => current.codex_app_path = normalized_path,
                 "claude" => current.claude_app_path = normalized_path,
                 "zed" => current.zed_app_path = normalized_path,
@@ -96,6 +101,7 @@ pub async fn set_app_path(app: String, path: String) -> Result<(), String> {
                 "trae_cn" => current.trae_cn_app_path = normalized_path,
                 "trae_solo_cn" => current.trae_solo_cn_app_path = normalized_path,
                 "workbuddy" => current.workbuddy_app_path = normalized_path,
+                "minimaxcode" | "minimax_code" => current.minimax_code_app_path = normalized_path,
                 "opencode" => current.opencode_app_path = normalized_path,
                 _ => return Err("未知应用类型".to_string()),
             }
@@ -169,7 +175,7 @@ pub fn detect_app_path(app: String, force: Option<bool>) -> Result<Option<String
         "claude" => Ok(modules::claude_instance::detect_and_save_claude_launch_path(force)),
         "antigravity" | "antigravity_ide" | "antigravity_legacy" | "codex" | "zed" | "vscode"
         | "codebuddy" | "codebuddy_cn" | "qoder" | "zcode" | "trae" | "trae_solo" | "trae_cn"
-        | "trae_solo_cn" | "opencode" | "workbuddy" => Ok(
+        | "trae_solo_cn" | "opencode" | "workbuddy" | "minimaxcode" | "minimax_code" => Ok(
             modules::process::detect_and_save_app_path(app.as_str(), force),
         ),
         _ => Err("未知应用类型".to_string()),
@@ -224,7 +230,7 @@ pub async fn scan_app_launch_targets(
         "antigravity" | "antigravity_ide" | "antigravity_legacy" | "codex" | "claude"
         | "vscode" | "windsurf" | "kiro" | "cursor" | "codebuddy" | "codebuddy_cn" | "qoder"
         | "zcode" | "trae" | "trae_solo" | "trae_cn" | "trae_solo_cn" | "workbuddy" | "zed"
-        | "opencode" => {}
+        | "opencode" | "minimaxcode" | "minimax_code" => {}
         _ => return Err("未知应用类型".to_string()),
     }
     let _ = scan_roots;
@@ -305,6 +311,9 @@ pub fn handle_window_close(
     // 执行操作
     match action.as_str() {
         "minimize" => {
+            if !config::get_user_config().show_tray_icon {
+                return window.minimize().map_err(|err| err.to_string());
+            }
             if let Err(err) = modules::floating_card_window::destroy_main_window_to_tray(&window) {
                 modules::logger::log_warn(&format!("[Window] 销毁主窗口失败，回退隐藏: {}", err));
                 let _ = window.hide();
@@ -427,17 +436,7 @@ pub async fn update_floating_card_appearance(
 
 #[tauri::command]
 pub fn resize_current_floating_card_window(window: tauri::Window, height: f64) -> Result<(), String> {
-    let label = window.label();
-    if label != modules::floating_card_window::FLOATING_CARD_WINDOW_LABEL
-        && !label.starts_with(modules::floating_card_window::INSTANCE_FLOATING_CARD_WINDOW_LABEL_PREFIX) {
-        return Err("invalid_floating_card_window".to_string());
-    }
-    let minimal = config::get_user_config().floating_card_minimal;
-    let min_height = if minimal { 110.0 } else { 290.0 };
-    let height = if height.is_finite() { height.clamp(min_height, 520.0) } else { min_height };
-    window.set_min_size(Some(tauri::LogicalSize::new(250.0, min_height))).map_err(|err| err.to_string())?;
-    let size = window.inner_size().map_err(|err| err.to_string())?.to_logical::<f64>(window.scale_factor().map_err(|err| err.to_string())?);
-    window.set_size(tauri::LogicalSize::new(size.width.max(250.0), height)).map_err(|err| err.to_string())
+    modules::floating_card_window::resize_floating_card_window(&window, height)
 }
 
 #[tauri::command]
@@ -569,19 +568,40 @@ pub async fn delete_corrupted_file(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn load_user_memory() -> Result<modules::user_memory::UserMemory, String> {
-    modules::user_memory::load_user_memory()
+pub async fn load_user_memory(
+    legacy: Option<modules::user_memory::UserMemory>,
+) -> Result<modules::user_memory::UserMemory, String> {
+    tauri::async_runtime::spawn_blocking(move || modules::user_memory::load_user_memory(legacy))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-pub fn mark_user_memory_dismissed(id: String) -> Result<modules::user_memory::UserMemory, String> {
-    modules::user_memory::mark_user_memory_dismissed(&id)
+pub async fn mark_user_memory_dismissed(id: String) -> Result<modules::user_memory::UserMemory, String> {
+    tauri::async_runtime::spawn_blocking(move || modules::user_memory::mark_user_memory_dismissed(&id))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-pub fn save_user_memory_list(
+pub async fn save_user_memory_list(
     id: String,
     items: Vec<String>,
 ) -> Result<modules::user_memory::UserMemory, String> {
-    modules::user_memory::save_user_memory_list(&id, items)
+    tauri::async_runtime::spawn_blocking(move || modules::user_memory::save_user_memory_list(&id, items))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+/// 返回操作系统真实时区相对 UTC 的偏移（分钟），如 `+08:00` -> `480`。
+///
+/// WebView 的 `Intl` 默认时区在部分环境会解析成 `UTC`，且部分 webview 的 ICU
+/// 时区库无法解析 IANA 名称（如 `Asia/Shanghai`）而再次静默回退 UTC，导致时间
+/// 偏移 N 小时。因此直接由 Rust 侧用 `chrono::Local` 读取 OS 真实偏移（与日志
+/// 本地时间一致），前端以 `UTC + offset` 方式渲染，彻底绕开 webview 时区库。
+/// ponytail: 仅在启动时取一次并缓存到前端，单一事实源；DST 边界的极旧时间戳
+/// 可能偏差 1 小时（用“当前”偏移近似），对“最近切换时间”无影响。
+#[tauri::command]
+pub fn get_local_timezone() -> i64 {
+    chrono::Local::now().offset().local_minus_utc() as i64 / 60
 }

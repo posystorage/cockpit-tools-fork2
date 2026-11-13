@@ -1,3 +1,4 @@
+import { previewDurableUiSetting, readDurableUiSetting } from "../utils/durableUiSettings";
 import { isCodexPendingOAuthAccount, type CodexApiProviderMode, type CodexBatchDeleteJobStatus } from "../types/codex";
 import type { CodexAccount } from "../types/codex";
 import type { CodexLocalAccessAddressKind, CodexLocalAccessAccountHealth, CodexLocalAccessCollection, CodexLocalAccessOAuthQuotaReserve } from "../types/codexLocalAccess";
@@ -122,7 +123,6 @@ export const SEARCH_QUERY_FIELD = CODEX_OVERVIEW_FILTER_FIELDS.searchQuery;
 export const FILTER_TYPES_FIELD = CODEX_OVERVIEW_FILTER_FIELDS.filterTypes;
 export const EXPIRY_FILTER_FIELD = CODEX_OVERVIEW_FILTER_FIELDS.expiryFilter;
 export const GROUP_FILTER_FIELD = CODEX_OVERVIEW_FILTER_FIELDS.groupFilter;
-export const ACTIVE_GROUP_ID_FIELD = CODEX_OVERVIEW_FILTER_FIELDS.activeGroupId;
 export const OAUTH_BINDING_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 
 export type CodexOverviewLayoutMode = "compact" | "list" | "grid";
@@ -297,24 +297,8 @@ export function normalizeLocalAccessAddressKind(
   return value === "lan" ? "lan" : "local";
 }
 
-export function readStoredLocalAccessAddressKind(): CodexLocalAccessAddressKind {
-  try {
-    return normalizeLocalAccessAddressKind(
-      localStorage.getItem(CODEX_LOCAL_ACCESS_ADDRESS_KIND_KEY),
-    );
-  } catch {
-    return "local";
-  }
-}
-
-export function persistLocalAccessAddressKind(
-  value: CodexLocalAccessAddressKind,
-): void {
-  try {
-    localStorage.setItem(CODEX_LOCAL_ACCESS_ADDRESS_KIND_KEY, value);
-  } catch {
-    // ignore storage write failures
-  }
+export function persistLocalAccessAddressKind(value: CodexLocalAccessAddressKind): void {
+  previewDurableUiSetting(CODEX_LOCAL_ACCESS_ADDRESS_KIND_KEY, value);
 }
 
 export const CODEX_BATCH_IMPORT_SESSION_STORAGE_KEY =
@@ -396,13 +380,15 @@ export function getCockpitApiStatsRecord(
 
 export function resolveApiKeyUsageMode(
   summary?: CodexModelProviderUsageSummary,
-): "new_api" | "sub2api" | "deepseek" | "token_plan" | null {
+): "new_api" | "sub2api" | "deepseek" | "token_plan" | "openai_official" | "cockpit" | null {
   if (!summary) return null;
+  if (summary.cockpit) return "cockpit";
   if (
     summary.mode === "new_api" ||
     summary.mode === "sub2api" ||
     summary.mode === "deepseek" ||
-    summary.mode === "token_plan"
+    summary.mode === "token_plan" ||
+    summary.mode === "openai_official"
   ) {
     return summary.mode;
   }
@@ -543,21 +529,12 @@ export interface CodexCliInstanceDraft {
 export const CODEX_CLI_LAST_WORKING_DIR_KEY = "cockpit.codex.cli.lastWorkingDir";
 
 export function readLastCodexCliWorkingDir(): string {
-  try {
-    return localStorage.getItem(CODEX_CLI_LAST_WORKING_DIR_KEY)?.trim() || "";
-  } catch {
-    return "";
-  }
+  return readDurableUiSetting(CODEX_CLI_LAST_WORKING_DIR_KEY)?.trim() || "";
 }
 
 export function persistLastCodexCliWorkingDir(value: string): void {
   const workingDir = value.trim();
-  if (!workingDir) return;
-  try {
-    localStorage.setItem(CODEX_CLI_LAST_WORKING_DIR_KEY, workingDir);
-  } catch {
-    // 工作目录记忆失败不影响 CLI 启动。
-  }
+  if (workingDir) previewDurableUiSetting(CODEX_CLI_LAST_WORKING_DIR_KEY, workingDir);
 }
 
 export function maskCodexApiKey(value: string): string {
@@ -606,7 +583,7 @@ export interface SponsorApiProviderTemplate {
   supportsVision: boolean;
   website: string;
   apiKeyUrl: string;
-  wireApi?: "responses" | "chat_completions" | null;
+  wireApi?: "responses" | "chat_completions" | "anthropic" | null;
   integrationType?: "sub2api" | "new_api" | null;
 }
 

@@ -77,13 +77,14 @@ const DEFAULT_TRANSFER_SELECTION: DataTransferSelection = {
 };
 
 const BACKUP_FILE_NAME_REGEX =
-  /^cockpit_(auto|manual)_backup_(full|accounts|config)_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.(json|zip)$/i;
+  /^cockpit_(auto|manual)_backup_(full|accounts|config)_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}(?:_mfa-pending)?\.(json|zip)$/i;
 
 const BACKUP_USAGE_SOURCE_ORDER = [
   'scheduled',
   'claude',
   'codex',
   'workbuddy',
+  'minimaxcode',
   'codebuddy',
   'trae',
 ] as const;
@@ -101,6 +102,7 @@ function normalizeImportErrorMessage(
   if (rawError === 'codex_top_layout_read_failed') return t('codex.more.topLayoutReadFailed');
   if (rawError === 'codex_top_layout_invalid') return t('settings.transfer.errors.codexTopLayoutInvalid');
   if (rawError === 'codex_top_layout_import_failed') return t('settings.transfer.errors.codexTopLayoutImportFailed');
+  if (rawError === 'platform_layout_import_failed') return t('settings.transfer.errors.platformLayoutImportFailed');
   if (rawError === 'transfer_selection_required') {
     return t('settings.transfer.errors.selectionRequired');
   }
@@ -1474,6 +1476,7 @@ export function SettingsAccountTransferSection({
                 </button>
               </div>
             </div>
+
 
             {!showImportModal && !showExportOptionsModal && feedbackNode && (
               <div className="settings-transfer-feedback-wrap">{feedbackNode}</div>

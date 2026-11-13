@@ -20,22 +20,23 @@ export async function fingerprintExcludedAccountIds(accounts: CodexAccount[], pr
 export function buildFingerprintTargets(accounts: CodexAccount[], providers: CodexModelProvider[], excludedAccountIds: string[] = []): FingerprintTarget[] {
   const targets: FingerprintTarget[] = [];
   const seen = new Set<string>();
-  const identity = (url: string, key: string) => JSON.stringify([url.trim().replace(/\/$/, ''), key.trim()]);
+  const identity = (url: string, key: string, protocol?: string | null, scheme?: string | null) =>
+    JSON.stringify([url.trim().replace(/\/$/, ''), key.trim(), protocol || 'responses', protocol === 'anthropic' ? scheme || 'x-api-key' : 'bearer']);
   for (const provider of providers) for (const key of provider.apiKeys) {
     if (!key.apiKey.trim() || !provider.baseUrl.trim()) continue;
-    const signature = identity(provider.baseUrl, key.apiKey);
+    const signature = identity(provider.baseUrl, key.apiKey, provider.wireApi, provider.authScheme);
     if (seen.has(signature)) continue;
     seen.add(signature);
     targets.push({ id: 'provider:' + provider.id + ':' + key.id, kind: 'provider',
       label: provider.name + ' · ' + (key.name || 'API Key ' + (provider.apiKeys.indexOf(key) + 1)),
-      baseUrl: provider.baseUrl, apiKey: key.apiKey, wireApi: provider.wireApi || 'responses' });
+      baseUrl: provider.baseUrl, apiKey: key.apiKey, wireApi: provider.wireApi || 'responses', authScheme: provider.authScheme });
   }
   for (const account of accounts) {
     if (excludedAccountIds.includes(account.id)) continue;
     if (isCodexWebSessionAccount(account) || isCodexPendingOAuthAccount(account)) continue;
     if (isCodexApiKeyAccount(account)) {
       if (!account.openai_api_key?.trim()) continue;
-      const signature = identity(account.api_base_url || 'https://api.openai.com/v1', account.openai_api_key);
+      const signature = identity(account.api_base_url || 'https://api.openai.com/v1', account.openai_api_key, account.api_wire_api, account.api_auth_scheme);
       if (seen.has(signature)) continue;
       seen.add(signature);
     } else if (!account.tokens?.access_token?.trim()) continue;

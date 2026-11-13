@@ -1,3 +1,4 @@
+import { useRefreshSafeDraft } from "../hooks/useRefreshSafeDraft";
 import { CodexSessionIdentityMappingControl } from "./codex/CodexSessionIdentityMappingControl";
 import { CodexMemberAccessMode } from './codex/CodexMemberAccessMode';
 import { canChooseCodexServiceAuthorization } from '../utils/codexAccountServiceNavigation';
@@ -9,7 +10,7 @@ import { codexServiceDisplayRows, codexServiceRelatedEndpointIds, getCodexServic
 import { CODEX_ACCOUNT_SERVICE_APPLIED, type CodexAccountServiceApplied } from "../utils/codexAccountServiceNavigation";
 import { CodexServiceMemberAuthorization } from "./codex/CodexServiceMemberAuthorization";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CodexGatewayModeControl, formatCodexGatewayModeError } from "./codex/CodexGatewayModeControl";
+import { formatCodexGatewayModeError } from "../utils/codexGatewayError";
 import {
   Activity,
   Bug,
@@ -96,6 +97,7 @@ import {
 import { SingleSelectDropdown } from "./SingleSelectDropdown";
 import { CodexImageModelSelect } from "./CodexImageModelConfig";
 import { CodexRequestPayloadSetting } from "./codex/CodexRequestPayloadSetting";
+import { CodexOverloadRetrySetting } from "./codex/CodexOverloadRetrySetting";
 import { CodexMemberImagePolicy } from "./codex/CodexMemberImagePolicy";
 import { CodexImageForwardConfig } from "./CodexImageForwardConfig";
 import { buildGrokMemberRowAccounts, CodexGrokBuildQuotaChip, selectCodexLocalAccessMemberRows } from "./codex/codexGrokMemberRows";
@@ -107,9 +109,12 @@ import {
   type CodexStatsTimeRange,
 } from "../utils/codexStatsRange";
 import {
-  persistCodexStatsRangeSelection,
+  CODEX_LOCAL_ACCESS_STATS_RANGE_STORAGE_KEY,
   readCodexStatsRangeSelection,
+  serializeCodexStatsRangeSelection,
 } from "../utils/codexStatsRangePreference";
+import { useDurableUiSetting } from "../hooks/useDurableUiSetting";
+import { previewDurableUiSetting } from "../utils/durableUiSettings";
 import { useEscClose } from "../hooks/useEscClose";
 import {
   buildPaginationPageSizeStorageKey,
@@ -127,6 +132,7 @@ import {
   formatCompactNumber,
   formatLatencyMs,
   formatQuotaPoolLabel,
+  getLocalAccessTestModelIds,
   formatRequestResultDetail as formatLocalAccessRequestResultDetail,
   normalizeAccessScope,
   normalizeCustomRoutingPriority,
@@ -223,7 +229,7 @@ interface CodexLocalAccessModalProps {
   ) => Promise<unknown> | unknown;
   onRotateApiKey: () => Promise<unknown> | unknown;
   onRestartSidecar: () => Promise<unknown> | unknown;
-  onKillPort: () => Promise<unknown> | unknown;
+  onRequestPortRecovery: () => void;
   onToggleEnabled: () => Promise<unknown> | unknown;
   onRecoverAccounts: (accountIds: string[]) => Promise<void>;
   healthActionBusy: boolean;
@@ -241,13 +247,10 @@ interface CodexLocalAccessModalProps {
 
 type CopyableField = "apiPortUrl" | "baseUrl" | "apiKey" | "modelId";
 
-const CODEX_LOCAL_ACCESS_STATS_RANGE_STORAGE_KEY =
-  "agtools.codex.local_access.stats_range.v1";
 export function CodexLocalAccessModal({
   isOpen,
   mode,
   state,
-  onStateChange,
   addressKind,
   addressOptions,
   onAddressKindChange,
@@ -274,7 +277,7 @@ export function CodexLocalAccessModal({
   onUpdateImageGenerationAccounts,
   onRotateApiKey,
   onRestartSidecar,
-  onKillPort,
+  onRequestPortRecovery,
   onToggleEnabled,
   onRecoverAccounts,
   healthActionBusy,
@@ -286,8 +289,8 @@ export function CodexLocalAccessModal({
   sidecarRestarting,
 }: CodexLocalAccessModalProps) {
   const { t } = useTranslation();
-  const [gatewaySaving, setGatewaySaving] = useState(false);
-  const saving = externalSaving || gatewaySaving;
+  const saving = externalSaving;
+  const collection = state?.collection ?? null;
   const localAccessStatus = resolveCodexLocalAccessRuntimeStatus(state?.collection, state);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -302,6 +305,7 @@ export function CodexLocalAccessModal({
   const [sessionAffinityTtlError, setSessionAffinityTtlError] = useState("");
   const [imageGenerationPolicies, setImageGenerationPolicies] = useState<Record<string, CodexLocalAccessImageGenerationPolicy>>({});
   const [membersDraftDirty, setMembersDraftDirty] = useState(false);
+  const modalSessionRef = useRef<CodexLocalAccessModalProps["mode"] | null>(null);
   const [memberSavePending, setMemberSavePending] = useState(false);
   const memberSaveInFlight = useRef(false);
   const memberSaveEpoch = useRef(0);
@@ -328,13 +332,15 @@ export function CodexLocalAccessModal({
   );
   const [testChatInput, setTestChatInput] = useState("");
   const [testDialogError, setTestDialogError] = useState("");
-  const [portInput, setPortInput] = useState("");
-  const [upstreamProxyDraftUrl, setUpstreamProxyDraftUrl] = useState("");
+  const [portInput, setPortInput] = useRefreshSafeDraft(collection?.port ? String(collection.port) : "");
+  const [upstreamProxyDraftUrl, setUpstreamProxyDraftUrl] = useRefreshSafeDraft(collection?.upstreamProxyUrl ?? "");
   const [keyVisible, setKeyVisible] = useState(false);
   const [copiedField, setCopiedField] = useState<CopyableField | null>(null);
   const [selectedModelId, setSelectedModelId] = useState("");
-  const [statsSelection, setStatsSelection] = useState(() =>
-    readCodexStatsRangeSelection(CODEX_LOCAL_ACCESS_STATS_RANGE_STORAGE_KEY),
+  const savedStatsRange = useDurableUiSetting(CODEX_LOCAL_ACCESS_STATS_RANGE_STORAGE_KEY);
+  const statsSelection = useMemo(
+    () => readCodexStatsRangeSelection(savedStatsRange),
+    [savedStatsRange, isOpen],
   );
   const { key: statsRange, range: statsTimeRange } = statsSelection;
   const [filteredStatsWindow, setFilteredStatsWindow] =
@@ -365,14 +371,13 @@ export function CodexLocalAccessModal({
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const sessionAffinityTtlInputRef = useRef<HTMLInputElement | null>(null);
   const testChatScrollRef = useRef<HTMLDivElement | null>(null);
-  const modalLifecycleRef = useRef({ isOpen: false, mode });
 
-  const collection = state?.collection ?? null;
   const apiPortUrl = state?.apiPortUrl ?? "";
   const baseUrl = state?.baseUrl ?? "";
   const displayBaseUrl =
     addressKind === "lan" && state?.lanBaseUrl ? state.lanBaseUrl : baseUrl;
   const modelIds = state?.modelIds ?? [];
+  const testModelIds = useMemo(() => getLocalAccessTestModelIds(modelIds, collection), [modelIds, collection]);
   const stats = state?.stats;
   const quotaPoolLabels = useMemo(
     () => ({
@@ -530,47 +535,23 @@ export function CodexLocalAccessModal({
   }, [isOpen, mode]);
 
   useEffect(() => {
-    const previousLifecycle = modalLifecycleRef.current;
-    modalLifecycleRef.current = { isOpen, mode };
-    const shouldInitialize =
-      isOpen && (!previousLifecycle.isOpen || previousLifecycle.mode !== mode);
-
-    // Service polling replaces collection arrays every few seconds. Only an
-    // actual modal open or mode change should reset transient dialog state.
-    if (!shouldInitialize) return;
-    const shouldResetMembersDraft = mode !== "members" || !membersDraftDirty;
+    if (!isOpen) {
+      modalSessionRef.current = null;
+      return;
+    }
+    // 后台状态/额度刷新只同步未编辑的数据，不能重置当前弹框会话。
+    const isNewSession = modalSessionRef.current !== mode;
+    modalSessionRef.current = mode;
+    const shouldResetMembersDraft = isNewSession ||
+      ((mode !== "members" || !membersDraftDirty) && !customRoutingOpen);
     if (shouldResetMembersDraft) {
-      setQuery("");
       setSelected(new Set(normalizedInitialSelectedIds));
-      setFilterTypes([]);
-      setTagFilter([]);
-      setGroupFilter([]);
       setRestrictFreeAccounts(initialRestrictFreeAccounts);
       setSessionIdentityMappingEnabled(initialSessionIdentityMappingEnabled);
       setSessionAffinity(initialSessionAffinity);
       setSessionAffinityTtlSeconds(String(initialSessionAffinityTtlSeconds));
       setImageGenerationPolicies(collection?.imageGenerationAccountPolicies ?? {});
       setOfficialAccountBindings(collection?.officialAccountBindings ?? {});
-    }
-    setSessionAffinityTtlError("");
-    setError("");
-    setNotice("");
-    setTestDialogOpen(false);
-    setTestDialogRunning(false);
-    setTestChatMessages([]);
-    setTestChatInput("");
-    setTestDialogError("");
-    setKeyVisible(false);
-    setCopiedField(null);
-    setPortInput(collection?.port ? String(collection.port) : "");
-    setUpstreamProxyDraftUrl(collection?.upstreamProxyUrl ?? "");
-    setCustomRoutingOpen(false);
-    setCustomRoutingQuery("");
-    setCustomRoutingFilterTypes([]);
-    setCustomRoutingTagFilter([]);
-    setCustomRoutingError("");
-    setCustomRoutingSelected(new Set());
-    if (shouldResetMembersDraft) {
       setCustomRoutingDraft(() => {
         const ruleMap = new Map(
           (collection?.customRoutingRules ?? []).map((rule) => [
@@ -595,20 +576,43 @@ export function CodexLocalAccessModal({
         return next;
       });
     }
+    if (!isNewSession) return;
+    setQuery("");
+    setFilterTypes([]);
+    setTagFilter([]);
+    setGroupFilter([]);
+    setSessionAffinityTtlError("");
+    setError("");
+    setNotice("");
+    setTestDialogOpen(false);
+    setTestDialogRunning(false);
+    setTestChatMessages([]);
+    setTestChatInput("");
+    setTestDialogError("");
+    setKeyVisible(false);
+    setCopiedField(null);
+    setPortInput(collection?.port ? String(collection.port) : "");
+    setUpstreamProxyDraftUrl(collection?.upstreamProxyUrl ?? "");
+    setCustomRoutingOpen(false);
+    setCustomRoutingQuery("");
+    setCustomRoutingFilterTypes([]);
+    setCustomRoutingTagFilter([]);
+    setCustomRoutingError("");
+    setCustomRoutingSelected(new Set());
     setCustomRoutingBulkPriority("10");
     setCustomRoutingBulkWeight("1");
     if (mode === "members") {
-      window.setTimeout(() => {
+      const timer = window.setTimeout(() => {
         searchInputRef.current?.focus();
       }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, [
     collection?.accountIds,
-    collection?.apiKeys,
     collection?.customRoutingRules,
+    collection?.imageGenerationAccountPolicies,
     collection?.officialAccountBindings,
-    collection?.port,
-    collection?.upstreamProxyUrl,
+    customRoutingOpen,
     initialRestrictFreeAccounts,
     initialSessionIdentityMappingEnabled,
     initialSessionAffinity,
@@ -620,20 +624,15 @@ export function CodexLocalAccessModal({
   ]);
 
   useEffect(() => {
-    if (modelIds.length === 0) {
+    const options = testDialogOpen ? testModelIds : modelIds;
+    if (options.length === 0) {
       setSelectedModelId("");
       return;
     }
     setSelectedModelId((current) =>
-      modelIds.includes(current) ? current : modelIds[0],
+      options.includes(current) ? current : options[0],
     );
-  }, [modelIds]);
-
-  useEffect(() => {
-    if (isOpen) {
-      setStatsSelection(readCodexStatsRangeSelection(CODEX_LOCAL_ACCESS_STATS_RANGE_STORAGE_KEY));
-    }
-  }, [isOpen]);
+  }, [modelIds, testDialogOpen, testModelIds]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -654,15 +653,13 @@ export function CodexLocalAccessModal({
     key: Exclude<CodexStatsRangeKey, "custom">,
     range: CodexStatsTimeRange,
   ) => {
-    const selection = { key, range };
-    setStatsSelection(selection);
-    persistCodexStatsRangeSelection(CODEX_LOCAL_ACCESS_STATS_RANGE_STORAGE_KEY, selection);
+    const saved = serializeCodexStatsRangeSelection({ key, range });
+    if (saved !== null) previewDurableUiSetting(CODEX_LOCAL_ACCESS_STATS_RANGE_STORAGE_KEY, saved);
   };
 
   const handleCustomStatsRangeApply = (range: CodexStatsTimeRange) => {
-    const selection = { key: "custom" as const, range };
-    setStatsSelection(selection);
-    persistCodexStatsRangeSelection(CODEX_LOCAL_ACCESS_STATS_RANGE_STORAGE_KEY, selection);
+    const saved = serializeCodexStatsRangeSelection({ key: "custom", range });
+    if (saved !== null) previewDurableUiSetting(CODEX_LOCAL_ACCESS_STATS_RANGE_STORAGE_KEY, saved);
   };
 
   useEffect(() => {
@@ -1490,10 +1487,15 @@ export function CodexLocalAccessModal({
     try {
       // Official membership is persisted before account metadata is refreshed.
       // Never silently drop the new endpoint while its store refresh is pending.
-      if ([...selected].some((id) => id.startsWith("chatgpt_plan_") && !localAccessAccountById.has(id))) {
+      const selectedIds = Array.from(selected);
+      if (selectedIds.some((id) => id.startsWith("chatgpt_plan_") && !localAccessAccountById.has(id))) {
         throw new Error(t("chatgptPlan.officialFlow.memberSyncPending"));
       }
-      const filtered = Array.from(selected).filter((accountId) => {
+      if (selectedIds.some((id) => !localAccessAccountById.has(id) &&
+          !(collection?.pausedAccountIds?.includes(id) && collection.accountIds.includes(id)))) {
+        throw new Error(t("codex.localAccess.noEligibleAccountsSelected"));
+      }
+      const filtered = selectedIds.filter((accountId) => {
         if (collection?.pausedAccountIds?.includes(accountId) && collection.accountIds.includes(accountId)) return true;
         const account = localAccessAccountById.get(accountId);
         if (!account) return false;
@@ -1878,15 +1880,6 @@ export function CodexLocalAccessModal({
     );
   };
 
-  const handleKillPort = async () => {
-    await runAction(
-      async () => {
-        await onKillPort();
-      },
-      t("codex.localAccess.killPortSuccessUnknown", "API 服务端口已清理"),
-    );
-  };
-
   const handleRestartSidecar = async () => {
     const confirmed = await confirmDialog(
       t(
@@ -1932,7 +1925,6 @@ export function CodexLocalAccessModal({
   };
 
   const closeTestDialog = () => {
-    if (testDialogBusy) return;
     setTestDialogOpen(false);
   };
 
@@ -2019,8 +2011,9 @@ export function CodexLocalAccessModal({
                 message.id === assistantMessage.id
                   ? {
                       ...message,
+                      imageDataUrl: payload.imageDataUrl,
                       content:
-                        message.content ||
+                        payload.imageDataUrl ? "" : message.content ||
                         t(
                           "codex.localAccess.testChatEmptyResponse",
                           "响应为空",
@@ -2319,7 +2312,7 @@ export function CodexLocalAccessModal({
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm codex-local-access-inline-action"
-                      onClick={() => void handleKillPort()}
+                      onClick={onRequestPortRecovery}
                       disabled={actionBusy}
                     >
                       {portCleanupBusy ? (
@@ -2327,7 +2320,7 @@ export function CodexLocalAccessModal({
                       ) : (
                         <Wrench size={14} />
                       )}
-                      {t("codex.localAccess.killPortAction", "清理端口")}
+                      {t("codex.localAccess.portRecoveryTitle")}
                     </button>
                   </>
                 )}
@@ -2510,9 +2503,6 @@ export function CodexLocalAccessModal({
                       {t("codex.localAccess.configTitle", "服务配置")}
                     </span>
                   </div>
-                  <CodexGatewayModeControl state={state} onState={onStateChange}
-                    disabled={actionBusy || sidecarRestarting} onError={setError}
-                    onNotice={setNotice} onSavingChange={setGatewaySaving} />
                   {collection ? (
                     <div className="codex-local-access-config-grid">
                       <div className="codex-local-access-config-card codex-local-access-config-card-base">
@@ -2822,6 +2812,7 @@ export function CodexLocalAccessModal({
                       <CodexRequestPayloadSetting />
                     </div>
                   </details>
+                  <CodexOverloadRetrySetting />
                 </section>
 
                 <section className="codex-local-access-section codex-local-access-section-surface codex-local-access-account-stats-section">
@@ -3888,16 +3879,12 @@ export function CodexLocalAccessModal({
                   </span>
                 </h3>
                 <p>
-                  {t(
-                    "codex.localAccess.testDialogDesc",
-                    "通过本地 API 服务发起一次真实对话，验证本地服务、密钥和上游响应。",
-                  )}
+                  {t("codex.localAccess.testDialogDesc")}
                 </p>
               </div>
               <button
                 className="modal-close codex-local-access-test-dialog-close"
                 onClick={closeTestDialog}
-                disabled={testDialogBusy}
                 aria-label={t("common.close")}
               >
                 <X size={18} />
@@ -3910,9 +3897,9 @@ export function CodexLocalAccessModal({
                   <span>{t("codex.localAccess.testChatModel", "模型")}</span>
                   <SingleSelectDropdown
                     value={selectedModelId}
-                    options={modelIdOptions}
+                    options={testModelIds.map((id) => ({ value: id, label: id }))}
                     onChange={setSelectedModelId}
-                    disabled={modelIdOptions.length === 0 || testDialogBusy}
+                    disabled={testModelIds.length === 0 || testDialogBusy}
                     ariaLabel={t("codex.localAccess.testChatModel", "模型")}
                     placeholder={t(
                       "codex.localAccess.modelIdPlaceholder",
@@ -3938,10 +3925,7 @@ export function CodexLocalAccessModal({
               >
                 {testChatMessages.length === 0 ? (
                   <div className="codex-local-access-test-chat-empty">
-                    {t(
-                      "codex.localAccess.testChatEmpty",
-                      "输入一条消息后，会通过当前 API 服务发起真实对话。",
-                    )}
+                    {t("codex.localAccess.testChatEmpty")}
                   </div>
                 ) : (
                   testChatMessages.map((message) => (
@@ -3957,7 +3941,9 @@ export function CodexLocalAccessModal({
                             {message.failureTitle}
                           </strong>
                         )}
-                        <p>{message.content}</p>
+                        {message.imageDataUrl
+                          ? <img src={message.imageDataUrl} alt={t("codex.localAccess.testOutputTitle")} />
+                          : <p>{message.content}</p>}
                         {message.failureDetail && (
                           <span className="codex-local-access-test-chat-meta">
                             {message.failureDetail}
@@ -4032,7 +4018,6 @@ export function CodexLocalAccessModal({
               <button
                 className="btn btn-secondary"
                 onClick={closeTestDialog}
-                disabled={testDialogBusy}
               >
                 {t("common.close")}
               </button>

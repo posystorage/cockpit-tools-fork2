@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback, useEffect, Fragment } from 'react';
+import { useAccountsOverviewFilterState } from '../hooks/useAccountsOverviewFilterState';
+import { useState, useMemo, useCallback, Fragment } from 'react';
 import {
   Plus,
   RefreshCw,
@@ -27,6 +28,7 @@ import {
   EyeOff,
   BookOpen,
 } from 'lucide-react';
+import { AccountLastUsed } from '../components/AccountLastUsed';
 import { useGitHubCopilotAccountStore } from '../stores/useGitHubCopilotAccountStore';
 import * as githubCopilotService from '../services/githubCopilotService';
 import { TagEditModal } from '../components/TagEditModal';
@@ -61,12 +63,9 @@ import {
   normalizeAccountsOverviewScope,
   readAccountsOverviewFilterPersistenceEnabled,
   readAccountsOverviewFilterStringArray,
-  removeAccountsOverviewFilterField,
-  writeAccountsOverviewFilterField,
 } from '../utils/accountsOverviewFilterPersistence';
 
 const GHCP_FLOW_NOTICE_COLLAPSED_KEY = 'agtools.github_copilot.flow_notice_collapsed';
-const GHCP_CURRENT_ACCOUNT_ID_KEY = 'agtools.github_copilot.current_account_id';
 const GHCP_FILTER_PERSISTENCE_SCOPE = normalizeAccountsOverviewScope('GitHubCopilot');
 const FILTER_TYPES_FIELD = 'filter_types';
 const GHCP_TOKEN_SINGLE_EXAMPLE = `ghu_xxx... 或 github_pat_xxx...`;
@@ -84,7 +83,7 @@ const GHCP_TOKEN_BATCH_EXAMPLE = `[
 
 export function GitHubCopilotAccountsPage() {
   const [activeTab, setActiveTab] = useState<GitHubCopilotTab>('overview');
-  const [filterTypes, setFilterTypes] = useState<string[]>(() =>
+  const [filterTypes, setFilterTypes] = useAccountsOverviewFilterState<string[]>(GHCP_FILTER_PERSISTENCE_SCOPE, FILTER_TYPES_FIELD, () =>
     readAccountsOverviewFilterPersistenceEnabled(GHCP_FILTER_PERSISTENCE_SCOPE)
       ? readAccountsOverviewFilterStringArray(GHCP_FILTER_PERSISTENCE_SCOPE, FILTER_TYPES_FIELD)
       : [],
@@ -97,7 +96,6 @@ export function GitHubCopilotAccountsPage() {
     platformKey: 'GitHubCopilot',
     oauthLogPrefix: 'GitHubCopilotOAuth',
     flowNoticeCollapsedKey: GHCP_FLOW_NOTICE_COLLAPSED_KEY,
-    currentAccountIdKey: GHCP_CURRENT_ACCOUNT_ID_KEY,
     exportFilePrefix: 'github_copilot_accounts',
     store: {
       accounts: store.accounts,
@@ -131,7 +129,6 @@ export function GitHubCopilotAccountsPage() {
   const {
     t, privacyModeEnabled, togglePrivacyMode, maskAccountText,
     viewMode, setViewMode, searchQuery, setSearchQuery,
-    filterPersistenceEnabled, filterPersistenceScope,
     sortBy, setSortBy, sortDirection, setSortDirection,
     selected, toggleSelect, toggleSelectAll,
     tagFilter, groupByTag, setGroupByTag, showTagFilter, setShowTagFilter,
@@ -160,14 +157,6 @@ export function GitHubCopilotAccountsPage() {
   } = page;
 
   const grouping = usePlatformAccountGroups('github_copilot', () => toggleSelectAll(Array.from(selected)));
-
-  useEffect(() => {
-    if (!filterPersistenceEnabled) {
-      removeAccountsOverviewFilterField(filterPersistenceScope, FILTER_TYPES_FIELD);
-      return;
-    }
-    writeAccountsOverviewFilterField(filterPersistenceScope, FILTER_TYPES_FIELD, filterTypes);
-  }, [filterPersistenceEnabled, filterPersistenceScope, filterTypes]);
 
   const toggleFilterTypeValue = useCallback((value: string) => {
     setFilterTypes((prev) => {
@@ -537,7 +526,7 @@ export function GitHubCopilotAccountsPage() {
           </div>
 
           <div className="card-footer">
-            <span className="card-date">{formatDate(account.created_at)}</span>
+            <AccountLastUsed accountId={account.id} lastSwitchedAt={account.last_switched_at} createdAt={account.created_at} formatDate={formatDate} />
             <div className="card-actions">
               <button
                 className="card-action-btn success"
@@ -913,7 +902,7 @@ export function GitHubCopilotAccountsPage() {
               { value: 'created_at', label: t('common.shared.sort.createdAt', '按创建时间') },
               { value: 'weekly', label: t('githubCopilot.sort.weekly', '按 Chat messages 使用量') },
               { value: 'hourly', label: t('githubCopilot.sort.hourly', '按 Inline Suggestions 使用量') },
-              { value: 'premium', label: t('githubCopilot.sort.premium', '按 Premium requests 使用量') },
+              { value: 'premium', label: t('common.shared.quota.usage') },
               { value: 'weekly_reset', label: t('githubCopilot.sort.weeklyReset', '按 Chat messages 重置时间') },
               { value: 'hourly_reset', label: t('githubCopilot.sort.hourlyReset', '按 Inline Suggestions 重置时间') },
             ]}
@@ -1078,7 +1067,7 @@ export function GitHubCopilotAccountsPage() {
                 <th style={{ width: 140 }}>{t('common.shared.columns.plan', '订阅')}</th>
                 <th>{t('githubCopilot.columns.hourly', 'Inline Suggestions')}</th>
                 <th>{t('githubCopilot.columns.weekly', 'Chat messages')}</th>
-                <th>{t('githubCopilot.columns.premium', 'Premium requests')}</th>
+                <th>{t('common.shared.quota.usage')}</th>
                 <th className="sticky-action-header table-action-header">{t('common.shared.columns.actions', '操作')}</th>
               </tr>
             </thead>
@@ -1115,7 +1104,7 @@ export function GitHubCopilotAccountsPage() {
                 <th style={{ width: 140 }}>{t('common.shared.columns.plan', '订阅')}</th>
                 <th>{t('githubCopilot.columns.hourly', 'Inline Suggestions')}</th>
                 <th>{t('githubCopilot.columns.weekly', 'Chat messages')}</th>
-                <th>{t('githubCopilot.columns.premium', 'Premium requests')}</th>
+                <th>{t('common.shared.quota.usage')}</th>
                 <th className="sticky-action-header table-action-header">{t('common.shared.columns.actions', '操作')}</th>
               </tr>
             </thead>

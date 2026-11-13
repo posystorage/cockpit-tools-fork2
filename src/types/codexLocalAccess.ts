@@ -4,6 +4,7 @@ export type CodexLocalAccessClientBaseUrlHost = "localhost" | "127.0.0.1";
 export type CodexLocalAccessImageGenerationMode =
   "enabled" | "images_only" | "disabled";
 export type CodexLocalAccessGatewayMode = "legacy" | "sidecar" | "native";
+export type CodexApiKeyReasoningCeiling = "none" | "minimal" | import("./codex").CodexReasoningEffort;
 
 export type CodexLocalAccessRequestKind =
   "text" | "image_generation" | "image_edit" | "other";
@@ -55,6 +56,7 @@ export type CodexLocalAccessRoutingStrategy =
   | "plan_high_first"
   | "plan_low_first"
   | "expiry_soon_first"
+  | "five_hour_reset_soon_first"
   | "custom";
 
 export interface CodexLocalAccessCustomRoutingRule {
@@ -112,8 +114,11 @@ export interface CodexLocalAccessApiKey {
   modelPrefix?: string | null;
   allowedModels: string[];
   excludedModels: string[];
+  maxReasoningEffort?: CodexApiKeyReasoningCeiling | null;
   tokenLimit?: number | null;
   tokenUsed: number;
+  budget?: import('./codexRemoteService').CodexApiKeyBudget;
+  budgetUsage?: import('./codexRemoteService').CodexApiKeyBudgetUsage;
   enabled: boolean;
   createdAt: number;
   updatedAt: number;
@@ -121,6 +126,8 @@ export interface CodexLocalAccessApiKey {
 }
 
 export interface CodexLocalAccessTimeouts {
+  legacyRequestReadTimeoutMs: number;
+  legacyUpstreamConnectTimeoutMs: number;
   sidecarStreamOpenTimeoutMs: number;
   sidecarStreamIdleTimeoutMs: number;
   sidecarImageStreamOpenTimeoutMs: number;
@@ -129,6 +136,7 @@ export interface CodexLocalAccessTimeouts {
   sidecarStreamKeepaliveSeconds: number;
   websocketConnectTimeoutMs: number;
   websocketInitialMessageTimeoutMs: number;
+  websocketFragmentTimeoutMs: number;
   websocketIdleTimeoutMs: number;
   websocketHeartbeatIntervalMs: number;
   upstreamSendRetryAttempts: number;
@@ -317,6 +325,7 @@ export interface CodexLocalAccessProxyRoute {
 }
 
 export interface CodexLocalAccessUsageEvent {
+  connectionSource?: { peerIp: string; kind: 'local' | 'lan' | 'remote' };
   authorizationRoute?: 'official' | 'local_gateway' | null;
   /** Recorded fallback evidence; absent for older logs or pending diagnostics. */
   authorizationFallback?: CodexAuthorizationFallbackTrace | null;
@@ -409,13 +418,29 @@ export interface CodexServiceTierAdaptation {
 }
 
 export interface CodexLocalAccessRequestAttempt {
+  imageRequest?: {
+    requestedModel?: string;
+    upstreamModel: string;
+    responsesModel?: string;
+    upstreamStatus?: number;
+  };
+  upstreamRequestBytes?: number | null;
+  requestSize?: {
+    totalBytes: number;
+    inputBytes: number;
+    toolsBytes: number;
+    instructionsBytes: number;
+  } | null;
+  overloadRetry?: { retry: number; waitMs: number; recoveryMs: number } | null;
   serviceTierAdaptation?: CodexServiceTierAdaptation | null;
   authorizationRoute?: 'official' | 'local_gateway' | null;
   authorizationFallback?: CodexAuthorizationFallbackTrace | null;
   upstreamRequestId?: string | null;
+  responseModel?: string | null;
   sequence: number;
   transportError?: string | null;
   transportPoolRetired?: boolean | null;
+  transportHttp1Fallback?: boolean | null;
   upstreamHttpVersion?: string | null;
   accountId: string;
   accountEmail?: string | null;
@@ -483,8 +508,15 @@ export interface CodexLocalAccessRequestLogQuery {
   endAt?: number | null;
   modelQuery?: string | null;
   accountQuery?: string | null;
+  accountNameMatches?: string[];
+  /** Exact identity filters for contextual navigation; queries remain free text. */
+  accountId?: string | null;
+  apiKeyId?: string | null;
   apiKeyQuery?: string | null;
   instanceQuery?: string | null;
+  sourceKind?: string | null;
+  peerIp?: string | null;
+  sessionQuery?: string | null;
   gatewayMode?: CodexLocalAccessGatewayMode | null;
   requestKind?: CodexLocalAccessRequestKind | null;
   success?: boolean | null;
@@ -615,6 +647,7 @@ export interface CodexServiceMemberAccess {
 }
 
 export interface CodexLocalAccessState {
+  projectStateDeferred?: boolean;
   collection: CodexLocalAccessCollection | null;
   /** Logical source identity is separate from the credential endpoint. */
   serviceMembers?: CodexServiceMemberAccess[];
@@ -704,6 +737,7 @@ export type CodexLocalAccessChatStreamEvent =
       type: "done";
       modelId: string;
       latencyMs: number | null;
+      imageDataUrl?: string;
     }
   | {
       sessionId: string;

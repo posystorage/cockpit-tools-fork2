@@ -67,6 +67,9 @@ pub struct CodebuddyAccount {
 
     pub created_at: i64,
     pub last_used: i64,
+    /// Last successful credential switch; absent for historical/imported accounts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_switched_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,6 +88,8 @@ pub struct CodebuddyAccountSummary {
 pub struct CodebuddyAccountIndex {
     pub version: String,
     pub accounts: Vec<CodebuddyAccountSummary>,
+    #[serde(skip)]
+    pub(crate) storage_revision: crate::modules::provider_account_index::Revision,
 }
 
 impl CodebuddyAccountIndex {
@@ -92,6 +97,7 @@ impl CodebuddyAccountIndex {
         Self {
             version: "1.0".to_string(),
             accounts: Vec::new(),
+            storage_revision: Default::default(),
         }
     }
 }

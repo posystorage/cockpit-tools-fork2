@@ -27,6 +27,7 @@ mod tests {
     include!("codex_account_tests_auth_store.rs");
     include!("codex_account_tests_batch_import_pressure.rs");
     include!("codex_account_tests_identity_import_refresh.rs");
+    include!("codex_account_tests_live_authority.rs");
     include!("codex_account_tests_auth_projection_identity.rs");
     include!("codex_account_tests_cli_daemon.rs");
     include!("codex_account_tests_local_import.rs");
@@ -44,6 +45,10 @@ mod tests {
 }
 
 include!("codex_account_mutations_quota.rs");
+
+#[cfg(test)]
+#[path = "codex_account_remote_service_tests.rs"]
+mod remote_service_tests;
 
 #[cfg(test)]
 #[path = "codex_account_tests_quota_proxy_persistence.rs"]

@@ -80,9 +80,9 @@ function harness(overrides: Props = {}) {
       };
       if (name === '../../hooks/useEscClose') return { useEscClose() {} };
       if (name === '../../services/modelProviderUsageService') return {
-        listModelProviderModels: () => {
+        listModelProviderModels: (input: any) => {
           calls.fetched += 1;
-          return overrides.fetch?.() ?? Promise.resolve({ models: [{ id: 'new-model' }] });
+          return overrides.fetch?.(input) ?? Promise.resolve({ models: [{ id: 'new-model' }] });
         },
       };
       if (name === '../../services/codexService') return {
@@ -99,6 +99,7 @@ function harness(overrides: Props = {}) {
   });
   return {
     calls,
+    toggleRouteModel: exports.toggleRouteModelInRoutes,
     component(name: string, initial: Props = {}) {
       const state = { slots: [], index: 0, effects: [] as (() => void)[] };
       let props: Props = {
@@ -123,6 +124,19 @@ function harness(overrides: Props = {}) {
     },
   };
 }
+
+test('a discovered model becomes eligible only in the route where it was selected', () => {
+  const { toggleRouteModel } = harness();
+  const original = [{ ...route, selectedModels: ['model-1'] }, { ...route, id: 'other', namespace: 'other' }];
+  const unchanged = toggleRouteModel(original, 'api/new-model', [account], 'add', 'other');
+  assert.equal(unchanged[0], original[0]);
+  const next = toggleRouteModel(original, 'api/new-model', [account], 'add', route.id);
+  assert.deepEqual(Array.from(next[0].extraModels), ['manual-model', 'new-model']);
+  assert.deepEqual(Array.from(next[0].selectedModels), ['model-1', 'new-model']);
+  assert.equal(next[1], original[1]);
+  const removed = toggleRouteModel(next, 'api/new-model', [account], 'remove');
+  assert.deepEqual(Array.from(removed[0].selectedModels), ['model-1']);
+});
 
 function elements(tree: Element): Element[] {
   const result: Element[] = [];
@@ -280,3 +294,18 @@ test('omitting disabled retains model editing and catalog refresh behavior', asy
   assert.equal(app.calls.saved, 1);
   assert.equal(app.calls.refreshed, 1);
 });
+
+for (const authScheme of ['bearer', 'x-api-key'] as const) {
+  test(`routing model discovery uses the account Anthropic ${authScheme} configuration`, async () => {
+    let request: any;
+    const app = harness({ fetch(input: any) { request = input; return Promise.resolve({ models: [{ id: 'claude-model' }] }); } });
+    const tree = app.component('CodexModelRoutingEditor', {
+      accounts: [{ ...account, api_wire_api: 'anthropic', api_auth_scheme: authScheme }],
+    }).render();
+    button(tree, 'instances.form.modelRouting.fetchModels').props.onClick();
+    await flush();
+    assert.equal(request.wireApi, 'anthropic');
+    assert.equal(request.authScheme, authScheme);
+    assert.equal(app.calls.saved, 1);
+  });
+}

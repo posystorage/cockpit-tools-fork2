@@ -31,6 +31,8 @@ pub enum FingerprintTarget {
         base_url: String,
         api_key: String,
         wire_api: String,
+        #[serde(default)]
+        auth_scheme: Option<String>,
     },
 }
 #[derive(Serialize)]
@@ -108,8 +110,8 @@ pub async fn codex_fingerprint_probe(
             let _slot = slots.acquire_owned().await.map_err(|_| "指纹调度器已关闭")?;
             match target {
                 FingerprintTarget::Account { account_id } => fingerprint_account_probe(&account_id, &model, &prompt).await,
-                FingerprintTarget::Provider { base_url, api_key, wire_api } =>
-                    fingerprint_provider_probe(&base_url, &api_key, &wire_api, &model, &prompt).await,
+                FingerprintTarget::Provider { base_url, api_key, wire_api, auth_scheme } =>
+                    fingerprint_provider_probe(&base_url, &api_key, &wire_api, auth_scheme.as_deref(), &model, &prompt).await,
             }
         }) => result.map_err(|_| "指纹请求超时（240 秒）".to_string())?,
     }
@@ -170,6 +172,7 @@ async fn fingerprint_account_probe(
                 .unwrap_or("https://api.openai.com/v1"),
             account.openai_api_key.as_deref().unwrap_or_default(),
             account.api_wire_api.as_deref().unwrap_or("responses"),
+            account.api_auth_scheme.as_deref(),
             model,
             prompt,
         )
@@ -269,6 +272,7 @@ fn fingerprint_endpoint(base_url: &str, wire_api: &str) -> Result<Url, String> {
     let suffix = match wire_api {
         "responses" => "/responses",
         "chat_completions" => "/chat/completions",
+        "anthropic" => "/messages",
         _ => return Err("不支持的上游协议".into()),
     };
     let mut url = Url::parse(base_url.trim()).map_err(|_| "无效的上游地址")?;
@@ -282,6 +286,7 @@ fn fingerprint_endpoint(base_url: &str, wire_api: &str) -> Result<Url, String> {
     let base = path
         .strip_suffix("/chat/completions")
         .or_else(|| path.strip_suffix("/responses"))
+        .or_else(|| path.strip_suffix("/messages"))
         .unwrap_or(path);
     let path = format!("{}{}", if base.is_empty() { "/v1" } else { base }, suffix);
     url.set_path(&path);
@@ -294,6 +299,7 @@ async fn fingerprint_provider_probe(
     base_url: &str,
     api_key: &str,
     wire_api: &str,
+    auth_scheme: Option<&str>,
     model: &str,
     prompt: &str,
 ) -> Result<FingerprintProbe, String> {
@@ -301,21 +307,16 @@ async fn fingerprint_provider_probe(
         return Err("上游缺少 API Key".into());
     }
     let url = fingerprint_endpoint(base_url, wire_api)?;
-    let body = if wire_api == "responses" {
-        fingerprint_response_body(model, prompt)
-    } else {
-        // Match ModelTrace's provider-default mode; GPT reasoning endpoints may
-        // reject temperature or legacy max_tokens parameters.
-        json!({"model":model,"messages":[{"role":"user","content":prompt}],"stream":false})
-    };
+    let body = fingerprint_provider_body(wire_api, model, prompt)?;
     let client = Client::builder()
         .timeout(FINGERPRINT_TIMEOUT)
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|_| "创建上游连接失败")?;
-    let mut response = client
-        .post(url)
-        .bearer_auth(api_key.trim())
+    let request = crate::modules::codex_provider_protocol::authenticate_provider_request(
+        client.post(url), wire_api, auth_scheme, api_key,
+    );
+    let mut response = request
         .json(&body)
         .send()
         .await
@@ -360,6 +361,17 @@ async fn fingerprint_provider_probe(
     fingerprint_parse_json(&parsed, wire_api)
 }
 
+fn fingerprint_provider_body(wire_api: &str, model: &str, prompt: &str) -> Result<Value, String> {
+    match wire_api {
+        "responses" => Ok(fingerprint_response_body(model, prompt)),
+        // Match ModelTrace's provider-default mode; GPT reasoning endpoints may
+        // reject temperature or legacy max_tokens parameters.
+        "chat_completions" => Ok(json!({"model":model,"messages":[{"role":"user","content":prompt}],"stream":false})),
+        "anthropic" => Ok(json!({"model":model,"messages":[{"role":"user","content":prompt}],"max_tokens":8192,"stream":false})),
+        _ => Err("不支持的上游协议".into()),
+    }
+}
+
 fn fingerprint_parse_json(parsed: &Value, wire_api: &str) -> Result<FingerprintProbe, String> {
     if parsed
         .get("status")
@@ -370,7 +382,21 @@ fn fingerprint_parse_json(parsed: &Value, wire_api: &str) -> Result<FingerprintP
     }
     let reply = if wire_api == "responses" {
         pelican_final_text(parsed)
-    } else {
+    } else if wire_api == "anthropic" {
+        if parsed.get("stop_reason").and_then(Value::as_str) != Some("end_turn") {
+            return Err("上游回答被截断或未正常结束".into());
+        }
+        let content = parsed.get("content").and_then(Value::as_array)
+            .ok_or("上游没有返回 content")?;
+        if content.iter().any(|block| block.get("type").and_then(Value::as_str) == Some("refusal")) {
+            return Err("上游拒绝了指纹请求".into());
+        }
+        content.iter()
+            .filter(|block| block.get("type").and_then(Value::as_str) == Some("text"))
+            .filter_map(|block| block.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>()
+            .join("")
+    } else if wire_api == "chat_completions" {
         let choice = parsed.pointer("/choices/0").ok_or("上游没有返回 choices")?;
         if choice
             .get("finish_reason")
@@ -384,6 +410,8 @@ fn fingerprint_parse_json(parsed: &Value, wire_api: &str) -> Result<FingerprintP
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string()
+    } else {
+        return Err("不支持的上游协议".into());
     };
     if reply.trim().is_empty() {
         return Err("上游未返回可分析文本".into());
@@ -449,5 +477,29 @@ mod fingerprint_transport_tests {
                 .reply,
             "1 2 3"
         );
+    }
+
+    #[test]
+    fn fingerprint_anthropic_preserves_model_and_rejects_partial_or_refused_samples() {
+        for base in ["https://example.com", "https://example.com/v1/messages", "https://example.com/v1/responses"] {
+            assert_eq!(fingerprint_endpoint(base, "anthropic").unwrap().as_str(), "https://example.com/v1/messages");
+        }
+        let body = fingerprint_provider_body("anthropic", "gpt-6.1-sol", "numbers").unwrap();
+        assert_eq!(body["model"], "gpt-6.1-sol");
+        assert_eq!(body["messages"][0]["content"], "numbers");
+        assert_eq!(body["max_tokens"], 8192);
+        assert_eq!(body["stream"], false);
+        assert!(body.get("tools").is_none());
+        let mut reply = json!({"id":"sample","model":"reported","stop_reason":"end_turn","content":[{"type":"thinking","thinking":"hidden"},{"type":"text","text":"1 2 "},{"type":"text","text":"3"}]});
+        let parsed = fingerprint_parse_json(&reply, "anthropic").unwrap();
+        assert_eq!(parsed.reply, "1 2 3");
+        assert_eq!(parsed.response_model.as_deref(), Some("reported"));
+        assert_eq!(parsed.response_id.as_deref(), Some("sample"));
+        for reason in ["max_tokens", "refusal", "tool_use", "pause_turn"] {
+            reply["stop_reason"] = json!(reason);
+            assert!(fingerprint_parse_json(&reply, "anthropic").is_err());
+        }
+        reply["stop_reason"] = Value::Null;
+        assert!(fingerprint_parse_json(&reply, "anthropic").is_err());
     }
 }

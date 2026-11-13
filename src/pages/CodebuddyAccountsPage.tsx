@@ -1,9 +1,12 @@
-import { useMemo, useCallback, Fragment, useState, useEffect } from 'react';
+import { useAccountsOverviewFilterState } from '../hooks/useAccountsOverviewFilterState';
+import { useMemo, useCallback, Fragment, useState } from 'react';
 import {
   Plus, RefreshCw, Download, Upload, Trash2, X, Globe, KeyRound, Database,
   Copy, Check, RotateCw, LayoutGrid, List, Search,
   Tag, Play, Eye, EyeOff, CircleAlert, ChevronDown,
 } from 'lucide-react';
+import { AccountLastUsed } from '../components/AccountLastUsed';
+import { useUiConfigStore } from '../stores/useUiConfigStore';
 import { useCodebuddyAccountStore } from '../stores/useCodebuddyAccountStore';
 import * as codebuddyService from '../services/codebuddyService';
 import { TagEditModal } from '../components/TagEditModal';
@@ -43,13 +46,10 @@ import {
   normalizeAccountsOverviewScope,
   readAccountsOverviewFilterPersistenceEnabled,
   readAccountsOverviewFilterStringArray,
-  removeAccountsOverviewFilterField,
-  writeAccountsOverviewFilterField,
 } from '../utils/accountsOverviewFilterPersistence';
 import { CodebuddySessionManager } from '../components/codebuddy/CodebuddySessionManager';
 
 const CB_FLOW_NOTICE_COLLAPSED_KEY = 'agtools.codebuddy.flow_notice_collapsed';
-const CB_CURRENT_ACCOUNT_ID_KEY = 'agtools.codebuddy.current_account_id';
 const CB_KNOWN_PLAN_FILTERS = ['FREE', 'TRIAL', 'PRO', 'ENTERPRISE'] as const;
 const CODEBUDDY_FILTER_PERSISTENCE_SCOPE = normalizeAccountsOverviewScope('CodeBuddy');
 const FILTER_TYPES_FIELD = 'filter_types';
@@ -76,8 +76,9 @@ function getQuotaClassByRemainPercent(remainPercent: number | null): string {
 }
 
 export function CodebuddyAccountsPage() {
+  const timeDisplayMode = useUiConfigStore((s) => s.timeDisplayMode);
   const [activeTab, setActiveTab] = useState<PlatformOverviewTab>('overview');
-  const [filterTypes, setFilterTypes] = useState<string[]>(() =>
+  const [filterTypes, setFilterTypes] = useAccountsOverviewFilterState<string[]>(CODEBUDDY_FILTER_PERSISTENCE_SCOPE, FILTER_TYPES_FIELD, () =>
     readAccountsOverviewFilterPersistenceEnabled(CODEBUDDY_FILTER_PERSISTENCE_SCOPE)
       ? readAccountsOverviewFilterStringArray(
           CODEBUDDY_FILTER_PERSISTENCE_SCOPE,
@@ -92,7 +93,6 @@ export function CodebuddyAccountsPage() {
     platformKey: 'CodeBuddy',
     oauthLogPrefix: 'CodebuddyOAuth',
     flowNoticeCollapsedKey: CB_FLOW_NOTICE_COLLAPSED_KEY,
-    currentAccountIdKey: CB_CURRENT_ACCOUNT_ID_KEY,
     exportFilePrefix: 'codebuddy_accounts',
     oauthTabKeys: ['oauth'],
     store: {
@@ -126,7 +126,6 @@ export function CodebuddyAccountsPage() {
   const {
     t, locale, privacyModeEnabled, togglePrivacyMode, maskAccountText,
     viewMode, setViewMode, searchQuery, setSearchQuery,
-    filterPersistenceEnabled, filterPersistenceScope,
     sortDirection, sortBy,
     selected, toggleSelect, toggleSelectAll,
     tagFilter, groupByTag, setGroupByTag, showTagFilter, setShowTagFilter,
@@ -156,14 +155,6 @@ export function CodebuddyAccountsPage() {
   } = page;
 
   const grouping = usePlatformAccountGroups('codebuddy', () => toggleSelectAll(Array.from(selected)));
-
-  useEffect(() => {
-    if (!filterPersistenceEnabled) {
-      removeAccountsOverviewFilterField(filterPersistenceScope, FILTER_TYPES_FIELD);
-      return;
-    }
-    writeAccountsOverviewFilterField(filterPersistenceScope, FILTER_TYPES_FIELD, filterTypes);
-  }, [filterPersistenceEnabled, filterPersistenceScope, filterTypes]);
 
   const toggleFilterTypeValue = useCallback((value: string) => {
     setFilterTypes((prev) => {
@@ -350,17 +341,21 @@ export function CodebuddyAccountsPage() {
     const primaryTimeText = formatQuotaDateTime(isBase ? resource.refreshAt : resource.expireAt);
     if (primaryTimeText) {
       return isBase
-        ? t('codebuddy.quotaQuery.updatedAt', '下次刷新时间：{{time}}', { time: primaryTimeText })
+        ? timeDisplayMode === "refresh"
+          ? t('codebuddy.quotaQuery.updatedAt', '下次刷新时间：{{time}}', { time: primaryTimeText })
+          : null
         : t('codebuddy.quotaQuery.expireAt', '到期时间：{{time}}', { time: primaryTimeText });
     }
     const fallbackTimeText = formatQuotaDateTime(isBase ? resource.expireAt : resource.refreshAt);
     if (fallbackTimeText) {
       return isBase
         ? t('codebuddy.quotaQuery.expireAt', '到期时间：{{time}}', { time: fallbackTimeText })
-        : t('codebuddy.quotaQuery.updatedAt', '下次刷新时间：{{time}}', { time: fallbackTimeText });
+        : timeDisplayMode === "refresh"
+          ? t('codebuddy.quotaQuery.updatedAt', '下次刷新时间：{{time}}', { time: fallbackTimeText })
+          : null;
     }
     return null;
-  }, [formatQuotaDateTime, t]);
+  }, [formatQuotaDateTime, t, timeDisplayMode === "refresh"]);
 
   const resolveResourcePackageTitle = useCallback((resource: CodebuddyOfficialQuotaResource, isExtra: boolean) => {
     if (isExtra || resource.packageCode === CB_PACKAGE_CODE.extra) {
@@ -484,7 +479,7 @@ export function CodebuddyAccountsPage() {
               <CircleAlert size={14} />
               <div className="quota-cache-warning-content">
                 <span className="quota-cache-warning-title">{cachedWarningText}</span>
-                {updatedAtText && (
+                {timeDisplayMode === "refresh" && updatedAtText && (
                   <span className="quota-cache-warning-time">
                     {t('common.shared.quota.lastSuccessfulQuery', '上次成功：{{time}}', {
                       time: updatedAtText,
@@ -537,7 +532,13 @@ export function CodebuddyAccountsPage() {
             {renderQuotaQuerySection(account, 'card')}
           </div>
           <div className="card-footer">
-            <span className="card-date">{formatDate(account.created_at)}</span>
+            <AccountLastUsed
+              accountId={account.id}
+              lastSwitchedAt={account.last_switched_at}
+              createdAt={account.created_at}
+              formatDate={formatDate}
+              refreshAt={getCodebuddyOfficialQuotaModel(account).updatedAt}
+            />
             <div className="card-actions">
               <button className="card-action-btn success" onClick={() => handleInjectToVSCode?.(account.id)} disabled={!!injecting}
                 title={t('common.shared.switchAccount', '切换账号')}>

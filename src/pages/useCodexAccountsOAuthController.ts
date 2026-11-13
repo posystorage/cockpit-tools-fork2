@@ -4,7 +4,7 @@ import * as codexService from "../services/codexService";
 import * as codexInstanceService from "../services/codexInstanceService";
 import * as codexLocalAccessService from "../services/codexLocalAccessService";
 import { useModalErrorState } from "../components/ModalErrorMessage";
-import { isCodexApiKeyAccount, type CodexProviderWireApi, type CodexApiProviderMode } from "../types/codex";
+import { isCodexApiKeyAccount, type CodexApiProviderMode } from "../types/codex";
 import { isCodexOAuthBindingEligibleAccount } from "../utils/codexLocalAccessAccounts";
 import { mergeIdListsPreferExisting, subscribeUserMemory } from "../utils/userMemory";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
@@ -15,7 +15,7 @@ import type { CodexLocalAccessOAuthQuotaReserve } from "../types/codexLocalAcces
 import { CODEX_ADDITIONAL_QUOTA_VISIBILITY_CHANGED_EVENT, CODEX_CODE_REVIEW_QUOTA_VISIBILITY_CHANGED_EVENT, isCodexAdditionalQuotaVisibleByDefault, isCodexCodeReviewQuotaVisibleByDefault } from "../utils/codexPreferences";
 import { emitAccountsChanged } from "../utils/accountSyncEvents";
 import { resolveCodexModelProviderAccountName } from "../utils/codexModelProviderAccountName";
-import { readCodexCustomSortOrder, writeCodexCustomSortActive, writeCodexCustomSortOrder } from "../utils/codexAccountOverview";
+import { CODEX_CUSTOM_SORT_RESTORED_EVENT, readCodexCustomSortActive, readCodexCustomSortOrder } from "../utils/codexAccountOverview";
 import { shouldDefaultReauthProxy, oauthProxyUseAfterStart, oauthStartProxyArgs } from "../utils/codexOAuthReauthProxy";
 import { usePlatformRuntimeSupport } from "../hooks/usePlatformRuntimeSupport";
 import { CODEX_API_PROVIDER_CUSTOM_ID, COCKPIT_API_PROVIDER_ID, COCKPIT_API_PROVIDER_NAME, DEEPSEEK_API_PROVIDER_ID, codexApiProviderPresetVisionSupport, findCodexApiProviderPresetById, isCockpitApiProviderBaseUrl } from "../utils/codexProviderPresets";
@@ -24,9 +24,11 @@ import { type ApiKeyFunPrefillPayload } from "../utils/apiKeyFunPrefill";
 import { resolveCodexProviderCapabilityProfile } from "../utils/codexProviderGateway";
 import { contextWindowDraftsFromRecord } from "../utils/codexModelContextWindows";
 import { resolveCodexModelProviderForApiKey } from "../utils/codexModelProviderKeyConfig";
-import { findCodexModelProviderById, findCodexModelProviderByBaseUrl, mergeCodexModelProviderApiKeysFromAccounts, type CodexModelProvider } from "../services/codexModelProviderService";
+import { findCodexModelProviderById, findCodexModelProviderByBaseUrl, listCodexModelProviders, mergeCodexModelProviderApiKeysFromAccounts, type CodexModelProvider } from "../services/codexModelProviderService";
 import { readCodexApiKeyUsageCache, type CodexApiKeyUsageState } from "../services/codexApiKeyUsageRefreshService";
-import { parseMfaCredentialInput, upsertSavedMfaRecord } from "../utils/mfaVault";
+import { parseMfaCredentialInput } from "../utils/mfaVault";
+import { upsertSavedMfaRecord } from "../services/mfaRecoveryService";
+import { parseWindowsOperationError } from "../utils/windowsOperationError";
 import { DEFAULT_CODEX_API_BASE_URL, DEFAULT_CODEX_API_PROVIDER_ID, getDefaultApiProviderPresetId, isSameHttpBaseUrl, normalizeHttpBaseUrl, normalizeSponsorApiProviderTemplates, OPENAI_OFFICIAL_PRESET_ID, parseApiModelCatalogText, resolveApiProviderPresetDefaults, type OAuthBindingQuotaReserveFieldErrors, type OAuthBindingTargetKind, type SponsorApiProviderTemplate } from "./codexAccountsControllerModel";
 import type { useCodexAccountsBaseController } from "./useCodexAccountsBaseController";
 
@@ -63,6 +65,7 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
   | "setReauthTargetAccount"
   | "setSavedMfaRecords"
   | "setSavingPendingOAuthAccount"
+  | "setSortBy"
   | "showAddModal"
   | "sortBy"
   | "sponsorModule"
@@ -102,6 +105,7 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
     setReauthTargetAccount,
     setSavedMfaRecords,
     setSavingPendingOAuthAccount,
+    setSortBy,
     showAddModal,
     sortBy,
     sponsorModule,
@@ -173,8 +177,7 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
       "browser",
     );
     const [deviceCodeCopied, setDeviceCodeCopied] = useState(false);
-    const [oauthTokenExchangeRetryVisible, setOauthTokenExchangeRetryVisible] =
-      useState(false);
+    const [oauthRetryAction, setOauthRetryAction] = useState<"exchange" | "restart" | null>(null);
     const [switching, setSwitching] = useState<string | null>(null);
     const [apiKeyInput, setApiKeyInput] = useState("");
     const [apiKeyInputVisible, setApiKeyInputVisible] = useState(false);
@@ -215,43 +218,6 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
     const [editingApiKeyCredentialsId, setEditingApiKeyCredentialsId] = useState<
       string | null
     >(null);
-    const [editingApiKeyCredentialsValue, setEditingApiKeyCredentialsValue] =
-      useState("");
-    const [editingApiKeyCredentialsVisible, setEditingApiKeyCredentialsVisible] =
-      useState(false);
-    const [
-      editingApiBaseUrlCredentialsValue,
-      setEditingApiBaseUrlCredentialsValue,
-    ] = useState("");
-    const [editingApiProviderPresetId, setEditingApiProviderPresetId] = useState(
-      DEFAULT_CODEX_API_PROVIDER_ID,
-    );
-    const [editingApiWireApi, setEditingApiWireApi] = useState<CodexProviderWireApi>("responses");
-    const [editingApiSupportsWebsockets, setEditingApiSupportsWebsockets] = useState(false);
-    const [editingApiCredentialsError, setEditingApiCredentialsError] = useState<string | null>(null);
-    const [editingApiModelCatalogInput, setEditingApiModelCatalogInput] =
-      useState("");
-    const [
-      editingApiModelContextWindowsInput,
-      setEditingApiModelContextWindowsInput,
-    ] = useState<Record<string, string>>({});
-    const [
-      editingApiSyncModelCatalogToCodex,
-      setEditingApiSyncModelCatalogToCodex,
-    ] = useState(false);
-    const [editingApiModelCatalogFetching, setEditingApiModelCatalogFetching] =
-      useState(false);
-    const [editingApiModelCatalogError, setEditingApiModelCatalogError] =
-      useState<string | null>(null);
-    const [editingManagedProviderId, setEditingManagedProviderId] =
-      useState<string>("");
-    const [editingManagedProviderApiKeyId, setEditingManagedProviderApiKeyId] =
-      useState<string>("");
-    const [
-      editingNewManagedProviderNameInput,
-      setEditingNewManagedProviderNameInput,
-    ] = useState("");
-    const [savingApiKeyCredentials, setSavingApiKeyCredentials] = useState(false);
     const [quickSwitchAccountId, setQuickSwitchAccountId] = useState<
       string | null
     >(null);
@@ -347,10 +313,6 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
       () => getDefaultApiProviderPresetId(sponsorApiProviderTemplates),
       [sponsorApiProviderTemplates],
     );
-    const selectedEditingApiProviderPreset = useMemo(
-      () => findCodexApiProviderPresetById(editingApiProviderPresetId),
-      [editingApiProviderPresetId],
-    );
     const selectedManagedProvider = useMemo(
       () =>
         managedProviders.find((item) => item.id === managedProviderId) ?? null,
@@ -363,19 +325,6 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
         ) ?? null,
       [managedProviderApiKeyId, selectedManagedProvider],
     );
-    const selectedEditingManagedProvider = useMemo(
-      () =>
-        managedProviders.find((item) => item.id === editingManagedProviderId) ??
-        null,
-      [editingManagedProviderId, managedProviders],
-    );
-    const selectedEditingManagedProviderApiKey = useMemo(
-      () =>
-        selectedEditingManagedProvider?.apiKeys.find(
-          (item) => item.id === editingManagedProviderApiKeyId,
-        ) ?? null,
-      [editingManagedProviderApiKeyId, selectedEditingManagedProvider],
-    );
     const selectedKeyCatalogIdentity = useRef({ add: "", edit: "" });
     useEffect(() => {
       const identity = `${managedProviderId}:${managedProviderApiKeyId}`;
@@ -386,22 +335,9 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
       setApiModelCatalogInput((effective.modelCatalog ?? []).join("\n"));
       setApiModelContextWindowsInput(contextWindowDraftsFromRecord(effective.modelContextWindows, effective.modelCatalog ?? []));
     }, [managedProviderId, managedProviderApiKeyId, selectedManagedProvider, selectedManagedProviderApiKey]);
-    useEffect(() => {
-      const identity = `${editingManagedProviderId}:${editingManagedProviderApiKeyId}`;
-      if (selectedKeyCatalogIdentity.current.edit === identity) return;
-      selectedKeyCatalogIdentity.current.edit = identity;
-      if (!selectedEditingManagedProvider || !selectedEditingManagedProviderApiKey) return;
-      const effective = resolveCodexModelProviderForApiKey(selectedEditingManagedProvider, selectedEditingManagedProviderApiKey.apiKey);
-      setEditingApiModelCatalogInput((effective.modelCatalog ?? []).join("\n"));
-      setEditingApiModelContextWindowsInput(contextWindowDraftsFromRecord(effective.modelContextWindows, effective.modelCatalog ?? []));
-    }, [editingManagedProviderId, editingManagedProviderApiKeyId, selectedEditingManagedProvider, selectedEditingManagedProviderApiKey]);
     const apiModelCatalogDraft = useMemo(
       () => parseApiModelCatalogText(apiModelCatalogInput),
       [apiModelCatalogInput],
-    );
-    const editingApiModelCatalogDraft = useMemo(
-      () => parseApiModelCatalogText(editingApiModelCatalogInput),
-      [editingApiModelCatalogInput],
     );
     const apiModelCatalogSyncAvailable = useMemo(
       () =>
@@ -421,30 +357,11 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
         selectedSponsorApiProviderTemplate?.wireApi,
       ],
     );
-    const editingApiModelCatalogSyncAvailable = useMemo(
-      () =>
-        editingApiProviderPresetId !== OPENAI_OFFICIAL_PRESET_ID &&
-        resolveCodexProviderCapabilityProfile({
-          presetId: editingApiProviderPresetId,
-          baseUrl: editingApiBaseUrlCredentialsValue,
-          wireApi: editingApiWireApi,
-        }).wireApi === "responses",
-      [
-        editingApiBaseUrlCredentialsValue,
-        editingApiProviderPresetId,
-        editingApiWireApi,
-      ],
-    );
     useEffect(() => {
       if (!apiModelCatalogSyncAvailable) {
         setApiSyncModelCatalogToCodex(false);
       }
     }, [apiModelCatalogSyncAvailable]);
-    useEffect(() => {
-      if (!editingApiModelCatalogSyncAvailable) {
-        setEditingApiSyncModelCatalogToCodex(false);
-      }
-    }, [editingApiModelCatalogSyncAvailable]);
     const quickSwitchAccount = useMemo(
       () =>
         quickSwitchAccountId
@@ -577,6 +494,8 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
     const reloadManagedProviders = useCallback(async () => {
       setManagedProvidersLoading(true);
       try {
+        setManagedProviders(await listCodexModelProviders());
+        setManagedProvidersLoading(false);
         const items = await mergeCodexModelProviderApiKeysFromAccounts(accounts);
         setManagedProviders(items);
       } catch (err) {
@@ -599,7 +518,7 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
         apiProviderId?: string;
         apiProviderName?: string;
         apiModelCatalog?: string[];
-        apiWireApi?: "responses" | "chat_completions";
+        apiWireApi?: "responses" | "chat_completions" | "anthropic";
         apiSupportsWebsockets?: boolean;
         apiSupportsVision?: boolean;
         apiModelVisionSupport?: Record<string, boolean>;
@@ -777,6 +696,15 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
         );
       });
     }, []);
+
+    useEffect(() => {
+      const restoreSortMode = () => {
+        setSortBy(readCodexCustomSortActive()
+          ? "custom" : sortBy === "custom" ? "created_at" : sortBy);
+      };
+      window.addEventListener(CODEX_CUSTOM_SORT_RESTORED_EVENT, restoreSortMode);
+      return () => window.removeEventListener(CODEX_CUSTOM_SORT_RESTORED_EVENT, restoreSortMode);
+    }, [setSortBy, sortBy]);
   
     useEffect(() => {
       if (accounts.length === 0) {
@@ -798,31 +726,6 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
         return unchanged ? prev : next;
       });
     }, [accounts]);
-  
-    useEffect(() => {
-      writeCodexCustomSortOrder(customSortOrder);
-    }, [customSortOrder]);
-  
-    useEffect(() => {
-      writeCodexCustomSortActive(sortBy === "custom");
-    }, [sortBy]);
-  
-    useEffect(() => {
-      if (!showCustomSortModal || !draggedCustomSortAccountId) return;
-      const handleMouseUp = () => {
-        setDraggedCustomSortAccountId(null);
-        setCustomSortDropTargetId(null);
-      };
-      window.addEventListener("mouseup", handleMouseUp);
-      return () => window.removeEventListener("mouseup", handleMouseUp);
-    }, [showCustomSortModal, draggedCustomSortAccountId]);
-  
-    useEffect(() => {
-      if (!showCustomSortModal) {
-        setDraggedCustomSortAccountId(null);
-        setCustomSortDropTargetId(null);
-      }
-    }, [showCustomSortModal]);
   
     useEffect(() => {
       void reloadManagedProviders();
@@ -982,64 +885,6 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
     }, [managedProviderApiKeyId, selectedManagedProviderApiKey]);
   
     useEffect(() => {
-      if (editingApiProviderPresetId === OPENAI_OFFICIAL_PRESET_ID) {
-        setEditingManagedProviderId("");
-        setEditingManagedProviderApiKeyId("");
-        return;
-      }
-  
-      const matchedById = editingManagedProviderId
-        ? findCodexModelProviderById(managedProviders, editingManagedProviderId)
-        : null;
-      const matchedByUrl = editingApiBaseUrlCredentialsValue.trim()
-        ? findCodexModelProviderByBaseUrl(
-            managedProviders,
-            editingApiBaseUrlCredentialsValue,
-          )
-        : null;
-      const matched =
-        matchedById &&
-        isSameHttpBaseUrl(matchedById.baseUrl, editingApiBaseUrlCredentialsValue)
-          ? matchedById
-          : matchedByUrl;
-  
-      if (matched) {
-        if (editingManagedProviderId !== matched.id) {
-          setEditingManagedProviderId(matched.id);
-        }
-      } else if (editingManagedProviderId) {
-        setEditingManagedProviderId("");
-        setEditingManagedProviderApiKeyId("");
-        return;
-      } else {
-        setEditingManagedProviderApiKeyId("");
-        return;
-      }
-  
-      if (matched.apiKeys.length === 0) {
-        setEditingManagedProviderApiKeyId("");
-        return;
-      }
-      setEditingManagedProviderApiKeyId((prev) => {
-        if (matched.apiKeys.some((item) => item.id === prev)) return prev;
-        return matched.apiKeys[0]?.id ?? "";
-      });
-    }, [
-      editingApiBaseUrlCredentialsValue,
-      editingApiProviderPresetId,
-      editingManagedProviderId,
-      managedProviders,
-    ]);
-  
-    useEffect(() => {
-      if (!selectedEditingManagedProviderApiKey) return;
-      setEditingApiKeyCredentialsValue(
-        selectedEditingManagedProviderApiKey.apiKey,
-      );
-      setEditingApiKeyCredentialsVisible(false);
-    }, [editingManagedProviderApiKeyId, selectedEditingManagedProviderApiKey]);
-  
-    useEffect(() => {
       if (!quickSwitchAccountId) return;
       if (accounts.some((item) => item.id === quickSwitchAccountId)) return;
       setQuickSwitchAccountId(null);
@@ -1162,13 +1007,11 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
           noteUpdate,
         );
         if (noteUpdate.twoFactorSecret.trim()) {
-          setSavedMfaRecords(
-            upsertSavedMfaRecord({
-              secret: noteUpdate.twoFactorSecret,
-              accountName: email,
-              remark: noteUpdate.note,
-            }),
-          );
+          void upsertSavedMfaRecord({
+            secret: noteUpdate.twoFactorSecret,
+            accountName: email,
+            remark: noteUpdate.note,
+          }).then(setSavedMfaRecords);
         }
         await fetchAccounts();
         await assignCodexAccountsToTargetGroup([account]);
@@ -1225,11 +1068,12 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
         setOauthTimeoutInfo(null);
         setOauthCallbackSubmitting(false);
         setOauthCallbackError(null);
-        setOauthTokenExchangeRetryVisible(false);
+        setOauthRetryAction(null);
         setDeviceAuthInfo(null);
         setDeviceAuthError(null);
         setOauthMethod("browser");
         setDeviceCodeCopied(false);
+        setOauthPortInUse(null);
         if (oauthProxyEnabled) setOauthProxyReady(false);
         if (oauthProxyEnabled && /PROXY_INVALID_URL|PROXY_UNSUPPORTED_PROTOCOL/.test(String(e))) {
           setOauthProxyFieldError(t("codex.oauthProxy.invalid"));
@@ -1240,6 +1084,15 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
           const port = Number(match[1]);
           setOauthPortInUse(Number.isNaN(port) ? null : port);
           setOauthPrepareError(t("codex.oauth.portInUse", { port: match[1] }));
+          return;
+        }
+        const windowsError = parseWindowsOperationError(e);
+        if (windowsError?.code === "port_denied") {
+          setOauthPrepareError([
+            t("common.windowsOperation.portDeniedDescription"),
+            !oauthProxyEnabled && t("common.shared.oauth.deviceAuthFootnote"),
+            windowsError.originalReason,
+          ].filter(Boolean).join(" "));
           return;
         }
         setOauthPrepareError(
@@ -1275,7 +1128,7 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
           if (!note) {
             setAddStatus("error");
             setAddMessage(t("codex.accountNote.twoFactorSecretInvalid"));
-            setOauthTokenExchangeRetryVisible(true);
+            setOauthRetryAction("exchange");
             return;
           }
           // An empty draft must not clear details already stored on a reauthorized
@@ -1296,7 +1149,7 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
               setAddMessage(t("codex.accountNote.saveFailed", {
                 error: String(error).replace(/^Error:\s*/, ""),
               }));
-              setOauthTokenExchangeRetryVisible(true);
+              setOauthRetryAction("exchange");
               return;
             }
           }
@@ -1455,7 +1308,7 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
         setOauthCallbackInput("");
         setOauthCallbackSubmitting(false);
         setOauthCallbackError(null);
-        setOauthTokenExchangeRetryVisible(false);
+        setOauthRetryAction(null);
         setDeviceAuthInfo(null);
         setDeviceAuthError(null);
         setOauthMethod("browser");
@@ -1489,12 +1342,24 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
     );
   
     const completeOauthError = useCallback(
-      (e: unknown, allowTokenExchangeRetry = false) => {
+      (error: unknown, allowTokenExchangeRetry = false, manualCallback = false) => {
+        const message = describeOauthProxyError(error);
+        const restartPrefix = "CODEX_OAUTH_RESTART_REQUIRED: ";
+        const restartRequired = message.startsWith(restartPrefix);
+        if (manualCallback && !allowTokenExchangeRetry && !restartRequired) {
+          setAddStatus("idle");
+          setAddMessage("");
+          setOauthCallbackError(message);
+          setOauthRetryAction(null);
+          return;
+        }
+        setOauthCallbackError(null);
         setAddStatus("error");
         setAddMessage(
-          t("common.shared.oauth.failed", "授权失败") + ": " + describeOauthProxyError(e),
+          t("common.shared.oauth.failed", "授权失败") + ": " +
+            (restartRequired ? message.slice(restartPrefix.length) : message),
         );
-        setOauthTokenExchangeRetryVisible(allowTokenExchangeRetry);
+        setOauthRetryAction(restartRequired ? "restart" : allowTokenExchangeRetry ? "exchange" : null);
       },
       [t, setAddStatus, setAddMessage, describeOauthProxyError],
     );
@@ -1503,9 +1368,6 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
       () => !!oauthTimeoutInfo,
       [oauthTimeoutInfo],
     );
-    const isOauthTokenExchangeErrorState = useMemo(() => {
-      return addStatus === "error" && oauthTokenExchangeRetryVisible;
-    }, [addStatus, oauthTokenExchangeRetryVisible]);
   
     useEffect(() => {
       let unlistenExtension: UnlistenFn | undefined;
@@ -1564,7 +1426,7 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
           setOauthPrepareError(null);
           setOauthCallbackSubmitting(false);
           setOauthCallbackError(null);
-          setOauthTokenExchangeRetryVisible(false);
+          setOauthRetryAction(null);
           setDeviceAuthInfo(null);
           setAddStatus("idle");
           setAddMessage("");
@@ -1583,6 +1445,7 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
           )
             return;
           oauthActiveRef.current = false;
+          completeOauthError(event.payload?.error || t("common.shared.oauth.failed"));
           setDeviceAuthError(
             event.payload?.error || t("common.shared.oauth.failed", "授权失败"),
           );
@@ -1733,7 +1596,7 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
       setOauthCallbackInput("");
       setOauthCallbackSubmitting(false);
       setOauthCallbackError(null);
-      setOauthTokenExchangeRetryVisible(false);
+      setOauthRetryAction(null);
   
       const proxyArgs = oauthStartProxyArgs({
         enabled: oauthProxyEnabled,
@@ -1907,7 +1770,7 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
       setOauthCallbackInput("");
       setOauthCallbackSubmitting(false);
       setOauthCallbackError(null);
-      setOauthTokenExchangeRetryVisible(false);
+      setOauthRetryAction(null);
       setDeviceAuthInfo(null);
       setDeviceAuthError(null);
       setOauthMethod("browser");
@@ -1933,7 +1796,7 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
       deviceAuthError,
       oauthPortInUse,
       oauthUrlCopied,
-      oauthTokenExchangeRetryVisible,
+      oauthRetryAction,
       oauthProxyEnabled,
       oauthProxyInput,
       oauthProxyUsesAccountExit,
@@ -2023,7 +1886,9 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
       setOauthCallbackInput("");
       setOauthCallbackSubmitting(false);
       setOauthCallbackError(null);
-      setOauthTokenExchangeRetryVisible(false);
+      setOauthRetryAction(null);
+      setAddStatus("idle");
+      setAddMessage("");
       prepareOauthUrl();
     };
   
@@ -2158,7 +2023,7 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
   
       setOauthCallbackSubmitting(true);
       setOauthCallbackError(null);
-      setOauthTokenExchangeRetryVisible(false);
+      setOauthRetryAction(null);
       oauthCompletingRef.current = true;
       let tokenExchangeStarted = false;
       try {
@@ -2171,8 +2036,7 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
         const account = await resolveCompletedOauthAccount(loginId);
         await completeOauthSuccess(account);
       } catch (e) {
-        completeOauthError(e, tokenExchangeStarted);
-        setOauthCallbackError(String(e).replace(/^Error:\s*/, ""));
+        completeOauthError(e, tokenExchangeStarted, true);
       } finally {
         oauthCompletingRef.current = false;
         setOauthCallbackSubmitting(false);
@@ -2184,7 +2048,7 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
       if (!loginId || oauthCompletingRef.current) return;
       setOauthCallbackSubmitting(true);
       setOauthCallbackError(null);
-      setOauthTokenExchangeRetryVisible(false);
+      setOauthRetryAction(null);
       setAddStatus("loading");
       setAddMessage(t(oauthCompletedAccountRef.current?.loginId === loginId
         ? "common.saving"
@@ -2195,7 +2059,6 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
         await completeOauthSuccess(account);
       } catch (e) {
         completeOauthError(e, true);
-        setOauthCallbackError(String(e).replace(/^Error:\s*/, ""));
       } finally {
         oauthCompletingRef.current = false;
         setOauthCallbackSubmitting(false);
@@ -2230,29 +2093,9 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
     deviceAuthStarting,
     deviceCodeCopied,
     draggedCustomSortAccountId,
-    editingApiBaseUrlCredentialsValue,
-    editingApiWireApi,
-    editingApiSupportsWebsockets,
-    editingApiCredentialsError,
-    setEditingApiWireApi,
-    setEditingApiSupportsWebsockets,
-    setEditingApiCredentialsError,
     editingApiKeyCredentialsId,
-    editingApiKeyCredentialsValue,
-    editingApiKeyCredentialsVisible,
     editingApiKeyNameId,
     editingApiKeyNameValue,
-    editingApiModelCatalogDraft,
-    editingApiModelCatalogError,
-    editingApiModelCatalogFetching,
-    editingApiModelCatalogInput,
-    editingApiModelCatalogSyncAvailable,
-    editingApiModelContextWindowsInput,
-    editingApiProviderPresetId,
-    editingApiSyncModelCatalogToCodex,
-    editingManagedProviderApiKeyId,
-    editingManagedProviderId,
-    editingNewManagedProviderNameInput,
     handleCopyDeviceCode,
     handleCopyOauthUrl,
     handleOpenCodexSecuritySettings,
@@ -2273,7 +2116,7 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
     inlineRenameDiscardRef,
     isLocalAccessOAuthBinding,
     isOauthTimeoutState,
-    isOauthTokenExchangeErrorState,
+    oauthRetryAction,
     managedProviderApiKeyId,
     managedProviderId,
     managedProviders,
@@ -2324,12 +2167,8 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
     quickSwitchSubmitting,
     reloadManagedProviders,
     resolveManagedProviderIdForAccount,
-    savingApiKeyCredentials,
     savingApiKeyNameId,
     selectedApiProviderPreset,
-    selectedEditingApiProviderPreset,
-    selectedEditingManagedProvider,
-    selectedEditingManagedProviderApiKey,
     selectedManagedProvider,
     selectedManagedProviderApiKey,
     selectedOAuthBindingAccount,
@@ -2351,21 +2190,9 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
     setCustomSortDropTargetId,
     setCustomSortOrder,
     setDraggedCustomSortAccountId,
-    setEditingApiBaseUrlCredentialsValue,
     setEditingApiKeyCredentialsId,
-    setEditingApiKeyCredentialsValue,
-    setEditingApiKeyCredentialsVisible,
     setEditingApiKeyNameId,
     setEditingApiKeyNameValue,
-    setEditingApiModelCatalogError,
-    setEditingApiModelCatalogFetching,
-    setEditingApiModelCatalogInput,
-    setEditingApiModelContextWindowsInput,
-    setEditingApiProviderPresetId,
-    setEditingApiSyncModelCatalogToCodex,
-    setEditingManagedProviderApiKeyId,
-    setEditingManagedProviderId,
-    setEditingNewManagedProviderNameInput,
     setManagedProviderApiKeyId,
     setManagedProviderId,
     setManagedProviders,
@@ -2387,7 +2214,6 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
     setQuickSwitchError,
     setQuickSwitchProviderId,
     setQuickSwitchSubmitting,
-    setSavingApiKeyCredentials,
     setSavingApiKeyNameId,
     setShowCustomSortModal,
     setSwitching,

@@ -1,4 +1,20 @@
 use crate::modules::codex_provider_protocol::normalize_model_provider_wire_api;
+use serde_json::Value;
+
+#[tauri::command]
+pub async fn codex_discover_remote_service(base_url: String, api_key: String) -> Result<Option<crate::modules::codex_remote_service::Connection>, String> {
+    if api_key.trim().is_empty() { return Ok(None); }
+    crate::modules::codex_remote_service::discover(&base_url, &api_key, false).await
+}
+
+#[path = "codex_openai_usage.rs"]
+mod openai_usage;
+
+#[tauri::command]
+pub async fn codex_query_remote_key_data(base_url:String,api_key:String,resource:String,
+    query:crate::modules::codex_remote_service::KeyQuery) -> Result<Value,String> {
+    crate::modules::codex_remote_service::key_data(&base_url,&api_key,&resource,&query).await
+}
 
 // Codex 模型供应商命令实现。
 //
@@ -6,43 +22,35 @@ use crate::modules::codex_provider_protocol::normalize_model_provider_wire_api;
 // 配置持久化、模型发现、连接测试和用量解析。对外调用仍使用原有
 // `commands::codex::<command>` 路径，避免拆分影响命令注册和现有调用方。
 
-const CODEX_GROUPS_FILE: &str = "codex_account_groups.json";
 const CODEX_MODEL_PROVIDERS_FILE: &str = "codex_model_providers.json";
 const CODEX_MODEL_PROVIDER_TEST_TIMEOUT_SECS: u64 = 20;
 
 #[tauri::command]
 pub async fn load_codex_account_groups() -> Result<String, String> {
-    let path = account::get_data_dir()?.join(CODEX_GROUPS_FILE);
-    if !path.exists() {
-        return Ok("[]".to_string());
-    }
-    std::fs::read_to_string(&path).map_err(|e| format!("Failed to read codex groups: {}", e))
+    crate::commands::account::load_platform_account_groups("codex".to_string()).await
 }
 
 #[tauri::command]
-pub async fn save_codex_account_groups(data: String) -> Result<(), String> {
-    // The shared and Codex-specific UI must use the same validated atomic write.
-    crate::commands::account::save_platform_account_groups("codex".to_string(), data).await
+pub async fn save_codex_account_groups(data: String, expected_revision: Option<u64>) -> Result<u64, String> {
+    crate::commands::account::save_platform_account_groups("codex".to_string(), data, expected_revision).await
 }
 
 #[tauri::command]
 pub async fn load_codex_model_providers() -> Result<String, String> {
-    let path = account::get_data_dir()?.join(CODEX_MODEL_PROVIDERS_FILE);
-    if !path.exists() {
-        return Ok("[]".to_string());
-    }
-    std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read codex model providers: {}", e))
+    tauri::async_runtime::spawn_blocking(|| {
+        let path = account::get_data_dir()?.join(CODEX_MODEL_PROVIDERS_FILE);
+        if !path.exists() { return Ok("[]".to_string()); }
+        std::fs::read_to_string(&path).map_err(|error| format!("Failed to read codex model providers: {error}"))
+    }).await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
 pub async fn save_codex_model_providers(data: String) -> Result<(), String> {
-    let dir = account::get_data_dir()?;
-    if !dir.exists() {
-        std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create dir: {}", e))?;
-    }
-    let path = dir.join(CODEX_MODEL_PROVIDERS_FILE);
-    std::fs::write(&path, data).map_err(|e| format!("Failed to write codex model providers: {}", e))
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = account::get_data_dir()?;
+        std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+        crate::modules::atomic_write::write_secret_string_atomic(&dir.join(CODEX_MODEL_PROVIDERS_FILE), &data)
+    }).await.map_err(|error| error.to_string())?
 }
 
 fn codex_model_provider_models_url(base_url: &str) -> Result<String, String> {
@@ -78,7 +86,11 @@ fn codex_model_provider_usage_url(base_url: &str) -> Result<String, String> {
         _ => return Err("PROVIDER_BASE_URL_INVALID".to_string()),
     }
     let next_path = if url.path().is_empty() || url.path() == "/" {
-        "/usage".to_string()
+        if url.scheme() == "https" && matches!(url.host_str(), Some("api.apikey.fan" | "api.apikey.fun")) && url.port().is_none() && url.username().is_empty() && url.password().is_none() {
+            "/v1/usage".to_string()
+        } else {
+            "/usage".to_string()
+        }
     } else {
         format!("{}/usage", url.path().trim_end_matches('/'))
     };
@@ -264,6 +276,7 @@ pub struct CodexModelProviderChatTestTarget {
     pub api_key_name: Option<String>,
     pub api_key: String,
     pub wire_api: Option<String>,
+    pub auth_scheme: Option<String>,
     #[serde(default)]
     pub model_catalog: Vec<String>,
 }
@@ -283,6 +296,7 @@ pub struct CodexModelProviderChatTestRecord {
     pub reply: Option<String>,
     pub error: Option<String>,
     pub duration_ms: Option<u64>,
+    pub first_text_ms: Option<u64>,
     pub timestamp: i64,
 }
 
@@ -339,6 +353,7 @@ const RESPONSES_NATIVE_CHAT_TEST_MODEL_PRIORITY: &[&str] = &[
     crate::modules::codex_wakeup::DEFAULT_WAKEUP_MODEL,
     "gpt-6.1-sol",
     "gpt-6-astra",
+    "gpt-6.1-terra",
     "gpt-6-sol",
     "gpt-6-luna",
     "gpt-5.6-sol",
@@ -413,24 +428,15 @@ fn first_model_from_provider_models(body: &serde_json::Value, wire_api: &str) ->
 }
 
 async fn discover_model_provider_model(
-    client: &reqwest::Client,
-    base_url: &str,
-    api_key: &str,
-    wire_api: &str,
+    client: &reqwest::Client, base_url: &str, api_key: &str, wire_api: &str, auth_scheme: Option<&str>,
 ) -> Option<String> {
-    let url = codex_model_provider_models_url(base_url).ok()?;
-    let response = client
-        .get(url)
-        .bearer_auth(api_key.trim())
-        .header(reqwest::header::ACCEPT, "application/json")
-        .send()
-        .await
-        .ok()?;
-    if !response.status().is_success() {
-        return None;
-    }
-    let text = response.text().await.ok()?;
-    let parsed = serde_json::from_str::<serde_json::Value>(&text).ok()?;
+    let url = if wire_api == "anthropic" {
+        crate::modules::codex_native_api::anthropic::endpoint(base_url, "models").ok()?
+    } else { codex_model_provider_models_url(base_url).ok()? };
+    let response = crate::modules::codex_provider_protocol::authenticate_provider_request(client.get(url), wire_api, auth_scheme, api_key)
+        .header(reqwest::header::ACCEPT, "application/json").send().await.ok()?;
+    if !response.status().is_success() { return None; }
+    let parsed: serde_json::Value = response.json().await.ok()?;
     first_model_from_provider_models(&parsed, wire_api)
 }
 
@@ -459,6 +465,7 @@ async fn run_single_model_provider_chat_test(
             reply: None,
             error: Some("供应商缺少 API Key".to_string()),
             duration_ms: None,
+            first_text_ms: None,
             timestamp,
         };
     }
@@ -472,6 +479,7 @@ async fn run_single_model_provider_chat_test(
                 &target.base_url,
                 &api_key,
                 &wire_api,
+                target.auth_scheme.as_deref(),
             ) => model_id,
             _ = async {
                 while !codex_local_access::is_model_provider_chat_test_cancelled(run_id) {
@@ -494,6 +502,7 @@ async fn run_single_model_provider_chat_test(
             reply: None,
             error: Some(codex_local_access::MODEL_PROVIDER_CHAT_TEST_CANCELLED_ERROR.to_string()),
             duration_ms: None,
+            first_text_ms: None,
             timestamp,
         };
     }
@@ -511,6 +520,7 @@ async fn run_single_model_provider_chat_test(
             reply: None,
             error: Some("无法确定测试模型，请先配置模型目录或确认 /models 可用".to_string()),
             duration_ms: None,
+            first_text_ms: None,
             timestamp,
         };
     };
@@ -525,16 +535,16 @@ async fn run_single_model_provider_chat_test(
             api_key_name: target.api_key_name.clone(),
             api_key,
             wire_api: wire_api.clone(),
+            auth_scheme: target.auth_scheme.clone(),
             model_catalog: target.model_catalog.clone(),
             model_id: model_id.clone(),
             prompt: prompt.to_string(),
         },
     )
-    .await
-    .map(|result| (result.duration_ms, result.reply));
+    .await;
 
     match result {
-        Ok((duration_ms, reply)) => CodexModelProviderChatTestRecord {
+        Ok(result) => CodexModelProviderChatTestRecord {
             provider_id: target.provider_id,
             provider_name: target.provider_name,
             api_key_id: target.api_key_id,
@@ -544,9 +554,10 @@ async fn run_single_model_provider_chat_test(
             model_id: Some(model_id),
             success: true,
             prompt: prompt.to_string(),
-            reply: Some(reply),
+            reply: Some(result.reply),
             error: None,
-            duration_ms: Some(duration_ms),
+            duration_ms: Some(result.duration_ms),
+            first_text_ms: result.first_text_ms,
             timestamp,
         },
         Err(error) => CodexModelProviderChatTestRecord {
@@ -562,6 +573,7 @@ async fn run_single_model_provider_chat_test(
             reply: None,
             error: Some(error),
             duration_ms: None,
+            first_text_ms: None,
             timestamp,
         },
     }
@@ -643,9 +655,10 @@ pub struct CodexModelProviderModelsResult {
     pub latency_ms: u64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexModelProviderUsageSummary {
+    pub cockpit: Option<crate::modules::codex_remote_service::Connection>,
     pub mode: Option<String>,
     pub is_valid: Option<bool>,
     pub status: Option<String>,
@@ -780,6 +793,7 @@ fn summarize_model_provider_usage(
     );
 
     CodexModelProviderUsageSummary {
+        cockpit: None,
         mode: json_string_at(body, &["mode"]),
         is_valid: json_bool_at(body, &["is_active"]).or_else(|| json_bool_at(body, &["isValid"])),
         status: json_string_at(body, &["status"]),
@@ -875,6 +889,7 @@ fn summarize_deepseek_balance(
     }
 
     CodexModelProviderUsageSummary {
+        cockpit: None,
         mode: Some("deepseek".to_string()),
         is_valid: Some(is_available),
         status: Some(
@@ -1118,6 +1133,7 @@ fn summarize_minimax_token_plan_usage(
     );
 
     Ok(CodexModelProviderUsageSummary {
+        cockpit: None,
         mode: Some("token_plan".to_string()),
         is_valid: Some(remaining_percent > 0.0),
         status: Some(if remaining_percent > 0.0 {
@@ -1265,6 +1281,7 @@ fn summarize_zhipu_token_plan_usage(
     }
 
     Ok(CodexModelProviderUsageSummary {
+        cockpit: None,
         mode: Some("token_plan".to_string()),
         is_valid: Some(remaining_percent > 0.0),
         status: Some(if remaining_percent > 0.0 {
@@ -1447,6 +1464,7 @@ fn summarize_new_api_model_provider_usage(
     );
 
     CodexModelProviderUsageSummary {
+        cockpit: None,
         mode: Some("new_api".to_string()),
         is_valid: None,
         status: None,
@@ -1475,6 +1493,7 @@ pub async fn codex_test_model_provider_connection(
     base_url: String,
     api_key: String,
     wire_api: Option<String>,
+    auth_scheme: Option<String>,
 ) -> Result<CodexLocalAccessTestResult, String> {
     let key = api_key.trim();
     if key.is_empty() {
@@ -1488,7 +1507,10 @@ pub async fn codex_test_model_provider_connection(
         ));
     }
 
-    let url = match codex_model_provider_models_url(&base_url) {
+    let models_url = if wire_api.as_deref() == Some("anthropic") {
+        crate::modules::codex_native_api::anthropic::endpoint(&base_url, "models").map_err(|_| "PROVIDER_BASE_URL_INVALID".to_string())
+    } else { codex_model_provider_models_url(&base_url) };
+    let url = match models_url {
         Ok(url) => url,
         Err(error) => {
             return Ok(codex_model_provider_failure(
@@ -1507,9 +1529,8 @@ pub async fn codex_test_model_provider_connection(
         .build()
         .map_err(|e| format!("CREATE_HTTP_CLIENT_FAILED: {}", e))?;
     let started = Instant::now();
-    let response = match client
-        .get(&url)
-        .bearer_auth(key)
+    let request = crate::modules::codex_provider_protocol::authenticate_provider_request(client.get(&url), wire_api.as_deref().unwrap_or("responses"), auth_scheme.as_deref(), key);
+    let response = match request
         .header(reqwest::header::ACCEPT, "application/json")
         .send()
         .await
@@ -1713,43 +1734,64 @@ pub fn codex_cancel_model_provider_chat_test(run_id: String) -> Result<bool, Str
 }
 
 #[tauri::command]
-pub async fn codex_list_model_provider_models(
-    base_url: String,
-    api_key: String,
-) -> Result<CodexModelProviderModelsResult, String> {
-    let key = api_key.trim();
-    if key.is_empty() {
-        return Err("MISSING_API_KEY".to_string());
+pub async fn codex_list_model_provider_models(base_url: String, api_key: String, wire_api: Option<String>, auth_scheme: Option<String>, remember_for_launch: Option<bool>) -> Result<CodexModelProviderModelsResult, String> {
+    if let Ok(Some(remote)) = crate::modules::codex_remote_service::discover(&base_url, api_key.trim(), false).await {
+        let names:std::collections::HashMap<String,String>=remote.model_catalog.as_ref().and_then(|c|c["models"].as_array())
+            .into_iter().flatten().filter_map(|m|Some((m["slug"].as_str()?.into(),m["display_name"].as_str()?.into()))).collect();
+        let priorities:std::collections::HashMap<String,i64>=remote.model_catalog.as_ref().and_then(|c|c["models"].as_array())
+            .into_iter().flatten().filter_map(|m|Some((m["slug"].as_str()?.into(),m["priority"].as_i64().unwrap_or(i64::MAX)))).collect();
+        let mut ids=remote.models;
+        ids.sort_by_key(|id|priorities.get(id).copied().unwrap_or(i64::MAX));
+        return Ok(CodexModelProviderModelsResult { models: ids.into_iter().map(|id| {
+            let display_name=names.get(&id).cloned();CodexModelProviderModel { id, display_name }
+        }).collect(), latency_ms: 0 });
     }
-    let url = codex_model_provider_models_url(&base_url)?;
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(CODEX_MODEL_PROVIDER_TEST_TIMEOUT_SECS))
-        .build()
-        .map_err(|e| format!("CREATE_HTTP_CLIENT_FAILED: {}", e))?;
+    if api_key.trim().is_empty() { return Err("MISSING_API_KEY".into()); }
+    let remember_for_launch = remember_for_launch.unwrap_or(false);
+    let mut client = reqwest::Client::builder().timeout(Duration::from_secs(20));
+    if remember_for_launch {
+        client = client.redirect(reqwest::redirect::Policy::none());
+    }
+    let client = client.build().map_err(|_| "PROVIDER_MODELS_NETWORK_FAILED".to_string())?;
+    let protocol = normalize_model_provider_wire_api(wire_api.as_deref(), &base_url);
+    let raw = if protocol == "anthropic" {
+        crate::modules::codex_native_api::anthropic::endpoint(&base_url,"models").map_err(|_| "PROVIDER_BASE_URL_INVALID".to_string())?
+    } else { codex_model_provider_models_url(&base_url)? };
+    let mut url = reqwest::Url::parse(&raw).map_err(|_| "PROVIDER_BASE_URL_INVALID".to_string())?;
     let started = Instant::now();
-    let response = client
-        .get(&url)
-        .bearer_auth(key)
-        .header(reqwest::header::ACCEPT, "application/json")
-        .send()
-        .await
-        .map_err(|e| format!("PROVIDER_MODELS_NETWORK_FAILED: {}", e))?;
-    let latency_ms = started.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
-    let status = response.status();
-    let text = response.text().await.unwrap_or_default();
-    if !status.is_success() {
-        return Err(format!(
-            "PROVIDER_MODELS_HTTP_{}: {}",
-            status.as_u16(),
-            text.chars().take(300).collect::<String>()
-        ));
+    let mut models = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..10 {
+        let remaining = Duration::from_secs(20).checked_sub(started.elapsed()).ok_or("PROVIDER_MODELS_NETWORK_FAILED")?;
+        let request = crate::modules::codex_provider_protocol::authenticate_provider_request(client.get(url.clone()), &protocol, auth_scheme.as_deref(), &api_key).timeout(remaining);
+        let response = request.send().await.map_err(|_| "PROVIDER_MODELS_NETWORK_FAILED".to_string())?;
+        if !response.status().is_success() { return Err(format!("PROVIDER_MODELS_HTTP_{}",response.status().as_u16())); }
+        let body: serde_json::Value = if remember_for_launch {
+            let mut response = response;
+            let mut bytes = Vec::new();
+            let limit = crate::modules::codex_model_catalog::MAX_CATALOG_BYTES;
+            while let Some(chunk) = response.chunk().await.map_err(|_| "PROVIDER_MODELS_PARSE_FAILED")? {
+                if chunk.len() > limit - bytes.len() {
+                    return Err("PROVIDER_MODELS_PARSE_FAILED".to_string());
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            serde_json::from_slice(&bytes).map_err(|_| "PROVIDER_MODELS_PARSE_FAILED".to_string())?
+        } else {
+            response.json().await.map_err(|_| "PROVIDER_MODELS_PARSE_FAILED".to_string())?
+        };
+        for model in list_model_provider_models(&body) { if seen.insert(model.id.clone()) { models.push(model); } }
+        if body["has_more"] != true { break; }
+        let Some(last) = body["last_id"].as_str().filter(|s|!s.is_empty()) else { break; };
+        url.query_pairs_mut().clear().append_pair("after_id",last);
     }
-    let parsed = serde_json::from_str::<serde_json::Value>(&text)
-        .map_err(|e| format!("PROVIDER_MODELS_PARSE_FAILED: {}", e))?;
-    Ok(CodexModelProviderModelsResult {
-        models: list_model_provider_models(&parsed),
-        latency_ms,
-    })
+    if remember_for_launch {
+        crate::modules::codex_provider_discovered_models::remember(
+            &base_url, &api_key, &protocol, auth_scheme.as_deref(),
+            models.iter().map(|model| model.id.clone()).collect(),
+        )?;
+    }
+    Ok(CodexModelProviderModelsResult {models,latency_ms:started.elapsed().as_millis().min(u64::MAX as u128) as u64})
 }
 
 #[tauri::command]
@@ -1757,6 +1799,68 @@ pub async fn codex_query_model_provider_usage(
     base_url: String,
     api_key: String,
     integration_type: Option<String>,
+    usage_api_key: Option<String>,
+    respect_relay_balance_switch: Option<bool>,
+    account_id: Option<String>,
+) -> Result<CodexModelProviderUsageSummary, String> {
+    let relay_balance_disabled = respect_relay_balance_switch.unwrap_or(true)
+        && crate::modules::codex_quota::relay_balance_disabled();
+    let query_started = std::time::Instant::now();
+    let original = if let Some(id) = account_id {
+        let (base, key) = (base_url.clone(), api_key.clone());
+        tokio::task::spawn_blocking(move || {
+            crate::modules::codex_account::load_account(&id)
+                .filter(|account| provider_quota_source_matches(account, &base, &key))
+        }).await.ok().flatten()
+    } else {
+        None
+    };
+    let result = query_model_provider_usage(base_url, api_key, integration_type, usage_api_key, relay_balance_disabled).await;
+    if let Some(original) = original {
+        let snapshot = match &result {
+            Ok(summary) => {
+                let mut summary = summary.clone();
+                // The connection contains remote scope metadata, which is not quota.
+                summary.cockpit = None;
+                serde_json::to_value(summary).ok()
+            }
+            Err(error) if error == crate::modules::codex_quota::RELAY_BALANCE_DISABLED => return result,
+            Err(_) => None,
+        };
+        let saved = tokio::task::spawn_blocking(move || {
+            crate::modules::codex_account::save_provider_usage_snapshot(&original, snapshot, query_started)
+        }).await;
+        if !matches!(saved, Ok(Ok(()))) {
+            crate::modules::logger::log_warn("[Codex Provider Quota] Could not save usage snapshot");
+        }
+    }
+    result
+}
+
+fn provider_quota_source_matches(account: &crate::models::codex::CodexAccount, base: &str, key: &str) -> bool {
+    if !account.is_api_key_auth() || account.openai_api_key.as_deref().map(str::trim) != Some(key.trim()) {
+        return false;
+    }
+    let configured = account.api_base_url.as_deref().map(str::trim)
+        .filter(|url| !url.is_empty())
+        .or_else(|| (account.api_provider_mode == crate::models::codex::CodexApiProviderMode::OpenaiBuiltin)
+            .then_some("https://api.openai.com/v1"));
+    let (Some(configured), Ok(mut requested)) = (configured, reqwest::Url::parse(base)) else { return false; };
+    let Ok(mut expected) = reqwest::Url::parse(configured) else { return false; };
+    let path = requested.path().trim_end_matches('/').to_owned();
+    requested.set_path(&path);
+    let mut expected_path = expected.path().trim_end_matches('/').to_owned();
+    if expected_path.is_empty() && path == "/v1" { expected_path = path; }
+    expected.set_path(&expected_path);
+    requested == expected
+}
+
+async fn query_model_provider_usage(
+    base_url: String,
+    api_key: String,
+    integration_type: Option<String>,
+    usage_api_key: Option<String>,
+    relay_balance_disabled: bool,
 ) -> Result<CodexModelProviderUsageSummary, String> {
     let key = api_key.trim();
     if key.is_empty() {
@@ -1767,12 +1871,60 @@ pub async fn codex_query_model_provider_usage(
         .build()
         .map_err(|e| format!("CREATE_HTTP_CLIENT_FAILED: {}", e))?;
 
+    if openai_usage::is_official_base_url(&base_url) {
+        let usage_key = openai_usage::require_usage_key(usage_api_key.as_deref())?;
+        return openai_usage::query(&client, usage_key).await;
+    }
+
+    let connection = if relay_balance_disabled {
+        // Only contact a known Cockpit service while relay balance discovery is disabled.
+        let (base, key) = (base_url.clone(), key.to_owned());
+        tokio::task::spawn_blocking(move || crate::modules::codex_remote_service::cached(&base, &key))
+            .await
+            .map_err(|error| format!("COCKPIT_REMOTE_CACHE_FAILED: {error}"))?
+    } else {
+        crate::modules::codex_remote_service::discover(&base_url, key, true).await?
+    };
+    if let Some(connection) = connection {
+        let now=chrono::Utc::now().timestamp_millis();
+        let today_query=crate::modules::codex_remote_service::KeyQuery {
+            start_at:Some(now/86_400_000*86_400_000),
+            end_at:Some((now/86_400_000+1)*86_400_000),
+            ..Default::default()
+        };
+        let (totals, today) = tokio::join!(
+            crate::modules::codex_remote_service::usage(&base_url, key, "all"),
+            crate::modules::codex_remote_service::key_data(&base_url,key,"stats",&today_query),
+        );
+        let totals=totals?;
+        // Older servers and background backfills leave daily fields unknown.
+        let today=today.ok().filter(|value|value["ready"]==true).unwrap_or_default();
+        let amount = |name: &str| connection.budget[name].as_u64().map(|value| value as f64 / 1_000_000.0);
+        return Ok(CodexModelProviderUsageSummary {
+            mode: Some("cockpit".into()), is_valid: Some(connection.status == "active"), status: Some(connection.status.clone()),
+            unit: Some("USD".into()), quota_unlimited: Some(connection.budget.pointer("/policy/limitMicrousd").and_then(Value::as_u64).is_none()),
+            quota_limit: connection.budget.pointer("/policy/limitMicrousd").and_then(Value::as_u64).map(|v| v as f64 / 1_000_000.0),
+            quota_used: amount("usedMicrousd"), quota_remaining: amount("remainingMicrousd"),
+            today_cost: today.pointer("/summary/estimatedCostUsd").and_then(Value::as_f64),
+            today_requests: today.pointer("/summary/requestCount").and_then(Value::as_i64),
+            today_total_tokens: today.pointer("/summary/totalTokens").and_then(Value::as_i64),
+            total_requests: totals.pointer("/usage/requestCount").and_then(Value::as_i64),
+            total_total_tokens: totals.pointer("/usage/totalTokens").and_then(Value::as_i64),
+            total_cost: totals.pointer("/usage/estimatedCostUsd").and_then(Value::as_f64),
+            cockpit: Some(connection), ..Default::default()
+        });
+    }
+
     if let Some(provider) = codex_model_provider_token_plan_provider(&base_url)? {
         return query_token_plan_model_provider_usage(&client, &base_url, key, provider).await;
     }
 
     if let Some(url) = codex_model_provider_deepseek_balance_url(&base_url)? {
         return query_deepseek_model_provider_balance(&client, &url, key).await;
+    }
+
+    if relay_balance_disabled {
+        return Err(crate::modules::codex_quota::RELAY_BALANCE_DISABLED.into());
     }
 
     let requested_type = integration_type
@@ -2015,6 +2167,156 @@ async fn query_sub2api_model_provider_usage(
 mod new_api_usage_tests {
     use super::*;
     use serde_json::json;
+
+    #[tokio::test]
+    async fn provider_test_selected_model_and_visible_text_timing_through_gateway() {
+        use axum::{body::Body, routing::post, Json, Router};
+        use futures_util::{stream, StreamExt};
+        use serde_json::Value;
+
+        let _env = crate::modules::test_support::env_lock().lock().unwrap();
+        let app = Router::new()
+            .route("/v1/responses", post(|Json(body): Json<Value>| async move {
+                assert_eq!(body["model"], "selected-model");
+                assert_eq!(body["stream"], true);
+                let message = json!({"type":"message","role":"assistant","content":[{"type":"output_text","text":"Ready"}]});
+                let events = [
+                    (0, json!({"type":"response.created","response":{"id":"fixture","status":"in_progress","output":[]}})),
+                    (15, json!({"type":"response.output_text.delta","delta":"Ready","output_index":0,"content_index":0})),
+                    (80, json!({"type":"response.completed","response":{"id":"fixture","status":"completed","output":[message]}})),
+                ];
+                let stream = stream::iter(events).then(|(delay, event)| async move {
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                    Ok::<_, std::io::Error>(format!("data: {event}\n\n"))
+                });
+                ([(reqwest::header::CONTENT_TYPE, "text/event-stream")], Body::from_stream(stream))
+            }))
+            .route("/v1/chat/completions", post(|Json(body): Json<Value>| async move {
+                assert_eq!(body["model"], "selected-model");
+                assert_eq!(body["stream"], true);
+                let chunk = json!({"id":"fixture","object":"chat.completion.chunk","model":"selected-model",
+                    "choices":[{"index":0,"delta":{"role":"assistant","content":"Ready"},"finish_reason":null}]});
+                let end = json!({"id":"fixture","object":"chat.completion.chunk","model":"selected-model",
+                    "choices":[{"index":0,"delta":{},"finish_reason":"stop"}]});
+                let stream = stream::iter([(15, chunk), (80, end)]).then(|(delay, event)| async move {
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                    Ok::<_, std::io::Error>(format!("data: {event}\n\n"))
+                }).chain(stream::once(async {
+                    Ok::<_, std::io::Error>("data: [DONE]\n\n".to_string())
+                }));
+                ([(reqwest::header::CONTENT_TYPE, "text/event-stream")], Body::from_stream(stream))
+            }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}/v1", listener.local_addr().unwrap());
+        let upstream = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        for protocol in ["responses", "chat_completions"] {
+            let record = run_single_model_provider_chat_test(
+                &client,
+                CodexModelProviderChatTestTarget {
+                    provider_id: protocol.to_string(),
+                    provider_name: "Local fixture".to_string(),
+                    base_url: base_url.clone(),
+                    api_key_id: None,
+                    api_key_name: None,
+                    api_key: "fixture-key".to_string(),
+                    wire_api: Some(protocol.to_string()),
+                    auth_scheme: None,
+                    model_catalog: vec!["configured-default".to_string()],
+                },
+                "ping",
+                Some("selected-model"),
+                "fixture-provider-chat-test",
+            ).await;
+            assert!(record.success, "{protocol}: {:?}", record.error);
+            assert_eq!(record.model_id.as_deref(), Some("selected-model"));
+            assert_eq!(record.reply.as_deref(), Some("Ready"));
+            let first = record.first_text_ms.expect("streaming first text");
+            let total = record.duration_ms.unwrap();
+            assert!(total >= first + 40, "{protocol}: first={first}, total={total}");
+        }
+        upstream.abort();
+    }
+
+    #[tokio::test]
+    async fn sub2api_usage_reports_remaining_and_unit_from_usage_endpoint() {
+        use axum::{routing::get, Json, Router};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}/v1", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let app = Router::new().route("/v1/usage", get(|| async {
+                Json(json!({"mode":"sub2api","remaining":12.5,"unit":"CNY","quota":{"remaining":7,"limit":10}}))
+            }));
+            axum::serve(listener, app).await.unwrap();
+        });
+        let summary = query_model_provider_usage(
+            base,
+            "fixture-key".into(),
+            Some("sub2api".into()),
+            None,
+            false,
+        ).await.unwrap();
+        assert_eq!(summary.remaining, Some(12.5));
+        assert_eq!(summary.quota_remaining, Some(7.0));
+        assert_eq!(summary.unit.as_deref(), Some("CNY"));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn relay_balance_switch_stops_requests_and_preserves_enabled_queries() {
+        use axum::{extract::Request, http::StatusCode, response::IntoResponse, Json, Router};
+        use std::sync::{Arc, Mutex};
+
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&requests);
+        let router = Router::new().fallback(move |request: Request| {
+            let recorded = Arc::clone(&recorded);
+            async move {
+                let path = request.uri().path();
+                recorded.lock().unwrap().push(path.to_owned());
+                match path {
+                    "/v1/dashboard/billing/subscription" => Json(json!({"hard_limit_usd": 10})).into_response(),
+                    "/v1/dashboard/billing/usage" => Json(json!({"total_usage": 100})).into_response(),
+                    _ => StatusCode::NOT_FOUND.into_response(),
+                }
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}/v1", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+
+        for integration in [None, Some("new_api"), Some("sub2api")] {
+            let result = query_model_provider_usage(
+                base.clone(), "test-key".into(), integration.map(str::to_owned), None, true,
+            )
+            .await;
+            assert!(matches!(result, Err(error) if error == crate::modules::codex_quota::RELAY_BALANCE_DISABLED));
+        }
+        assert!(requests.lock().unwrap().is_empty());
+
+        let official = query_model_provider_usage(
+            "https://api.openai.com/v1".into(), "test-key".into(), None, None, true,
+        )
+        .await;
+        assert!(matches!(official, Err(error) if error == "OPENAI_USAGE_NOT_CONFIGURED"));
+
+        let summary = query_model_provider_usage(
+            base, "test-key".into(), Some("new_api".into()), None, false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(summary.mode.as_deref(), Some("new_api"));
+        assert!(requests.lock().unwrap().iter().any(|path| path == "/v1/dashboard/billing/subscription"));
+        server.abort();
+    }
+
+    #[test]
+    fn apikey_fun_root_uses_versioned_usage_endpoint() {
+        assert_eq!(codex_model_provider_usage_url("https://api.apikey.fan").unwrap(), "https://api.apikey.fan/v1/usage");
+        assert_eq!(codex_model_provider_usage_url("https://api.apikey.fan/v1").unwrap(), "https://api.apikey.fan/v1/usage");
+        assert_eq!(codex_model_provider_usage_url("https://other.example").unwrap(), "https://other.example/usage");
+    }
 
     fn detail(summary: &CodexModelProviderUsageSummary, key: &str) -> Option<String> {
         summary

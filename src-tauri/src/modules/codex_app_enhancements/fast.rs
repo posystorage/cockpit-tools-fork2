@@ -17,6 +17,9 @@ use tokio_tungstenite::{connect_async_with_config, MaybeTlsStream, WebSocketStre
 const GUARD_SCRIPT: &str = include_str!("startup_guard.js");
 const PRELOAD_SCRIPT: &str = include_str!("startup_preload.js");
 const SCRIPT: &str = include_str!("fast.js");
+const PREDICTIONS_RSPACK_SCRIPT: &str = include_str!("predictions_rspack.js");
+const SERVICE_RSPACK_SCRIPT: &str = include_str!("service_rspack.js");
+const PREDICTIONS_SCRIPT: &str = include_str!("predictions.js");
 const QUOTA_SCRIPT: &str = include_str!("quota.js");
 const QUOTA_CURRENT_SCRIPT: &str = include_str!("quota_current.js");
 const STATE_SCRIPT: &str = r#";(() => {
@@ -29,9 +32,11 @@ const STATE_SCRIPT: &str = r#";(() => {
   try { window.__cockpitApiDictation?.dispose?.(); } catch {}
   if (typeof window.__cockpitNativeDictation?.capability === 'function')
     window.__cockpitNativeDictation.capability = nativeValue => nativeValue;
-  const features = [next.nativeFast, next.quotaCompat, next.apiKeyAuthVerified, next.apiService].map(Number).join('');
+  const features = [next.nativeFast, next.quotaCompat, next.apiKeyAuthVerified, next.apiService].map(Number).join('') + (next.nativePredictions ? '1' : '');
   const installedFeatures = previous?.nativePatchMode === 'fast-only'
-    ? [next.nativeFast, false, next.apiKeyAuthVerified, false].map(Number).join('') : features;
+    ? [next.nativeFast, false, next.apiKeyAuthVerified, false].map(Number).join('') + (next.nativePredictions ? '1' : '')
+    : previous?.nativePatchMode === 'prediction-only'
+      ? [false, false, next.apiKeyAuthVerified, false, true].map(Number).join('') : features;
   const graph = window.__cockpitNativeEvaluatedGraph;
   // Cleanup revokes runtime policy, not code that already evaluated in this
   // document. Reuse a complete quota graph for API instance preference changes;
@@ -39,26 +44,34 @@ const STATE_SCRIPT: &str = r#";(() => {
   const reusableApiGraph = next.apiService === true && graph?.version === 1 && graph.quota === true
     && (next.nativeFast !== true || graph.fast === true);
   const active = reusableApiGraph || previous?.nativePatchState === 'active'
-    && ['full', 'live-quota', 'fast-only'].includes(previous.nativePatchMode)
+    && ['full', 'live-quota', 'fast-only', 'prediction-only', 'rspack'].includes(previous.nativePatchMode)
     && (previous.nativePatchMode !== 'fast-only' || next.nativeFast === true
+      && previous.nativeQuotaPatchState === 'unsupported')
+    && (previous.nativePatchMode !== 'prediction-only' || next.nativePredictions === true && next.nativeFast !== true
       && previous.nativeQuotaPatchState === 'unsupported')
     && previous.nativePatchRequestedFeatures === features
     && previous.nativePatchFeatures === installedFeatures;
   const sameOwnerAndConfig = previous?.owner === next.owner
     && previous.nativeFast === next.nativeFast
+    && previous.nativePredictions === next.nativePredictions
     && previous.quotaCompat === next.quotaCompat
     && previous.apiKeyAuthVerified === next.apiKeyAuthVerified
     && previous.apiService === next.apiService;
   const preserveLoadingState = sameOwnerAndConfig
     && ['preloading', 'unsupported'].includes(previous.nativePatchState);
+  if (previous && (previous.owner !== next.owner || previous.nativePredictions !== next.nativePredictions)) {
+    try { window.__cockpitNativePredictions?.runtime?.dispose?.(); } catch {}
+  }
   window.__cockpitEnhancements = {
     ...previous, ...next, apiDictation: false,
-    ...(reusableApiGraph ? { nativePatchMode: 'full', nativePatchFeatures: features,
+    ...(reusableApiGraph ? { nativePatchMode: graph.mode || 'full', nativePatchFeatures: features,
       nativePatchRequestedFeatures: features } : {}),
     nativePatchState: reusableApiGraph ? 'active' : active ? previous.nativePatchState : preserveLoadingState ? previous.nativePatchState : 'pending',
     nativePatchReason: reusableApiGraph ? 'module-evaluated' : active || preserveLoadingState ? previous?.nativePatchReason : undefined,
     nativeQuotaPatchState: reusableApiGraph ? 'active' : active || preserveLoadingState ? previous?.nativeQuotaPatchState : undefined,
     nativeQuotaPatchReason: reusableApiGraph ? undefined : active || preserveLoadingState ? previous?.nativeQuotaPatchReason : undefined,
+    nativePredictionPatchState: next.nativePredictions ? (active || preserveLoadingState ? previous?.nativePredictionPatchState : 'pending') : 'disabled',
+    nativePredictionPatchReason: next.nativePredictions && (active || preserveLoadingState) ? previous?.nativePredictionPatchReason : undefined,
   };
 })();"#;
 const RUNTIME_PROBE_SCRIPT: &str = r#"(() => {
@@ -68,6 +81,7 @@ const RUNTIME_PROBE_SCRIPT: &str = r#"(() => {
     && typeof p?.consumeHandoff === 'function' && typeof p?.cancelHandoff === 'function';
   return {
     installed: ready && s?.owner === __COCKPIT_WORKER_OWNER__,
+    rspack: [...(document.scripts || [])].some(script => /^app:\/\/-\/assets\/\d+\.[a-f0-9]+\.js$/.test(script.src)),
     preloading: ready && s?.nativePatchState === 'preloading'
       && typeof window.__cockpitNativeFastComplete === 'function'
       && (Object.keys(expected).every(key => s[key] === expected[key])
@@ -102,6 +116,7 @@ fn guard_document_install(source: &str, skipped: &str) -> String {
 /// the app's first document. No transform runs on an already-started document.
 pub(super) fn browser_preload_source(
     native_fast: bool,
+    native_predictions: bool,
     quota_compat: bool,
     api_key_auth_verified: bool,
     api_service: bool,
@@ -112,6 +127,7 @@ pub(super) fn browser_preload_source(
             "{}\n{PRELOAD_SCRIPT}",
             bootstrap(
                 native_fast,
+                native_predictions,
                 quota_compat,
                 api_key_auth_verified,
                 api_service,
@@ -371,6 +387,7 @@ struct Registration {
     preload_first: bool,
     live_quota: bool,
     live_quota_armed: bool,
+    is_rspack: bool,
     breakpoint_ids: Vec<String>,
     nonce: String,
     startup: Option<Arc<StartupReload>>,
@@ -382,6 +399,7 @@ struct Registration {
     active: bool,
     native_module_active: bool,
     quota_unsupported_reason: Option<String>,
+    prediction_unsupported_reason: Option<String>,
     capability_only: bool,
     activation_until: Option<Instant>,
     next_state_read: Option<Instant>,
@@ -424,6 +442,10 @@ impl Registration {
             diagnostic["quotaState"] = json!("unsupported");
             diagnostic["quotaReason"] = json!(quota_reason);
         }
+        if let Some(prediction_reason) = &self.prediction_unsupported_reason {
+            diagnostic["predictionState"] = json!("unsupported");
+            diagnostic["predictionReason"] = json!(prediction_reason);
+        }
         if self.last_diagnostic.as_ref() == Some(&diagnostic) {
             return;
         }
@@ -438,6 +460,9 @@ impl Registration {
         }
         if let Some(quota_reason) = &self.quota_unsupported_reason {
             message.push_str(&format!("; quota=unsupported:{quota_reason}"));
+        }
+        if let Some(prediction_reason) = &self.prediction_unsupported_reason {
+            message.push_str(&format!("; predictions=unsupported:{prediction_reason}"));
         }
         if self.active {
             crate::modules::logger::log_info(&message);
@@ -486,11 +511,11 @@ async fn cleanup(
 ) {
     let _ = timeout(CLEANUP_TIMEOUT, async {
         if let Some(context) = session.context() {
-            let expression = format!("(()=>{{const s=window.__cockpitEnhancements;if(s?.owner==={}){{window.__cockpitQuotaCompat?.disposeLiveQuotaGuard?.();window.__cockpitNativeFast?.cancelHandoff?.({});s.nativeFast=false;s.quotaCompat=false;s.apiService=false;window.__cockpitNativeFastDispose?.();}}return true;}})()", json!(owner), json!(nonce));
+            let expression = format!("(()=>{{const s=window.__cockpitEnhancements;if(s?.owner==={}){{window.__cockpitQuotaCompat?.disposeLiveQuotaGuard?.();window.__cockpitNativeFast?.cancelHandoff?.({});s.nativeFast=false;s.nativePredictions=false;s.quotaCompat=false;s.apiService=false;window.__cockpitNativePredictions?.runtime?.dispose?.();window.__cockpitNativeFastDispose?.();}}return true;}})()", json!(owner), json!(nonce));
             let _ = session.evaluate(expression, context, Duration::from_millis(500)).await;
         }
-        if !breakpoint_ids.is_empty() {
-          for breakpoint_id in breakpoint_ids {
+        let had_breakpoints = !breakpoint_ids.is_empty();
+        for breakpoint_id in breakpoint_ids {
             let _ = session
                 .command(
                     "Debugger.removeBreakpoint",
@@ -498,7 +523,8 @@ async fn cleanup(
                     Duration::from_millis(500),
                 )
                 .await;
-          }
+        }
+        if had_breakpoints {
             let _ = session
                 .command("Debugger.disable", json!({}), Duration::from_millis(500))
                 .await;
@@ -558,38 +584,17 @@ fn command_reason(error: &str) -> String {
 
 fn bootstrap(
     native_fast: bool,
+    native_predictions: bool,
     quota_compat: bool,
     api_key_auth_verified: bool,
     api_service: bool,
     owner: &str,
 ) -> String {
-    let options = json!({"nativeFast":native_fast,"quotaCompat":quota_compat,"apiKeyAuthVerified":api_key_auth_verified,"apiService":api_service,"owner":owner,
-        "serviceTierFallbacks":service_tier_fallbacks()});
+    let options = json!({"nativeFast":native_fast,"nativePredictions":native_predictions,"quotaCompat":quota_compat,"apiKeyAuthVerified":api_key_auth_verified,"apiService":api_service,"owner":owner});
     let state = STATE_SCRIPT.replace("__COCKPIT_STATE_OPTIONS__", &options.to_string());
-    format!("{state}\n{GUARD_SCRIPT}\n{SCRIPT}\n{QUOTA_SCRIPT}\n{QUOTA_CURRENT_SCRIPT}\n;true;")
+    format!("{state}\n{GUARD_SCRIPT}\n{SCRIPT}\n{PREDICTIONS_SCRIPT}\n{PREDICTIONS_RSPACK_SCRIPT}\n{SERVICE_RSPACK_SCRIPT}\n{QUOTA_SCRIPT}\n{QUOTA_CURRENT_SCRIPT}\n;true;")
 }
 
-fn service_tier_fallbacks() -> &'static Value {
-    static FALLBACKS: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
-    FALLBACKS.get_or_init(|| {
-        let catalog = crate::modules::codex_protocol::build_codex_client_models_response(
-            &crate::modules::codex_protocol::managed_codex_model_ids(),
-        );
-        let mut fallbacks = serde_json::Map::new();
-        if let Some(models) = catalog["models"].as_array() {
-            for model in models {
-                if let (Some(slug), Some(tiers)) =
-                    (model["slug"].as_str(), model["service_tiers"].as_array())
-                {
-                    if let Some(tier) = tiers.iter().find(|tier| tier["id"] == "ultrafast") {
-                        fallbacks.insert(slug.to_string(), tier.clone());
-                    }
-                }
-            }
-        }
-        Value::Object(fallbacks)
-    })
-}
 
 async fn rollback_preparation(registration: &mut Registration) {
     if let Some(context) = registration.session().context() {
@@ -651,6 +656,24 @@ async fn prepare_future_document(
     registration: &mut Registration,
     context: ContextKey,
 ) -> Result<(), String> {
+    if registration.is_rspack {
+        let result = registration
+            .session()
+            .evaluate(
+                "window.__cockpitServiceRspack.verifySpeedDocument()".to_string(),
+                context,
+                PREPARE_TIMEOUT,
+            )
+            .await
+            .map_err(|error| command_reason(&error))?;
+        if registration.session().context() != Some(context) {
+            return Err("context-changed".to_string());
+        }
+        if result.get("ok").and_then(Value::as_bool) != Some(true) {
+            return Err(safe_reason(&result, "speed-contract-failed"));
+        }
+        return register_live_runtime(registration, context).await;
+    }
     // The renderer retains the large prepared module in its private closure.
     // Only bounded metadata crosses CDP; polling never copies the source again.
     let expression = format!(
@@ -848,10 +871,14 @@ async fn try_startup_reload(registration: &mut Registration, context: ContextKey
     // Claim is consumed before sending. A lost response can mean navigation
     // already started, so only a known explicit rejection may restore it.
     // The final JS helper checks and reloads in the same turn.
-    let expression = format!(
-        "window.__cockpitNativeFast.reloadPreparedDocument({})",
-        json!(registration.nonce)
-    );
+    let expression = if registration.is_rspack {
+        "window.__cockpitStartupGuard.reload()".to_string()
+    } else {
+        format!(
+            "window.__cockpitNativeFast.reloadPreparedDocument({})",
+            json!(registration.nonce)
+        )
+    };
     let result = registration
         .session()
         .evaluate(expression, context, COMMAND_TIMEOUT)
@@ -885,7 +912,7 @@ async fn read_activation(
     registration: &mut Registration,
     context: ContextKey,
 ) -> Result<(), String> {
-    if registration.active
+    if registration.active && registration.native_module_active
         || registration
             .next_state_read
             .is_some_and(|next| Instant::now() < next)
@@ -893,7 +920,7 @@ async fn read_activation(
         return Ok(());
     }
     registration.next_state_read = Some(Instant::now() + Duration::from_millis(500));
-    let expression = format!("(()=>{{const s=window.__cockpitEnhancements;return s?.owner==={} ? {{state:s.nativePatchState,reason:s.nativePatchReason,mode:s.nativePatchMode,features:s.nativePatchFeatures,quotaState:s.nativeQuotaPatchState,quotaReason:s.nativeQuotaPatchReason}} : {{state:'pending'}};}})()", json!(registration.owner));
+    let expression = format!("(()=>{{const s=window.__cockpitEnhancements;return s?.owner==={} ? {{state:s.nativePatchState,reason:s.nativePatchReason,mode:s.nativePatchMode,features:s.nativePatchFeatures,quotaState:s.nativeQuotaPatchState,quotaReason:s.nativeQuotaPatchReason,predictionState:s.nativePredictionPatchState,predictionReason:s.nativePredictionPatchReason}} : {{state:'pending'}};}})()", json!(registration.owner));
     let result = match registration
         .session()
         .evaluate(expression, context, COMMAND_TIMEOUT)
@@ -913,11 +940,15 @@ async fn read_activation(
                 .get("features")
                 .and_then(Value::as_str)
                 .is_some_and(|features| {
-                    features.len() == 4
+                    (features.len() == 4 || features.len() == 5)
                         && features.bytes().all(|byte| byte == b'0' || byte == b'1')
                         && (result.get("mode").and_then(Value::as_str) == Some("full")
+                            || result.get("mode").and_then(Value::as_str) == Some("rspack")
+                                && result.get("quotaState").and_then(Value::as_str) == Some("active")
                             || result.get("mode").and_then(Value::as_str) == Some("fast-only")
-                                && features.starts_with('1'))
+                                && features.starts_with('1')
+                            || result.get("mode").and_then(Value::as_str) == Some("prediction-only")
+                                && features.len() == 5 && features.ends_with('1'))
                 });
             registration.quota_unsupported_reason =
                 (result.get("quotaState").and_then(Value::as_str) == Some("unsupported")).then(
@@ -928,6 +959,9 @@ async fn read_activation(
                         )
                     },
                 );
+            registration.prediction_unsupported_reason =
+                (result.get("predictionState").and_then(Value::as_str) == Some("unsupported")).then(||
+                    safe_reason(&json!({"reason":result.get("predictionReason")}), "prediction-unsupported"));
             registration.capability_only = false;
             registration.activation_until = None;
             registration
@@ -1014,6 +1048,58 @@ async fn register_live_runtime(
     Ok(())
 }
 
+fn quota_breakpoint(location: &Value, rspack: bool) -> Result<Value, String> {
+    let invalid = || "quota-location-invalid".to_string();
+    let url = location.get("url").and_then(Value::as_str).filter(|url| {
+        if rspack {
+            regex::Regex::new(r"^app://-/assets/async/(543778|634303)\.[a-f0-9]+\.js$")
+                .expect("static Rspack chunk URL").is_match(url)
+        } else {
+            local_primary(url)
+        }
+    }).ok_or_else(invalid)?;
+    let coordinate = |key| location.get(key).and_then(Value::as_u64)
+        .filter(|value| *value <= u32::MAX as u64).ok_or_else(invalid);
+    let variable = |key| valid_quota_identifier(location.get(key).and_then(Value::as_str))
+        .ok_or_else(invalid);
+    let hard = variable("hardVariable")?;
+    let guard = variable("guardVariable")?;
+    let condition = if rspack {
+        let [host, thread, provider, props, scope, settings] =
+            ["host", "thread", "provider", "props", "scope", "settings"].map(variable);
+        let (host, thread, provider, props, scope, settings) =
+            (host?, thread?, provider?, props?, scope?, settings?);
+        // The scope's atom read is the non-React equivalent of the composer
+        // hook. Only mutate these two per-render locals on the verified route.
+        format!("(function(){{try{{if(window.__cockpitRspackLiveQuotaArmed===true&&({hard}||{guard})&&window.__cockpitServiceRspack?.quotaRoute({host},{settings},{thread}==null?null:{scope}.get({provider}.jR,{thread}),{props},{scope})){{{hard}=false;{guard}=false;}}}}catch{{}}return false;}})()")
+    } else {
+        live_quota_condition(hard, guard)
+    };
+    Ok(json!({
+        "lineNumber":coordinate("lineNumber")?,
+        "columnNumber":coordinate("columnNumber")?,
+        "urlRegex":format!("^{}$", regex::escape(url)),
+        "condition":condition,
+    }))
+}
+
+async fn register_quota_breakpoints(registration: &mut Registration, breakpoints: Vec<Value>) -> Result<(), String> {
+    if registration.breakpoint_ids.len() == breakpoints.len() {
+        return Ok(());
+    }
+    registration.session().command("Debugger.enable", json!({}), Duration::from_secs(15))
+        .await.map_err(|error| command_reason(&error))?;
+    for params in breakpoints.into_iter().skip(registration.breakpoint_ids.len()) {
+        let reply = registration.session()
+            .command("Debugger.setBreakpointByUrl", params, Duration::from_secs(15))
+            .await.map_err(|error| command_reason(&error))?;
+        let id = reply.pointer("/result/breakpointId").and_then(Value::as_str)
+            .filter(|id| !id.is_empty()).ok_or_else(|| "breakpoint-registration-failed".to_string())?;
+        registration.breakpoint_ids.push(id.to_owned());
+    }
+    Ok(())
+}
+
 async fn arm_live_quota_guard(
     registration: &mut Registration,
     context: ContextKey,
@@ -1032,6 +1118,31 @@ async fn arm_live_quota_guard(
     }
     if plan.get("ok").and_then(Value::as_bool) != Some(true) {
         return Err(safe_reason(&plan, "quota-location-unavailable"));
+    }
+    if let Some(locations) = plan.get("rspackPlans").and_then(Value::as_array) {
+        if locations.len() != 2 {
+            return Err("quota-location-invalid".to_string());
+        }
+        let breakpoints = locations.iter().map(|location| quota_breakpoint(location, true))
+            .collect::<Result<Vec<_>, _>>()?;
+        if breakpoints[0]["urlRegex"] == breakpoints[1]["urlRegex"] {
+            return Err("quota-location-invalid".to_string());
+        }
+        register_quota_breakpoints(registration, breakpoints).await?;
+        if registration.session().context() != Some(context) {
+            return Err("context-changed".to_string());
+        }
+        registration.session()
+            .evaluate("window.__cockpitRspackLiveQuotaArmed=true".into(), context, COMMAND_TIMEOUT)
+            .await.map_err(|error| command_reason(&error))?;
+        if registration.session().context() != Some(context) {
+            return Err("context-changed".to_string());
+        }
+        registration.live_quota_armed = true;
+        registration.active = true;
+        registration.activation_until = None;
+        registration.report("activation", "rspack-quota-breakpoints-armed").await;
+        return Ok(());
     }
     let location = plan
         .get("plan")
@@ -1187,6 +1298,7 @@ async fn maintain(registration: &mut Registration) -> Result<(), String> {
         registration.active = false;
         registration.native_module_active = false;
         registration.quota_unsupported_reason = None;
+        registration.prediction_unsupported_reason = None;
         registration.capability_only = false;
         registration.live_quota_armed = false;
         registration.live_quota_attempt = Attempt::default();
@@ -1228,6 +1340,7 @@ async fn maintain(registration: &mut Registration) -> Result<(), String> {
             registration.report("document", "browser-preloading").await;
             return Ok(());
         }
+        registration.is_rspack = probe.get("rspack").and_then(Value::as_bool) == Some(true);
         let installed = probe
             .get("installed")
             .and_then(Value::as_bool)
@@ -1247,6 +1360,9 @@ async fn maintain(registration: &mut Registration) -> Result<(), String> {
         read_activation(registration, context).await?;
     }
     if registration.live_quota {
+        // Rspack may finish evaluating its complete quota graph after Fast or
+        // predictions became active. Recheck that independent quota proof.
+        read_activation(registration, context).await?;
         // A subsequently attached worker must not replace an evaluated Fast
         // module's state with the live-quota guard's narrower feature mask.
         if registration.native_module_active {
@@ -1369,6 +1485,7 @@ pub(super) async fn run(
     websocket_url: String,
     profile_dir: PathBuf,
     native_fast: bool,
+    native_predictions: bool,
     quota_compat: bool,
     api_key_auth_verified: bool,
     api_service: bool,
@@ -1384,6 +1501,7 @@ pub(super) async fn run(
         websocket_url,
         profile_dir,
         native_fast,
+        native_predictions,
         quota_compat,
         api_key_auth_verified,
         api_service,
@@ -1399,6 +1517,7 @@ async fn run_with_live_quota(
     websocket_url: String,
     profile_dir: PathBuf,
     native_fast: bool,
+    native_predictions: bool,
     quota_compat: bool,
     api_key_auth_verified: bool,
     api_service: bool,
@@ -1407,7 +1526,7 @@ async fn run_with_live_quota(
     mut stop: watch::Receiver<bool>,
     live_quota: bool,
 ) -> Result<(), String> {
-    if !native_fast && !quota_compat && !api_service || *stop.borrow() {
+    if !native_fast && !native_predictions && !quota_compat && !api_service || *stop.borrow() {
         return Ok(());
     }
     if !local_websocket(&websocket_url) {
@@ -1435,6 +1554,7 @@ async fn run_with_live_quota(
     );
     let runtime = bootstrap(
         native_fast,
+        native_predictions,
         quota_compat,
         api_key_auth_verified,
         api_service,
@@ -1442,7 +1562,7 @@ async fn run_with_live_quota(
     );
     let startup_runtime = guard_document_install(&format!("{runtime}\n{PRELOAD_SCRIPT}"), "");
     let browser_snapshot = json!({"owner":format!("preload-{browser_port}"),
-        "nativeFast":native_fast,"quotaCompat":quota_compat,
+        "nativeFast":native_fast,"nativePredictions":native_predictions,"quotaCompat":quota_compat,
         "apiKeyAuthVerified":api_key_auth_verified,"apiService":api_service});
     let runtime_probe = RUNTIME_PROBE_SCRIPT
         .replace(
@@ -1470,6 +1590,7 @@ async fn run_with_live_quota(
         preload_first,
         live_quota,
         live_quota_armed: false,
+        is_rspack: false,
         breakpoint_ids: Vec::new(),
         nonce: uuid::Uuid::new_v4().to_string(),
         startup,
@@ -1481,6 +1602,7 @@ async fn run_with_live_quota(
         active: false,
         native_module_active: false,
         quota_unsupported_reason: None,
+        prediction_unsupported_reason: None,
         capability_only: false,
         activation_until: None,
         next_state_read: None,

@@ -112,26 +112,28 @@ impl NativeHostBridge {
     ) -> Result<Vec<CodexAccount>, native_contract::ServiceError> {
         let accounts = self.load_accounts(ids).await?;
         let bindings = self.collection().await?.official_account_bindings;
-        if !official || self.profile_dir.is_some() || bindings.is_empty() {
-            return Ok(accounts);
-        }
-        tokio::task::spawn_blocking(move || {
+        let mut accounts = if !official || self.profile_dir.is_some() || bindings.is_empty() {
             accounts
-                .into_iter()
-                .map(|account| match bindings.get(&account.id) {
+        } else {
+            tokio::task::spawn_blocking(move || {
+                accounts.into_iter().map(|account| match bindings.get(&account.id) {
                     Some(id) => crate::modules::chatgpt_plan::official_runtime_overlay(account, id),
                     None => account,
-                })
-                .collect()
-        })
-        .await
-        .map_err(|_| {
-            native_error(
-                503,
-                "account_read_failed",
-                "Unable to read official authorization metadata",
-            )
-        })
+                }).collect::<Vec<_>>()
+            }).await.map_err(|_| native_error(503, "account_read_failed", "Unable to read official authorization metadata"))?
+        };
+        // Scope the pause to local OAuth API traffic. An independent official plan
+        // grant or API key must not inherit a local OAuth credential's restriction.
+        if self.account_overrides.is_empty() {
+            let ids = accounts.iter().filter(|a| native_device_restriction_applies(a))
+                .map(|a| a.id.clone()).collect();
+            let blocked = crate::modules::codex_device_restrictions::blocked(ids,
+                crate::modules::codex_device_restrictions::API).await.map_err(|_| native_error(
+                    503, "device_restriction_state_unavailable", &crate::modules::i18n::translate(
+                        &crate::modules::config::get_user_config().language, "common.deviceRestriction.failed", &[])))?;
+            accounts.retain(|a| !native_device_restriction_applies(a) || !blocked.contains(&a.id));
+        }
+        Ok(accounts)
     }
 
     async fn load_accounts(
@@ -157,6 +159,13 @@ impl NativeHostBridge {
                     }
                 }
                 labels.insert(account.id.clone(), account.email.clone());
+            }
+        }
+        for account in &mut accounts {
+            if let Some(remote) = crate::modules::codex_remote_service::for_routing_account(account) {
+                for model in remote.image_models {
+                    if !account.api_model_catalog.contains(&model) { account.api_model_catalog.push(model); }
+                }
             }
         }
         Ok(accounts)
@@ -208,7 +217,7 @@ async fn native_run_model_provider_chat_test(
         let mut builder = client
             .post(format!("http://{}/v1/responses", handle.addr))
             .bearer_auth(&collection.api_key)
-            .header(ACCEPT, "application/json");
+            .header(ACCEPT, "text/event-stream, application/json");
         for (name, value) in [
             ("x-client-request-id", client_request_id.as_str()),
             ("x-agtools-test-run-id", request.run_id.as_str()),
@@ -217,23 +226,24 @@ async fn native_run_model_provider_chat_test(
         ] {
             builder = add_model_provider_test_header(builder, name, value);
         }
-        let response = builder.json(&json!({"model":client_model,"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":request.prompt}]}],"instructions":"","stream":false,"store":false,"max_output_tokens":256,
+        let response = builder.json(&json!({"model":client_model,"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":request.prompt}]}],"instructions":"","stream":true,"store":false,"max_output_tokens":256,
             "metadata":{"agtools_source":"codex_model_provider_batch_test","agtools_test_run_id":request.run_id,"agtools_provider_id":request.provider_id,"agtools_provider_name":request.provider_name,"agtools_provider_api_key_id":request.api_key_id,"agtools_provider_api_key_name":request.api_key_name,"agtools_wire_api":request.wire_api,"agtools_test_model":request.model_id,"agtools_client_model":client_model,"agtools_client_request_id":client_request_id}}))
             .send().await.map_err(|error|format!("Native provider test failed: {error}"))?;
         let status = response.status();
-        let text = response.text().await.map_err(|error| error.to_string())?;
         if !status.is_success() {
+            let text = response.text().await.map_err(|error| error.to_string())?;
             return Err(format!(
                 "Native provider test failed ({}): {}",
                 status.as_u16(),
                 extract_provider_gateway_test_error_message(&text)
             ));
         }
-        let parsed: Value = serde_json::from_str(&text).map_err(|error| error.to_string())?;
+        let (parsed, first_text_ms) = native_api::provider_test_stream::read(response, started).await?;
         let reply = extract_provider_gateway_test_output_text(&parsed)
             .ok_or_else(|| "Native provider test returned no text".to_string())?;
         Ok(CodexModelProviderGatewayChatTestResult {
             duration_ms: started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+            first_text_ms,
             reply,
         })
     };
@@ -281,6 +291,12 @@ async fn native_start_profile_listener(
     .map_err(|_| "NATIVE_API_INVALID_ADDRESS".to_string())?;
     let options = native_api::Options {
         session_identity_mapping_enabled: collection.session_identity_mapping_enabled,
+        request_body_timeout: Some(Duration::from_millis(
+            collection
+                .timeouts
+                .legacy_request_read_timeout_ms
+                .clamp(1000, LOCAL_ACCESS_TIMEOUT_MAX_MS),
+        )),
         request_timeout: Duration::from_millis(
             collection
                 .timeouts
@@ -379,11 +395,13 @@ async fn native_ensure_provider_profile(
                 let profile = profile_owned.as_path();
                 let account = &account_owned;
                 save_profile_takeover_backup(profile, &key_owned)?;
-                runtime.block_on(write_local_access_profile_takeover(
+                let preserve_catalog =
+                    slots.is_empty() && account_requires_responses_compatibility_gateway(account);
+                runtime.block_on(write_provider_gateway_profile_takeover(
                     profile,
                     &published,
-                    Some(&key_owned),
-                    false,
+                    &key_owned,
+                    preserve_catalog,
                 ))?;
                 cleanup_provider_gateway_profile_model_overrides(profile)?;
                 backup_current_profile_model_before_provider_gateway(
@@ -406,6 +424,13 @@ async fn native_ensure_provider_profile(
                 }
                 codex_account::reapply_experimental_model_policy_if_enabled(profile)?;
                 reapply_deepseek_profile_config_overrides(profile, account)?;
+                if !crate::modules::codex_remote_service::is_known_account(account)
+                    && slots.iter().any(|slot| codex_protocol::deepseek_model_template(&slot.upstream_model).is_some()) {
+                    ensure_profile_max_reasoning_effort(profile)?;
+                }
+                if preserve_catalog {
+                    return Ok(());
+                }
                 runtime.block_on(native_sync_profile_catalog_tool_capabilities(
                     profile,
                     &published,

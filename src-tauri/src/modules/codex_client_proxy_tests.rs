@@ -193,6 +193,7 @@ async fn bound_oauth_tracks_current_exit_and_cannot_fall_back_to_direct() {
     provider.bound_oauth_account_id = Some(oauth_id);
     codex_account::save_account(&provider).unwrap();
     save_mode(&id, Mode::BoundOauth, None).await.unwrap();
+    assert_eq!(upstream_route(&provider).await.unwrap().egress_proxy_url, oauth.egress_proxy_url);
     assert_eq!(
         load_route(&id).await.unwrap().egress_proxy_url,
         oauth.egress_proxy_url
@@ -209,6 +210,7 @@ async fn bound_oauth_tracks_current_exit_and_cannot_fall_back_to_direct() {
     );
     oauth.egress_proxy_disabled = true;
     codex_account::save_account(&oauth).unwrap();
+    assert_eq!(upstream_route(&provider).await.unwrap_err(), "CLIENT_PROXY_BOUND_PROXY_MISSING");
     assert_eq!(
         resolve(&id).await.unwrap_err(),
         "CLIENT_PROXY_BOUND_PROXY_MISSING"
@@ -247,15 +249,14 @@ async fn actual_entry_route() {
     save_mode(id, Mode::Independent, Some(&format!("http://{address}")))
         .await
         .unwrap();
-    let CodexLaunchProxy::Proxy(entry) =
+    let CodexLaunchProxy::Managed(port) =
         codex_instance::resolve_egress_proxy_for_bind_account(Some(id))
             .await
             .unwrap()
     else {
         panic!("missing managed client proxy");
     };
-    let parsed = url::Url::parse(&entry).unwrap();
-    let mut client = tokio::net::TcpStream::connect(("127.0.0.1", parsed.port().unwrap()))
+    let mut client = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
         .unwrap();
     let upstream = tokio::spawn(async move {
@@ -432,6 +433,7 @@ async fn catalog_refresh_rebuilds_encrypted_snapshot_and_preserves_selection_ref
     let fixture = Fixture::new();
     let target = fixture.provider();
     let catalog = |port| super::super::codex_proxy_subscription_parser::ParsedCatalog {
+        native: None,
         nodes: vec![super::super::codex_proxy_subscription_parser::ParsedNode {
             id: "stable-node".into(),
             name: "Node".into(),
@@ -501,7 +503,7 @@ async fn catalog_refresh_rebuilds_encrypted_snapshot_and_preserves_selection_ref
 }
 
 #[tokio::test]
-async fn ordinary_proxy_commands_support_api_cards_without_touching_credentials_or_upstream() {
+async fn ordinary_proxy_commands_share_api_card_entries_without_touching_credentials() {
     let fixture = Fixture::new();
     let id = fixture.provider();
     let before = codex_account::load_account(&id).unwrap();
@@ -528,9 +530,9 @@ async fn ordinary_proxy_commands_support_api_cards_without_touching_credentials_
         .await
         .unwrap();
     assert_eq!(status.desktop, "direct");
-    assert_eq!(status.account, "unbound");
-    assert_eq!(status.sidecar, "unbound");
-    assert!(status.account_port.is_none() && status.sidecar_port.is_none());
+    assert_eq!(status.account, status.desktop);
+    assert_eq!(status.sidecar, status.desktop);
+    assert!(status.shared_entry);
     crate::commands::codex_proxy_engine::codex_proxy_activity_set_enabled(id.clone(), true)
         .await
         .unwrap();
@@ -617,12 +619,13 @@ async fn api_service_uses_same_proxy_commands_and_never_creates_an_account_file(
 }
 
 #[tokio::test]
-async fn follow_unified_changes_effective_route_but_never_changes_api_upstream() {
+async fn follow_unified_changes_effective_route_without_writing_api_credentials() {
     let fixture = Fixture::new();
     let id = fixture.provider();
     let api_service = codex_instance::CODEX_API_SERVICE_BIND_ACCOUNT_ID;
     assert_eq!(resolve(&id).await.unwrap(), CodexLaunchProxy::Inherit);
     let catalog = super::super::codex_proxy_subscription_parser::ParsedCatalog {
+        native: None,
         nodes: vec![super::super::codex_proxy_subscription_parser::ParsedNode {
             id: "unified-node".into(),
             name: "Node".into(),

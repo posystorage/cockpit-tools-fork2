@@ -98,7 +98,7 @@ fn deepseek_script_controls_official_picker_and_returns_pending_model() {
     assert!(script.contains("supportedReasoningEfforts = levels"));
     assert!(script.contains("applyVisionMetadata"));
     assert!(script.contains("item.input_modalities = modalities"));
-    assert!(script.contains("item.supports_image_detail_original = supportsImage"));
+    assert!(script.contains("item.supports_image_detail_original = false"));
     assert!(script.contains("\"vision\":true"));
     // 模型列表判定必须严格，否则会把队列/线程等 data 数组当成模型列表改写。
     assert!(script.contains("typeof item.slug !== \"string\""));
@@ -377,6 +377,7 @@ fn rejects_missing_or_invalid_remote_debugging_port() {
 fn custom_script_renders_weekly_and_optional_five_hour_fields() {
     let script = api_service_script(
         &QuotaResponse {
+            remote: None,
             weekly_remaining_percent: Some(1387),
             five_hour_remaining_percent: Some(100),
             weekly_capacity_percent: Some(1400),
@@ -385,6 +386,7 @@ fn custom_script_renders_weekly_and_optional_five_hour_fields() {
             available_account_count: Some(12),
             abnormal_account_count: Some(2),
             cooldown_account_count: Some(0),
+            provider_quotas: vec![],
             plans: vec![QuotaPlanSummary {
                 plan: "PLUS".to_string(),
                 official: false,
@@ -797,19 +799,15 @@ fn five_hour_only_quota_is_not_relabelled_as_weekly() {
 }
 
 #[test]
-fn empty_pool_quota_keeps_zero_windows_and_account_detail_counts() {
+fn empty_pool_quota_displays_unknown_windows_and_keeps_account_detail_counts() {
     let quota = QuotaResponse::empty_pool();
     assert_eq!(quota.account_count, Some(0));
-    assert_eq!(quota.five_hour_remaining_percent, Some(0));
-    assert_eq!(quota.weekly_remaining_percent, Some(0));
-    assert_eq!(quota.five_hour_capacity_percent, Some(0));
-    assert_eq!(quota.weekly_capacity_percent, Some(0));
 
     let script = api_service_script(&quota, &[], &[], InjectionBadgeKind::CodexQuota, None);
     assert!(script.contains("const accountCount = 0"));
-    assert!(script.contains("const fiveHourPercent = 0"));
-    assert!(script.contains("const weeklyPercent = 0"));
-    // 空池保留零额度；底部不再单独显示账号数，详情保留可用账号统计。
+    assert!(script.contains("const fiveHourPercent = null"));
+    assert!(script.contains("const weeklyPercent = null"));
+    // 额度栏展示未知，详情仍保留真实的账号统计。
     let summary = script
         .split("const fields = [];")
         .nth(1)
@@ -824,16 +822,31 @@ fn empty_pool_quota_keeps_zero_windows_and_account_detail_counts() {
 }
 
 #[test]
-fn empty_pool_response_normalizes_missing_window_values_to_zero() {
-    // The sidecar omits its empty plans list and absent window values.
-    let quota: QuotaResponse = serde_json::from_value(json!({"accountCount": 0})).unwrap();
+fn empty_pool_response_clears_zero_placeholders_and_preserves_real_exhaustion() {
+    let quota: QuotaResponse = serde_json::from_value(json!({
+        "accountCount": 0, "fiveHourRemainingPercent": 0, "weeklyRemainingPercent": 0,
+        "fiveHourCapacityPercent": 0, "weeklyCapacityPercent": 0,
+    })).unwrap();
     let quota = quota.normalize_empty_pool();
 
     assert_eq!(quota.account_count, Some(0));
-    assert_eq!(quota.five_hour_remaining_percent, Some(0));
-    assert_eq!(quota.weekly_remaining_percent, Some(0));
-    assert_eq!(quota.five_hour_capacity_percent, Some(0));
-    assert_eq!(quota.weekly_capacity_percent, Some(0));
+    assert_eq!(quota.five_hour_remaining_percent, None);
+    assert_eq!(quota.weekly_remaining_percent, None);
+    assert_eq!(quota.five_hour_capacity_percent, None);
+    assert_eq!(quota.weekly_capacity_percent, None);
+    let exhausted: QuotaResponse = serde_json::from_value(json!({
+        "accountCount": 1, "fiveHourRemainingPercent": 0, "weeklyRemainingPercent": 0,
+    })).unwrap();
+    let script = api_service_script(
+        &exhausted.normalize_empty_pool(), &[], &[], InjectionBadgeKind::CodexQuota, None,
+    );
+    assert!(script.contains("const fiveHourPercent = 0"));
+    assert!(script.contains("const weeklyPercent = 0"));
+    let provider_only: QuotaResponse = serde_json::from_value(json!({
+        "accountCount": 0,
+        "providerQuotas": [{"name": "Fixture relay", "remaining": 94, "total": 100, "unit": "%", "unlimited": false, "status": "ready"}],
+    })).unwrap();
+    assert_eq!(provider_only.normalize_empty_pool().provider_quotas[0].name, "Fixture relay");
 }
 
 #[test]
@@ -1187,4 +1200,29 @@ fn app_server_auth_snapshot_never_contains_auth_contents() {
     assert!(!snapshot.contains("secret-access"));
     assert!(!snapshot.contains("secret-refresh"));
     let _ = std::fs::remove_dir_all(directory);
+}
+
+#[test]
+fn device_restriction_cdp_requires_official_auth_endpoint_and_explicit_error() {
+    let response = json!({"result":{"body":r#"{"error":{"message":"Device limit reached"}}"#}});
+    assert!(super::official_device_limit_response("https://chatgpt.com/backend-api/accounts/check/v4", &response));
+    for url in ["https://example.org/backend-api/accounts/check/v4", "https://chatgpt.com.evil.test/backend-api/accounts/check/v4",
+        "http://chatgpt.com/backend-api/accounts/check/v4", "https://chatgpt.com/backend-api/conversation"] {
+        assert!(!super::official_device_limit_response(url, &response));
+    }
+    assert!(!super::official_device_limit_response("https://chatgpt.com/backend-api/accounts/check/v4", &json!({"result":{"body":"unauthorized"}})));
+}
+
+#[test]
+fn device_restriction_does_not_assign_another_login_to_the_profile_account() {
+    let known = super::ProfileOAuthIdentityObservation::Matched {
+        account_id: "local-a".into(),
+        observed: CodexOfficialOAuthIdentity { email: "fixture@example.test".into(), user_id: None,
+            account_id: Some("remote-a".into()), organization_id: None },
+    };
+    assert_eq!(super::confirmed_device_limit_subject(&known, &known, Some("remote-a")), Some("local-a".into()));
+    assert_eq!(super::confirmed_device_limit_subject(&known, &known, None), None);
+    assert_eq!(super::confirmed_device_limit_subject(&known, &known, Some("remote-b")), None);
+    let unknown = super::ProfileOAuthIdentityObservation::Unknown { account_id: None, reason: "test" };
+    assert_eq!(super::confirmed_device_limit_subject(&known, &unknown, Some("remote-a")), None);
 }

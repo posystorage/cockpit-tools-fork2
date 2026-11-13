@@ -343,25 +343,29 @@ fn ensure_callback_listener_for_state(app_handle: &AppHandle, state: &OAuthState
 
     match TcpListener::bind(("127.0.0.1", state.port)) {
         Ok(listener) => {
-            drop(listener);
+            let server = match tiny_http::Server::from_listener(listener, None) {
+                Ok(server) => server,
+                Err(error) => {
+                    logger::log_warn(&format!(
+                        "Codex OAuth 回调监听恢复失败: login_id={}, port={}, error={}",
+                        state.login_id, state.port, error
+                    ));
+                    return;
+                }
+            };
             let expected_state = state.state.clone();
             let expected_login_id = state.login_id.clone();
             let callback_url = state.redirect_uri.clone();
             let app_handle_clone = app_handle.clone();
             let port = state.port;
-            tokio::spawn(async move {
-                if let Err(e) = start_callback_server(
-                    port,
-                    expected_state,
-                    expected_login_id,
-                    callback_url,
-                    app_handle_clone,
-                )
-                .await
-                {
-                    logger::log_error(&format!("OAuth 回调服务器错误: {}", e));
-                }
-            });
+            tokio::spawn(start_callback_server(
+                server,
+                port,
+                expected_state,
+                expected_login_id,
+                callback_url,
+                app_handle_clone,
+            ));
             logger::log_info(&format!(
                 "Codex OAuth 已恢复回调监听: login_id={}, port={}",
                 state.login_id, state.port
@@ -382,21 +386,17 @@ fn ensure_callback_listener_for_state(app_handle: &AppHandle, state: &OAuthState
     }
 }
 
-fn find_available_port() -> Result<u16, String> {
+fn bind_callback_listener() -> Result<(u16, TcpListener), String> {
     let mut last_error: Option<String> = None;
 
     for port in [OAUTH_CALLBACK_PORT, OAUTH_FALLBACK_CALLBACK_PORT] {
         match TcpListener::bind(("127.0.0.1", port)) {
-            Ok(listener) => {
-                drop(listener);
-                return Ok(port);
-            }
+            Ok(listener) => return Ok((port, listener)),
             Err(error) if error.kind() == ErrorKind::AddrInUse => {
                 logger::log_warn(&format!(
                     "Codex OAuth 回调端口被占用，尝试下一个端口: port={}",
                     port
                 ));
-                last_error = None;
             }
             Err(error) => {
                 last_error = Some(format!("无法绑定端口 {}: {}", port, error));
@@ -577,16 +577,20 @@ async fn poll_device_token(
                 }
                 return;
             }
-            Ok(response)
-                if response.status() == reqwest::StatusCode::FORBIDDEN
-                    || response.status() == reqwest::StatusCode::NOT_FOUND => {}
             Ok(response) => {
-                emit_device_auth_error(
-                    &app_handle,
-                    &login_id,
-                    format!("Codex 设备授权轮询失败: status={}", response.status()),
-                );
-                return;
+                let status = response.status();
+                let started = crate::modules::codex_device_restrictions::now();
+                let body = crate::modules::codex_device_restrictions::bounded_error_body(response).await.unwrap_or_default();
+                if crate::modules::codex_device_restrictions::explicit_message(&body) {
+                    crate::modules::codex_device_restrictions::observe(format!("login:{login_id}"),
+                        crate::modules::codex_device_restrictions::OAUTH, "device_authorization", None, started, true).await;
+                    emit_device_auth_error(&app_handle, &login_id, crate::modules::codex_device_restrictions::paused_message());
+                    return;
+                }
+                if status != reqwest::StatusCode::FORBIDDEN && status != reqwest::StatusCode::NOT_FOUND {
+                    emit_device_auth_error(&app_handle, &login_id, format!("Codex 设备授权轮询失败: status={}", status));
+                    return;
+                }
             }
             Err(error) => logger::log_warn(&format!("Codex 设备授权轮询请求失败: {}", error)),
         }
@@ -1013,7 +1017,7 @@ pub async fn start_oauth_login(
         }
     }
 
-    let port = find_available_port()?;
+    let (port, listener) = bind_callback_listener()?;
     let code_verifier = generate_base64url_token();
     let code_challenge = generate_code_challenge(&code_verifier);
     let state_token = generate_base64url_token();
@@ -1030,6 +1034,8 @@ pub async fn start_oauth_login(
     {
         return Err("PROXY_OAUTH_SESSION_ACTIVE".into());
     }
+    let server = tiny_http::Server::from_listener(listener, None)
+        .map_err(|error| format!("启动服务器失败: {error}"))?;
     let redirect_uri = format!("http://localhost:{}/auth/callback", port);
     let auth_url = build_auth_url(&redirect_uri, &code_challenge, &state_token);
 
@@ -1052,23 +1058,14 @@ pub async fn start_oauth_login(
     *OAUTH_PROXY.lock().map_err(|_| "PROXY_OAUTH_UNAVAILABLE")? = prepared_proxy;
     set_oauth_state(Some(oauth_state));
 
-    let app_handle_clone = app_handle.clone();
-    let expected_state = state_token.clone();
-    let expected_login_id = login_id.clone();
-    let callback_url = redirect_uri.clone();
-    tokio::spawn(async move {
-        if let Err(e) = start_callback_server(
-            port,
-            expected_state,
-            expected_login_id,
-            callback_url,
-            app_handle_clone,
-        )
-        .await
-        {
-            logger::log_error(&format!("OAuth 回调服务器错误: {}", e));
-        }
-    });
+    tokio::spawn(start_callback_server(
+        server,
+        port,
+        state_token,
+        login_id.clone(),
+        redirect_uri.clone(),
+        app_handle,
+    ));
 
     logger::log_info(&format!(
         "Codex OAuth 登录会话已创建: login_id={}, port={}, redirect_uri={}",
@@ -1083,16 +1080,14 @@ pub async fn start_oauth_login(
 }
 
 async fn start_callback_server(
+    server: tiny_http::Server,
     port: u16,
     expected_state: String,
     expected_login_id: String,
     callback_url: String,
     app_handle: AppHandle,
-) -> Result<(), String> {
-    use tiny_http::{Response, Server};
-
-    let server = Server::http(format!("127.0.0.1:{}", port))
-        .map_err(|e| format!("启动服务器失败: {}", e))?;
+) {
+    use tiny_http::Response;
     let timeout = std::time::Duration::from_secs(OAUTH_TIMEOUT_SECONDS as u64);
 
     logger::log_info(&format!(
@@ -1161,6 +1156,16 @@ async fn start_callback_server(
                     let response = Response::from_string("State mismatch").with_status_code(400);
                     let _ = request.respond(response);
                     continue;
+                }
+
+                if params.get("error_description").is_some_and(|text|
+                    crate::modules::codex_device_restrictions::explicit_message(text)) {
+                    crate::modules::codex_device_restrictions::observe(format!("login:{expected_login_id}"),
+                        crate::modules::codex_device_restrictions::OAUTH, "oauth_callback", None,
+                        crate::modules::codex_device_restrictions::now(), true).await;
+                    emit_device_auth_error(&app_handle, &expected_login_id, crate::modules::codex_device_restrictions::paused_message());
+                    let _ = request.respond(Response::from_string(crate::modules::codex_device_restrictions::paused_message()).with_status_code(403));
+                    break;
                 }
 
                 if code.is_empty() {
@@ -1294,17 +1299,17 @@ async fn start_callback_server(
             logger::log_warn(&error);
         }
     }
-
-    Ok(())
 }
 
 async fn exchange_code_for_token_internal(
+    login_id: &str,
     code: &str,
     code_verifier: &str,
     port: u16,
     exchange_redirect_uri: Option<&str>,
     proxy_url: Option<&str>,
 ) -> Result<CodexTokens, String> {
+    let observation_started = crate::modules::codex_device_restrictions::now();
     let redirect_uri = resolve_exchange_redirect_uri(port, exchange_redirect_uri);
     let mut builder = reqwest::Client::builder()
         .connect_timeout(TOKEN_REFRESH_TIMEOUT)
@@ -1349,6 +1354,11 @@ async fn exchange_code_for_token_internal(
     })?;
 
     if !status.is_success() {
+        if crate::modules::codex_device_restrictions::explicit_message(&body) {
+            crate::modules::codex_device_restrictions::observe(format!("login:{login_id}"),
+                crate::modules::codex_device_restrictions::OAUTH, "oauth_exchange", None, observation_started, true).await;
+            return Err(crate::modules::codex_device_restrictions::paused_message());
+        }
         let response_summary = serde_json::from_str::<serde_json::Value>(&body)
             .map(|value| crate::modules::codex_auth_diagnostic::oauth_response_summary(&value))
             .unwrap_or_else(|_| serde_json::json!({"body_type":"non_json"}));
@@ -1403,6 +1413,10 @@ async fn exchange_code_for_token_internal(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
+    if !access_token.trim().is_empty() && !id_token.trim().is_empty() {
+        crate::modules::codex_device_restrictions::observe(format!("login:{login_id}"),
+            crate::modules::codex_device_restrictions::OAUTH, "oauth_exchange", None, observation_started, false).await;
+    }
     Ok(CodexTokens {
         id_token,
         access_token,
@@ -1417,6 +1431,9 @@ fn resolve_exchange_redirect_uri(port: u16, exchange_redirect_uri: Option<&str>)
         .unwrap_or_else(|| format!("http://localhost:{}/auth/callback", port))
 }
 
+const OAUTH_SESSION_MISSING: &str =
+    "CODEX_OAUTH_RESTART_REQUIRED: OAuth 状态不存在，请重新发起授权";
+
 pub async fn complete_oauth_login(login_id: &str) -> Result<CodexOAuthCompletion, String> {
     hydrate_oauth_state_if_missing();
     let attempt_id = COMPLETE_ATTEMPT_SEQ.fetch_add(1, Ordering::Relaxed) + 1;
@@ -1429,7 +1446,7 @@ pub async fn complete_oauth_login(login_id: &str) -> Result<CodexOAuthCompletion
         let oauth_state = OAUTH_STATE.lock().unwrap();
         let state = oauth_state
             .as_ref()
-            .ok_or("OAuth 状态不存在，请重新发起授权")?;
+            .ok_or(OAUTH_SESSION_MISSING)?;
         if state.expires_at <= now_timestamp() {
             return Err("OAuth 登录已超时，请重新发起授权".to_string());
         }
@@ -1466,6 +1483,7 @@ pub async fn complete_oauth_login(login_id: &str) -> Result<CodexOAuthCompletion
     };
 
     let tokens = match exchange_code_for_token_internal(
+        login_id,
         &code,
         &code_verifier,
         port,
@@ -1555,7 +1573,7 @@ pub fn submit_callback_url(login_id: &str, callback_url: &str) -> Result<(), Str
         let guard = OAUTH_STATE.lock().unwrap();
         let state = guard
             .as_ref()
-            .ok_or_else(|| "OAuth 状态不存在，请重新发起授权".to_string())?;
+            .ok_or_else(|| OAUTH_SESSION_MISSING.to_string())?;
         if state.login_id != login_id {
             return Err("OAuth loginId 不匹配".to_string());
         }
@@ -1587,7 +1605,7 @@ pub fn submit_callback_url(login_id: &str, callback_url: &str) -> Result<(), Str
     let mut guard = OAUTH_STATE.lock().unwrap();
     let current = guard
         .as_mut()
-        .ok_or_else(|| "OAuth 状态不存在，请重新发起授权".to_string())?;
+        .ok_or_else(|| OAUTH_SESSION_MISSING.to_string())?;
     if current.login_id != login_id {
         return Err("OAuth loginId 不匹配".to_string());
     }
@@ -1726,6 +1744,11 @@ pub async fn refresh_access_token_with_account_proxy(
     current_id_token: Option<&str>,
     account: Option<&crate::models::codex::CodexAccount>,
 ) -> Result<CodexTokens, String> {
+    use crate::modules::codex_device_restrictions as restrictions;
+    if let Some(account) = account {
+        restrictions::ensure_allowed(&account.id, restrictions::TOKEN).await?;
+    }
+    let observation_started = restrictions::now();
     let builder = reqwest::Client::builder()
         .connect_timeout(TOKEN_REFRESH_TIMEOUT)
         .timeout(TOKEN_REFRESH_TIMEOUT);
@@ -1758,6 +1781,12 @@ pub async fn refresh_access_token_with_account_proxy(
         .map_err(|e| format!("读取响应失败: {}", e))?;
 
     if !status.is_success() {
+        if restrictions::explicit_message(&body) {
+            if let Some(account) = account {
+                restrictions::observe_account(account, restrictions::TOKEN, "token_response", observation_started, true).await;
+            }
+            return Err(restrictions::paused_message());
+        }
         let error_code = extract_token_error_code(&body);
         let response_summary = serde_json::from_str::<serde_json::Value>(&body)
             .map(|value| crate::modules::codex_auth_diagnostic::oauth_response_summary(&value))
@@ -1820,13 +1849,16 @@ pub async fn refresh_access_token_with_account_proxy(
         }),
     );
 
+    if let Some(account) = account {
+        restrictions::observe_account(account, restrictions::TOKEN, "token_response", observation_started, false).await;
+    }
     Ok(refreshed_tokens)
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        authorize_url_matches_pending, build_auth_url, find_available_port, is_callback_navigation,
+        authorize_url_matches_pending, bind_callback_listener, build_auth_url, is_callback_navigation,
         is_id_token_expired, is_id_token_refresh_due, is_token_expired, parse_device_poll_interval,
         resolve_exchange_redirect_uri, resolve_refreshed_id_token, OAuthState,
         DEVICE_DEFAULT_POLL_SECONDS, DEVICE_EXCHANGE_REDIRECT_URI, ID_TOKEN_REFRESH_LEAD_SECONDS,
@@ -1854,15 +1886,16 @@ mod tests {
             // 本机 1455 已被其它进程占用，说明前置条件不成立，跳过该用例。
             return;
         };
-        let result = find_available_port();
+        let result = bind_callback_listener();
         drop(occupied);
 
         match result {
-            Ok(port) => assert_eq!(
-                port, OAUTH_FALLBACK_CALLBACK_PORT,
-                "1455 被占用时必须回退到 {}",
-                OAUTH_FALLBACK_CALLBACK_PORT
-            ),
+            Ok((port, listener)) => {
+                assert_eq!(port, OAUTH_FALLBACK_CALLBACK_PORT);
+                assert_eq!(listener.local_addr().unwrap().port(), port);
+                let server = tiny_http::Server::from_listener(listener, None).unwrap();
+                assert_eq!(server.server_addr().to_ip().unwrap().port(), port);
+            }
             Err(error) => assert!(
                 error.contains(OAUTH_PORT_IN_USE_CODE),
                 "1455/1457 都不可用时必须返回端口占用错误，实际: {error}"
@@ -2027,6 +2060,7 @@ mod tests {
     #[test]
     fn oauth_proxy_use_keeps_resource_snapshots_backend_side() {
         let catalog = crate::modules::codex_proxy_subscription_parser::ParsedCatalog {
+            native: None,
             nodes: vec![crate::modules::codex_proxy_subscription_parser::ParsedNode {
                 id: "node-1".into(),
                 name: "Alpha".into(),

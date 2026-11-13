@@ -158,6 +158,67 @@
     "providerClear": "清空选择"
   },
   "common": {
+    "collapseAll": "全部收起",
+    "expandAll": "全部展开",
+    "syncing": "同步中…",
+    "notice": "提示",
+    "gotIt": "知道了",
+    "unknown": "未知",
+    "noData": "暂无数据",
+    "search": "搜索",
+    "rename": "重命名",
+    "yes": "是",
+    "no": "否",
+    "saved": "已保存",
+    "done": "完成",
+    "edit": "编辑",
+    "windowMinimize": "最小化",
+    "windowMaximize": "最大化",
+    "windowRestore": "还原",
+    "profileRestoreBusy": "正在恢复登录态，请稍后重试。",
+    "profileRestoreInvalid": "登录态快照路径无效，请重新导入账号。",
+    "profileRestoreRecoveryFailed": "登录态恢复失败，备份已保留：{{detail}}",
+    "dataQueryBusy": "数据正在处理中，请稍后重试。",
+    "historyRestoring": "正在恢复历史记录…",
+    "apiBudget": {
+      "keyScope": "当前 Key",
+      "upgradeRequired": "请升级网关所在电脑的 Cockpit Tools，以查看统计和请求记录。",
+      "gatewayName": "Cockpit 网关",
+      "accountingNote": "已记录扣额不随价格重算变化；估算价值可能不同。预算按 UTC 重置。",
+      "preparing": "正在后台整理历史统计，请稍后重试。",
+      "settled": "已记录扣额",
+      "unrecorded": "未记录",
+      "unmeteredShort": "未计量",
+      "rangeLimit": "请选择有效日期，最多 93 天，且不得晚于今天。",
+      "partialCharges": "{{count}} 条请求缺少扣额或未计量；扣额统计仅含已记录金额。",
+      "retention": "历史始于 {{time}}；仅统计网关保留的日志。",
+      "logFiltersNote": "筛选仅影响下方明细；上方统计和曲线使用所选日期。",
+      "timeout": "超时",
+      "textRequests": "文本",
+      "imageEdits": "图片编辑",
+      "budget": "用量预算",
+      "period": "周期",
+      "lifetime": "一次性",
+      "daily": "每日",
+      "weekly": "每周",
+      "monthly": "每月",
+      "dailyLimit": "每日上限",
+      "concurrency": "并发请求",
+      "dailyImages": "每日图片请求",
+      "invalid": "请输入范围内的正数。",
+      "hint": "按配置的结算价格计量；未配置价格的模型不可用。周期按 UTC 重置，不结转。进行中的请求可能超额。",
+      "unmetered": "部分请求缺少用量或价格，未计入金额。",
+      "remote": "Cockpit 远程服务",
+      "active": "可用",
+      "disabled": "已停用",
+      "service_disabled": "服务已停止",
+      "token_limit_reached": "Token 已用尽",
+      "budget_limit_reached": "预算已用尽",
+      "images": "生图",
+      "consumed": "已用",
+      "resetsAt": "下次重置",
+      "offline": "离线 · 显示缓存"
+    },
     "networkErrors": {
       "upstream": "上游服务",
       "proxyConnection": "通过代理“{{proxy}}”连接 {{target}} 失败，可能与代理或网络有关，请检查代理或更换节点后重试。",
@@ -247,6 +308,7 @@
     "failureTime": "失败时间",
     "clearRecord": "清除记录",
     "clearingRecord": "清除中…",
+    "to": "至",
     "dragSortHint": "拖动左侧手柄调整顺序，松开后自动保存。",
     "dragSortFilteredHint": "清除搜索后可调整顺序。",
     "recycleBin": {
@@ -352,6 +414,33 @@
       "action": "查看详情"
     },
     "shared": {
+      "quotaCategories": {
+        "other": "其他",
+        "extra": "加量包",
+        "activity": "活动赠送包",
+        "base": "基础体验包"
+      },
+      "webSession": {
+        "openFailed": "打开网页会话失败：{{error}}",
+        "opened": "已打开网页会话：{{email}}",
+        "open": "打开网页会话"
+      },
+      "addAccountTargetGroup": "将添加到分组：{{group}}",
+      "checkin": {
+        "saveFailed": "自动签到设置保存失败：{{message}}",
+        "manualTestPartialFailure": "部分账号签到失败，请查看记录；后台稍后会自动重试。",
+        "manualTestAlreadyRunning": "自动签到任务正在执行，请稍后查看记录。",
+        "manualTestFailed": "测试执行失败：{{message}}",
+        "clearLogsFailed": "清空签到记录失败：{{message}}",
+        "tabSettings": "自动签到设置",
+        "tabHistory": "自动签到记录",
+        "historyRangeHint": "仅保留近 30 天的自动签到记录（共 {{count}} 条）",
+        "manualTest": "测试执行",
+        "clearLogs": "清空",
+        "historyLoadFailed": "读取自动签到记录失败：{{message}}",
+        "historyLoading": "正在读取自动签到记录...",
+        "noHistory": "暂无近 30 天的自动签到记录"
+      },
       "addAccount": "添加账号",
       "columns": {
         "actions": "操作",
@@ -384,6 +473,7 @@
       },
       "filterLabel": "筛选",
       "import": {
+        "file": "选择文件",
         "failedMsg": "导入失败: {{error}}",
         "label": "导入",
         "importing": "正在导入...",
@@ -399,7 +489,11 @@
           "statusSkipped": "已跳过",
           "statusPending": "待导入"
         },
-        "invalidJson": "JSON 格式无效，请检查文件或粘贴内容。"
+        "invalidJson": "JSON 格式无效，请检查文件或粘贴内容。",
+        "empty": "导入内容为空。",
+        "sizeLimit": "导入文件不能超过 {{limit}} MiB。",
+        "countLimit": "每次最多导入 {{count}} 个账号。",
+        "itemFailed": "第 {{index}} 条：{{error}}"
       },
       "externalImport": {
         "bundleInvalidJson": "导入包不是有效 JSON",
@@ -478,6 +572,15 @@
       "refreshQuota": "刷新配额",
       "search": "搜索账号...",
       "sort": {
+        "name": "按名称",
+        "customReset": "重置自定义顺序",
+        "customModalDesc": "拖动账号或使用上下按钮调整展示顺序。",
+        "customModalTitle": "自定义账号排序",
+        "customSettingsTooltip": "配置自定义顺序",
+        "custom": "自定义顺序",
+        "dragToReorder": "拖拽排序",
+        "moveUp": "上移",
+        "moveDown": "下移",
         "ascTooltip": "当前：升序，点击切换为降序",
         "createdAt": "按创建时间",
         "descTooltip": "当前：降序，点击切换为升序",
@@ -510,6 +613,8 @@
         "title": "账号总览"
       },
       "quota": {
+        "usageWithUnit": "用量（{{unit}}）",
+        "usage": "用量",
         "noData": "暂无配额数据",
         "queryFailed": "配额查询失败",
         "resetDone": "已重置",
@@ -591,6 +696,29 @@
         "missingTiming": "未记录有效输出计时。",
         "shortWindow": "输出观测窗口不足 100 毫秒。"
       }
+    },
+    "deviceRestriction": {
+      "title": "设备限制记录",
+      "badge": "设备受限",
+      "paused": "已观察到明确的设备限制，当前操作的自动尝试已暂停。请在账号页查看本地限制记录。",
+      "note": "这里记录本机观察结果，不代表 OpenAI 设备名额。删除账号或清理本地凭据不保证释放服务端设备额度。",
+      "retryNote": "允许重试只恢复尝试，不会把限制标为已解除；再次收到明确限制时会重新暂停。",
+      "desktop": "桌面登录",
+      "quota": "额度查询",
+      "api": "API 调用",
+      "oauth": "授权登录",
+      "token": "令牌刷新",
+      "recovered": "该操作已恢复",
+      "pausedLabel": "已暂停尝试",
+      "retryEnabled": "已允许重试",
+      "observed": "首次：{{first}} · 最近：{{last}} · {{count}} 次观察",
+      "check": "重新检查",
+      "allowRetry": "允许重试",
+      "help": "官方说明",
+      "support": "联系支持",
+      "failed": "操作未完成，已保留最近状态，请重试。",
+      "loginAttempt": "尚未确认账号的登录",
+      "removed": "已移除的本地账号"
     }
   },
   "floatingCard": {
@@ -667,10 +795,11 @@
     },
     "qoder": "Qoder",
     "trae": "Trae",
-    "traeSolo": "TRAE SOLO",
+    "traeSolo": "TraeWork",
     "traeCn": "Trae CN",
-    "traeSoloCn": "TRAE SOLO CN",
+    "traeSoloCn": "TraeWork CN",
     "codebuddyCn": "CodeBuddy CN",
+    "minimaxcode": "MiniMax Code",
     "switchClassicLayoutEntry": "切换到经典布局",
     "switchClassicLayoutTitle": "切换至经典侧边栏布局",
     "switchClassicLayoutDesc": "经典布局将展示完整平台导航，并支持可折叠侧边栏。你可在“设置 > 通用 > 侧边栏布局”中随时切换回原始布局。",
@@ -791,7 +920,8 @@
     "error": {
       "missingApiKey": "请输入 API Key。",
       "queryFailed": "额度查询失败：{{error}}",
-      "saveFailed": "一键写入失败：{{error}}"
+      "saveFailed": "一键写入失败：{{error}}",
+      "missingBaseUrl": "请输入供应商 Base URL。"
     },
     "models": {
       "title": "可用模型",
@@ -806,6 +936,14 @@
     "copyKey": "复制密钥",
     "clearKey": "清空输入",
     "keyManager": {
+      "prefillOpened": "已打开 {{target}} 的添加弹框，请核对信息后保存。",
+      "checkpointAvailable": "当前密钥库文件缺失。恢复会先校验本机备份，备份后的更改可能不在其中。",
+      "restoreCheckpoint": "恢复本机备份",
+      "checkpointRestoreFailed": "未能校验或恢复本机密钥备份。",
+      "exportLegacy": "导出明文 JSON",
+      "legacyExportFailed": "未能导出旧版密钥列表。",
+      "vaultLoadFailed": "未能读取已保存的密钥。",
+      "vaultWriteFailed": "未能保存密钥更改。",
       "title": "密钥管理",
       "desc": "保存常用 API Key，点击即可切换并自动查询额度。",
       "saveButton": "保存密钥",
@@ -839,6 +977,7 @@
       "useKey": "使用密钥"
     },
     "prefill": {
+      "codexReady": "已填入 APIKEY.FUN 配置，请确认后添加到 Codex。",
       "claudeDesktopReady": "已带入 API Relay 配置，请确认后添加到 Claude。"
     },
     "table": {
@@ -856,9 +995,21 @@
       "family": "分组",
       "platform": "当前系统",
       "unsupportedGroup": "该分组暂时没有可一键写入的客户端。"
+    },
+    "campaign": {
+      "badge": "双11",
+      "title": "充值赠送 11.11%",
+      "description": "新老用户均可参与。",
+      "period": "活动时间：2026年11月1日—11日（北京时间）",
+      "terms": "活动规则以活动页为准。",
+      "action": "查看活动",
+      "inactive": "活动当前未开放。",
+      "label": "双十一限时活动",
+      "promotionDescription": "Cockpit 官方合作中转站双十一福利，新老用户均可参与。活动期间充值赠送 11.11%，支持 Claude、ChatGPT、Gemini 等主流模型。"
     }
   },
   "platformLayout": {
+    "customIconStorageFailed": "无法保存自定义图标，本地存储空间可能已满。删除不再使用的图标后重试。",
     "title": "平台布局",
     "sidebarSelected": "侧边栏已选择 {{count}}/{{max}}",
     "sidebarSelectedUnlimited": "侧边栏已选择 {{count}}",
@@ -872,6 +1023,11 @@
     "groupBadge": "分组",
     "sidebarToggle": "侧边栏显示",
     "dashboardToggle": "仪表盘显示",
+    "enabledToggle": "启用",
+    "groupEnabledHint": "批量启用/禁用该分组内的所有平台",
+    "disabledHint": "禁用后该平台的所有自动活动停止，且其在应用设置中的配置项一并隐藏（入口是否显示由「仪表盘」开关单独控制）",
+    "enableAll": "全部启用",
+    "disableAll": "全部禁用",
     "trayToggle": "菜单栏显示",
     "apiRelayTrayDisabled": "中转站暂不支持菜单栏显示",
     "groupDefault": "默认平台",
@@ -930,6 +1086,7 @@
       "submit": "导入"
     },
     "actions": {
+      "duplicate": "复制实例",
       "create": "新建实例",
       "refresh": "刷新",
       "startAll": "全部启动",
@@ -988,6 +1145,7 @@
       "editTitle": "编辑实例"
     },
     "form": {
+      "copyName": "{{name}} 副本",
       "name": "实例名称",
       "namePlaceholder": "例如：工作账号",
       "path": "实例目录",
@@ -1054,6 +1212,41 @@
         }
       },
       "modelRouting": {
+        "deselectModel": "取消选择",
+        "selectModel": "选择",
+        "manageAction": "管理渠道",
+        "missingSource": "路由缺失",
+        "disabledSource": "路由已停用",
+        "unavailableSource": "账号不可用",
+        "modelUnavailable": "模型已不在 API 目录",
+        "provider": "选择 API 账号",
+        "namespacePlaceholder": "前缀",
+        "deleteRoute": "删除渠道",
+        "loadedModels": "已加载模型",
+        "enabledTotal": "已启用 / 总数",
+        "fetchModels": "获取列表",
+        "manualPlaceholder": "如 gpt-5.6-sol, grok-4.6",
+        "channelsSummary": "第三方 API 渠道",
+        "manageChannels": "配置渠道",
+        "noChannels": "暂未添加第三方 API 渠道",
+        "addRoute": "添加渠道",
+        "unnamedAccount": "未选择账号",
+        "routesCount": "{{count}} 个渠道",
+        "statusBadge": "混合路由",
+        "catalogUnavailable": "Cockpit 无法管理此实例的可见模型目录，暂不能启用模型路由。",
+        "desktopOnly": "模型路由仅支持桌面版实例。",
+        "oauthRequired": "请绑定可直接登录的 OAuth 订阅账号。",
+        "routeRequired": "请至少添加一个 API 模型路由。",
+        "invalidNamespace": "前缀须为 2–32 位小写英文字母、数字、下划线或连字符，且不能使用保留名称。首位必须为字母或数字。",
+        "duplicateNamespace": "每个模型路由须使用不同的前缀。",
+        "providerRequired": "请为每个模型路由选择一个 API 账号。",
+        "enabledRouteRequired": "请至少启用一个 API 模型路由。",
+        "createHint": "新建时复制默认实例可跳过 Codex 设置。空白实例需要先启动一次。",
+        "fetchCredentialsRequired": "此 API 账号缺少密钥或基础 URL。",
+        "fetchEmpty": "供应商未返回模型，可在下方手动添加。",
+        "noProviderAccounts": "没有可用的 API 账号，请先在「API 账号」页面添加受支持的供应商。",
+        "noCatalog": "尚未获取模型，请获取列表或手动添加。",
+        "modalDescription": "配置第三方 API 账号和模型前缀。没有前缀的模型继续使用当前订阅。",
         "title": "第三方 API 路由",
         "summary": "普通模型使用当前订阅；带前缀模型（如 cpa/gpt-5.6-sol）转发到第三方 API。两者都依赖本地分流服务。",
         "rowSummary": "普通模型使用当前订阅；带前缀模型（如 cpa/gpt-5.6-sol）转发到第三方 API。两者都依赖本地分流服务。",
@@ -1079,7 +1272,7 @@
       "appSpeed": "速度",
       "appSpeedDesc": "启动官方 Codex 前写入对应速度",
       "autoSyncThreads": "自动同步会话",
-      "autoSyncThreadsDesc": "关闭时保持多实例会话隔离；开启后仅在所有 Codex 实例已停止时，启动或关闭实例会自动合并本地会话记录。"
+      "autoSyncThreadsDesc": "关闭时保持各实例的会话记录隔离。开启后，关闭实例且所有 Codex 实例均已停止时，自动补齐缺失会话并追加匹配历史，不覆盖已有内容。同步可能复制大型会话文件。"
     },
     "quota": {
       "unbound": "未绑定账号",
@@ -1221,6 +1414,11 @@
     "title": "应用设置",
     "subtitle": "个性化您的 Cockpit Tools 体验。",
     "general": {
+      "accountLevelRefreshSummary": "展开配置",
+      "accountLevelRefreshSummaryActive": "已配置 {{count}} 个账号",
+      "accountLevelRefreshDesc": "为各账号设置自动刷新间隔，覆盖平台默认值。",
+      "accountLevelRefreshTitle": "账号级刷新",
+      "accountLevelRefreshInherit": "继承平台",
       "errorReporting": "遥测诊断",
       "errorReportingDesc": "启用后提交经过脱敏的启动及界面诊断；关闭后停止提交。",
       "appearance": "界面外观",
@@ -1265,10 +1463,14 @@
       "startupMinimizedDesc": "应用启动完成后自动最小化主窗口，可从 Dock、任务栏或托盘恢复",
       "rememberMainWindowState": "记住主窗口位置和大小",
       "rememberMainWindowStateDesc": "重启或从托盘重新打开时恢复主窗口位置和大小；默认关闭",
+      "timeDisplayMode": "时间显示",
+      "timeDisplayModeDesc": "账号卡片与列表中的时间区域显示内容（默认切换时间）",
       "minimizeBehavior": "窗口最小化行为（仅 macOS）",
       "minimizeBehaviorDesc": "选择最小化窗口时保留在程序坞和菜单栏，或仅保留在菜单栏",
       "minimizeBehaviorDockAndTray": "程序坞 + 菜单栏（推荐默认）",
       "minimizeBehaviorTrayOnly": "仅菜单栏",
+      "showTrayIcon": "显示托盘图标",
+      "showTrayIconDesc": "隐藏托盘或菜单栏图标后，后台任务继续运行。可从程序坞或任务栏恢复窗口。",
       "hideDockIcon": "是否隐藏Dock图标（仅 macOS）",
       "hideDockIconDesc": "独立控制程序坞图标显示状态，不受窗口最小化行为影响",
       "hideDockIconOff": "否（显示Dock图标）",
@@ -1327,7 +1529,7 @@
       "vscodeAppPathPlaceholder": "默认路径",
       "vscodePathSelect": "选择",
       "vscodePathReset": "重置默认",
-      "antigravityAppPath": "Antigravity IDE 启动路径",
+      "antigravityAppPath": "{{appName}} 启动路径",
       "antigravityTitle": "Antigravity IDE 启动",
       "commonTitle": "通用",
       "antigravitySettingsTitle": "Antigravity IDE 设置",
@@ -1421,18 +1623,24 @@
       "platformAutoRefresh": "{{platform}} 自动刷新配额",
       "traeAutoRefreshDesc": "后台自动更新频率",
       "traeAppPath": "Trae 启动路径",
-      "traeSoloAppPath": "TRAE SOLO 启动路径",
+      "traeSoloAppPath": "TraeWork 启动路径",
       "traeCnAppPath": "Trae CN 启动路径",
-      "traeSoloCnAppPath": "TRAE SOLO CN 启动路径",
+      "traeSoloCnAppPath": "TraeWork CN 启动路径",
       "traeAppPathDesc": "留空则使用默认路径",
       "traeAppPathPlaceholder": "默认路径",
       "traePathSelect": "选择",
       "traePathReset": "重置默认",
-      "workbuddyAppPath": "WorkBuddy 启动路径",
+      "workbuddyAppPath": "WorkBuddy 国内版路径",
       "workbuddyAppPathDesc": "留空则使用默认路径",
       "workbuddyAppPathPlaceholder": "默认路径",
       "workbuddyPathSelect": "选择",
       "workbuddyPathReset": "重置默认",
+      "minimaxCodeAppPath": "MiniMax Code 启动路径",
+      "minimaxCodeAppPathDesc": "留空则使用默认路径",
+      "minimaxCodeAppPathPlaceholder": "默认路径",
+      "minimaxCodePathSelect": "选择",
+      "minimaxCodeAppPathPathSelect": "选择",
+      "minimaxCodePathReset": "重置默认",
       "openclawAuthOverwrite": "切换 Codex 时覆盖 OpenClaw 登录信息",
       "openclawAuthOverwriteDesc": "关闭后仅切换 Codex，不会改写 OpenClaw 当前登录态",
       "ghcpOpencodeAuthOverwrite": "切换 GitHub Copilot 时覆盖 OpenCode 登录信息",
@@ -1465,6 +1673,8 @@
       "qoderPathSelect": "选择",
       "workbuddyAutoRefresh": "WorkBuddy 自动刷新配额",
       "workbuddyAutoRefreshDesc": "后台自动更新频率",
+      "minimaxCodeAutoRefresh": "MiniMax Code 自动刷新配额",
+      "minimaxCodeAutoRefreshDesc": "后台自动更新频率",
       "codexAppSpeed": "Codex 速度",
       "codexAppSpeedDesc": "保存为官方 Codex 启动速度；每次从本应用启动 Codex 前都会写入。",
       "codexAppSpeedStandard": "标准",
@@ -1517,13 +1727,15 @@
       "menuBarQuotaConfigure": "配置",
       "menuBarQuotaModalTitle": "菜单栏额度",
       "menuBarQuotaModalDesc": "以下为菜单栏额度的专属选项：跟随所选平台当前账号。Codex 当前为 API 服务时显示「API + 池剩余%」；API Key 账号显示「API + 剩余额度」；普通账号显示邮箱前缀与剩余%（多条取最低；低红、中橙、高绿）。",
+      "menuBarAntigravityMetric": "菜单栏配额",
+      "menuBarQuotaLowest": "最低剩余额度",
       "menuBarQuotaPlatform": "额度账号平台",
       "menuBarQuotaPlatformDesc": "跟随该平台当前正在使用的账号，刷新或切换后自动更新",
       "menuBarAccountPrefix": "显示账号邮箱前 4 位",
       "menuBarAccountPrefixDesc": "仅普通账号：关闭后不显示邮箱前缀。Codex API 服务 / API Key 仍会显示 API 标签",
       "menuBarQuotaConfirmEnable": "启用",
-      "codexHideRelayQuota": "隐藏中转站额度",
-      "codexHideRelayQuotaDesc": "开启后，Codex 账号总览隐藏中转 / New API 类额度面板，减轻列表重叠与视觉干扰。",
+      "codexHideRelayQuota": "余额开关",
+      "codexHideRelayQuotaDesc": "关闭后，隐藏 Codex 中转站余额，并停止自动和手动余额查询。",
       "floatingCardStyle": "悬浮窗样式",
       "floatingCardStyleDesc": "所有悬浮窗共用此设置，可在悬浮窗内切换。",
       "floatingCardFull": "完整卡片",
@@ -1537,12 +1749,12 @@
       "codexPreserveExternalBridge": "保留外部桥接",
       "codexPreserveExternalBridgeDesc": "OAuth 切号时保留经本地记录验证的 Codex Web GPT 桥接；默认关闭。",
       "codexEnhancements": {
-        "nativeFast": "原生 Fast 控件",
-        "nativeFastDesc": "为 API Key 账号启用官方速度菜单，显示模型支持的档位；实际支持和计费取决于 API 供应商。",
         "quotaCompat": "混合模式额度兼容",
         "quotaCompatDesc": "仅真实 OAuth 登录且走外部 API 路由时，避免订阅额度拦截本地 API 消息；不改变真实用量和图像额度。",
-        "restartHint": "默认开启。修改后需重启各目标 Codex 实例，并保持 Cockpit Tools 运行。原生听写由客户端能力与设置决定，Cockpit 不接管或强制启用。",
-        "configFailed": "设置读取或保存失败：{{error}}"
+        "restartHint": "原生下一步预测默认关闭。修改后需重启各目标 Codex 实例，并保持 Cockpit Tools 运行。原生听写由客户端能力与设置决定，Cockpit 不接管或强制启用。",
+        "configFailed": "设置读取或保存失败：{{error}}",
+        "nativePredictions": "原生下一步预测（Tab）",
+        "nativePredictionsDesc": "使用当前对话的 API 供应商和模型生成下一条消息建议，会额外消耗 API 额度；保存后重启 Codex 生效。"
       }
     },
     "tabs": {
@@ -1706,6 +1918,7 @@
         "unsupportedLegacyFile": "无法识别该旧版账号备份格式",
         "codexTopLayoutInvalid": "备份中的顶部布局格式无效，配置未导入。",
         "codexTopLayoutImportFailed": "其他配置已导入，但顶部布局保存失败。请重试导入。",
+        "platformLayoutImportFailed": "部分设置可能已经导入。平台布局未能保存，请重试导入。",
         "unsupportedVersion": "当前版本暂不支持该数据包版本"
       }
     },
@@ -1784,12 +1997,13 @@
       "saveFailed": "保存失败: {{error}}",
       "reportTitle": "网页查询服务",
       "reportService": "HTTP 报表服务",
-      "reportServiceDesc": "提供带 token 的 HTTP 查询接口，用于查看用量摘要",
+      "reportServiceDesc": "启用并保存后立即启动，以后随应用启动。访问需要 Token。",
       "reportPort": "报表端口",
-      "reportPortDesc": "默认为 {{port}}，修改后需重启应用",
+      "reportPortDesc": "默认端口为 {{port}}，保存后生效。",
       "reportToken": "访问 Token",
       "reportTokenDesc": "访问 /report 时必须携带，请妥善保管",
       "reportTokenRequired": "启用网页查询服务时，访问 Token 不能为空。",
+      "reportApplyFailed": "设置已保存，但网页查询服务未能启动。{{error}}",
       "generateToken": "生成",
       "reportUrlPreview": "地址预览",
       "reportUrlPreviewDesc": "支持 format=md / format=yaml，也支持 render=true 网页渲染",
@@ -1874,13 +2088,20 @@
       "center": "居中",
       "top": "顶部",
       "bottom": "底部",
-      "localHint": "修改立即生效并在当前设备自动保存，图片不会上传。恢复默认会移除已保存的图片。",
+      "localHint": "修改立即生效，每张皮肤的图片和参数在本机单独保存，图片不会上传。恢复默认不会删除我的皮肤。",
       "restore": "恢复默认",
       "imageType": "请选择 JPG、PNG 或 WebP 图片。",
       "imageSize": "请选择小于 10 MB 的图片。",
       "imageRead": "无法读取这张图片，请换一张重试。",
       "storage": "背景读取或保存失败，请重试；原有背景仍会保留。",
-      "saveFailed": "当前背景已显示，但保存失败。请重试；上次保存的背景仍会保留。"
+      "saveFailed": "修改已显示，但保存失败。请重试；上次保存的皮肤仍会保留。",
+      "builtInSkins": "内置皮肤",
+      "mySkins": "我的皮肤",
+      "addSkin": "添加皮肤",
+      "rename": "重命名",
+      "skinName": "皮肤名称",
+      "manageSkin": "管理皮肤：{{name}}",
+      "deleteSkinConfirm": "删除“{{name}}”？删除当前皮肤后将恢复默认背景。"
     }
   },
   "appPath": {
@@ -1888,6 +2109,8 @@
       "desc": "未找到 {{app}} 应用程序路径，请立即设置后继续。"
     },
     "missing": {
+      "scanEmpty": "未检测到正在运行的应用。请先启动后重试，或手动选择路径。",
+      "scanEmptyGeneric": "未检测到正在运行的 {{app}}。请先启动后重试，或手动选择路径。",
       "title": "未找到应用程序路径",
       "desc": "未找到 {{app}} 应用程序路径，请立即设置后继续启动。",
       "codexLaunchHint": "切号已完成。启动应用请先设置路径；若切号后不需要启动，请到设置中关闭「切换 Codex 时自动启动 Codex App」。",
@@ -1920,6 +2143,12 @@
       "gcpTos": "GCP ToS 账号",
       "gcpTosTitle": "GCP ToS 账号"
     },
+    "lastSwitchTime": "切换时间",
+    "neverSwitched": "从未切换",
+    "refreshTime": "刷新时间",
+    "refreshTimeFull": "刷新时间：{{time}}",
+    "lastSwitchTimeFull": "切换时间：{{time}}",
+    "toggleTimeMode": "切换显示切换时间 / 刷新时间",
     "columns": {
       "email": "邮箱",
       "subscription": "订阅类型",
@@ -1988,6 +2217,8 @@
     "clearFilter": "清空筛选",
     "editTags": "编辑标签",
     "tagModal": {
+      "renamePlaceholder": "新标签名",
+      "renamingGlobal": "在所有账号中重命名标签：",
       "title": "账户标签",
       "hint": "最多 {{max}} 个标签，单个标签长度不超过 {{maxLength}} 个字符。",
       "empty": "暂无标签",
@@ -2263,8 +2494,8 @@
       "oauthAction": "OAuth 授权",
       "fromExtension": "从插件导入",
       "syncBadge": "同步 Antigravity Cockpit 插件账号",
-      "fromLocalDB": "从本地数据库导入",
-      "localDBDesc": "读取本机 Antigravity IDE 客户端登录账号",
+      "fromLocalApp": "从本机客户端导入",
+      "localAppDesc": "读取本机 {{appName}} 客户端登录账号",
       "toolsDescMigrate": "从 ~/.antigravity_tools/ 迁移历史账号",
       "importingTools": "导入 Antigravity Tools...",
       "importingLocal": "导入本地账号...",
@@ -2281,6 +2512,7 @@
       "resetTime": "重置时间"
     },
     "errors": {
+      "viewVerificationDetail": "验证详情",
       "title": "错误详情",
       "empty": "暂无错误信息",
       "account": "账号",
@@ -2308,6 +2540,8 @@
     "switchFailed": "切换失败：{{error}}",
     "antigravitySwitchBusy": "Antigravity 账号正在切换，请稍后重试。",
     "antigravitySwitchPrepareTimeout": "Antigravity 账号准备超时，请重试。",
+    "antigravityWindowsCredentialStoreCapacity": "Windows 凭据管理器可能已满。请在「控制面板 → 用户帐户 → 凭据管理器」中，只删除不再使用的 Windows 凭据，然后重试。",
+    "antigravityWindowsCredentialTooLarge": "此凭据超过 Windows 单条凭据 2,560 字节的上限。",
     "antigravitySwitchStateSaveFailed": "客户端凭据已切换，但保存本地账号状态失败：{{error}}。请重试切号。",
     "antigravityLegacyUnsupported": "暂不支持 Antigravity 2.0.0 及以上版本，请选择小于Antigravity 2.0.0版本或者使用Antigravity IDE",
     "importSuccess": "成功导入 {{count}} 个账号",
@@ -2374,6 +2608,7 @@
     "historyClear": "清空历史",
     "historyPromptLabel": "唤醒词：{{prompt}}",
     "errorUi": {
+      "officialLanguageServerUnavailable": "未找到唤醒所需的语言服务器。请安装 Antigravity 桌面版，或安装内置语言服务器的 IDE 版本。已检查目录：{{path}}。",
       "verificationRequiredTitle": "需要验证",
       "quotaTitle": "配额限制",
       "temporaryTitle": "临时错误",
@@ -2438,6 +2673,8 @@
       "crontabRequired": "请输入 crontab 表达式",
       "crontabValid": "Crontab 表达式有效",
       "crontabInvalid": "Crontab 表达式无效",
+      "stateLoadFailed": "读取唤醒任务失败：{{error}}",
+      "stateSaveFailed": "保存唤醒任务失败：{{error}}",
       "taskSaved": "任务「{{name}}」已保存",
       "featureOff": "唤醒功能已关闭",
       "featureOn": "唤醒功能已开启",
@@ -2480,7 +2717,9 @@
       "modeScheduled": "📅 定时触发",
       "modeCrontab": "🧩 定时任务",
       "modeQuotaReset": "🔄 配额重置",
-      "antigravityVersion": "Antigravity IDE 版本",
+      "transportMode": "唤醒方式",
+      "transportLanguageServer": "语言服务器",
+      "transportClientless": "无客户端唤醒",
       "modelSelect": "模型选择",
       "modelHint": "同一配额组建议只选一个模型，多模型会依次触发。",
       "modelsEmpty": "暂无推荐模型",
@@ -2574,6 +2813,7 @@
     "stopApiServiceFailedContinue": "API 服务未正常关闭，将继续重启..."
   },
   "closeDialog": {
+    "minimizeWindow": "最小化",
     "title": "关闭窗口",
     "description": "请选择关闭窗口时的操作",
     "minimize": "最小化到托盘",
@@ -2590,13 +2830,154 @@
     "other_group": "其他模型"
   },
   "codex": {
+    "cli": {
+      "launchSuccess": "已启动 Codex CLI",
+      "selectWorkingDir": "选择 Codex CLI 工作目录"
+    },
+    "resetAutomation": {
+      "nothingToReset": "当前没有需要重置的额度窗口。",
+      "unknownOutcome": "无法确认重置结果，请重试。",
+      "applyAllHint": "开启后，点击保存会将此规则写入所有账号，覆盖已有的自定义和关闭配置。",
+      "applyAll": "为所有账号保存此规则",
+      "accountHint": "未单独配置的账号默认使用公共规则。保存后，仅对当前账号生效。",
+      "title": "重置卡自动使用",
+      "accountTab": "当前账号",
+      "publicTab": "公共规则",
+      "inherit": "跟随公共",
+      "custom": "自定义",
+      "off": "关闭",
+      "entryDefault": "自动设置",
+      "noCredits": "暂无重置卡",
+      "publicHint": "作为未单独配置账号的默认规则，不影响已有自定义或关闭配置。",
+      "before": "提前",
+      "expiry": "临期使用",
+      "minutes": "分钟",
+      "hours": "小时",
+      "days": "天",
+      "hostHint": "Cockpit Tools 运行期间后台检查，实际扣除哪张卡由服务端决定。同一账号自动用卡成功后，需等待 30 分钟才能再次自动用卡。",
+      "invalidTime": "请输入大于零、可精确到整秒的时间。",
+      "invalidPercent": "请输入 0 至 100 的整数百分比。",
+      "loadFailed": "加载规则失败：{{error}}",
+      "saveFailed": "保存规则失败：{{error}}",
+      "conflict": "规则已在其他位置修改，请重新加载后保存。",
+      "busy": "此账号正在重置，请稍后再试。",
+      "storageError": "读取或保存重置规则失败。",
+      "timeout": "请求超时，将复用已保存的请求标识，避免重复扣卡。",
+      "history": "最近执行记录",
+      "reasonExpiry": "临期使用",
+      "reasonQuota": "低额度使用",
+      "reasonManual": "手动重置",
+      "reasonCheck": "后台检查",
+      "pending": "等待结果",
+      "editPublic": "编辑公共规则",
+      "accountMissing": "账号已不存在。",
+      "masterLabel": "设置自动使用重置卡",
+      "ruleSource": "规则来源",
+      "weeklyTrigger": "周额度触发",
+      "weeklyRemaining": "周剩余额度 ≤",
+      "previewTitle": "触发规则预览",
+      "previewAny": "满足以下任意一项时，自动使用一张重置卡：",
+      "previewExpiry": "距离重置卡到期不超过 {{value}} {{unit}}",
+      "previewWeekly": "周剩余额度不高于 {{percent}}%",
+      "previewOff": "自动使用已关闭，以下配置暂不生效。",
+      "previewEmpty": "未启用任何触发条件，暂不会自动使用重置卡。",
+      "cardOn": "自动",
+      "cardOff": "关闭",
+      "orSeparator": "，或",
+      "inheritHint": "当前跟随公共规则。可编辑公共规则，或切换为自定义。"
+    },
+    "overload": {
+      "setting": "满载时持续重试",
+      "settingHint": "仅用于本地 Codex API 服务。开启后，可安全重试的请求会持续等待模型恢复。设置对新请求生效。",
+      "retrying": "模型繁忙，正在重试（{{count}}）",
+      "count": "上游满载 {{count}} 次",
+      "countHint": "按上游尝试计数，含自动重试。记录最多保留 7 天。",
+      "history": "满载明细",
+      "empty": "此时间范围内没有满载记录。",
+      "attempt": "第 {{number}} 次尝试",
+      "sameAccount": "同号恢复",
+      "otherAccount": "换号恢复",
+      "pending": "结果待定",
+      "cancelled": "已取消",
+      "failed": "请求失败",
+      "countUnavailable": "暂时无法读取满载统计"
+    },
+    "instance": {
+      "errors": {
+        "threadSyncWorkerFailed": "会话同步任务失败：{{error}}",
+        "threadSyncBusy": "Codex 会话同步正在进行，请稍后重试。",
+        "threadSyncTargetRunning": "目标 Codex 实例正在运行，请关闭后再同步已有会话。",
+        "threadSyncTargetChanged": "目标会话在预览后发生变化，请重新同步；已保留新增内容。",
+        "threadSyncTargetReplaced": "目标会话文件已被替换，请重新预览同步。",
+        "threadSyncFileBusy": "目标会话正在被其他同步操作使用，请稍后重试。"
+      }
+    },
+    "quotaHistory": {
+      "storage": {
+        "title": "历史存储",
+        "usage": "{{records}} 条记录 · 占用 {{size}}",
+        "loadFailed": "无法读取历史存储。",
+        "enabled": "记录额度历史",
+        "onlyChanges": "仅在额度变化时记录",
+        "autoCleanup": "自动清理过期记录",
+        "intervalMinutes": "记录间隔（分钟）",
+        "retentionDays": "保留天数",
+        "cleanupEveryDays": "清理周期（天）",
+        "validRange": "请输入 1 至 {{max}} 的整数。",
+        "recordScope": "记录范围",
+        "allAccounts": "全部账号",
+        "selectedAccounts": "选定账号",
+        "saveFailed": "无法保存历史设置。",
+        "saved": "历史设置已保存。",
+        "cleanup": "清理历史",
+        "cleanupAccounts": "清理账号",
+        "cleanupRange": "清理范围",
+        "expired": "过期记录",
+        "dates": "日期范围",
+        "all": "全部记录",
+        "fromDate": "开始日期",
+        "toDate": "结束日期",
+        "invalidDates": "请选择有效的日期范围。",
+        "cleanupFailed": "清理失败，请重新预览后重试。",
+        "previewCount": "预计删除 {{records}} 条记录。",
+        "confirmCleanup": "确认删除",
+        "preview": "预览清理",
+        "deleted": "已删除 {{records}} 条记录。"
+      },
+      "title": "额度趋势",
+      "chart": "图表",
+      "details": "明细",
+      "onlyChanges": "仅看变化",
+      "noChanges": "此时段暂无额度变化。",
+      "sampledAt": "采样时间",
+      "changeFromPrevious": "较上一条采样的变化",
+      "points": "{{value}} 个百分点",
+      "account": "账号",
+      "interval": "间隔（分钟）",
+      "intervalInvalid": "请输入 1 至 1440 的整数。",
+      "empty": "此时段暂无额度采样。",
+      "readFailed": "无法读取额度历史。",
+      "noAccount": "添加 Codex 订阅账号后可查看额度历史。"
+    },
+    "quotaRecovery": {
+      "title": "额度恢复提醒",
+      "description": "刷新发现剩余额度回升至 90% 或以上时，通过推送加发送提醒。需要允许外部网络访问。",
+      "token": "推送加令牌",
+      "settingsError": "无法读取或保存提醒设置。"
+    },
+    "thresholds": {
+      "shortCycle": "短周期额度",
+      "weekly": "周额度",
+      "windowHint": "按实际时长匹配阈值，一周及以上使用周额度阈值；只有周额度时仅检查周额度。缺少时长时沿用主/次窗口映射。",
+      "rule": "短周期剩余 <= {{shortCycle}}% 或周剩余 <= {{weekly}}%"
+    },
     "launchConfirmation": {
       "title": "启动待确认",
       "description": "启动请求已发出，尚未确认客户端状态。客户端可能已打开，请勿重复启动。",
       "check": "检查状态",
       "notRunning": "暂未检测到目标实例。请稍后检查，或关闭此窗口后重试启动。",
       "checkFailed": "暂时无法读取运行状态，请稍后重试检查。",
-      "maintenanceDeferred": "暂时无法检查会话，已保留历史并跳过本次维护。"
+      "maintenanceDeferred": "部分会话维护暂未完成，已保留历史，稍后可在会话管理中重试。"
     },
     "launchErrors": {
       "sessionRestoreFailed": "会话修复失败，备份恢复未完成，已停止启动。请先检查日志和备份，再重试。",
@@ -2635,7 +3016,7 @@
     "contextOverride": {
       "title": "上下文管理",
       "description": "模型列表、排序、默认模型和推理强度跟随官方；仅手动设置时覆盖上下文。",
-      "dialogDescription": "对当前 Codex 实例的所有账号生效，切号后保持不变；可选择跟随官方、预设或自定义。",
+      "dialogDescription": "对当前 Codex 实例的所有账号生效，切号后保持不变；可选择跟随官方、预设或自定义。选择预设或自定义后，会覆盖所有模型在目录中各自的上下文窗口。",
       "followOfficial": "跟随官方",
       "custom": "自定义上下文",
       "automatic": "自动",
@@ -2663,6 +3044,10 @@
       "enabledHint": "启用后使用当前可见模型列表，重启 Codex 生效。",
       "disabledHint": "关闭后会移除 Cockpit 受管模型目录，恢复官方模型可见性；具体可用模型由官方账号权限决定。",
       "models": {
+        "addCustomBlank": "新建自定义模型",
+        "addAll": "全部添加（{{count}}）",
+        "added": "已添加",
+        "source": "来源",
         "title": "模型列表",
         "model": "模型",
         "default": "默认模型",
@@ -2729,9 +3114,9 @@
         "autoDisabled": "已关闭自动同步所有实例记录",
         "autoEnabled": "已开启自动同步所有实例记录",
         "autoTooltip": "自动同步所有实例记录",
-        "autoDesc": "关闭时保持多实例记录隔离；开启后，仅在所有 Codex 实例已停止时，启动或关闭实例会自动补齐缺失会话并追加匹配历史的新增内容，不覆盖已有字节。",
+        "autoDesc": "关闭时保持各实例的会话记录隔离。开启后，关闭实例且所有 Codex 实例均已停止时，自动补齐缺失会话并追加匹配历史，不覆盖已有内容。同步可能复制大型会话文件。",
         "closeFirst": "请先关闭所有 Codex 实例后再同步记录，避免运行中的实例把旧记录写回。",
-        "confirmMessage": "将补齐所有实例中缺失的会话，并在目标实例已停止且历史一致时追加新增内容，不覆盖已有字节。分叉历史或运行中目标的已有会话更新会被拒绝。写入前会备份目标文件。确认继续？",
+        "confirmMessage": "将补齐所有实例中缺失的会话，并在目标实例已停止且历史一致时追加新增内容，不覆盖已有字节。分叉历史或运行中目标的已有会话更新会被拒绝。写入前会备份目标文件。同步可能复制大型会话文件。确认继续？",
         "needTwo": "至少需要两个实例才能同步记录",
         "settingsSection": "同步设置",
         "settingsSubtitle": "管理 Codex 多实例记录同步方式",
@@ -2757,14 +3142,16 @@
     "refreshAllSuccess": "刷新完成，共成功 {{count}} 个账号",
     "refreshAllPartialFailed": "刷新完成，成功 {{success}} / {{total}}，部分账号失败",
     "launchPreview": {
-      "hideNativeQuotaBannerTitle": "隐藏 Codex 官方额度提示",
-      "hideNativeQuotaBannerDescription": "仅隐藏桌面客户端的额度耗尽提示，不修改账户额度或服务状态。API 服务的桌面启动默认开启，其他启动默认关闭；手动选择按实例保存。CLI 不执行显示注入。",
-      "quotaDisplayCompatibilityTitle": "额度显示兼容",
-      "quotaDisplayCompatibilityDescription": "默认关闭。仅兼容桌面主额度的允许／阻止显示状态，不改用量数字、余额或图片额度。与提示隐藏及 API 服务本地发送解锁独立，按实例保存。",
+      "providerAccessAutomatic": "自动",
+      "providerAccessDirect": "直连上游",
+      "providerAccessGatewayHint": "通过实例本地网关向供应商发送请求。",
+      "providerAccessCdpHint": "通过 CDP 把模型列表载入桌面客户端。",
       "configLoading": "正在读取实例配置…",
       "configRefreshing": "正在核对实例配置，已有内容仍可查看。",
       "configLoadTimeout": "读取实例配置超时，请重试。",
       "configChanged": "实例配置已在其他位置更改。请重新载入后再保存或启动。",
+      "reloadConfig": "重新载入",
+      "contextReloadHint": "重新载入会替换未保存的设置，请重新确认后再应用。",
       "accessModeTitle": "启动方式",
       "prosLabel": "优点：",
       "consLabel": "缺点：",
@@ -2808,14 +3195,16 @@
       "forceRefreshTitle": "强制刷新 Token",
       "forceRefreshReady": "可手动刷新 OAuth Token",
       "forceRefreshDescription": "使用 refresh_token 刷新 access_token；仅在响应返回时更新 id_token，refresh_token 可能轮换。",
+      "tokenExpiryDescription": "access_token 用于请求授权，id_token 保存身份信息。id_token 到期本身不代表 API 授权失效；实际可用性以启动校验和服务响应为准。",
       "forceRefreshUnavailable": "当前账号类型不可用",
       "forceRefreshAction": "立即刷新",
       "forceRefreshRunning": "正在刷新 Token…",
       "forceRefreshSuccess": "Token 刷新成功",
       "forceRefreshRetry": "重新检测",
-      "reloadConfig": "重新载入",
-      "contextReloadHint": "重新载入会替换未保存的设置，请重新确认后再应用。",
-      "tokenExpiryDescription": "access_token 用于请求授权，id_token 保存身份信息。id_token 到期本身不代表 API 授权失效；实际可用性以启动校验和服务响应为准。"
+      "hideNativeQuotaBannerTitle": "隐藏 Codex 官方额度提示",
+      "hideNativeQuotaBannerDescription": "仅隐藏桌面客户端的额度耗尽提示，不修改账户额度或服务状态。API 服务的桌面启动默认开启，其他启动默认关闭；手动选择按实例保存。CLI 不执行显示注入。",
+      "quotaDisplayCompatibilityTitle": "额度显示兼容",
+      "quotaDisplayCompatibilityDescription": "默认关闭。仅兼容桌面主额度的允许／阻止显示状态，不改用量数字、余额或图片额度。与提示隐藏及 API 服务本地发送解锁独立，按实例保存。"
     },
     "switch": "切换",
     "switched": "已切换至 {{email}}",
@@ -2831,17 +3220,8 @@
       "unsupportedCountryRegion": "当前网络地区不支持刷新 Codex 授权。OpenAI 授权服务拒绝了当前网络出口的刷新请求，请切换到支持的网络地区后重试。"
     },
     "switchAuth": {
-      "apiOnlyTitle": "客户端需授权",
       "reauthorizeTitle": "Codex 授权已失效",
-      "apiOnlyDescription": "检测到当前客户端已跳转到登录页面。你可以重新授权以恢复客户端使用；如果暂时只使用 API 服务，仍可继续使用。",
-      "clearClientAuth": "清除异常标识",
-      "clearClientAuthSuccess": "已清除客户端异常标识",
-      "clearClientAuthFailed": "清除客户端异常标识失败：{{error}}",
-      "observationStatus": "检测到跳转到登录页面",
-      "observationTime": "最近一次检测时间：{{time}}",
-      "loginRedirectTime": "最近一次跳转登录页：{{time}}",
       "observationInstance": "检测实例：{{instance}}",
-      "launchTime": "本次实例启动时间：{{time}}",
       "reauthorizeDescription": "当前登录凭据无法自动更新，且 access_token 已不可用于 API 服务。请重新授权后继续使用。",
       "idTokenUnavailable": "客户端身份凭据已过期，自动更新后仍未获得有效的 id_token。",
       "reasonLabel": "原因",
@@ -2854,7 +3234,7 @@
       "startingInstanceAfterReauth": "授权成功，正在重新启动实例...",
       "startInstanceAfterReauthFailed": "授权已更新，但实例启动失败：{{error}}",
       "reauthorizedAndStartedInstance": "重新授权并启动实例成功",
-      "apiOnlyBadge": "客户端需授权"
+      "apiTokenUsableDescription": "部分登录凭据需要重新授权。当前 access_token 仍可用于 API 服务。"
     },
     "switchProgress": {
       "completed": "切换完成",
@@ -2954,6 +3334,7 @@
       "reauthEmailLabel": "重新授权账号"
     },
     "token": {
+      "importPartial": "导入完成。成功 {{success}} 个，失败 {{failed}} 个。{{errors}}",
       "desc": "粘贴 auth.json、Agent Identity、账号 JSON、Sub2API JSON、accessToken、个人访问令牌 at-… 或 refresh_token。",
       "placeholder": "示例：auth_mode=agentIdentity、session JSON、accessToken、at-…、Sub2API JSON，或仅 refresh_token",
       "formatSummary": "必填字段与示例（点击展开）",
@@ -3087,6 +3468,15 @@
       "modelId": "模型 ID",
       "modelIdViewOnly": "仅查看，无切换功能",
       "modelIdPlaceholder": "选择模型 ID",
+      "imageAccounts": {
+        "upstreamModel": "上游型号",
+        "chooseModel": "选择型号",
+        "modelRequired": "请选择支持的实际型号。",
+        "sourceUnavailable": "所选来源不支持当前图片模型，或缺少可用的 API 凭据/请求地址。",
+        "loadFailed": "读取生图设置失败，请重试。",
+        "missingModels": "有 {{count}} 个已选来源需要指定型号。",
+        "locateModel": "定位来源"
+      },
       "imageGenerationModel": {
         "manage": "管理型号",
         "deleteSelected": "型号正在使用，请先替换并保存。",
@@ -3096,7 +3486,7 @@
         "custom": "自定义",
         "save": "保存模型",
         "placeholder": "输入自定义模型 ID",
-        "description": "用于 /v1/images/generations 与 /v1/images/edits 转发；默认使用 gpt-image-2.5。",
+        "description": "默认模型：{{model}}",
         "required": "请输入生图模型名称",
         "tooLong": "生图模型名称不能超过 200 个字符",
         "saveSuccess": "生图模型已更新"
@@ -3130,7 +3520,7 @@
       "enableService": "启用服务",
       "testAction": "测试",
       "testDialogTitle": "测试 API 服务",
-      "testDialogDesc": "像游乐场一样通过当前 API 服务发起真实对话，便于检查模型、账号路由和上游响应。",
+      "testDialogDesc": "通过当前 API 服务测试对话或生成图片。",
       "testProgressTitle": "正在测试服务",
       "testProgressDesc": "正在向本地 API 服务发起真实请求，请稍候。",
       "testOutputTitle": "返回结果",
@@ -3196,6 +3586,12 @@
       "clearStatsConfirm": "确定要清空 API 服务统计吗？",
       "clearStatsSuccess": "API 服务统计已清空",
       "killPortAction": "清理端口",
+      "portRecoveryTitle": "处理端口",
+      "portRecoveryCurrent": "当前端口：{{port}}",
+      "randomPortAction": "换随机端口",
+      "randomPortDescription": "系统会分配可用端口，API 服务地址会随之更新。",
+      "keepPortDescription": "尝试释放当前端口，仅清理本工具可确认归属的进程。",
+      "randomPortSuccess": "API 服务已切换到端口 {{port}}",
       "killPortTitle": "清理 API 服务端口",
       "killPortConfirmMessage": "将强制结束占用本机 {{port}} 端口的其他进程，然后重新启动 API 服务。确认继续吗？",
       "killPortSuccess": "端口已清理（结束 {{count}} 个进程）",
@@ -3332,6 +3728,7 @@
         "planHighFirst": "优先高订阅",
         "planLowFirst": "优先低订阅",
         "expirySoonFirst": "优先近到期",
+        "fiveHourResetSoonFirst": "优先近重置（5 小时）",
         "random": "随机分散",
         "custom": "自定义"
       },
@@ -3395,7 +3792,6 @@
         "quotaReserveInvalid": "请输入 1 到 100 的整数",
         "strictReserve": "严格保护",
         "strictReserveDesc": "设置保留额度后自动启用安全垫保护；接近保留值时，每个账号仅发出一个请求，结束后确认最新额度。其他客户端用量不受此设置约束。",
-        "strictNativeOnly": "严格保护需要 Rust 原生引擎；切换 Go 前请先关闭严格保护。",
         "safetyMargin": "安全垫",
         "safetyMarginUnit": "个百分点",
         "safetyMarginInvalid": "请输入 1 到 20 的整数",
@@ -3431,12 +3827,6 @@
       "upstreamProxyUrlPlaceholder": "留空用全局代理",
       "upstreamProxySaveAction": "保存代理",
       "testSuccessInline": "API 服务测试通过",
-      "gatewayModeLabel": "网关模式",
-      "gatewayModeLegacyShort": "旧版",
-      "gatewayModeSidecarShort": "新版",
-      "gatewayModeNewLabel": "API 服务-新",
-      "gatewayModeOldLabel": "API 服务-旧",
-      "gatewayModeSaveSuccess": "API 服务网关模式已更新",
       "gatewayGuideTitle": "这里可以切换网关",
       "gatewayGuideDesc": "默认使用新网关。如果遇到兼容性问题或客户端请求异常，可以在这里切换到旧网关。",
       "gatewayGuideAction": "我知道了",
@@ -3457,7 +3847,7 @@
       "clientBaseUrlHostSaveSuccess": "客户端地址已更新",
       "testChatModel": "模型",
       "testChatClear": "清空对话",
-      "testChatEmpty": "输入一条消息后，会通过当前 API 服务发起真实对话。",
+      "testChatEmpty": "选择模型，发送消息或图片描述。",
       "testChatLatency": "耗时 {{latency}}",
       "testChatSending": "正在请求 API 服务",
       "testChatInputPlaceholder": "输入测试消息，Enter 发送",
@@ -3465,6 +3855,16 @@
       "testChatInputRequired": "请输入测试消息",
       "testChatModelRequired": "请选择模型 ID",
       "testChatEmptyResponse": "响应为空",
+      "imageGenerationMainModel": {
+        "label": "生图主模型",
+        "notice": "日常请勿修改生图主模型。",
+        "hint": "仅用于 Responses 内嵌生图；独立图片接口不使用此项。留空沿用 gpt-5.6-luna。",
+        "invalid": "请输入不含空白的模型 ID，最长 200 字符。"
+      },
+      "requestDetail": {
+        "invalidRequestId": "请求 ID 无效。",
+        "settingsChanged": "设置已被其他操作修改，请重试。"
+      },
       "backupDispatchDraining": "已暂停；关闭前请求处理中 {{count}}",
       "backupDispatchSaved": "最低优先级调度设置已更新",
       "backupDispatchToggle": "允许该最低优先级账号参与兜底调度",
@@ -3472,36 +3872,10 @@
       "historicalAccounts": "历史账号",
       "historyDeleted": "已删除",
       "historyNotJoined": "未加入",
-      "imageAccounts": {
-        "upstreamModel": "上游型号",
-        "chooseModel": "选择型号",
-        "modelRequired": "请选择支持的实际型号。",
-        "sourceUnavailable": "所选来源不支持当前图片模型，或缺少可用的 API 凭据/请求地址。",
-        "loadFailed": "读取生图设置失败，请重试。",
-        "missingModels": "有 {{count}} 个已选来源需要指定型号。",
-        "locateModel": "定位来源"
-      },
-      "gatewayEngineNative": "Rust 原生",
-      "gatewayEngineSidecar": "Go 现有",
-      "gatewayEngineHint": "默认使用 Go，保留已有引擎选择；可切换至 Rust 测试。切换会重启 API 服务，可能中断活动请求；Codex 窗口保持打开。",
-      "gatewayEngineSwitching": "正在切换引擎…",
-      "gatewayEngineSwitchFailed": "切换引擎失败：{{error}}",
-      "gatewayEngineReadbackFailed": "未能确认当前引擎，请先刷新再重试：{{error}}",
-      "gatewayEngineReadbackTimeout": "刷新状态超时",
       "gatewayEngineRequestsBusy": "仍有请求进行中，请在完成后重试。",
-      "gatewayEngineOperationBusy": "服务正在执行其他操作，请稍后重试。",
-      "gatewayEngineSwitchRestored": "切换失败，已恢复原引擎。",
-      "gatewayEngineRestoreFailed": "切换失败，且未能恢复原引擎。请检查服务状态后重试。",
       "gatewayEngineStopped": "API 服务已停止，请重启后重试。",
-      "imageGenerationMainModel": {
-        "label": "生图主模型",
-        "notice": "日常请勿修改生图主模型。",
-        "hint": "此项仅用于官方生图接口的底层转发，不用于切换出图模型。仅当官方调整主模型时手动更新；留空沿用 gpt-5.6-luna。",
-        "invalid": "请输入不含空白的模型 ID，最长 200 字符。"
-      },
-      "requestDetail": {
-        "invalidRequestId": "请求 ID 无效。",
-        "settingsChanged": "设置已被其他操作修改，请重试。"
+      "memberSort": {
+        "dispatchFirst": "调度活动优先"
       }
     },
     "api": {
@@ -3512,6 +3886,7 @@
       "hideApiKey": "隐藏 API Key",
       "apiKeyHiddenHint": "API Key 已隐藏，点击显示",
       "modelCatalog": {
+        "restartHint": "模型目录已更新。若 Codex 正在运行，请重启后生效。",
         "label": "模型列表",
         "fetch": "从上游获取",
         "fetching": "获取中...",
@@ -3688,6 +4063,8 @@
       }
     },
     "modelProviders": {
+      "updateApiKeyFailed": "更新 API 密钥失败：{{error}}",
+      "editApiKey": "编辑 API 密钥",
       "keyModels": {
         "title": "Key 模型配置",
         "override": "独立配置",
@@ -3733,6 +4110,8 @@
         "supportsWebsockets": "WebSocket 传输"
       },
       "validation": {
+        "apiKeyExists": "该 API 密钥已存在于当前供应商",
+        "apiKeyRequired": "请输入 API 密钥",
         "nameRequired": "供应商名称不能为空",
         "baseUrlInvalid": "Base URL 格式无效",
         "baseUrlExists": "该 Base URL 已存在",
@@ -3742,7 +4121,7 @@
         "apiKeyUrlInvalid": "请填写不含内嵌凭据的 HTTP(S) 管理页面网址；API Key 请填入密钥栏。"
       },
       "saveSuccess": "模型供应商已保存",
-      "deleteBlocked": "该供应商已被 {{count}} 个账号引用，禁止删除。",
+      "confirmDeleteWithAccounts": "确认删除供应商「{{name}}」及其关联的 {{count}} 个账号吗？",
       "confirmDelete": "确认删除供应商「{{name}}」吗？",
       "deleteFailed": "删除供应商失败：{{error}}",
       "deleteApiKeyFailed": "删除 API Key 失败：{{error}}",
@@ -3766,8 +4145,12 @@
         "chatCompletions": "Chat Completions 协议",
         "deepseekResponsesHint": "启动 DeepSeek 时选择网关或直连，并确认 Flash / Pro。网关可在 Codex 内切模型；直连不走网关。",
         "deepseekChatHint": "DeepSeek Chat Completions 走本地网关协议转换，适合兼容旧链路；需要官方 Codex 工具形态时请选 Responses。",
-        "deepseekThirdPartyHint": "该地址不是官方 DeepSeek 端点，将按第三方兼容地址处理；模型目录请填上游真实模型 ID，不要套用官方模型名。"
+        "deepseekThirdPartyHint": "该地址不是官方 DeepSeek 端点，将按第三方兼容地址处理；模型目录请填上游真实模型 ID，不要套用官方模型名。",
+        "anthropic": "Anthropic 协议",
+        "gatewayRequired": "此协议需通过本地网关使用，并在此选择启动模型。"
       },
+      "searchSavedProviders": "搜索供应商",
+      "noMatchingSavedProviders": "没有匹配的供应商",
       "selectSavedProvider": "已保存供应商",
       "selectSavedApiKey": "已保存 API Key",
       "selectSavedApiKeyPlaceholder": "选择 API Key",
@@ -3851,6 +4234,7 @@
         "checkModelsApi": "请确认该供应商提供 OpenAI 兼容的模型列表响应。"
       },
       "batchTest": {
+        "firstText": "首字",
         "entry": "一键测试",
         "entryHint": "批量测试供应商真实对话能力",
         "selectedCount": "已选 {{count}} 个",
@@ -3870,7 +4254,7 @@
         "selectVisible": "选择当前结果",
         "resultSelectedCount": "已选 {{count}} 个",
         "selectFailed": "选择失败",
-        "deleteConfirm": "确认删除选中的 {{providerCount}} 个供应商吗？会同时删除 {{accountCount}} 个精确关联的 Codex API Key 账号。",
+        "deleteConfirm": "确认删除选中的 {{providerCount}} 个供应商及其关联的 {{accountCount}} 个账号吗？",
         "deleteSuccess": "已删除 {{providerCount}} 个供应商和 {{accountCount}} 个关联账号。",
         "deleteFailed": "删除选中项失败：{{error}}",
         "protocolSummary": "{{protocol}} · {{mode}} · {{model}}",
@@ -3937,6 +4321,15 @@
         "detailTitle": "服务面板",
         "rawFields": "服务数据",
         "fields": {
+          "intervalRemaining": "周期剩余",
+          "intervalLimit": "周期上限",
+          "intervalRemainingPercent": "周期剩余比例",
+          "intervalExpiresAt": "周期重置",
+          "weeklyRemaining": "每周剩余",
+          "weeklyLimit": "每周上限",
+          "weeklyRemainingPercent": "每周剩余比例",
+          "weeklyExpiresAt": "每周重置",
+          "currency": "币种",
           "status": "状态",
           "planName": "订阅",
           "remaining": "剩余额度",
@@ -3959,6 +4352,7 @@
           "expiresAt": "过期时间",
           "totalGranted": "授予额度",
           "totalAvailable": "可用额度",
+          "isAvailable": "余额可用",
           "modelLimitsEnabled": "模型限制"
         },
         "accountBalance": "账户余额",
@@ -3999,7 +4393,22 @@
       "importConfigPlaceholder": "在供应商卡片上点「复制配置」后，把内容粘贴到这里",
       "importConfigAction": "导入配置",
       "importConfigFromClipboard": "一键读取剪贴板",
-      "settingsRestartHint": "供应商配置已更新。若关联的 Codex 或 API 服务正在运行，请重启后生效。"
+      "settingsRestartHint": "供应商配置已更新。若关联的 Codex 或 API 服务正在运行，请重启后生效。",
+      "anthropic": {
+        "auth": "鉴权方式",
+        "hint": "通过网关调用 Anthropic Messages；模型可获取或手动填写。",
+        "fetch": "获取模型",
+        "fetching": "正在获取…",
+        "fetchFailed": "获取失败，可重试或手动填写模型。",
+        "import": "导入配置",
+        "importFailed": "未找到有效的 Claude Code 或桌面端 Gateway 配置。"
+      },
+      "editor": {
+        "modelScope": "模型配置范围",
+        "providerDefault": "供应商默认",
+        "sharedSettings": "模型目录和能力仅作用于所选范围；协议、鉴权与地址为供应商共用设置。",
+        "saveScope": "保存会更新供应商并同步关联账号；若当前账号受影响，也会更新本地 Codex 配置和凭据，不会自动启动客户端。"
+      }
     },
     "quickSwitch": {
       "action": "快速切换供应商",
@@ -4078,7 +4487,7 @@
       "resetCreditDialogDesc": "重置速率限制后，可以继续不间断地工作。你还有 {{count}} 次重置可用。",
       "resetCreditDialogAction": "重置使用次数",
       "resetCreditNoCredits": "没有可用的主动重置次数",
-      "resetCreditConsumed": "已重置 5 小时额度",
+      "resetCreditConsumed": "已重置额度",
       "resetCreditFailed": "重置失败：{{error}}",
       "resetCreditRefreshAfterConsumeFailed": "已提交重置，但刷新配额失败：{{error}}",
       "resetCreditsTitleWithExpiry": "可用于重置当前 5 小时窗口的剩余次数：{{count}}，最近到期：{{time}}",
@@ -4179,15 +4588,7 @@
       "hourly": "按5小时配额",
       "weeklyReset": "按周配额重置时间",
       "hourlyReset": "按5小时配额重置时间",
-      "subscriptionExpiry": "按订阅有效期",
-      "custom": "自定义顺序",
-      "customSettingsTooltip": "配置自定义顺序",
-      "customModalTitle": "自定义账号排序",
-      "customModalDesc": "拖动账号或使用上下按钮调整展示顺序。",
-      "customDragHandle": "拖拽排序",
-      "customMoveUp": "上移",
-      "customMoveDown": "下移",
-      "customReset": "重置自定义顺序"
+      "subscriptionExpiry": "按订阅有效期"
     },
     "opencodeSwitch": "OpenCode切换开关",
     "opencodeSwitchDesc": "同步切换OpenCode里codex账户信息",
@@ -4241,6 +4642,12 @@
       "nextRunLabel": "下次触发 {{time}}",
       "lastRunLabel": "上次执行 {{time}}",
       "lastStatusLabel": "最近结果",
+      "confirmationTimedOut": "确认超时",
+      "confirmationDeclined": "已拒绝执行",
+      "confirmationDeclinedOrExpired": "已拒绝执行或确认超时",
+      "confirmationUnavailable": "无法请求确认",
+      "taskRunCancelled": "任务已取消",
+      "taskRunInterrupted": "任务已中断",
       "lastStatusIdle": "尚未执行",
       "lastStatusSuccessSummary": "成功 {{count}} 个账号",
       "lastStatusFailedSummary": "失败 {{count}} 个账号",
@@ -4254,6 +4661,10 @@
       "taskNamePlaceholder": "例如：工作日上午例行唤醒",
       "taskNameRequired": "请输入任务名称",
       "taskAccountsLabel": "选择账号",
+      "taskAccountsManual": "手动选账号",
+      "taskAccountsApiPool": "API 服务账号池",
+      "taskAccountsApiPoolHint": "按账号池顺序唤醒未暂停的订阅账号。",
+      "taskAccountsApiPoolEmpty": "账号池没有可唤醒的订阅账号。",
       "taskAccountsHint": "仅支持 OAuth Codex 账号。可多选，任务会依次执行。",
       "taskAccountsRequired": "请至少选择一个账号",
       "scheduleLabel": "调度方式",
@@ -4266,6 +4677,8 @@
       "scheduleQuotaResetHint": "开启配额重置后唤醒，自动刷新时间会自动调整至2分钟刷新一次。",
       "quotaResetWindowLabel": "重置窗口触发条件",
       "quotaResetWindowHint": "primary_window 一般指 5 小时配额；免费用户下 primary_window 可能对应周配额，不同订阅可能不同。",
+      "quotaResetDelayLabel": "重置后延迟",
+      "quotaResetDelayInvalid": "请输入有效范围内的非负整数分钟。",
       "quotaResetWindowOptions": {
         "either": "primary_window 或 secondary_window 任一重置",
         "primary_window": "仅 primary_window 重置时触发",
@@ -4509,8 +4922,16 @@
         "confirm": "导入选中会话"
       },
       "repairModal": {
+        "historyDuplicateOrdinals": "以下历史记录存在重复序号。修复历史索引会跳过这些记录，完整修复无法继续。可选择「修复会话索引」处理其他会话。\n{{details}}",
+        "projectsDeferredAction": "请退出实例，然后在「修复历史会话」中选择「本地项目」继续。",
+        "projectsStateSize": "最大的状态文件为 {{file}}，大小为 {{bytes}} 字节。",
+        "projectsQuickBudget": "快速项目扫描已达到处理上限。",
+        "projectsStateTooLarge": "项目状态文件超过支持的大小。",
+        "projectsStopHint": "恢复前请完全退出所选实例。现在可以预览变更。",
+        "modeProjectsDesc": "恢复本地项目与会话归属，保留消息历史。",
+        "modeProjects": "本地项目",
         "title": "修复历史会话",
-        "description": "将历史会话的 Provider 归一到目标实例当前状态（仅修正 SQLite 索引、会话目录和工作区状态；会话日志文件保持原样，只校正文件时间）。执行前会创建本地备份。",
+        "description": "快速修复校正可见性索引并补齐当前项目与归属；完整修复还会结合历史快照恢复，并修复会话索引。写入前创建本地备份，会话日志正文保持原样。",
         "stopInstanceHint": "完整修复前请先完全退出所选 Codex App/ChatGPT 实例；仍可先预览变更。",
         "encryptedContentWarning": "检测到由其他 Provider/账号加密的历史内容。元数据可以完成迁移，但继续或压缩这些会话仍可能失败；需要可靠续聊时请切回原 Provider/账号或开启新会话。",
         "running": "正在修复...",
@@ -4536,9 +4957,9 @@
         "providerLoadFailed": "读取 provider 候选失败：{{error}}",
         "modeTitle": "修复方式",
         "modeQuick": "快速修复",
-        "modeQuickDesc": "只校正官方 state DB 和会话索引的 Provider，会话日志文件保持原样，适合日常切号后恢复。",
+        "modeQuickDesc": "限时修正可见性索引、补齐当前项目与归属；项目元数据写入需退出目标实例。",
         "modeDeep": "完整修复",
-        "modeDeepDesc": "全量归一历史 Provider，并修复目录、工作区和子 Agent 索引；会话日志文件保持原样，执行前需退出目标实例。",
+        "modeDeepDesc": "包含快速修复，并结合历史快照恢复项目与归属、修复会话索引；执行前需退出目标实例。",
         "scopeTitle": "会话范围",
         "scopeAll": "全部会话",
         "scopeAllDesc": "修复当前管理列表中的 {{count}} 条会话。",
@@ -4576,10 +4997,18 @@
         "historyPreview": "发现 {{count}} 段可重建的异常历史索引；聊天记录保持原样。",
         "historySuccess": "已重置 {{count}} 段异常历史索引。请重启客户端并重新打开会话以重建；备份已保留。",
         "historyNoChanges": "未发现可安全重建的异常历史索引。",
+        "historySkippedSources": "有 {{count}} 项因会话记录或依赖的历史源缺失而未修复，现有数据已保留；其他可修复索引会继续处理。恢复缺失文件后可重试。以下为“实例：受影响 ID → 缺失来源 ID”：\n{{details}}",
         "historyFailed": "历史索引修复未完成：{{error}}",
         "historyChanged": "会话数据在修复期间发生变化，本次修复未写入。请稍后重试。",
         "historyScan": "正在检查历史索引（{{current}}/{{total}}）…",
-        "historyReset": "正在备份并重置异常索引…"
+        "historyReset": "正在备份并重置异常索引…",
+        "projectsChanged": "项目数据已变化，请重新预览后重试。",
+        "projectsFailed": "本地项目恢复失败：{{error}}",
+        "projectsPreview": "预览：{{projects}} 个项目、{{assignments}} 条归属；跳过 {{skipped}} 个项目及 {{ambiguous}} 条归属不明会话。",
+        "projectsSuccess": "恢复完成：{{projects}} 个项目、{{assignments}} 条归属；跳过 {{skipped}} 个项目及 {{ambiguous}} 条归属不明会话。",
+        "projectsPending": "上次恢复未完成。请退出目标实例后执行完整修复，先恢复中断的写入。",
+        "projectsDeferred": "部分项目元数据暂未处理，请退出目标实例后重试快速修复，或使用完整修复。",
+        "switchProjectsDeferred": "凭据已更新，但本地项目状态未能同步。请退出受影响的 Codex 实例，再从 Cockpit 启动该实例重试。"
       },
       "transferModal": {
         "exportTitle": "导出会话",
@@ -4753,6 +5182,13 @@
       "launchHint": "切号及通过 Cockpit 启动时写入客户端配置。运行中的客户端需重启；新会话使用默认档位，已有会话的独立速度设置需在客户端调整。"
     },
     "apiService": {
+      "providerQuotaStale": "额度数据已过期",
+      "providerQuotaUnitUnknown": "单位未知",
+      "inspection": {
+        "internalScope": "这是内部客户端请求，请检查服务账号池及实例绑定；它不对应公开客户端 Key。",
+        "keyUnavailable": "请求对应的客户端 Key 已删除或不存在，请检查当前 Key 和账号池。",
+        "imageScope": "图片请求使用生图账号池及账号图片策略，请检查图片配置。"
+      },
       "navTitle": "Codex API 服务",
       "title": "Codex API 服务",
       "openPage": "进入 API 服务",
@@ -4767,7 +5203,10 @@
       "statsRange": {
         "today": "今日",
         "thisWeek": "本周",
-        "thisMonth": "本月"
+        "thisMonth": "本月",
+        "last24h": "近 24H",
+        "last48h": "近 48H",
+        "last7d": "近 7Day"
       },
       "usage": {
         "title": "用量统计",
@@ -4783,6 +5222,11 @@
         "responsesTitle": "Responses",
         "responsesNote": "Codex 原生 Responses 入口。",
         "anthropicTitle": "Anthropic Messages",
+        "claudeCodeNoModels": "所选 Key 没有可用的 Claude Code 预设模型。请先在模型规则中保存别名。",
+        "claudeCodeSettingsChanged": "配置在预览后发生变化，请重新预览。",
+        "claudeCodeServiceUnavailable": "无法读取所选 Key 的模型。请检查 API 服务和密钥状态。",
+        "claudeCodeNoBackup": "当前配置没有匹配的备份。",
+        "claudeCodeSettingsHint": "保存会合并所列变量并加密备份原配置。值为 null 的变量将移除。",
         "anthropicNote": "使用同一个服务 Key。",
         "geminiTitle": "Gemini",
         "geminiNote": "Base URL 使用 /v1beta。",
@@ -4822,7 +5266,7 @@
         "upstreamModel": "发送模型",
         "addRow": "添加一行",
         "fillDeepSeek": "填入 DeepSeek",
-        "empty": "当前成员里没有可映射的 API Key 账号",
+        "empty": "没有可配置模型映射的账号",
         "incomplete": "请补全请求模型和发送模型",
         "duplicate": "请求模型不能重复",
         "saveSuccess": "账号模型映射已保存",
@@ -4833,6 +5277,7 @@
         "capabilityTitle": "能力开关",
         "capabilityDesc": "gpt-image-2 会根据服务开关、账号套餐和已记录的图片能力状态自动暴露或隐藏。",
         "rulesTitle": "模型规则",
+        "claudeCodePreset": "Claude Code 预设",
         "aliasTitle": "模型别名",
         "aliasPlaceholder": "gpt-5 => g5；保留原模型加 +",
         "excludedTitle": "隐藏模型",
@@ -4907,9 +5352,15 @@
         "unsaved": "未保存",
         "resetPolicy": "撤销修改",
         "modelPrefix": "模型前缀",
+        "maxReasoningEffort": "思考深度上限",
+        "maxReasoningHint": "超过上限或无法确认思考深度的请求会被拒绝。",
+        "reasoningNone": "无",
+        "reasoningMinimal": "最低",
         "modelPrefixPlaceholder": "例如 codex",
         "allowedModels": "允许模型",
         "allowedModelsPlaceholder": "留空允许全部；每行一个模型或通配符",
+        "modelsOutsideAllowlist": "白名单外的模型",
+        "allowCurrentAndFutureModels": "允许当前及未来模型",
         "excludedModels": "排除模型",
         "excludedModelsPlaceholder": "每行一个模型或通配符",
         "savePolicy": "保存策略",
@@ -4918,8 +5369,8 @@
       "routing": {
         "optionsTitle": "调度选项",
         "sessionIdentityMapping": "会话 ID 映射",
-        "sessionIdentityMappingEnableHint": "开启后，切换上游账号会使用独立的 Session-Id 和 Thread-Id，会话标识隔离更强，但跨账号缓存复用可能减少。同一账号内仍复用已有映射。",
-        "sessionIdentityMappingDisableHint": "关闭后，保留客户端原始 Session-Id 和 Thread-Id。不同上游账号可能共用相同标识，隔离性减弱，但跨账号缓存复用可能增加。",
+        "sessionIdentityMappingEnableHint": "仅适用于 Codex 官方账号。开启后，各账号使用独立的 Session-Id 和 Thread-Id，同一账号复用已有映射，跨账号缓存复用可能减少。",
+        "sessionIdentityMappingDisableHint": "关闭后，Codex 官方账号保留客户端原始 Session-Id 和 Thread-Id。不同账号可能共用相同标识，隔离性减弱，但跨账号缓存复用可能增加。",
         "sessionIdentityMappingCacheNote": "缓存命中率还取决于上游规则、账号范围和请求内容，不保证因切换而升降。",
         "sessionIdentityMappingSaveNote": "确认后还需保存设置才会生效。",
         "sessionAffinity": "会话亲和",
@@ -4936,6 +5387,7 @@
         "optionsSaved": "调度选项已保存"
       },
       "timeouts": {
+        "retryTitle": "发送与账号重试",
         "entryLabel": "高级参数",
         "openAction": "超时与重试",
         "title": "超时与重试",
@@ -4957,6 +5409,10 @@
         "bootstrapRetries": "启动重试",
         "websocketTitle": "WebSocket 设置",
         "websocketConnect": "连接超时",
+        "requestBody": "正文接收超时",
+        "requestBodyHelp": "HTTP 接收完整请求正文的时限（1–600 秒）。",
+        "websocketFragment": "分片接收超时",
+        "websocketFragmentHelp": "接收一条完整 WebSocket 分片消息的总时限（1–600 秒）。",
         "websocketInitial": "首包超时",
         "websocketIdle": "空闲超时",
         "websocketHeartbeat": "心跳间隔",
@@ -4991,12 +5447,20 @@
         "allStatuses": "全部状态",
         "allGatewayModes": "全部模式",
         "allInstances": "全部实例",
+        "allSources": "全部来源",
+        "connectionSource": "连接来源",
+        "peerIp": "对端 IP",
+        "sourceLocal": "本机",
+        "sourceLan": "局域网",
+        "sourceRemote": "远程",
         "instanceFilter": "实例",
         "instanceUnknown": "实例 -",
+        "sessionFilter": "会话",
+        "sessionPlaceholder": "会话 ID",
         "modelFilter": "模型",
         "modelPlaceholder": "模型 ID",
         "accountFilter": "账号",
-        "accountPlaceholder": "邮箱或账号 ID",
+        "accountPlaceholder": "名称、邮箱或 ID",
         "apiKeyFilter": "API 密钥",
         "apiKeyPlaceholder": "名称或 ID",
         "kindFilter": "类型",
@@ -5042,15 +5506,14 @@
         "sentTier": "发送：{{tier}}",
         "originalTier": "原档位：{{tier}}"
       },
-      "inspection": {
-        "internalScope": "这是内部客户端请求，请检查服务账号池及实例绑定；它不对应公开客户端 Key。",
-        "keyUnavailable": "请求对应的客户端 Key 已删除或不存在，请检查当前 Key 和账号池。",
-        "imageScope": "图片请求使用生图账号池及账号图片策略，请检查图片配置。"
-      },
       "recovery": {
         "progress": "正在自动恢复账号配置（{{attempt}}/{{total}}）",
         "partialUnavailable": "部分账号暂不可用，其他账号可继续使用。请检查账号与 Key 绑定。",
         "unavailable": "账号配置需要恢复。请检查账号与 Key 绑定后重试。"
+      },
+      "accountActivity": {
+        "running": "运行中 {{count}}",
+        "recent": "最近活动"
       }
     },
     "apiKey": {
@@ -5093,6 +5556,9 @@
       "imported": "已导入",
       "failed": "失败",
       "quotaOk": "账号正常",
+      "minimumQuota": "最低剩余额度 (%)",
+      "minimumQuotaHint": "任一已知额度低于此值时跳过该账号。",
+      "minimumQuotaEmpty": "没有符合额度筛选条件的账号。",
       "quotaFailed": "异常",
       "checkQuotaToggle": "导入前检测账号",
       "preparing": "正在准备导入任务...",
@@ -5209,6 +5675,7 @@
       "syncNow": "立即同步",
       "connectionOk": "连接成功",
       "syncVerified": "SSH 已校验同步成功",
+      "connectionRefreshFailed": "鉴权已同步，但 SSH 连接刷新未完成，请稍后重试。",
       "syncFailed": "SSH 同步失败",
       "syncedAs": "已同步 {{email}} · {{time}}",
       "neverSynced": "尚未同步",
@@ -5224,13 +5691,15 @@
       "user": "用户",
       "remoteDir": "远端 Codex 目录",
       "syncSwitchActive": "已启用 · {{name}}（{{user}}@{{host}}）",
+      "syncSwitchActiveMultiple": "已启用 · {{count}} 台服务器",
+      "selectedServerCount": "已选 {{selected}} / {{total}} 台",
       "footerHint": "保存后开关会点亮；关闭开关可随时停用自动同步。",
       "formLead": "填写远端主机信息",
       "namePlaceholder": "例如：家里 NAS",
       "syncOnSwitchHint": "保存并选中后，Codex 切号会推送鉴权到这台主机",
       "addAndSave": "添加并保存",
       "serverList": "服务器列表",
-      "serverListLead": "选择同步目标",
+      "serverListLead": "选择同步目标（可多选）",
       "serverCount": "{{count}} 台",
       "autoSyncBadge": "自动同步"
     },
@@ -5266,12 +5735,19 @@
       "restartFailed": "重启网关失败：{{error}}"
     },
     "proxy": {
+      "directHosts": {
+        "title": "Codex 直连主机",
+        "hint": "每行输入一个主机名、IP 地址或 CIDR 网段。内网 MCP 等匹配目标会绕开 Codex 托管代理。客户端设置在重启 Codex 后生效。",
+        "invalid": "每行请输入有效的主机名、IP 地址或 CIDR 网段。",
+        "loadFailed": "无法加载直连主机。",
+        "saveFailed": "无法保存直连主机。"
+      },
       "legacyBoundHint": "沿用此前绑定账号代理，重新保存将使用所选模式。",
       "boundAccountUnavailable": "绑定账号不可用，请重新选择代理。",
       "boundProxyUnavailable": "绑定账号没有可用代理，请重新选择。",
       "sourceUnavailable": "代理来源或节点已失效，请重新选择。",
       "operationTimeout": "代理操作超时，请重试。",
-      "cardScopeHint": "此卡片代理用于启动的 Codex 桌面客户端；模型网关上游仍使用各自出口。",
+      "cardScopeHint": "API Key 账号代理同时用于桌面客户端和 API 服务上游请求；API 服务卡片代理仍仅用于桌面客户端。不修改系统代理。",
       "display": {
         "title": "代理展示",
         "compact": "简略",
@@ -5572,7 +6048,7 @@
       "modeDefaultHint": "该账号未使用代理，按原有默认出口连接。",
       "modeStaleHint": "绑定的来源或节点已失效，请重新选择。",
       "management": "代理管理",
-      "managementHint": "为 OAuth、API 账号与 API 服务卡片配置代理，不修改系统代理。API 卡片仅用于启动的桌面客户端，模型网关上游仍使用各自出口。",
+      "managementHint": "API Key 账号代理同时用于桌面客户端和 API 服务上游请求；API 服务卡片代理仍仅用于桌面客户端。不修改系统代理。",
       "emptyTitle": "为账号准备独立出口",
       "emptyDescription": "暂无适用账号卡片。添加 OAuth 或 API 账号，或开启 API 服务卡片后，即可在这里选择代理。",
       "search": "搜索账号",
@@ -5686,7 +6162,7 @@
         "subscriptionUrl": "订阅地址",
         "nodeLinks": "节点链接或配置内容",
         "import": "导入",
-        "importNotice": "订阅地址与节点凭据加密保存在本机；订阅请求仅发送至提供方，不附带账号 Token。",
+        "importNotice": "配置与资源快照加密保存，运行时在独立目录解密使用；订阅和资源请求不附带账号 Token。",
         "intro": "导入和测试订阅或节点，再到账号列表中选择并绑定。",
         "emptyTitle": "先添加你的代理",
         "emptyHint": "支持订阅地址、节点链接与 HTTP / SOCKS5 代理。没有账号也可以先导入和检测。",
@@ -5731,7 +6207,7 @@
         "unsupported": "暂不支持",
         "invalidInput": "请填写名称和有效的订阅地址、节点链接或代理信息。",
         "downloadFailed": "订阅下载失败，请检查网络及代理设置后重试。",
-        "downloadRedirect": "订阅发生跨站跳转或跳转次数过多，下载已停止。",
+        "downloadRedirect": "订阅跳转无效或次数过多，下载已停止。",
         "downloadDenied": "订阅服务器拒绝访问（HTTP 401/403），请检查链接及有效期。",
         "downloadTls": "订阅连接的 TLS 握手或证书校验失败，请检查网络及代理设置。",
         "timeout": "操作超时，请刷新确认结果后重试。",
@@ -5749,6 +6225,7 @@
         "loadBalanceGroup": "负载均衡",
         "reasonStrategy": "暂不支持此分组策略，可展开选择可用节点。",
         "reasonOptions": "包含尚未兼容的协议或配置参数。",
+        "reasonProviderConfig": "节点集合的来源、筛选或转换配置尚不受支持。",
         "reasonProvider": "此分组依赖尚未加载的外部节点集合。",
         "reasonMembers": "分组成员未通过校验，请查看具体原因。",
         "reasonInvalid": "必要配置缺失或格式无效。",
@@ -5770,6 +6247,14 @@
         "defaultProtocol": "无协议时使用",
         "credentialFormat": "账号格式",
         "recognizing": "正在识别…",
+        "nativePreview": "导入时由 Mihomo 原生解析并加载资源；预览不会读取文件或联网。",
+        "resourceDirectory": "资源目录",
+        "browseResources": "选择目录",
+        "resourceDirectoryHint": "含本地文件时选择订阅资源目录；目录内容将复制到独立运行目录，并加密保存快照。",
+        "resourceDirectoryRequired": "请选择该订阅的本地资源目录。",
+        "resourceMissing": "本地资源不可用，请检查目录或重新导入。",
+        "rulesName": "订阅规则",
+        "pendingProviders": "导入时将加载 {{count}} 个远程节点集合；预览不会下载。",
         "previewCount": "有效 {{valid}} · 需检查 {{invalid}} · 重复 {{duplicates}}",
         "line": "第 {{line}} 行",
         "ambiguous": "格式有歧义，请选择账号格式或改用完整代理链接。",
@@ -5871,7 +6356,7 @@
         "assign": "分配代理",
         "specific": "指定账号",
         "shared": "设为统一代理",
-        "sharedHint": "未单独配置的适用卡片使用此代理，新增卡片也会跟随。独立代理和“不使用代理”优先。API 卡片用于桌面客户端，模型网关上游仍使用各自出口。",
+        "sharedHint": "未单独配置的账号继承此代理，新增账号也会跟随。独立代理和“不使用代理”优先。API Key 账号的客户端与 API 请求均生效；API 服务卡片仅影响客户端。",
         "apply": "确认分配"
       },
       "managerResources": {
@@ -5955,6 +6440,12 @@
       "done": "完成"
     },
     "cliDaemon": {
+      "profileChanged": "当前配置目录已更新。运行中的 CLI 后台进程可能仍在使用旧账号或模型列表。",
+      "restartWarning": "请先完成正在运行的 CLI 任务。重启会中断连接到此后台进程的会话。",
+      "restart": "重启 CLI",
+      "restarting": "正在重启…",
+      "restarted": "CLI 后台进程已重启。",
+      "restartFailed": "重启失败。请重试，或复制命令在终端执行。",
       "title": "CLI 账号需刷新",
       "description": "凭据已写入，但检测到此配置目录的 Codex CLI 后台服务仍在运行，可能继续使用原账号。",
       "restartHint": "请先结束正在运行的 CLI 任务，再在终端执行以下命令。重启会中断连接到该服务的会话。",
@@ -5964,22 +6455,6 @@
       "errors": {
         "bindingChanged": "账号绑定已更改，保留当前设置"
       }
-    },
-    "instance": {
-      "errors": {
-        "threadSyncWorkerFailed": "会话同步任务失败：{{error}}",
-        "threadSyncBusy": "Codex 会话同步正在进行，请稍后重试。",
-        "threadSyncTargetRunning": "目标 Codex 实例正在运行，请关闭后再同步已有会话。",
-        "threadSyncTargetChanged": "目标会话在预览后发生变化，请重新同步；已保留新增内容。",
-        "threadSyncTargetReplaced": "目标会话文件已被替换，请重新预览同步。",
-        "threadSyncFileBusy": "目标会话正在被其他同步操作使用，请稍后重试。"
-      }
-    },
-    "thresholds": {
-      "shortCycle": "短周期额度",
-      "weekly": "周额度",
-      "windowHint": "按实际时长匹配阈值，一周及以上使用周额度阈值；只有周额度时仅检查周额度。缺少时长时沿用主/次窗口映射。",
-      "rule": "短周期剩余 <= {{shortCycle}}% 或周剩余 <= {{weekly}}%"
     },
     "autoRefreshScope": {
       "label": "自动刷新套餐",
@@ -5997,6 +6472,17 @@
       }
     },
     "requestDiagnostics": {
+      "cloudflareGatewayError": "Cloudflare 网关错误（HTTP {{status}}，Ray ID {{ray}}）",
+      "responseModel": "上游回报模型",
+      "responseModelDiffers": "上游回报的模型与发送的模型不同。",
+      "requestSizeTitle": "请求体积",
+      "requestSizeHint": "按解压后的客户端 JSON 统计；各字段为紧凑 JSON 字节数，仅记录大小。",
+      "requestBytes": "请求",
+      "historyBytes": "历史",
+      "toolsBytes": "工具",
+      "instructionsBytes": "指令",
+      "overloadRetry": "满载重试",
+      "overloadRecovery": "恢复耗时",
       "recordPayloads": "记录请求正文",
       "recordPayloadsHint": "默认关闭。仅在本地保存有限长度的客户端和上游请求快照；关闭后停止新记录，已有正文可单独清除。",
       "privacyHint": "认证字段会脱敏，但对话正文中的敏感信息未必能识别。复制或分享前请检查。",
@@ -6006,7 +6492,7 @@
       "title": "请求详情",
       "totalLatency": "总耗时",
       "firstResponse": "首响",
-      "firstResponseHint": "首响为请求开始到首个上游响应片段的耗时，不等同于首个生成 Token。",
+      "firstResponseHint": "新的 Responses 流式请求在网关处理完请求体后开始计首响，直至首个有效上游事件，跳过保活和限额通知。",
       "unavailable": "此请求暂无诊断详情，可稍后刷新。旧请求不会补录。",
       "attempts": "尝试轨迹",
       "noAttempts": "未记录尝试轨迹。",
@@ -6092,7 +6578,9 @@
       "defaultReasoning": "默认档位",
       "defaultReasoningFollow": "沿用默认",
       "defaultReasoningHint": "留空沿用模型默认档位；所选档位必须在当前支持范围内。",
-      "defaultReasoningInvalid": "默认推理档位必须属于当前支持的档位。"
+      "defaultReasoningInvalid": "默认推理档位必须属于当前支持的档位。",
+      "ultraReasoning": "Ultra 档位",
+      "ultraReasoningInvalid": "请选择支持 Ultra 的模型所提供的推理档位。"
     },
     "modelConfig": {
       "transfer": "导入 / 导出",
@@ -6178,9 +6666,89 @@
       "saveWithoutLaunch": "保存并继续切换",
       "saveOnly": "仅保存设置",
       "validationBusy": "上一条路径仍在检查，请稍后重试。"
+    },
+    "openaiUsage": {
+      "monthCost": "本月消费",
+      "scope": "组织消费；请求和 Token 仅含文本接口；按 UTC 统计。",
+      "loading": "正在查询官方用量…",
+      "pending": "等待查询官方用量",
+      "permissionRequired": "当前 Key 缺少组织用量读取权限（api.usage.read）。",
+      "permissionGuide": "使用管理员 Key：Admin keys → Restricted → Usage API Scope → Read。可查询消费和用量，不提供剩余余额。",
+      "openAdminKeys": "前往创建",
+      "invalidKey": "查询 Key 无效或已过期，请检查管理员 API Key。",
+      "networkFailed": "无法连接官方用量服务，请稍后刷新。",
+      "queryFailed": "官方用量查询失败，请稍后重试。",
+      "organization": "组织用量",
+      "configure": "配置查询",
+      "settings": "查询设置",
+      "title": "配置用量查询",
+      "optional": "用量查询（可选）",
+      "queryKey": "管理员 API Key",
+      "callKey": "调用 API Key",
+      "notConfigured": "配置管理员 Key 可查看组织消费与用量。",
+      "purpose": "请使用与调用 Key 属于同一组织的管理员 Key。此 Key 仅用于用量查询，不替换调用 Key。",
+      "saveVerify": "保存并验证",
+      "remove": "移除配置",
+      "keyRequired": "请输入管理员 API Key。",
+      "saveFailed": "保存查询配置失败，请重试。",
+      "configChanged": "账号或查询 Key 已变更，请重新打开设置后再试。",
+      "openFailed": "打开密钥页面失败，请重试。",
+      "costUnavailable": "暂无记录",
+      "costUnavailableHint": "官方成本接口未返回对应时段的金额记录。请求数和 Token 来自独立的用量接口，无金额记录不代表消费为零。"
+    },
+    "officialApi": {
+      "hint": "OpenAI 官方 API Key 接入，按实际地址识别。"
+    },
+    "resetHistory": {
+      "redeemedCardId": "已用卡片编号",
+      "windowsReset": "重置的额度窗口数",
+      "observations": "用卡详情",
+      "effectiveRule": "生效规则",
+      "before": "请求前",
+      "after": "确认后",
+      "availableCardIds": "可用卡片编号",
+      "title": "重置记录",
+      "available": "可用次数",
+      "official": "官方历史",
+      "local": "本地使用",
+      "officialHint": "过去 30 天，来自官方记录。",
+      "localHint": "仅记录本工具后续的手动和自动操作，不回填旧数据。",
+      "officialEmpty": "过去 30 天暂无重置记录",
+      "localEmpty": "暂无本地使用记录",
+      "received": "已获得重置次数",
+      "used": "已使用重置次数",
+      "alreadyRedeemed": "已兑换（重试确认）",
+      "nothingToReset": "无需重置，未使用次数",
+      "noCredit": "无可用次数",
+      "pending": "等待确认",
+      "unconfirmed": "结果未确认",
+      "manual": "手动使用",
+      "expiry": "自动使用 · 临期",
+      "weekly": "自动使用 · 周额度",
+      "unknown": "未知记录",
+      "requestId": "请求 ID",
+      "more": "加载更多",
+      "loadFailed": "读取记录失败",
+      "officialUnavailable": "此账号不支持官方重置历史"
     }
   },
   "codebuddy": {
+    "sessionManager": {
+      "statusAll": "全部状态",
+      "statusCompleted": "已完成",
+      "statusInProgress": "进行中",
+      "statusFilter": "会话状态",
+      "noMatching": "没有匹配的会话",
+      "noSessions": "暂无会话记录",
+      "untitled": "（无标题）",
+      "labels": {
+        "session": "会话",
+        "user": "用户",
+        "dir": "目录"
+      },
+      "unknownTime": "时间未知",
+      "searchPlaceholder": "搜索标题或工作目录"
+    },
     "title": "CodeBuddy 账号管理",
     "noAccounts": "暂无 CodeBuddy 账号",
     "addAccount": "添加 CodeBuddy 账号",
@@ -6408,6 +6976,9 @@
     }
   },
   "quickSettings": {
+    "codexWindow": {
+      "orDivider": "满足任一条件即触发"
+    },
     "antigravity": {
       "title": "Antigravity IDE 设置",
       "appPath": "启动路径"
@@ -6557,22 +7128,26 @@
       "title": "WorkBuddy 设置",
       "appPath": "WorkBuddy 路径"
     },
+    "minimaxCode": {
+      "title": "MiniMax Code 设置",
+      "appPath": "MiniMax Code 路径"
+    },
     "claudeRefreshInterval": "配额自动刷新",
     "claude": {
       "appPath": "Claude 路径",
       "appTargetPlaceholder": "Claude.exe 路径或 shell:AppsFolder\\..."
     },
     "traeSolo": {
-      "title": "TRAE SOLO 设置",
-      "appPath": "TRAE SOLO 路径"
+      "title": "TraeWork 设置",
+      "appPath": "TraeWork 路径"
     },
     "traeCn": {
       "title": "Trae CN 设置",
       "appPath": "Trae CN 路径"
     },
     "traeSoloCn": {
-      "title": "TRAE SOLO CN 设置",
-      "appPath": "TRAE SOLO CN 路径"
+      "title": "TraeWork CN 设置",
+      "appPath": "TraeWork CN 路径"
     }
   },
   "quotaAlert": {
@@ -6704,6 +7279,8 @@
   },
   "kiro": {
     "account": {
+      "signedInWithUnknown": "登录渠道未知",
+      "signedInWithProvider": "通过 {{provider}} 登录",
       "signedInWith": "使用 {{provider}} 登录",
       "providerUnknown": "未知方式",
       "userId": "用户 ID"
@@ -6768,8 +7345,9 @@
       "desc": "粘贴您的 Kiro Access Token 或导出的 JSON 数据。"
     },
     "import": {
-      "localDesc": "支持从本机 Kiro 客户端或 JSON 文件导入账号数据。",
-      "localClient": "从本机 Kiro 导入"
+      "localDesc": "支持本机或 JSON 导入；JSON 账号先保存，再后台刷新登录态与额度。",
+      "localClient": "从本机 Kiro 导入",
+      "invalidCredentials": "凭据字段缺失或不受支持，请重新导出账号。"
     },
     "injectToVSCode": "切换到 Kiro"
   },
@@ -6777,6 +7355,19 @@
     "subscription": "订阅状态",
     "injectToCursor": "切换到 Cursor",
     "quota": {
+      "weeklyUsage": "周用量",
+      "monthlyUsage": "月用量",
+      "additionalBalance": "额外用量余额",
+      "additionalMonthlyUsed": "本月额外用量",
+      "additionalMonthlyLimit": "月度额外用量上限",
+      "limitUnset": "未设置",
+      "autoTopUp": "自动充值",
+      "autoTopUpDetails": "低于 {{threshold}} 时充值 {{amount}}",
+      "usedPercent": "已用 {{percent}}%",
+      "details": "用量详情",
+      "sandUsage": "Grok Bot 用量",
+      "cursorModels": "Cursor 模型",
+      "otherModels": "其他模型",
       "onDemand": "按需使用"
     },
     "title": "Cursor 账号管理",
@@ -6795,11 +7386,12 @@
       "desc": "点击下方按钮，在浏览器中完成 Cursor 授权登录。"
     },
     "token": {
-      "desc": "粘贴您的 Cursor Access Token（JWT）或导出的 JSON 数据。",
+      "desc": "粘贴 Cursor JWT、浏览器会话令牌或导出的 JSON 数据。",
       "formatHint": "必填字段与示例（点击展开）",
-      "formatRequired": "单条 Token 直接粘贴 JWT；批量导入使用 JSON 数组格式",
+      "formatRequired": "单条可用 JWT 或浏览器会话令牌。批量导入使用 JSON 数组。",
       "singleExample": "单条示例（JWT）",
-      "batchExample": "批量示例（JSON）"
+      "batchExample": "批量示例（JSON）",
+      "invalidBrowserToken": "浏览器会话令牌格式错误，或用户 ID 与 JWT 不一致。"
     },
     "import": {
       "localDesc": "支持从本机 Cursor 客户端或 JSON 文件导入账号数据。",
@@ -7116,18 +7708,35 @@
     }
   },
   "qoder": {
+    "diagnostics": {
+      "launchUnconfirmed": "未能确认 Qoder IDE 已启动。",
+      "workerFailed": "Qoder 后台操作失败。{{detail}}",
+      "profileUninitialized": "Qoder IDE 未完成初始化。请用当前系统账号打开该资料目录，退出后重试。目录：{{detail}}",
+      "storageUnavailable": "无法访问 Qoder IDE 的本机凭据。请确认 Cockpit 和 Qoder IDE 使用同一系统账号。{{detail}}",
+      "profileConflict": "启动参数或环境变量会将实例指向其他资料目录。请检查实例设置。实际目录：{{detail}}",
+      "dataRootUnavailable": "无法解析 Qoder IDE 的资料目录。",
+      "busy": "Qoder 正在处理另一项操作，请稍后重试。",
+      "reauthRequired": "Qoder 登录已失效，请重新授权，或在 Qoder IDE 登录后重新导入。",
+      "apiUnauthorized": "Qoder 服务未授权本次查询。",
+      "renewalFailed": "Qoder 凭据续期失败，请稍后重试。",
+      "sessionChanged": "Qoder 会话已变更，请刷新账号列表后重试。",
+      "endpointUnavailable": "无法确认该 Qoder 会话的服务地址。请在对应的 Qoder IDE 中检查登录及组织配置。",
+      "switchLaunchFailed": "账号已写入，但 Qoder IDE 启动失败。{{detail}}",
+      "refreshCount": "成功刷新 {{count}} / {{total}} 个账号。"
+    },
     "title": "Qoder 账号管理",
     "flowNotice": {
       "title": "Qoder 账号接入说明（点击展开/收起）",
       "desc": "当前支持官方 CLI device login 授权、本地导入、JSON 导入、切号注入、应用多开绑定与配额概览。浏览器授权无需保持 Qoder 运行；切号注入按 Qoder 客户端真实落盘规则写回。",
-      "permission": "权限范围：读取 Qoder 本地认证存储、用户信息与机器标识缓存（如 machine_token.json、cache/id），用于官方授权登录、本地导入、账号切换与会话注入；所有数据仅在本机处理。",
-      "network": "网络范围：OAuth 授权登录会在浏览器中打开 Qoder 官方 device login 页面，并轮询 Qoder 官方 OpenAPI 完成授权；配额查询通过 Qoder API 获取用量数据。不上传本地密钥、凭证或原始存储内容。"
+      "permission": "权限范围：读取 Qoder IDE 的本机登录、套餐、额度和机器标识缓存。切号会向目标资料目录写入登录状态和用量缓存，并使用操作系统的凭据保护。",
+      "network": "网络范围：浏览器授权在 Qoder 官方页面完成。Cockpit 向会话对应的 Qoder 服务发送授权参数、所需机器标识和令牌，以轮询登录、续期及查询用量。"
     },
     "oauth": {
       "hint": "点击下方按钮，在浏览器中完成 Qoder 官方授权。该流程走官方 CLI device login 链路，无需保持 Qoder 运行。",
       "copyLoginUrl": "复制登录链接"
     },
     "usageOverview": {
+      "enterpriseManaged": "企业管理",
       "title": "用量概览",
       "viewDetails": "查看详情",
       "includedCredits": "套餐内 Credits",
@@ -7333,7 +7942,9 @@
       "fastChannelStatus": "快通道: {{status}}",
       "freeRemainingUnknown": "免费剩余：--",
       "timesRemainingUnknown": "剩余次数：--",
-      "soloParallel": "权益包: Solo 并发 {{count}}"
+      "soloParallel": "权益包: Solo 并发 {{count}}",
+      "creditsMember": "会员积分",
+      "creditsBonus": "奖励积分"
     },
     "token": {
       "jsonOnlyDesc": "粘贴完整 Trae CN 账号 JSON。暂不支持裸 Token，避免导入后无法稳定识别账号或写入不可用登录态。",
@@ -7349,6 +7960,18 @@
       "permissionWithPlatform": "权限范围：读取并写入本机 {{platform}} 配置目录中的 storage.json 登录相关字段，用于账号导入、切号注入与套餐信息展示；所有数据仅在本机处理。",
       "networkGlobal": "网络范围：{{platform}} OAuth 登录、令牌刷新和套餐查询会请求 trae.ai / traeapi.us 官方接口；不会向第三方服务上传本地账号文件或原始存储内容。",
       "networkCn": "网络范围：{{platform}} OAuth 登录、令牌刷新和套餐查询会请求 trae.cn / trae.com.cn 官方接口；不会向第三方服务上传本地账号文件或原始存储内容。"
+    },
+    "checkin": {
+      "modalTitle": "每日签到",
+      "durationMs": "{{ms}} 毫秒",
+      "durationSeconds": "{{seconds}} 秒",
+      "durationTitle": "累计签到耗时",
+      "logSuccess": "成功 ({{done}}/{{total}})",
+      "logPartial": "部分成功 ({{done}}/{{total}})",
+      "logIncomplete": "未完成",
+      "detailSuccess": "签到成功",
+      "detailAlreadyClaimed": "今日已领",
+      "detailError": "签到异常"
     }
   },
   "codebuddyCn": {
@@ -7378,6 +8001,36 @@
     "syncToWorkbuddy": "同步到 WorkBuddy"
   },
   "workbuddy": {
+    "desktopEdition": "WorkBuddy 国内版",
+    "credits": {
+      "planBase": "套餐基础积分",
+      "planBonus": "套餐赠送积分",
+      "benefit": "平台奖励积分",
+      "addon": "购买积分",
+      "total": "总剩余积分",
+      "details": "积分明细",
+      "usedOf": "已使用 {{used}}/{{total}}",
+      "remainingPercent": "剩余{{percent}}%",
+      "nearestExpiry": "最近到期时间 {{time}}",
+      "nextRefresh": "下次刷新时间 {{time}}",
+      "expiring": "包含即将到期的积分",
+      "valid": "有效期内",
+      "expired": "已过期",
+      "expiresAt": "到期时间 {{time}}",
+      "expiryHours": "24小时内到期",
+      "expiryDays": "3天内到期",
+      "empty": "暂无明细",
+      "loadFailed": "积分明细加载失败（{{error}}）",
+      "overview": "积分概览",
+      "remaining": "剩余 {{amount}}",
+      "loadMore": "加载更多",
+      "usage": "消耗明细",
+      "requestAndTime": "请求与时间",
+      "creditUsed": "积分消耗",
+      "model": "模型",
+      "recentUsage": "仅展示最近的 5 条数据",
+      "viewMore": "查看更多"
+    },
     "title": "WorkBuddy 账号管理",
     "noAccounts": "暂无 WorkBuddy 账号",
     "addAccount": "添加 WorkBuddy 账号",
@@ -7420,13 +8073,15 @@
       "startTime": "开始时间",
       "endTime": "结束时间",
       "timeRangeHint": "应用保持运行时，会在这个时间段内随机选取一个时间点完成后台自动签到。",
+      "errors": "异常",
+      "totalCredits": "{{credits}} 积分",
       "timeRangeError": "开始时间不能晚于结束时间"
     },
     "flowNotice": {
       "title": "WorkBuddy 账号管理说明（点击展开/收起）",
       "desc": "切换账号会按当前 WorkBuddy 官方客户端登录文件布局写入本机；本机导入读取同一登录文件，数据仅在本地处理。若检测到无法解密的官方封装，会保留原文件并停止覆盖。",
       "permission": "权限范围：读取并写入 WorkBuddy 登录文件（CodeBuddyExtension/Data/Public/auth/workbuddy-desktop.info），用于本机导入与账号切换；不再读取或修改旧版 state.vscdb。遇到官方加密封装且未取得密钥时不会覆盖原文件。",
-      "network": "网络范围：OAuth 授权登录与 Token 刷新需联网请求 WorkBuddy；配额查询需调用计费 API。不上传本地登录文件或凭证原文。"
+      "network": "OAuth 登录和 Token 刷新会请求 WorkBuddy 服务。积分余额与明细查询使用账号 Token 请求 WorkBuddy 计费服务。本地登录文件和系统密钥保留在本机。 模型探测还会向 WorkBuddy 对话服务和其会话端点发送所选模型及测试消息，并读取回复。"
     },
     "nickname": "昵称",
     "enterprise": "企业",
@@ -7443,8 +8098,8 @@
       "oauth": {
         "title": "仅授权 IDE 登录信息",
         "item1": "在浏览器完成 OAuth 后即可添加账号并用于 IDE 切换。",
-        "item2": "授权完成后会自动刷新资源包配额数据。",
-        "item3": "账号卡片将按资源包展示额度、进度和刷新/到期时间。"
+        "item2": "授权完成后会自动查询积分余额。",
+        "item3": "账号卡片展示积分概览，可打开「积分明细」查看积分记录和到期时间。"
       }
     },
     "oauthWebviewTab": "WebView 授权",
@@ -7520,9 +8175,195 @@
       "unsupported": {
         "descPlatform": "WorkBuddy 应用多开仅支持 macOS、Windows 和 Linux。"
       }
+    },
+    "modelProbe": {
+      "title": "模型探测",
+      "hint": "发送一条简短消息并读取实际回复，会消耗少量额度。默认删除测试会话。",
+      "account": "账号",
+      "model": "模型",
+      "catalog": "选择模型",
+      "modelPlaceholder": "输入模型 ID",
+      "catalog_loading": "正在加载模型目录…",
+      "catalog_loaded": "可选择模型或直接输入 ID。",
+      "catalog_error": "模型目录加载失败，可输入模型 ID 重试。",
+      "keep": "保留测试会话",
+      "run": "开始探测",
+      "running": "探测中…",
+      "failed": "探测失败",
+      "status_available": "可用",
+      "status_rate_limited": "受限",
+      "status_error": "请求失败",
+      "status_unknown": "尚未确认",
+      "deleted": "测试会话已删除",
+      "retained": "测试会话已保留",
+      "cleanupFailed": "会话删除失败，可稍后手动清理。",
+      "protocolFailure": "尚未完成协议确认，可重试或检查账号授权。",
+      "open": "探测模型"
+    },
+    "probeNotice": {
+      "until": "{{model}} 上次探测受限，恢复时间 {{time}}",
+      "unavailable": "{{model}} 上次探测受限",
+      "failed": "{{model}} 上次探测失败"
     }
   },
+  "minimaxCode": {
+    "title": "MiniMax Code 账号管理",
+    "noAccounts": "暂无 MiniMax Code 账号",
+    "addAccount": "添加 MiniMax Code 账号",
+    "checkin": {
+      "title": "每日签到",
+      "modalTitle": "每日签到",
+      "status": "签到状态",
+      "checkedIn": "已签到",
+      "notCheckedIn": "未签到",
+      "button": "签到",
+      "button.loading": "签到中...",
+      "done": "已完成",
+      "claimed": "已领取",
+      "success": "签到成功！连续签到 {{days}} 天",
+      "failure": "签到失败：{{message}}",
+      "failure.network": "网络异常，请稍后重试",
+      "lastCheckin": "最后签到：{{time}}",
+      "streak": "连续签到 {{days}} 天",
+      "reward": "奖励：{{reward}}",
+      "refreshStatus": "刷新状态",
+      "checkAll": "一键签到",
+      "noAccounts": "暂无账号",
+      "querying": "查询中...",
+      "queryFailed": "状态查询失败",
+      "retry": "重试",
+      "inactive": "不可用",
+      "inactiveHint": "签到活动未开启或不适用当前账号",
+      "streakDays": "{{days}} 天",
+      "streakRewardCountdown": "再签 {{days}} 天获大礼包",
+      "streakRewardToday": "今日可获得大礼包!",
+      "recentDates": "近期签到：",
+      "autoCheckinSettings": "自动签到设置",
+      "autoCheckinLabel": "自动签到",
+      "autoCheckinOff": "自动签到未开启",
+      "autoCheckinEnabledHint": "自动签到已开启：将在 {{start}} 至 {{end}} 随机签到",
+      "autoCheckinDisabledHint": "自动签到未开启",
+      "enableAutoCheckin": "开启自动签到",
+      "enableAutoCheckinDesc": "每天在指定时间段内随机选取一个时间完成自动签到",
+      "randomTimeRange": "随机签到时间段",
+      "startTime": "开始时间",
+      "endTime": "结束时间",
+      "timeRangeHint": "应用保持运行时，会在这个时间段内随机选取一个时间点完成后台自动签到。",
+      "timeRangeError": "开始时间不能晚于结束时间"
+    },
+    "flowNotice": {
+      "title": "MiniMax Code 账号管理说明（点击展开/收起）",
+      "desc": "管理 MiniMax Code 的本地登录与账号切换。",
+      "permission": "读取并写入 MiniMax Code 的官方登录文件；默认实例与多开实例使用各自的数据目录。",
+      "network": "仅向 MiniMax 官方接口请求授权、账号、套餐和积分信息；本地登录文件不会上传。"
+    },
+    "nickname": "昵称",
+    "enterprise": "企业",
+    "usage": "用量状态",
+    "creditsBalance": "积分余额",
+    "usageNormal": "正常",
+    "usageAbnormal": "异常",
+    "usageViewDetail": "查看详情",
+    "usageDetailTitle": "用量状态详情",
+    "oauthWaiting": "等待授权完成...",
+    "oauthDesc": "点击下方按钮将在浏览器中打开 MiniMax Code 授权页面。",
+    "oauthDescWebview": "点击下方按钮将在内置 WebView 中打开 MiniMax Code 授权页面。",
+    "oauthFeature": {
+      "oauth": {
+        "title": "仅授权 IDE 登录信息",
+        "item1": "在浏览器完成 OAuth 后即可添加账号并用于 IDE 切换。",
+        "item2": "积分余额",
+        "item3": "购买积分 · 赠送积分"
+      }
+    },
+    "oauthWebviewTab": "WebView 授权",
+    "oauthOpenWebview": "在 WebView 中打开",
+    "oauthOpenWebviewIncognito": "在无痕 WebView 中打开",
+    "oauthOpenWebviewFailed": "打开 WebView 失败：{{error}}",
+    "oauthOpenBrowserFallback": "在浏览器中打开（备用）",
+    "oauthOpenBrowserFailed": "打开浏览器失败：{{error}}",
+    "oauthWebviewProgressHint": "WebView 顶部显示横向步骤条，便于定位卡住步骤。",
+    "oauthFlow": {
+      "prepare": "准备授权链接",
+      "authorize": "访问授权链接并确认授权",
+      "bind": "轮询授权结果并绑定账号",
+      "retryPrepare": "重新生成授权链接",
+      "retryAuthorize": "重新请求授权链接",
+      "retryBind": "重新轮询授权结果",
+      "error": "流程异常：{{error}}"
+    },
+    "oauthWebviewOverlay": {
+      "steps": {
+        "prepare": "1 准备授权链接",
+        "authorize": "2 访问授权链接并确认授权",
+        "bind": "3 轮询授权结果并绑定账号",
+        "complete": "5 已完成（请手动关闭）"
+      },
+      "status": {
+        "loginConfirm": "请在页面中完成登录并确认授权。"
+      }
+    },
+    "tokenDesc": "粘贴 MiniMax Code 的 access token：",
+    "jsonDesc": "选择包含 MiniMax Code 账号的 JSON 文件：",
+    "import": {
+      "localDesc": "支持从本机 MiniMax Code 客户端或 JSON 文件导入账号数据。",
+      "localClient": "从本机 MiniMax Code 导入"
+    },
+    "search": "搜索 MiniMax Code 账号...",
+    "quota": {
+      "usedOfTotal": "{{used}} / {{total}}",
+      "noPlan": "未订阅 M Plan",
+      "purchased": "购买积分",
+      "gifted": "赠送积分"
+    },
+    "quotaQuery": {
+      "failedRefreshCompact": "配额查询失败",
+      "sectionTitle": "配额查询",
+      "empty": "暂无可用配额数据",
+      "packageUnknown": "套餐信息未知",
+      "quotaLabel": "剩余配额",
+      "updatedAt": "下次刷新时间：{{time}}",
+      "cycleRange": "周期：{{start}} - {{end}}",
+      "cycleUnknown": "周期信息暂无",
+      "expireAt": "到期时间：{{time}}",
+      "expireUnknown": "到期时间：暂无",
+      "packageTitle": {
+        "base": "基础体验包",
+        "activity": "活动赠送包"
+      }
+    },
+    "extraCredit": {
+      "title": "加量包"
+    },
+    "oauthUrlInputPlaceholder": "可手动输入授权地址",
+    "oauthInvalidUrl": "授权链接格式不正确，请输入完整 URL。",
+    "oauthGotoWebview": "让已打开 WebView 跳转到输入地址",
+    "oauthGotoWebviewSuccess": "已请求 WebView 跳转到输入地址。",
+    "oauthGotoWebviewFailed": "WebView 跳转失败：{{error}}",
+    "oauthWebviewInlineUrlPlaceholder": "在此输入网址并在当前 WebView 跳转",
+    "oauthWebviewInlineGo": "跳转",
+    "oauthSuccessClosePrompt": "账号添加完成，是否关闭 WebView？\n点击“关闭 WebView”将立即关闭；点击“稍后再说”保持当前页面不关闭。",
+    "oauthSuccessCloseTitle": "账号添加完成",
+    "oauthSuccessCloseNowLabel": "关闭 WebView",
+    "oauthSuccessCloseLaterLabel": "稍后再说",
+    "oauthSuccessCloseNowStatus": "✅ 账号添加完成，窗口即将关闭…",
+    "oauthSuccessCloseLaterStatus": "✅ 账号添加完成，已保持当前页面打开。",
+    "instances": {
+      "unsupported": {
+        "descPlatform": "MiniMax Code 应用多开仅支持 macOS、Windows 和 Linux。"
+      }
+    },
+    "placeholder": "MiniMax Code 账号管理即将推出。"
+  },
   "mfaVault": {
+    "checkpointAvailable": "当前 2FA 密钥库文件缺失。恢复会先校验本机备份，备份后的更改可能不在其中。",
+    "restoreCheckpoint": "恢复本机备份",
+    "checkpointRestoring": "正在校验和恢复 2FA 备份…",
+    "checkpointRestoreFailed": "未能校验或恢复本机 2FA 备份。",
+    "checkpointLiveVaultExists": "已发现当前 2FA 密钥库，请重试读取。",
+    "checkpointSidecarExists": "发现未处理的 SQLite 日志文件，原文件已保留。",
+    "recoveryFailed": "未能恢复 2FA 密钥。",
+    "storageWriteFailed": "未能保存 2FA 更改。",
     "pageDesc": "安全地保存并管理您的 MFA 备用恢复码、安全密码集及其他敏感认证信息。以下MFA账号均在本地存储，误删、清缓存、换/丢设备均会导致MFA丢失，建议备份MFA。您也可以从备份中导入MFA。",
     "manualAdd": "手动添加凭证",
     "add": "添加",
@@ -7563,7 +8404,29 @@
     "saveAccountName": "保存账号名",
     "cancelEditAccountName": "取消编辑",
     "accountNameRequired": "账号名不能为空。",
-    "copySecret": "复制秘钥"
+    "copySecret": "复制秘钥",
+    "searchPlaceholder": "搜索账号或类型",
+    "noSearchResults": "没有匹配的账号或类型",
+    "exportMigrationQr": "导出迁移二维码",
+    "exportBackup": "导出备份",
+    "importBackup": "导入备份",
+    "batchDelete": "批量删除",
+    "exportBackupHint": "导出全部已保存记录的 JSON 备份，不受搜索或选择影响。",
+    "editAccountHint": "类型与账号使用“类型:账号”格式，例如 OpenAI:alice@example.com",
+    "migrationTitle": "导出迁移二维码",
+    "migrationSelectedSummary": "本次导出所选的 {{count}} 个账号。",
+    "migrationAllSummary": "本次导出全部 {{count}} 个已保存账号，不受搜索影响。",
+    "migrationWarning": "二维码包含 2FA 密钥，请妥善保管。",
+    "migrationPage": "第 {{current}} / {{total}} 张 · 本张包含 {{count}} 个账号",
+    "migrationPrevious": "上一张",
+    "migrationNext": "下一张",
+    "migrationSaveImage": "保存二维码",
+    "migrationImageAlt": "迁移二维码，第 {{current}} 张，共 {{total}} 张",
+    "migrationInvalidRecord": "部分记录的密钥无效，无法生成迁移二维码。请检查后重试。",
+    "migrationRecordTooLarge": "单个账号的信息过长，无法放入迁移二维码。请缩短账号名称后重试。",
+    "migrationUnsupportedParameters": "当前迁移导出仅支持 SHA1、6 位、30 秒验证码；部分账号参数不受支持。",
+    "migrationQrFailed": "迁移二维码生成失败，请重试。",
+    "exportFailed": "导出失败，请检查保存位置后重试。"
   },
   "mfaQuick": {
     "title": "2FA 验证码",
@@ -7679,6 +8542,8 @@
       "apiBaseUrlInvalid": "请输入完整的 http:// 或 https:// 地址，且不要包含用户名、查询参数或片段"
     },
     "instances": {
+      "accountHomeReady": "已为 {{email}} 准备独立目录",
+      "installLaunchHint": "在终端运行下方官方命令。安装完成后，再点击「在终端执行」。",
       "unsupported": "Grok CLI 多开仅支持 macOS、Windows 和 Linux。",
       "launchDialogTitle": "启动实例",
       "launchHint": "可复制命令手动执行，或点击下方按钮直接在终端执行。",
@@ -7708,6 +8573,7 @@
       "sectionTitle": "配额查询"
     },
     "quota": {
+      "cliUnavailable": "CLI 用量暂不可得",
       "weekly": "每周用量",
       "sharedPool": "共享额度",
       "monthly": "每月用量",
@@ -7839,6 +8705,7 @@
       "baseUrlInvalid": "Base URL 不是有效 URL"
     },
     "desktopOAuth": {
+      "cliUnsupported": "此账号无法启动 Claude Code CLI。",
       "title": "Claude 登录",
       "desc": "在本工具打开 Claude 登录窗口，支持 Google、Apple、邮箱和 free 账号。",
       "start": "打开登录",
@@ -7888,6 +8755,7 @@
       }
     },
     "oauth": {
+      "switchHint": "切换到本机 Claude Code",
       "title": "Claude OAuth 授权",
       "desc": "打开 Claude 官方 OAuth 授权页，完成后粘贴回调链接或 code 导入账号。",
       "start": "OAuth 授权",
@@ -7916,6 +8784,9 @@
       "cliUnsupported": "旧 OAuth 账号不能启动 Claude CLI"
     },
     "cli": {
+      "applyUserConfig": "写入全局配置",
+      "userConfigHint": "将此账号写入 ~/.claude，供 Claude Code 和 VS Code 扩展使用。",
+      "userConfigApplied": "全局配置已更新",
       "quickLaunch": "CLI 启动",
       "selectWorkingDir": "选择 Claude CLI 工作目录",
       "launchSuccess": "已启动 Claude CLI",
@@ -7946,6 +8817,8 @@
       "nickname": "昵称"
     },
     "desktopGateway": {
+      "switchHint": "应用供应商配置并启动 Claude Desktop",
+      "switchSuccess": "已应用 Claude Desktop 供应商配置：{{name}}。",
       "label": "网关",
       "authScheme": "认证方式",
       "importAction": "导入 Gateway",
@@ -8030,7 +8903,7 @@
     "model": "测试模型",
     "selectModel": "选择模型",
     "verifyHint": "所选模型仅用于测试连接，不限制账号可使用的其他模型。验证会发送一次简短请求，消耗少量套餐用量。",
-    "serviceHint": "加入当前账号池不会启动 API 服务。首版仅支持原生引擎。",
+    "serviceHint": "加入当前账号池不会启动 API 服务。",
     "verify": "仅验证",
     "verifyAndJoin": "验证并加入",
     "remove": "移出服务",
@@ -8090,8 +8963,6 @@
       "verify": "模型请求未完整完成，请重试验证。",
       "usage": "当前套餐或应用用量受限，请检查 ChatGPT 用量设置。",
       "usageUnavailable": "官方暂时无法确认用量，请稍后重试；这不代表套餐额度已耗尽。",
-      "native": "套餐授权首版仅支持原生引擎，请先在 API 服务中切换引擎。",
-      "nativeSwitch": "请先将套餐账号移出 API 服务，再切换其他引擎。",
       "browser": "无法打开浏览器，请复制授权链接后手动打开。",
       "configuration": "授权注册信息不匹配，请重试授权或重新连接套餐。",
       "notVerified": "请先验证套餐授权，再加入 API 服务。",
@@ -8271,7 +9142,6 @@
     "title": "能力兜底",
     "hint": "当前账号不支持请求能力时，按所选顺序尝试备用账号；仍使用既有模型映射。",
     "consent": "切换会将本次对话发送给备用账号，并消耗其额度或产生对应费用。",
-    "nativeOnly": "当前引擎不执行能力兜底。请切到原生引擎后开启；已有设置可以关闭。",
     "backups": "备用账号",
     "addBackup": "添加备用账号",
     "backupEmpty": "启用前，请从当前 API 账号池选择备用账号。",
@@ -8336,5 +9206,9 @@
     "errorModel": "请输入不重复的完整模型名，不支持通配符。",
     "errorSave": "读取或保存失败，请重试。",
     "saved": "已保存，后续请求使用新设置。"
+  },
+  "apiRelay": {
+    "baseUrlLabel": "供应商 Base URL",
+    "clearBaseUrl": "清除 Base URL"
   }
 }

@@ -62,6 +62,49 @@ test("macOS release builds use the wrapper that cleans temporary DMG mounts", ()
   assert.match(jobBody("build-macos-universal", "build-linux"), /node scripts\/tauri.cjs bundle --ci --target universal-apple-darwin/);
 });
 
+test("macOS signing requires an explicit fork opt-in and complete credentials", () => {
+  for (const [job, next] of [
+    ["build-macos-aarch64", "build-macos-x86_64"],
+    ["build-macos-x86_64", "build-macos-universal"],
+    ["build-macos-universal", "build-linux"],
+  ]) {
+    const body = jobBody(job, next);
+    assert.match(body, /APPLE_SIGNING_ENABLED: \$\{\{ vars\.APPLE_SIGNING_ENABLED == 'true'/);
+    for (const name of ['APPLE_CERTIFICATE', 'APPLE_CERTIFICATE_PASSWORD', 'APPLE_SIGNING_IDENTITY', 'APPLE_ID', 'APPLE_PASSWORD', 'APPLE_TEAM_ID']) {
+      assert.ok(body.includes(`secrets.${name} != ''`), `${job}: missing credential gate for ${name}`);
+    }
+    assert.match(body, /Prepare Apple signing and notarization\s+if: env\.APPLE_SIGNING_ENABLED == 'true'/);
+    assert.match(body, /Notarize final DMG and verify macOS assets\s+if: env\.APPLE_SIGNING_ENABLED == 'true'/);
+    const prepare = body.indexOf('macos-signing.cjs prepare');
+    const build = body.search(/node scripts\/tauri.cjs (build|bundle)/);
+    const rebuild = body.indexOf('inject-dmg-readme.cjs');
+    const verify = body.indexOf('macos-signing.cjs finalize');
+    const stage = body.indexOf('stage_release_assets.cjs');
+    const upload = body.indexOf('upload_release_assets.cjs');
+    assert.ok(prepare >= 0 && prepare < build && build < rebuild && rebuild < verify && verify < stage && stage < upload, job);
+    assert.match(body, /if: always\(\)\s+run: node scripts\/release\/macos-signing.cjs cleanup/);
+    for (const name of ['APPLE_CERTIFICATE', 'APPLE_CERTIFICATE_PASSWORD', 'APPLE_SIGNING_IDENTITY', 'APPLE_ID', 'APPLE_PASSWORD', 'APPLE_TEAM_ID']) {
+      assert.ok(body.includes(`secrets.${name}`), `${job}: missing ${name}`);
+    }
+  }
+  assert.doesNotMatch(jobBody('build-windows', 'build-macos-aarch64'), /APPLE_PASSWORD/);
+  assert.doesNotMatch(jobBody('build-linux', 'finalize-legacy-latest'), /APPLE_PASSWORD/);
+});
+
+test("all required platforms build under the same draft tag with beta manifest URLs", () => {
+  for (const [job, next] of [
+    ['build-windows', 'build-macos-aarch64'], ['build-macos-aarch64', 'build-macos-x86_64'],
+    ['build-macos-x86_64', 'build-macos-universal'], ['build-macos-universal', 'build-linux'],
+  ]) {
+    const body = jobBody(job, next);
+    assert.doesNotMatch(body.slice(0, body.indexOf('    steps:')), /if: \$\{\{ false \}\}/);
+    assert.match(body, /RELEASE_TAG: \$\{\{ needs\.prepare-release\.outputs\.release_tag \}\}/);
+    if (job !== 'build-macos-universal') assert.match(body, /--release-tag "\$\{RELEASE_TAG\}"/);
+  }
+  assert.match(jobBody('build-windows', 'build-macos-aarch64'), /Preserve legacy updater in draft release\s+if: needs\.prepare-release\.outputs\.publish == 'true'/);
+  assert.doesNotMatch(workflow, /setup-go|COCKPIT_SKIP_CLIPROXY_BUILD/);
+});
+
 test("Universal consumes this run's verified thin inputs and does not recompile", () => {
   const universal = jobBody("build-macos-universal", "build-linux");
   assert.match(universal, /needs:\s+- prepare-release\s+- build-macos-aarch64\s+- build-macos-x86_64/);
@@ -110,6 +153,18 @@ test("1.3.75 release notes include precisely the two newly merged upstream relea
     const changelog = fs.readFileSync(path.join(__dirname, "../..", file), "utf8");
     for (const version of ["1.3.75", "1.3.74"]) {
       assert.equal(changelog.split(`## [${version}] -`).length - 1, 1, `${file}: ${version} must appear once`);
+    }
+  }
+});
+
+test("1.3.82 release notes contain all seven newly merged upstream releases", () => {
+  const mapping = workflow.match(/"1[.]3[.]82"\)\s*RELEASE_VERSIONS=\(([^)]*)\)/);
+  assert.ok(mapping);
+  assert.equal(mapping[1], '"1.3.82" "1.3.81" "1.3.80" "1.3.79" "1.3.78" "1.3.77" "1.3.76"');
+  for (const file of ['CHANGELOG.md', 'CHANGELOG.zh-CN.md']) {
+    const changelog = fs.readFileSync(path.join(__dirname, '../..', file), 'utf8');
+    for (let minor = 76; minor <= 82; minor++) {
+      assert.equal(changelog.split(`## [1.3.${minor}] -`).length - 1, 1, `${file}: 1.3.${minor}`);
     }
   }
 });

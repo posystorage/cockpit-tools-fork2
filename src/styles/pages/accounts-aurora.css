@@ -100,17 +100,18 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  flex: 1;
+  flex: 1 1 420px;
   min-width: 0;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 
 .accounts-page .toolbar-right {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-shrink: 0;
-  flex-wrap: nowrap;
+  justify-content: flex-end;
+  max-width: 100%;
+  flex-wrap: wrap;
 }
 
 .accounts-page .search-box {
@@ -861,6 +862,28 @@
   border-top: 1px dashed rgba(15, 23, 42, 0.12);
 }
 
+.accounts-page .antigravity-card-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
+  border-top: 0;
+}
+
+.accounts-page .antigravity-card-footer::before {
+  content: '';
+  grid-row: 2;
+  justify-self: stretch;
+  border-top: 1px solid var(--border-light);
+}
+
+.accounts-page .antigravity-card-footer > .card-actions {
+  grid-row: 3;
+  justify-self: end;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 100%;
+}
+
 .accounts-page .card-date {
   font-size: 10px;
   font-family: var(--font-mono);
@@ -1258,33 +1281,6 @@
 
 [data-theme="dark"] .breadcrumb-current {
   color: rgba(226, 232, 240, 0.9);
-}
-
-html[data-reduced-motion="true"] .accounts-page .toolbar,
-html[data-reduced-motion="true"] .accounts-page .accounts-grid .account-card,
-html[data-reduced-motion="true"] .accounts-page .card-quota-grid {
-  background: var(--bg-surface);
-  backdrop-filter: none;
-  box-shadow: none;
-}
-
-html[data-reduced-motion="true"] .accounts-page .accounts-grid .account-card,
-html[data-reduced-motion="true"] .accounts-page .accounts-grid .account-card:hover:not(.current) {
-  transform: none;
-}
-
-html[data-reduced-motion="true"] .accounts-page .account-card.current,
-html[data-reduced-motion="true"] .accounts-page .account-card.current:hover {
-  box-shadow: 0 0 0 2px var(--primary-light);
-}
-
-html[data-reduced-motion="true"] .accounts-page .account-card.selected {
-  background: color-mix(in srgb, var(--bg-surface) 88%, var(--primary) 12%);
-}
-
-html[data-reduced-motion="true"] .accounts-page .account-card.disabled {
-  filter: none;
-  background: color-mix(in srgb, var(--bg-surface) 92%, var(--danger) 8%);
 }
 
 /* ============================================

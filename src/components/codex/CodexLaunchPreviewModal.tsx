@@ -34,6 +34,7 @@ import { useModalFocusTrap } from "../../hooks/useModalFocusTrap";
 import { resolveStoredCompactLimitInput } from "../../utils/codexModelContext";
 import {
   saveCodexInstanceQuickConfig,
+  saveCodexInstanceModelCatalog,
   saveCodexInstanceConfiguration,
 } from "../../services/codexInstanceService";
 import {
@@ -46,7 +47,8 @@ import {
   codexLaunchPreviewInstanceConfigKey,
   codexLaunchPreviewQuickConfigKey,
 } from "../../utils/codexLaunchPreviewConfig";
-import { useCodexAccountStore } from "../../stores/useCodexAccountStore";
+import { readCodexAccountForEditing, useCodexAccountStore } from "../../stores/useCodexAccountStore";
+import { useAccountFormLoad } from "../../hooks/useAccountFormLoad";
 import { useCodexInstanceStore } from "../../stores/useCodexInstanceStore";
 import {
   CODEX_API_SERVICE_BIND_ID,
@@ -81,6 +83,7 @@ import {
   formatCodexLoginProvider,
   getCodexAuthMetadata,
   getCodexSubscriptionPresentationForAccount,
+  isCodexAccountDisplayCache,
   isCodexApiKeyAccount,
   isStandardCodexOAuthAccount,
 } from "../../types/codex";
@@ -88,9 +91,9 @@ import {
   DEEPSEEK_ACCESS_MODE_CDP,
   DEEPSEEK_ACCESS_MODE_DIRECT,
   DEEPSEEK_ACCESS_MODE_GATEWAY,
+  codexProviderAccessModes,
   isDeepSeekAccount,
-  isDeepSeekResponsesAccount,
-  resolveDeepSeekAccessMode,
+  resolveCodexProviderAccessMode,
   type DeepSeekAccessMode,
 } from "../../utils/codexDeepSeekAccess";
 import { useCodexImageModelConfig } from "./useCodexImageModelConfig";
@@ -165,7 +168,7 @@ export interface CodexLaunchPreviewAction {
 
 /** 启动预览里选好的启动配置，确认时交给调用方落盘。 */
 export interface CodexLaunchPreviewLaunchOptions {
-  deepSeekAccessMode?: DeepSeekAccessMode;
+  providerAccessMode?: DeepSeekAccessMode;
   imageGenerationAccountIds?: string[];
   imageGenerationAccountModels?: Record<string, string>;
 }
@@ -197,7 +200,7 @@ interface CodexLaunchPreviewModalProps {
   onExecute: (
     launchAfterSwitch: boolean,
     launchOptions?: CodexLaunchPreviewLaunchOptions,
-  ) => Promise<boolean>;
+  ) => Promise<boolean | { projectStateDeferred: true }>;
 }
 
 interface ModelConfigSnapshot {
@@ -214,7 +217,7 @@ interface ContextConfigSnapshot {
 }
 
 export function CodexLaunchPreviewModal({
-  account,
+  account: accountSnapshot,
   accountLabel,
   accountMetaLabel,
   oauthBinding,
@@ -231,6 +234,20 @@ export function CodexLaunchPreviewModal({
   onExecute,
 }: CodexLaunchPreviewModalProps) {
   const { t, i18n } = useTranslation();
+  const [liveAccount, setLiveAccount] = useState<CodexAccount | null>(null);
+  const cachedAccount = accountSnapshot && isCodexAccountDisplayCache(accountSnapshot) ? accountSnapshot : null;
+  const account = cachedAccount && liveAccount?.id === cachedAccount.id ? liveAccount : accountSnapshot;
+  const awaitingAccount = Boolean(account && isCodexAccountDisplayCache(account));
+  const { status: accountReadStatus, start: loadAccount, reset: resetAccountRead, retry: retryAccountRead } = useAccountFormLoad();
+  const { message: accountReadError, scrollKey: accountReadErrorScrollKey, set: setAccountReadError } = useModalErrorState();
+  useEffect(() => {
+    if (!cachedAccount || !awaitingAccount) {
+      resetAccountRead();
+      return;
+    }
+    loadAccount(() => readCodexAccountForEditing(cachedAccount), setLiveAccount, error => setAccountReadError(error ?
+      t('messages.actionFailed', { action: t('codex.launchPreview.title'), error: String(error) }) : null));
+  }, [awaitingAccount, cachedAccount, loadAccount, resetAccountRead, setAccountReadError, t]);
   const dialog = useRef<HTMLDivElement>(null);
   const accessModeDialog = useRef<HTMLDivElement>(null);
   const imageModeDialog = useRef<HTMLDivElement>(null);
@@ -240,6 +257,7 @@ export function CodexLaunchPreviewModal({
   const [loadedConfig, setLoadedConfig] = useState<CodexQuickConfig | null>(
     null,
   );
+  const { message: modelConfigError, scrollKey: modelErrorScrollKey, set: setModelConfigError } = useModalErrorState();
   const [catalogEnabled, setCatalogEnabled] = useState(false);
   const [models, setModels] = useState<CodexExperimentalModelDefinition[]>([]);
   const [defaultModelId, setDefaultModelId] = useState<string | null>(null);
@@ -296,11 +314,11 @@ export function CodexLaunchPreviewModal({
       ),
     [account?.api_image_generation_account_ids],
   );
-  const [deepSeekAccessMode, setDeepSeekAccessMode] =
-    useState<DeepSeekAccessMode>(() =>
-      resolveDeepSeekAccessMode(account ?? undefined),
+  const [providerAccessMode, setProviderAccessMode] =
+    useState<DeepSeekAccessMode | undefined>(() =>
+      resolveCodexProviderAccessMode(account),
     );
-  const [deepSeekAccessModeDialogOpen, setDeepSeekAccessModeDialogOpen] =
+  const [providerAccessModeDialogOpen, setProviderAccessModeDialogOpen] =
     useState(false);
   const [imageGenEnabled, setImageGenEnabled] = useState(
     () => initialImageGenerationAccountIds.length > 0,
@@ -312,9 +330,9 @@ export function CodexLaunchPreviewModal({
   const [imageGenPickerOpen, setImageGenPickerOpen] = useState(false);
   const [imageGenModeSwitchOpen, setImageGenModeSwitchOpen] = useState(false);
   const childDialogOpen = repairOpen || modelConfigOpen || contextConfigOpen ||
-    deepSeekAccessModeDialogOpen || imageGenPickerOpen || imageGenModeSwitchOpen || Boolean(manualRefreshResult);
+    providerAccessModeDialogOpen || imageGenPickerOpen || imageGenModeSwitchOpen || Boolean(manualRefreshResult);
   useModalFocusTrap(dialog, true, true, !childDialogOpen);
-  useModalFocusTrap(accessModeDialog, deepSeekAccessModeDialogOpen);
+  useModalFocusTrap(accessModeDialog, providerAccessModeDialogOpen);
   useModalFocusTrap(imageModeDialog, imageGenModeSwitchOpen);
   useModalFocusTrap(refreshDialog, Boolean(manualRefreshResult));
   useModalFocusTrap(modelDialog, modelConfigOpen);
@@ -323,7 +341,7 @@ export function CodexLaunchPreviewModal({
   const accountId = account?.id ?? null;
 
   useEffect(() => {
-    setDeepSeekAccessMode(resolveDeepSeekAccessMode(account ?? undefined));
+    setProviderAccessMode(resolveCodexProviderAccessMode(account));
     setImageGenEnabled(initialImageGenerationAccountIds.length > 0);
     setImageGenAccountIds(initialImageGenerationAccountIds);
     setImageGenAccountModels(account?.api_image_generation_account_models ?? {});
@@ -333,7 +351,7 @@ export function CodexLaunchPreviewModal({
 
   // 只有网关模式支持生图；切到直连 / CDP 时自动取消勾选并清空账号。
   const deepSeekImageGenAvailable =
-    deepSeekAccessMode === DEEPSEEK_ACCESS_MODE_GATEWAY;
+    providerAccessMode === DEEPSEEK_ACCESS_MODE_GATEWAY;
   useEffect(() => {
     if (
       !(account && isDeepSeekAccount(account)) ||
@@ -389,19 +407,42 @@ export function CodexLaunchPreviewModal({
   const instanceConfigKey = codexLaunchPreviewInstanceConfigKey(selectedInstance);
   const instanceConfigChanged = loadedInstanceKey !== null && loadedInstanceKey !== instanceConfigKey;
   const configReady = loadedTarget === previewTargetKey && !loading &&
-    !configLoadError && !instanceConfigChanged && loadedConfig !== null;
-  const resolveModelSource = useMemo(
-    () =>
-      createCodexModelSourceResolver(
-        normalizeCodexModelRoutingRoutes(routingRoutes, accounts),
-        accounts,
-        t,
-      ),
-    [accounts, routingRoutes, t],
-  );
+    (!configLoadError || configLoadError === "CODEX_LAUNCH_PREVIEW_CONFIG_CHANGED") && loadedConfig !== null;
+  const resolveModelSource = useMemo(() => {
+    if (!routingEnabled && account && isCodexApiKeyAccount(account)) {
+      const label = shortCodexRouteAccountLabel(account, account.email);
+      return () => ({ label, kind: "api" as const });
+    }
+    return createCodexModelSourceResolver(
+      normalizeCodexModelRoutingRoutes(routingRoutes, accounts),
+      accounts,
+      t,
+    );
+  }, [account, accounts, routingEnabled, routingRoutes, t]);
   const availableChannels = useMemo(() => {
-    if (!routingEnabled) return [];
     const providerAccounts = eligibleCodexModelRoutingAccounts(accounts);
+    const discoveryFor = (provider: (typeof providerAccounts)[number] | undefined) => {
+      const baseUrl = provider?.api_base_url?.trim();
+      const apiKey = provider?.openai_api_key?.trim();
+      return provider && baseUrl && apiKey ? {
+        accountId: provider.id,
+        baseUrl,
+        apiKey,
+        wireApi: provider.api_wire_api ?? undefined,
+        authScheme: provider.api_auth_scheme ?? undefined,
+      } : undefined;
+    };
+    if (!routingEnabled) {
+      if (!account || !isCodexApiKeyAccount(account)) return [];
+      const discovery = discoveryFor(account);
+      return discovery ? [{
+        id: account.id,
+        namespace: "",
+        providerName: shortCodexRouteAccountLabel(account, account.email),
+        models: account.api_model_catalog ?? [],
+        discovery,
+      }] : [];
+    }
     return normalizeCodexModelRoutingRoutes(routingRoutes, accounts)
       .filter((route) => route.enabled)
       .map((route) => {
@@ -418,10 +459,11 @@ export function CodexLaunchPreviewModal({
           namespace: route.namespace,
           providerName: name,
           models: route.selectedModels ?? upstreamModels,
+          discovery: discoveryFor(provider),
         };
       })
-      .filter((group) => group.models.length > 0);
-  }, [accounts, routingRoutes, routingEnabled]);
+      .filter((group) => group.models.length > 0 || group.discovery);
+  }, [account, accounts, routingRoutes, routingEnabled]);
   const {
     message: error,
     scrollKey: errorScrollKey,
@@ -461,14 +503,14 @@ export function CodexLaunchPreviewModal({
       !repairOpen &&
       !modelConfigOpen &&
       !contextConfigOpen &&
-      !deepSeekAccessModeDialogOpen &&
+      !providerAccessModeDialogOpen &&
       !imageGenPickerOpen &&
       !imageGenModeSwitchOpen &&
       !manualRefreshResult,
     requestClose, dialog,
   );
-  useEscCloseTopmost(deepSeekAccessModeDialogOpen, () =>
-    setDeepSeekAccessModeDialogOpen(false), accessModeDialog,
+  useEscCloseTopmost(providerAccessModeDialogOpen, () =>
+    setProviderAccessModeDialogOpen(false), accessModeDialog,
   );
   useEscCloseTopmost(imageGenModeSwitchOpen, () => setImageGenModeSwitchOpen(false), imageModeDialog);
 
@@ -604,7 +646,7 @@ export function CodexLaunchPreviewModal({
     setLoadedInstanceKey(instanceConfigKey);
   }, [accounts, instanceConfigKey, loadedInstanceKey, loadedTarget, loading, previewTargetKey, selectedInstance]);
 
-  const configErrorMessage = instanceConfigChanged || configLoadError === "CODEX_LAUNCH_PREVIEW_CONFIG_CHANGED"
+  const configErrorMessage = configLoadError === "CODEX_LAUNCH_PREVIEW_CONFIG_CHANGED"
     ? t("codex.launchPreview.configChanged")
     : configLoadError === CODEX_LAUNCH_PREVIEW_CONFIG_TIMEOUT
       ? t("codex.launchPreview.configLoadTimeout")
@@ -719,100 +761,19 @@ export function CodexLaunchPreviewModal({
     routingDirty,
   ]);
 
-  const persistDraft = useCallback(async () => {
-    if (configBusy || configWritePending.current) return false;
-    if (!loadedConfig || (catalogEnabled && modelsError && models.length > 0 && !routingEnabled)) {
-      if (catalogEnabled && modelsError) setError(modelsError);
-      return false;
-    }
-    if (!dirty) return true;
-    const contextWindow = Number.parseInt(contextWindowInput, 10);
-    const compactLimit = compactLimitInput.trim()
-      ? Number.parseInt(compactLimitInput, 10)
-      : undefined;
-    if (
-      contextOverrideEnabled &&
-      (!Number.isSafeInteger(contextWindow) || contextWindow <= 0)
-    ) {
-      setError(t("codex.experimentalModelCatalog.models.validation.contextWindow"));
-      return false;
-    }
-    if (
-      contextOverrideEnabled &&
-      compactLimit !== undefined &&
-      (!Number.isSafeInteger(compactLimit) || compactLimit <= 0)
-    ) {
-      setError(t("codex.experimentalModelCatalog.models.validation.autoCompact"));
-      return false;
-    }
-    if (
-      contextOverrideEnabled &&
-      compactLimit !== undefined &&
-      compactLimit >= contextWindow
-    ) {
-      setError(t("codex.experimentalModelCatalog.models.validation.autoCompactRange"));
-      return false;
-    }
-    // 只有本次保存/启动仍然启用路由时才校验路由底座；
-    // 目标是普通账号（API Key / API 服务）时路由会在保存时自动关闭，不能再拦住启动。
-    if (routingEnabledForSave) {
-      // 与实例表单一致：没有可直接登录的 OAuth 订阅账号时直接给出可读提示，
-      // 不要等后端用实例旧绑定校验失败后再抛出难懂的报错。
-      if (!mixedRoutingOAuthAccount) {
-        setError(
-          t(
-            "instances.form.modelRouting.oauthRequired",
-            "混合模型路由需要绑定一个直接登录的 OAuth 订阅账号。",
-          ),
-        );
-        return false;
-      }
-      if (routingRoutes.length === 0) {
-        setError(
-          t(
-            "instances.form.modelRouting.routeRequired",
-            "请至少添加一个 API 模型路由。",
-          ),
-        );
-        return false;
-      }
-      const providerAccounts = eligibleCodexModelRoutingAccounts(accounts);
-      for (const route of normalizedRoutingRoutes) {
-        const namespace = route.namespace.trim().toLowerCase();
-        if (
-          !/^[a-z0-9][a-z0-9_-]{1,31}$/.test(namespace) ||
-          ["official", "subscription", "openai", "codex", "oauth"].includes(
-            namespace,
-          )
-        ) {
-          setError(
-            t(
-              "instances.form.modelRouting.invalidNamespace",
-              "命名空间需为 2-32 位小写字母、数字、下划线或连字符，且不能使用保留名称。",
-            ),
-          );
-          return false;
-        }
-        if (
-          !providerAccounts.some(
-            (account) => account.id === route.providerAccountId,
-          )
-        ) {
-          setError(
-            t(
-              "instances.form.modelRouting.providerRequired",
-              "每个模型路由都必须选择一个 API 账号。",
-            ),
-          );
-          return false;
-        }
-      }
-    }
+  const persistDraft = useCallback(async (
+    preferCurrentConfig = false,
+    modelSave?: { enabled: boolean; reportError: (message: string | null) => void },
+  ) => {
+    if (configBusy || configWritePending.current || !loadedConfig) return false;
+    if (!modelSave && !dirty && !instanceConfigChanged && configLoadError !== "CODEX_LAUNCH_PREVIEW_CONFIG_CHANGED") return true;
+    const enabled = modelSave?.enabled ?? catalogEnabled;
+    const reportError = modelSave?.reportError ?? setError;
     const session = configSession.current;
     configWritePending.current = true;
     setCheckingConfig(true);
     setNotice(null);
-    setError(null);
+    reportError(null);
     try {
       // Check before a write, not during passive status refresh. Closing the
       // dialog while this read is pending invalidates the session and cancels
@@ -822,10 +783,101 @@ export function CodexLaunchPreviewModal({
         mode === "apiService",
       );
       if (session !== configSession.current) return false;
+      const currentInstance = configLoadInputs.current.selectedInstance;
       if (codexLaunchPreviewQuickConfigKey(latest) !== codexLaunchPreviewQuickConfigKey(loadedConfig) ||
-          (loadedInstanceKey !== null && loadedInstanceKey !== codexLaunchPreviewInstanceConfigKey(configLoadInputs.current.selectedInstance))) {
-        setConfigLoadError("CODEX_LAUNCH_PREVIEW_CONFIG_CHANGED");
+          (loadedInstanceKey !== null && loadedInstanceKey !== codexLaunchPreviewInstanceConfigKey(currentInstance)) ||
+          configLoadError === "CODEX_LAUNCH_PREVIEW_CONFIG_CHANGED") {
+        if (!preferCurrentConfig) {
+          setConfigLoadError("CODEX_LAUNCH_PREVIEW_CONFIG_CHANGED");
+          modelSave?.reportError(t("codex.launchPreview.configChanged"));
+          return false;
+        }
+        // 启动/切号以当前配置为准：放弃过期草稿，不回写旧配置，也不要求手动重载。
+        rememberCodexLaunchPreviewConfig(instanceId, latest);
+        applyLoadedConfig(latest);
+        setLoadedInstanceKey(currentInstance ? codexLaunchPreviewInstanceConfigKey(currentInstance) : null);
+        const routes = normalizeCodexModelRoutingRoutes(currentInstance?.modelRouting?.routes ?? [], accounts);
+        setRoutingEnabled(Boolean(currentInstance?.modelRouting?.enabled));
+        setRoutingRoutes(routes);
+        if (currentInstance?.modelRouting?.enabled && routes.length) {
+          setModels(syncExperimentalModelsWithRouting(latest.experimental_model_catalog_models, routes, accounts, true));
+        }
+        setConfigLoadError(null);
+        return true;
+      }
+      if (enabled && modelsError && models.length > 0 && !routingEnabled) {
+        reportError(modelsError);
         return false;
+      }
+      const contextWindow = Number.parseInt(contextWindowInput, 10);
+      const compactLimit = compactLimitInput.trim()
+        ? Number.parseInt(compactLimitInput, 10)
+        : undefined;
+      if (
+        !modelSave && contextOverrideEnabled &&
+        (!Number.isSafeInteger(contextWindow) || contextWindow <= 0)
+      ) {
+        reportError(t("codex.experimentalModelCatalog.models.validation.contextWindow"));
+        return false;
+      }
+      if (
+        !modelSave && contextOverrideEnabled &&
+        compactLimit !== undefined &&
+        (!Number.isSafeInteger(compactLimit) || compactLimit <= 0)
+      ) {
+        reportError(t("codex.experimentalModelCatalog.models.validation.autoCompact"));
+        return false;
+      }
+      if (
+        !modelSave && contextOverrideEnabled &&
+        compactLimit !== undefined &&
+        compactLimit >= contextWindow
+      ) {
+        reportError(t("codex.experimentalModelCatalog.models.validation.autoCompactRange"));
+        return false;
+      }
+      // 只有本次保存/启动仍然启用路由时才校验路由底座；
+      // 目标是普通账号（API Key / API 服务）时路由会在保存时自动关闭，不能再拦住启动。
+      if (routingEnabledForSave) {
+        // 与实例表单一致：没有可直接登录的 OAuth 订阅账号时直接给出可读提示，
+        // 不要等后端用实例旧绑定校验失败后再抛出难懂的报错。
+        if (!mixedRoutingOAuthAccount) {
+          reportError(
+            t("instances.form.modelRouting.oauthRequired"),
+          );
+          return false;
+        }
+        if (routingRoutes.length === 0) {
+          reportError(
+            t("instances.form.modelRouting.routeRequired"),
+          );
+          return false;
+        }
+        const providerAccounts = eligibleCodexModelRoutingAccounts(accounts);
+        for (const route of normalizedRoutingRoutes) {
+          const namespace = route.namespace.trim().toLowerCase();
+          if (
+            !/^[a-z0-9][a-z0-9_-]{1,31}$/.test(namespace) ||
+            ["official", "subscription", "openai", "codex", "oauth"].includes(
+              namespace,
+            )
+          ) {
+            reportError(
+              t("instances.form.modelRouting.invalidNamespace"),
+            );
+            return false;
+          }
+          if (
+            !providerAccounts.some(
+              (account) => account.id === route.providerAccountId,
+            )
+          ) {
+            reportError(
+              t("instances.form.modelRouting.providerRequired"),
+            );
+            return false;
+          }
+        }
       }
       setCheckingConfig(false);
       setSaving(true);
@@ -838,7 +890,7 @@ export function CodexLaunchPreviewModal({
           true,
         );
       }
-      const nextCatalog = resolveRoutingCatalog(nextModels, catalogEnabled, defaultModelId);
+      const nextCatalog = resolveRoutingCatalog(nextModels, enabled, defaultModelId);
       let saved: CodexQuickConfig;
       if (routingDirty) {
         const result = await saveCodexInstanceConfiguration({
@@ -846,7 +898,7 @@ export function CodexLaunchPreviewModal({
           bindAccountId: mixedRoutingBindAccountId,
           modelRouting: nextModelRouting,
           deferBindAccountApplication: true,
-          updateContextOverride: true,
+          updateContextOverride: !modelSave,
           modelContextWindow: contextOverrideEnabled ? contextWindow : null,
           autoCompactTokenLimit: contextOverrideEnabled ? (compactLimit ?? null) : null,
           experimentalModelCatalogEnabled: nextCatalog.enabled,
@@ -861,6 +913,10 @@ export function CodexLaunchPreviewModal({
           instances: useCodexInstanceStore.getState().instances.map((item) =>
             item.id === result.instance.id ? result.instance : item),
         });
+      } else if (modelSave) {
+        saved = await saveCodexInstanceModelCatalog(
+          instanceId, nextCatalog.enabled, nextCatalog.models, nextCatalog.defaultModelId,
+        );
       } else {
         saved = await saveCodexInstanceQuickConfig(
           instanceId,
@@ -870,6 +926,13 @@ export function CodexLaunchPreviewModal({
           nextCatalog.models,
           nextCatalog.defaultModelId,
         );
+      }
+      if (latest.experimental_model_catalog_reset_models) {
+        saved = {
+          ...saved,
+          experimental_model_catalog_reset_models: latest.experimental_model_catalog_reset_models,
+          experimental_model_catalog_reset_default_model_id: latest.experimental_model_catalog_reset_default_model_id,
+        };
       }
       rememberCodexLaunchPreviewConfig(instanceId, saved);
       // A dispatched write may finish after Close. Keep shared snapshots current,
@@ -890,12 +953,12 @@ export function CodexLaunchPreviewModal({
       if (session !== configSession.current) return false;
       if (String(saveError).replace(/^Error:\s*/, "") === CODEX_LAUNCH_PREVIEW_CONFIG_TIMEOUT) {
         setConfigLoadError(CODEX_LAUNCH_PREVIEW_CONFIG_TIMEOUT);
+        modelSave?.reportError(t("codex.launchPreview.configLoadTimeout"));
         return false;
       }
-      setError(
+      reportError(
         getCodexExperimentalModelErrorMessage(t, saveError) ??
-          t("instances.form.codexQuickConfig.saveFailed", {
-            defaultValue: "保存 Codex 配置失败：{{error}}",
+          t("quickSettings.codex.quickConfig.saveFailed", {
             error: String(saveError).replace(/^Error:\s*/, ""),
           }),
       );
@@ -917,11 +980,14 @@ export function CodexLaunchPreviewModal({
     contextWindowInput,
     defaultModelId,
     dirty,
+    instanceConfigChanged,
+    configLoadError,
     loadedConfig,
     loadedInstanceKey,
     models,
     modelsError,
     instanceId,
+    mode,
     nextModelRouting,
     routingDirty,
     routingEnabled,
@@ -957,7 +1023,7 @@ export function CodexLaunchPreviewModal({
         return;
       }
       const session = configSession.current;
-      const saved = await persistDraft();
+      const saved = await persistDraft(true);
       if (!saved || session !== configSession.current) return;
       setExecuting(launchAfterSwitch ? "launch" : "switch");
       setNotice(null);
@@ -982,7 +1048,7 @@ export function CodexLaunchPreviewModal({
         const launchOptions: CodexLaunchPreviewLaunchOptions | undefined =
           account && isDeepSeekAccount(account)
             ? {
-                deepSeekAccessMode,
+                providerAccessMode,
                 imageGenerationAccountIds: imageGenEnabled
                   ? configuredImageAccountIds(imageGenAccountIds, accounts, imageModelConfig.model, imageGenAccountModels, imageModelConfig.deletedModels)
                   : [],
@@ -990,13 +1056,19 @@ export function CodexLaunchPreviewModal({
                   ? selectedImageAccountModels(imageGenAccountIds, accounts, imageModelConfig.model, imageGenAccountModels, imageModelConfig.deletedModels)
                   : {},
               }
-            : undefined;
+            : account && isCodexApiKeyAccount(account) && providerAccessMode
+              ? { providerAccessMode }
+              : undefined;
         if (cliAction?.onAction) {
           // CLI 入口复用配置校验与保存，随后直接进入 CLI 弹框。
           await cliAction.onAction(launchOptions ?? {}, () => session === configSession.current);
           if (session === configSession.current) onClose();
         } else {
-          await onExecute(launchAfterSwitch, launchOptions);
+          const result = await onExecute(launchAfterSwitch, launchOptions);
+          if (session !== configSession.current) return;
+          if (typeof result === "object" && result.projectStateDeferred) {
+            setError(t("codex.sessionManager.repairModal.switchProjectsDeferred"));
+          }
         }
       } catch (executeError) {
         if (isCodexLaunchCancelled(executeError)) return;
@@ -1013,7 +1085,7 @@ export function CodexLaunchPreviewModal({
       accounts,
       account,
       configBusy,
-      deepSeekAccessMode,
+      providerAccessMode,
       imageGenAccountIds,
       imageGenAccountModels,
       imageModelConfig.model,
@@ -1050,9 +1122,7 @@ export function CodexLaunchPreviewModal({
   /** API 服务固定走网关模式，接入方式只读展示。 */
   const providerRowsVisible = isDeepSeekSubject || mode === "apiService";
   const providerAccessModeReadOnly = mode === "apiService";
-  const canChooseDeepSeekAccessMode = Boolean(
-    account && isDeepSeekResponsesAccount(account),
-  );
+  const providerAccessModes = account && isApiKeySubject ? codexProviderAccessModes(account) : [];
   const imageGenAvailable = deepSeekImageGenAvailable;
 
   const accountPresentation = useMemo(
@@ -1284,6 +1354,7 @@ export function CodexLaunchPreviewModal({
     setCatalogEnabled(true);
     setNotice(null);
     setError(null);
+    setModelConfigError(null);
     setModelConfigOpen(true);
   }, [
     configBusy,
@@ -1292,6 +1363,7 @@ export function CodexLaunchPreviewModal({
     models,
     routingRoutes,
     setError,
+    setModelConfigError,
     t,
     unavailable,
   ]);
@@ -1327,10 +1399,8 @@ export function CodexLaunchPreviewModal({
   );
 
   const closeModelConfig = useCallback(
-    (apply: boolean) => {
-      if (apply) {
-        setCatalogEnabled(true);
-      } else if (modelConfigSnapshot) {
+    (saved: boolean) => {
+      if (!saved && modelConfigSnapshot) {
         setCatalogEnabled(modelConfigSnapshot.enabled);
         setModels(modelConfigSnapshot.models);
         setDefaultModelId(modelConfigSnapshot.defaultModelId);
@@ -1342,6 +1412,12 @@ export function CodexLaunchPreviewModal({
     },
     [modelConfigSnapshot],
   );
+
+  const persistModelConfig = useCallback(async (enabled: boolean) => {
+    if (await persistDraft(false, { enabled, reportError: setModelConfigError })) {
+      closeModelConfig(true);
+    }
+  }, [closeModelConfig, persistDraft, setModelConfigError]);
 
   const openContextConfig = useCallback(() => {
     if (configBusy) return;
@@ -1570,7 +1646,7 @@ export function CodexLaunchPreviewModal({
     setManualRefreshResult(null);
   }, [forceRefreshing]);
 
-  useEscCloseTopmost(modelConfigOpen && !busy, () => closeModelConfig(false), modelDialog);
+  useEscCloseTopmost(modelConfigOpen && !busy && !checkingConfig, () => closeModelConfig(false), modelDialog);
   useEscCloseTopmost(contextConfigOpen && !busy && !contextConfigSaving, () => closeContextConfig(false), contextDialog);
   useEscCloseTopmost(Boolean(manualRefreshResult) && !forceRefreshing, closeManualRefreshResult, refreshDialog);
 
@@ -1630,14 +1706,16 @@ export function CodexLaunchPreviewModal({
     </div>
   );
 
-  const deepSeekAccessModeLabel =
-    deepSeekAccessMode === DEEPSEEK_ACCESS_MODE_DIRECT
-      ? t("codex.deepSeek.start.directMode", "直连官方")
-      : deepSeekAccessMode === DEEPSEEK_ACCESS_MODE_CDP
+  const providerAccessModeLabel =
+    providerAccessMode === DEEPSEEK_ACCESS_MODE_DIRECT
+      ? t(isDeepSeekSubject ? "codex.deepSeek.start.directMode" : "codex.launchPreview.providerAccessDirect")
+      : providerAccessMode === DEEPSEEK_ACCESS_MODE_CDP
         ? t("codex.deepSeek.start.cdpMode", "CDP 注入")
-        : t("codex.deepSeek.start.gatewayMode", "网关列出");
+        : providerAccessMode === DEEPSEEK_ACCESS_MODE_GATEWAY
+          ? t("codex.deepSeek.start.gatewayMode", "网关列出")
+          : t("codex.launchPreview.providerAccessAutomatic");
 
-  const deepSeekAccessModeOptions: {
+  const providerAccessModeOptions: {
     id: DeepSeekAccessMode;
     label: string;
     pros: string;
@@ -1669,7 +1747,7 @@ export function CodexLaunchPreviewModal({
     },
     {
       id: DEEPSEEK_ACCESS_MODE_DIRECT,
-      label: t("codex.deepSeek.start.directMode", "直连官方"),
+      label: t(isDeepSeekSubject ? "codex.deepSeek.start.directMode" : "codex.launchPreview.providerAccessDirect"),
       pros: t(
         "codex.launchPreview.accessModeDirectPros",
         "优点：不经网关，速度最快。",
@@ -1685,6 +1763,11 @@ export function CodexLaunchPreviewModal({
     pros: string;
     cons: string;
   }[]);
+  const providerAccessHints = {
+    gateway: t("codex.launchPreview.providerAccessGatewayHint"),
+    direct: t("codex.deepSeek.start.directUpstreamHint"),
+    cdp: t("codex.launchPreview.providerAccessCdpHint"),
+  };
 
   const selectedImageGenAccounts = configuredImageAccountIds(imageGenAccountIds, accounts, imageModelConfig.model, imageGenAccountModels, imageModelConfig.deletedModels)
     .map((id) => accounts.find((item) => item.id === id))
@@ -1713,7 +1796,11 @@ export function CodexLaunchPreviewModal({
           </div>
 
           <div className="modal-body">
-            <ModalErrorMessage message={contextConfigOpen ? null : configErrorMessage || error} scrollKey={errorScrollKey} />
+            {awaitingAccount ? <>
+              <ModalErrorMessage message={accountReadError} scrollKey={accountReadErrorScrollKey} />
+              {accountReadStatus !== 'failed' && <p role="status">{t('common.loading')}</p>}
+            </> : <>
+            <ModalErrorMessage message={contextConfigOpen || modelConfigOpen ? null : configErrorMessage || error} scrollKey={errorScrollKey} />
             {(loading || checkingConfig) && (
               <div className="codex-launch-preview-config-status" role="status">
                 <RefreshCw size={14} className="spin" />
@@ -1956,51 +2043,33 @@ export function CodexLaunchPreviewModal({
                 </label>
               </section>
               )}
-              {providerRowsVisible && mode !== "apiService" && (
+              {isApiKeySubject && mode !== "apiService" && (
                 <section className="codex-launch-preview-tool-row">
                   <div className="codex-launch-preview-tool-icon">
                     <Route size={16} />
                   </div>
                   <div className="codex-launch-preview-tool-copy">
-                    <h3>{t("codex.launchPreview.accessModeTitle", "启动方式")}</h3>
+                    <h3>{t("codex.modelProviders.enableMode.label")}</h3>
                     <p>
                       {t(
                         "codex.launchPreview.accessModeDescription",
                         "选择该供应商的启动方式；不同方式在模型切换、OAuth 与生图转发上不同。",
                       )}
                     </p>
-                    {providerAccessModeReadOnly ? (
+                    {!providerAccessModes.includes(DEEPSEEK_ACCESS_MODE_DIRECT) && (
                       <div className="codex-launch-preview-tool-meta">
-                        <span>
-                          {t(
-                            "codex.launchPreview.accessModeApiServiceFixed",
-                            "API 服务固定使用网关模式，不可切换。",
-                          )}
-                        </span>
+                        <span>{providerAccessHints.gateway}</span>
                       </div>
-                    ) : !canChooseDeepSeekAccessMode ? (
-                      <div className="codex-launch-preview-tool-meta">
-                        <span>
-                          {t(
-                            "codex.deepSeek.start.chatOnlyHint",
-                            "Chat Completions 只能走本地网关，并在此选择启动模型。",
-                          )}
-                        </span>
-                      </div>
-                    ) : null}
+                    )}
                   </div>
                   <button
                     type="button"
                     className="btn btn-outline btn-sm codex-launch-preview-tool-action codex-launch-preview-dropdown-trigger"
-                    onClick={(event) => { rememberChildTrigger(event); setDeepSeekAccessModeDialogOpen(true); }}
-                    disabled={busy || providerAccessModeReadOnly || !canChooseDeepSeekAccessMode}
+                    onClick={(event) => { rememberChildTrigger(event); setProviderAccessModeDialogOpen(true); }}
+                    disabled={busy}
                   >
-                    <span>
-                      {providerAccessModeReadOnly
-                        ? t("codex.deepSeek.start.gatewayMode", "网关列出")
-                        : deepSeekAccessModeLabel}
-                    </span>
-                    {!providerAccessModeReadOnly && <ChevronDown size={14} />}
+                    <span>{providerAccessModeLabel}</span>
+                    <ChevronDown size={14} />
                   </button>
                 </section>
               )}
@@ -2074,7 +2143,7 @@ export function CodexLaunchPreviewModal({
                           setImageGenPickerOpen(true);
                         }}
                       />
-                      <span>{t("common.enable", "启用")}</span>
+                      <span>{t("common.enable")}</span>
                     </label>
                     <button
                       type="button"
@@ -2443,10 +2512,11 @@ export function CodexLaunchPreviewModal({
                 <span>{t("codex.launchPreview.unsavedConfig")}</span>
               </div>
             )}
+            </>}
           </div>
 
           <div className="modal-footer codex-launch-preview-footer">
-            {footerToolActions.length > 0 && (
+            {!awaitingAccount && footerToolActions.length > 0 && (
               <div className="codex-launch-preview-footer-tools">
                 {footerToolActions.map(renderFooterAction)}
               </div>
@@ -2467,6 +2537,9 @@ export function CodexLaunchPreviewModal({
                 </button>
               </div>
               <div className="codex-launch-preview-footer-primary">
+                {awaitingAccount ? accountReadStatus === 'failed' && (
+                  <button type="button" className="btn btn-primary" onClick={retryAccountRead}>{t('common.retry')}</button>
+                ) : <>
                 {account && isStandardCodexOAuthAccount(account) && (
                   <button
                     type="button"
@@ -2496,7 +2569,7 @@ export function CodexLaunchPreviewModal({
                     type="button"
                     className="btn btn-outline"
                     onClick={() => void handleExecute(false)}
-                    disabled={configBusy || (catalogEnabled && Boolean(modelsError))}
+                    disabled={configBusy}
                   >
                     {executing === "switch"
                       ? t("common.loading", "加载中...")
@@ -2507,7 +2580,7 @@ export function CodexLaunchPreviewModal({
                   type="button"
                   className="btn btn-primary"
                   onClick={() => void handleExecute(mode !== "instance")}
-                  disabled={configBusy || (catalogEnabled && models.length > 0 && Boolean(modelsError))}
+                  disabled={configBusy}
                 >
                   {mode !== "instance" && <Play size={15} />}
                   {executing !== null
@@ -2518,13 +2591,14 @@ export function CodexLaunchPreviewModal({
                         ? t("codex.localAccess.activateAction", "启动 API 服务")
                         : t("codex.launchPreview.startInstance")}
                 </button>
+                </>}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {deepSeekAccessModeDialogOpen && (
+      {providerAccessModeDialogOpen && (
         <div className="modal-overlay codex-launch-preview-refresh-overlay">
           <div
             ref={accessModeDialog} tabIndex={-1}
@@ -2535,12 +2609,12 @@ export function CodexLaunchPreviewModal({
           >
             <div className="modal-header">
               <h2 id="codex-launch-preview-mode-title">
-                {t("codex.launchPreview.accessModeTitle", "启动方式")}
+                {t("codex.modelProviders.enableMode.label")}
               </h2>
               <button
                 type="button"
                 className="modal-close"
-                onClick={() => setDeepSeekAccessModeDialogOpen(false)}
+                onClick={() => setProviderAccessModeDialogOpen(false)}
                 aria-label={t("common.close", "关闭")}
               >
                 <X />
@@ -2550,44 +2624,46 @@ export function CodexLaunchPreviewModal({
               <p className="form-hint">
                 {t(
                   "codex.launchPreview.accessModeDescription",
-                  "选择 DeepSeek 的启动方式；不同方式在模型切换、OAuth 与生图转发上不同。",
+                  "选择该供应商的启动方式；不同方式在模型切换、OAuth 与生图转发上不同。",
                 )}
               </p>
               <div className="codex-launch-preview-mode-list">
-                {deepSeekAccessModeOptions.map((option) => (
+                {providerAccessModeOptions.filter((option) => providerAccessModes.includes(option.id)).map((option) => (
                   <button
                     key={option.id}
                     type="button"
                     className={`codex-launch-preview-mode-card ${
-                      deepSeekAccessMode === option.id ? "active" : ""
+                      providerAccessMode === option.id ? "active" : ""
                     }`}
                     onClick={() => {
-                      setDeepSeekAccessMode(option.id);
-                      setDeepSeekAccessModeDialogOpen(false);
+                      setProviderAccessMode(option.id);
+                      setProviderAccessModeDialogOpen(false);
                     }}
                   >
                     <span className="codex-launch-preview-mode-card-head">
                       <span className="codex-launch-preview-mode-card-title">
                         {option.label}
                       </span>
-                      {deepSeekAccessMode === option.id && <Check size={15} />}
+                      {providerAccessMode === option.id && <Check size={15} />}
                     </span>
-                    <span className="codex-launch-preview-mode-card-section">
-                      <span className="codex-launch-preview-mode-card-label is-pros">
-                        {t("codex.launchPreview.prosLabel", "优点：")}
-                      </span>
-                      <span className="codex-launch-preview-mode-card-pros">
-                        {option.pros}
-                      </span>
-                    </span>
-                    <span className="codex-launch-preview-mode-card-section">
-                      <span className="codex-launch-preview-mode-card-label is-cons">
-                        {t("codex.launchPreview.consLabel", "缺点：")}
-                      </span>
-                      <span className="codex-launch-preview-mode-card-cons">
-                        {option.cons}
-                      </span>
-                    </span>
+                    {isDeepSeekSubject ? (
+                      <>
+                        <span className="codex-launch-preview-mode-card-section">
+                          <span className="codex-launch-preview-mode-card-label is-pros">
+                            {t("codex.launchPreview.prosLabel", "优点：")}
+                          </span>
+                          <span className="codex-launch-preview-mode-card-pros">{option.pros}</span>
+                        </span>
+                        <span className="codex-launch-preview-mode-card-section">
+                          <span className="codex-launch-preview-mode-card-label is-cons">
+                            {t("codex.launchPreview.consLabel", "缺点：")}
+                          </span>
+                          <span className="codex-launch-preview-mode-card-cons">{option.cons}</span>
+                        </span>
+                      </>
+                    ) : (
+                      <span className="codex-launch-preview-mode-card-cons">{providerAccessHints[option.id]}</span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -2641,7 +2717,7 @@ export function CodexLaunchPreviewModal({
                 type="button"
                 className="btn btn-primary"
                 onClick={() => {
-                  setDeepSeekAccessMode(DEEPSEEK_ACCESS_MODE_GATEWAY);
+                  setProviderAccessMode(DEEPSEEK_ACCESS_MODE_GATEWAY);
                   setImageGenEnabled(true);
                   setImageGenModeSwitchOpen(false);
                   setImageGenPickerOpen(true);
@@ -2767,6 +2843,7 @@ export function CodexLaunchPreviewModal({
       <CodexSessionVisibilityRepairModal
         open={repairOpen}
         repairKind={repairKind}
+        initialInstanceId={instanceId}
         onClose={() => setRepairOpen(false)}
         onRepaired={(summary) => {
           setNotice(repairKind === "history"
@@ -2794,7 +2871,7 @@ export function CodexLaunchPreviewModal({
                 type="button"
                 className="modal-close"
                 onClick={() => closeModelConfig(false)}
-                disabled={busy}
+                disabled={busy || checkingConfig}
                 aria-label={t("common.close", "关闭")}
               >
                 <X />
@@ -2802,8 +2879,8 @@ export function CodexLaunchPreviewModal({
             </div>
             <div className="modal-body">
               <ModalErrorMessage
-                message={catalogEnabled ? modelsError : null}
-                scrollKey={errorScrollKey}
+                message={modelConfigError || configErrorMessage || (catalogEnabled ? modelsError : null)}
+                scrollKey={modelErrorScrollKey}
               />
               <CodexExperimentalModelEditor
                 instanceId={instanceId}
@@ -2819,12 +2896,12 @@ export function CodexLaunchPreviewModal({
                 onChange={(nextModels) => {
                   setModels(nextModels);
                   setNotice(null);
-                  setError(null);
+                  setModelConfigError(null);
                 }}
                 onDefaultModelChange={(modelId) => {
                   setDefaultModelId(modelId);
                   setNotice(null);
-                  setError(null);
+                  setModelConfigError(null);
                 }}
                 onValidationChange={setModelsError}
                 onModelRemoved={(removedId) => {
@@ -2832,9 +2909,9 @@ export function CodexLaunchPreviewModal({
                     toggleRouteModelInRoutes(prevRoutes, removedId, accounts, "remove"),
                   );
                 }}
-                onModelAdded={(addedId) => {
+                onModelAdded={(addedId, discoveredRouteId) => {
                   setRoutingRoutes((prevRoutes) =>
-                    toggleRouteModelInRoutes(prevRoutes, addedId, accounts, "add"),
+                    toggleRouteModelInRoutes(prevRoutes, addedId, accounts, "add", discoveredRouteId),
                   );
                 }}
                 disabled={configBusy}
@@ -2845,12 +2922,7 @@ export function CodexLaunchPreviewModal({
                 <button
                   type="button"
                   className="btn btn-outline"
-                  onClick={() => {
-                    setCatalogEnabled(false);
-                    setModelConfigSnapshot(null);
-                    setModelConfigOpen(false);
-                    setModelsError(null);
-                  }}
+                  onClick={() => void persistModelConfig(false)}
                   disabled={configBusy}
                 >
                   {t("codex.modelManagement.disable", "关闭模型管理")}
@@ -2860,14 +2932,14 @@ export function CodexLaunchPreviewModal({
                 type="button"
                 className="btn btn-secondary"
                 onClick={() => closeModelConfig(false)}
-                disabled={busy}
+                disabled={busy || checkingConfig}
               >
                 {t("common.cancel", "取消")}
               </button>
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={() => closeModelConfig(true)}
+                onClick={() => void persistModelConfig(true)}
                 disabled={configBusy || (catalogEnabled && Boolean(modelsError))}
               >
                 {t("codex.launchPreview.applyModelConfig")}

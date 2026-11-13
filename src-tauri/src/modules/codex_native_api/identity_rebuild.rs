@@ -3,7 +3,25 @@ use super::*;
 use std::collections::{HashMap, HashSet};
 
 #[path = "identity_checkpoint.rs"]
-mod checkpoint_store;
+pub(super) mod checkpoint_store;
+
+// Checkpoints keep reusable settings, but a prior turn's forced tool choice
+// must not force another call when the current request leaves the choice open.
+pub(super) fn inherited_parameter(key: &str, mut value: Value) -> Value {
+    if key != "tool_choice" {
+        return value;
+    }
+    if value["type"] == "allowed_tools" {
+        if value["mode"] == "required" {
+            value["mode"] = Value::String("auto".into());
+        }
+        return value;
+    }
+    if value == "required" || value.is_object() {
+        return Value::String("auto".into());
+    }
+    value
+}
 
 const MAX_CHECKPOINT_BYTES: usize = 8 * 1024 * 1024;
 const MAX_CACHE_BYTES: i64 = 64 * 1024 * 1024;
@@ -25,6 +43,9 @@ pub(crate) struct Plan {
     pub headers: HeaderMap,
     pub body: Value,
     pub base_revision: i64,
+    // A replay-only custom result merge must not replace accepted source history.
+    // This also maps every merged item's original ID to its ordered result group.
+    pub source_input: Option<Arc<Vec<Value>>>,
 }
 
 pub(super) fn initialize(connection: &Connection) -> rusqlite::Result<()> {
@@ -143,17 +164,7 @@ pub(super) fn full_input(
     let Some(previous) = checkpoint_store::transcript(connection, caller, thread, previous)? else {
         return Ok(false);
     };
-    let strip = |items: &[Value]| {
-        items
-            .iter()
-            .map(|item| {
-                let mut item = item.clone();
-                item.as_object_mut().map(|o| o.remove("id"));
-                item
-            })
-            .collect::<Vec<_>>()
-    };
-    Ok(strip(input).starts_with(&strip(&previous)))
+    Ok(matches_checkpoint_prefix(&previous, input))
 }
 
 pub(super) fn blob_accepted(
@@ -532,6 +543,12 @@ pub(in crate::modules::codex_native_api) fn replay_items(items: &[Value]) -> boo
 }
 
 pub(in crate::modules::codex_native_api) fn paired_tools(items: &[Value]) -> bool {
+    paired_tool_items(items)
+}
+
+pub(in crate::modules::codex_native_api) fn paired_tool_items<'a>(
+    items: impl IntoIterator<Item = &'a Value>,
+) -> bool {
     let mut pending = HashMap::new();
     let mut seen = HashSet::new();
     for item in items {
@@ -569,18 +586,52 @@ pub(in crate::modules::codex_native_api) fn paired_tools(items: &[Value]) -> boo
     pending.is_empty()
 }
 
-fn merge_checkpoint(previous: Vec<Value>, incoming: &[Value]) -> Option<Vec<Value>> {
-    let without_ids = |items: &[Value]| {
-        items
-            .iter()
-            .map(|item| {
-                let mut item = item.clone();
-                item.as_object_mut()?.remove("id");
-                Some(item)
-            })
-            .collect::<Option<Vec<_>>>()
-    };
-    if without_ids(incoming)?.starts_with(&without_ids(&previous)?) {
+/// Compare against an authenticated caller/thread checkpoint, never arbitrary
+/// client history. Some clients omit an empty plaintext marker on replay. Only
+/// that direction is equivalent, and only for the otherwise identical call.
+/// Keep the input and opaque-reference validation unchanged.
+fn matches_checkpoint_prefix(previous: &[Value], incoming: &[Value]) -> bool {
+    incoming.len() >= previous.len()
+        && previous.iter().zip(incoming).all(|(saved, replayed)| {
+            let (Some(saved), Some(replayed)) = (saved.as_object(), replayed.as_object()) else {
+                return false;
+            };
+            let mut saved = saved.clone();
+            let mut replayed = replayed.clone();
+            saved.remove("id");
+            replayed.remove("id");
+            if saved == replayed {
+                return true;
+            }
+            let omitted_plaintext_marker = saved.get("type").and_then(Value::as_str)
+                == Some("function_call")
+                && saved.get("namespace").and_then(Value::as_str) == Some("collaboration")
+                && matches!(
+                    saved.get("name").and_then(Value::as_str),
+                    Some("spawn_agent" | "send_message" | "followup_task")
+                )
+                && saved
+                    .get("call_id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|id| !id.trim().is_empty())
+                && saved
+                    .get("encrypted_function_args")
+                    .and_then(Value::as_array)
+                    .is_some_and(Vec::is_empty)
+                && !replayed.contains_key("encrypted_function_args");
+            if !omitted_plaintext_marker {
+                return false;
+            }
+            saved.remove("encrypted_function_args");
+            saved == replayed
+        })
+}
+
+pub(super) fn merge_checkpoint(previous: Vec<Value>, incoming: &[Value]) -> Option<Vec<Value>> {
+    if !previous.iter().chain(incoming).all(Value::is_object) {
+        return None;
+    }
+    if matches_checkpoint_prefix(&previous, incoming) {
         return Some(incoming.to_vec());
     }
     // Incremental input may only finish pending tools or append a fresh user turn.
@@ -628,7 +679,7 @@ pub(super) fn complete_input_available(
     else {
         return Ok(false);
     };
-    Ok(replay_items(&transcript) && paired_tools(&transcript))
+    Ok(super::super::responses_custom_results::replayable(&transcript))
 }
 
 impl IdentityStore {
@@ -738,7 +789,7 @@ impl IdentityStore {
         ] {
             if parameter_source.get(key).is_none() {
                 if let Some(value) = parameters.get(key) {
-                    object.insert(key.into(), value.clone());
+                    object.insert(key.into(), inherited_parameter(key, value.clone()));
                 }
             }
         }
@@ -785,6 +836,7 @@ impl IdentityStore {
         let mut missing = false;
         for (key, value) in parameters {
             if !object.contains_key(&key) {
+                let value = inherited_parameter(&key, value);
                 object.insert(key, value);
                 missing = true;
             }
@@ -1018,12 +1070,15 @@ impl IdentityStore {
         });
         drop(connection);
         context.rebuild_base_revision = Some(base_revision);
-        if !paired_tools(&transcript) {
+        let Some(replay) = super::super::responses_custom_results::replay(&transcript) else {
             return Ok(None);
-        }
+        };
+        let (mut fresh_input, source_input) = match replay {
+            std::borrow::Cow::Borrowed(_) => (transcript, None),
+            std::borrow::Cow::Owned(replay) => (replay, Some(Arc::new(transcript))),
+        };
         let mut upstream_headers = headers.clone();
         let mut upstream_body = body.clone();
-        let mut fresh_input = transcript;
         if !context.portable_body {
             for item in &mut fresh_input {
                 item.as_object_mut().unwrap().remove("id");
@@ -1070,6 +1125,7 @@ impl IdentityStore {
             headers: upstream_headers,
             body: upstream_body,
             base_revision,
+            source_input,
         }))
     }
 
@@ -1227,6 +1283,9 @@ impl RequestIdentity {
         self.rebuild_base_revision = Some(plan.base_revision);
         self.rebuild_new_generation = true;
         self.generation = None;
+        if let Some(input) = &plan.source_input {
+            self.rebuild_input = Some((**input).clone());
+        }
     }
     pub(crate) fn retain_binding_generation(&mut self, binding: &Binding) {
         self.session_identity_mapping_enabled = binding.session_identity_mapping_enabled;

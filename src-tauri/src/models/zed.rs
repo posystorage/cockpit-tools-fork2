@@ -60,6 +60,9 @@ pub struct ZedAccount {
     pub preferences_raw: Option<Value>,
     pub created_at: i64,
     pub last_used: i64,
+    /// Last successful credential switch; absent for historical/imported accounts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_switched_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,6 +93,8 @@ pub struct ZedAccountIndex {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current_account_id: Option<String>,
     pub accounts: Vec<ZedAccountSummary>,
+    #[serde(skip)]
+    pub(crate) storage_revision: crate::modules::provider_account_index::Revision,
 }
 
 impl ZedAccountIndex {
@@ -98,6 +103,7 @@ impl ZedAccountIndex {
             version: "1.0".to_string(),
             current_account_id: None,
             accounts: Vec::new(),
+            storage_revision: Default::default(),
         }
     }
 }

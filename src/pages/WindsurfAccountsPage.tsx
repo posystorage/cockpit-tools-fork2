@@ -1,3 +1,4 @@
+import { useAccountsOverviewFilterState } from '../hooks/useAccountsOverviewFilterState';
 import { useState, useMemo, useCallback, useEffect, useRef, Fragment } from 'react';
 import {
   Plus,
@@ -25,6 +26,7 @@ import {
   Mail,
   BookOpen,
 } from 'lucide-react';
+import { AccountLastUsed } from '../components/AccountLastUsed';
 import { useWindsurfAccountStore } from '../stores/useWindsurfAccountStore';
 import * as windsurfService from '../services/windsurfService';
 import { TagEditModal } from '../components/TagEditModal';
@@ -72,12 +74,9 @@ import {
   normalizeAccountsOverviewScope,
   readAccountsOverviewFilterPersistenceEnabled,
   readAccountsOverviewFilterStringArray,
-  removeAccountsOverviewFilterField,
-  writeAccountsOverviewFilterField,
 } from '../utils/accountsOverviewFilterPersistence';
 
 const WINDSURF_FLOW_NOTICE_COLLAPSED_KEY = 'agtools.windsurf.flow_notice_collapsed';
-const WINDSURF_CURRENT_ACCOUNT_ID_KEY = 'agtools.windsurf.current_account_id';
 const WINDSURF_FILTER_PERSISTENCE_SCOPE = normalizeAccountsOverviewScope('Windsurf');
 const FILTER_TYPES_FIELD = 'filter_types';
 const WINDSURF_TOKEN_SINGLE_EXAMPLE = `sk-ws-xxxxx 或 eyJxxxxx`;
@@ -307,7 +306,7 @@ function parseWindsurfPasswordBatchTextInput(
 
 export function WindsurfAccountsPage() {
   const [activeTab, setActiveTab] = useState<WindsurfTab>('overview');
-  const [filterTypes, setFilterTypes] = useState<string[]>(() =>
+  const [filterTypes, setFilterTypes] = useAccountsOverviewFilterState<string[]>(WINDSURF_FILTER_PERSISTENCE_SCOPE, FILTER_TYPES_FIELD, () =>
     readAccountsOverviewFilterPersistenceEnabled(WINDSURF_FILTER_PERSISTENCE_SCOPE)
       ? readAccountsOverviewFilterStringArray(
           WINDSURF_FILTER_PERSISTENCE_SCOPE,
@@ -323,7 +322,6 @@ export function WindsurfAccountsPage() {
     platformKey: 'Windsurf',
     oauthLogPrefix: 'WindsurfOAuth',
     flowNoticeCollapsedKey: WINDSURF_FLOW_NOTICE_COLLAPSED_KEY,
-    currentAccountIdKey: WINDSURF_CURRENT_ACCOUNT_ID_KEY,
     exportFilePrefix: 'windsurf_accounts',
     defaultSortBy: 'recommended',
     store: {
@@ -359,7 +357,6 @@ export function WindsurfAccountsPage() {
   const {
     t, locale, privacyModeEnabled, togglePrivacyMode, maskAccountText,
     viewMode, setViewMode, searchQuery, setSearchQuery,
-    filterPersistenceEnabled, filterPersistenceScope,
     sortBy, setSortBy, sortDirection, setSortDirection,
     selected, toggleSelect, toggleSelectAll,
     tagFilter, groupByTag, setGroupByTag, showTagFilter, setShowTagFilter,
@@ -391,14 +388,6 @@ export function WindsurfAccountsPage() {
   } = page;
 
   const grouping = usePlatformAccountGroups('windsurf', () => toggleSelectAll(Array.from(selected)));
-
-  useEffect(() => {
-    if (!filterPersistenceEnabled) {
-      removeAccountsOverviewFilterField(filterPersistenceScope, FILTER_TYPES_FIELD);
-      return;
-    }
-    writeAccountsOverviewFilterField(filterPersistenceScope, FILTER_TYPES_FIELD, filterTypes);
-  }, [filterPersistenceEnabled, filterPersistenceScope, filterTypes]);
 
   const toggleFilterTypeValue = useCallback((value: string) => {
     setFilterTypes((prev) => {
@@ -877,7 +866,7 @@ export function WindsurfAccountsPage() {
       const summary = resolveQuotaSummary(account);
       const items: WindsurfOfficialUsagePanelItem[] = [];
 
-      if (summary.dailyUsedPercent != null) {
+      if (!summary.hideDaily && summary.dailyUsedPercent != null) {
         const label = t('windsurf.usageSummary.dailyQuota', 'Daily quota usage');
         const value = formatQuotaUsagePercent(summary.dailyUsedPercent);
         const detail = summary.dailyResetAt
@@ -898,7 +887,7 @@ export function WindsurfAccountsPage() {
         });
       }
 
-      if (summary.weeklyUsedPercent != null) {
+      if (!summary.hideWeekly && summary.weeklyUsedPercent != null) {
         const label = t('windsurf.usageSummary.weeklyQuota', 'Weekly quota usage');
         const value = formatQuotaUsagePercent(summary.weeklyUsedPercent);
         const detail = summary.weeklyResetAt
@@ -987,6 +976,14 @@ export function WindsurfAccountsPage() {
       }
 
       const mode = resolveUsageMode(account);
+      if (mode === 'acu') {
+        const items = resolvePresentation(account).quotaItems.map(item => ({
+          key: item.key, label: item.label, value: item.valueText ?? '--', detail: '',
+          title: `${item.label}: ${item.valueText ?? '--'}`, progressPercent: item.progressPercent,
+          quotaClass: item.quotaClass, showProgress: item.showProgress,
+        }));
+        return { mode, headline: '', note: items.length ? '' : t('common.shared.quota.noData'), items, title: items.map(item => item.title).join(' | ') };
+      }
       if (mode === 'quota') {
         const items = buildQuotaDisplayItems(account);
         return {
@@ -1013,7 +1010,7 @@ export function WindsurfAccountsPage() {
         title: [headline, ...items.map((item) => item.title)].join(' | '),
       };
     },
-    [buildCreditsDisplayItems, buildQuotaDisplayItems, formatCreditValue, resolveCreditsSummary, resolveUsageMode, t],
+    [buildCreditsDisplayItems, buildQuotaDisplayItems, formatCreditValue, resolveCreditsSummary, resolveUsageMode, resolvePresentation, t],
   );
 
   // ─── Tier filter ────────────────────────────────────────────────────
@@ -1230,7 +1227,7 @@ export function WindsurfAccountsPage() {
           {renderUsagePanel(usagePanel)}
           {renderPlanDetails(cycleDisplay)}
           <div className="card-footer">
-            <span className="card-date">{formatDate(account.created_at)}</span>
+            <AccountLastUsed accountId={account.id} lastSwitchedAt={account.last_switched_at} createdAt={account.created_at} formatDate={formatDate} />
             <div className="card-actions">
               <button className="card-action-btn success" onClick={() => handleInjectToVSCode?.(account.id)} disabled={!!injecting} title={t('windsurf.injectToVSCode', '切换到 Windsurf')}>
                 {injecting === account.id ? <RefreshCw size={14} className="loading-spinner" /> : <Play size={14} />}

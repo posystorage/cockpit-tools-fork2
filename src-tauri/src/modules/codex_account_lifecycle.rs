@@ -151,11 +151,6 @@ pub fn upsert_agent_identity_account(identity: CodexAgentIdentity) -> Result<Cod
     account.requires_reauth = false;
     account.reauth_reason = None;
     account.authorization_status = None;
-    account.client_auth_status = None;
-    account.last_client_auth_observed_at = None;
-    account.last_client_login_redirect_at = None;
-    account.last_client_launch_at = None;
-    account.last_client_auth_instance_id = None;
     account.update_last_used();
     save_account_from_user_action(&mut account)?;
 
@@ -206,6 +201,7 @@ pub fn upsert_api_key_account(
     api_vision_routing_model: Option<String>,
     account_name: Option<String>,
     api_model_context_windows: Option<HashMap<String, i64>>,
+    api_auth_scheme: Option<String>,
 ) -> Result<CodexAccount, String> {
     let (api_key, api_base_url) = validate_api_key_credentials(&api_key, api_base_url.as_deref())?;
     let provider_config = resolve_api_provider_config(
@@ -216,7 +212,13 @@ pub fn upsert_api_key_account(
     )?;
     let account_id = build_api_key_account_id(&api_key);
     let account_name = normalize_optional_value(account_name);
-    let mut index = load_account_index();
+    // Initialize legacy storage before taking the lock. Re-read the saved
+    // index under the lock so a parallel Key import cannot lose its row.
+    let initial_index = load_account_index_inner(false)?;
+    let _guard = CODEX_ACCOUNT_MUTATION_LOCK
+        .lock()
+        .map_err(|_| "Codex 账号写入锁已损坏".to_string())?;
+    let mut index = read_saved_account_index()?.unwrap_or(initial_index);
 
     let mut account = if let Some(mut acc) = load_account(&account_id) {
         let sync_model_catalog_to_codex =
@@ -233,6 +235,7 @@ pub fn upsert_api_key_account(
             api_model_vision_support.clone(),
             api_vision_routing_model.clone(),
             api_model_context_windows.clone(),
+            api_auth_scheme.clone(),
         );
         if acc.email.trim().is_empty() {
             acc.email = build_api_key_email(&api_key);
@@ -257,6 +260,7 @@ pub fn upsert_api_key_account(
         acc.account_name = account_name;
         acc.api_sync_model_catalog_to_codex = api_sync_model_catalog_to_codex.unwrap_or(false);
         acc.api_wire_api = normalize_api_wire_api(api_wire_api.clone());
+        acc.api_auth_scheme = api_auth_scheme.clone();
         acc.api_supports_websockets = api_supports_websockets;
         let _ = normalize_api_key_websocket_capability(&mut acc);
         acc.api_supports_vision = api_supports_vision;
@@ -267,6 +271,7 @@ pub fn upsert_api_key_account(
 
     account.auth_mode = CodexAuthMode::Apikey;
     let _ = enforce_deepseek_responses_account(&mut account);
+    let _ = upgrade_opencode_go_model_catalog(&mut account);
     if api_model_context_windows.is_some() || !account.api_model_context_windows.is_empty() {
         account.api_model_context_windows = normalize_api_model_context_windows(
             api_model_context_windows.unwrap_or_else(|| account.api_model_context_windows.clone()),
@@ -274,7 +279,7 @@ pub fn upsert_api_key_account(
             &account.api_model_mappings,
         );
     }
-    save_account_from_user_action(&mut account)?;
+    save_account_from_user_action_unlocked(&mut account)?;
 
     if let Some(summary) = index.accounts.iter_mut().find(|item| item.id == account.id) {
         summary.email = account.email.clone();
@@ -348,7 +353,7 @@ fn resolve_reauth_target_account_id(
     }
     if !target.email.trim().is_empty() && !target.email.eq_ignore_ascii_case(email) {
         return Err(format!(
-            "重新授权账号邮箱不匹配: 目标账号为 {}，本次授权为 {}",
+            "CODEX_OAUTH_RESTART_REQUIRED: 重新授权账号邮箱不匹配: 目标账号为 {}，本次授权为 {}",
             target.email, email
         ));
     }
@@ -483,11 +488,6 @@ fn upsert_account_with_hints_and_reauth_target(
     // login_required 只代表历史观测结果，不能继续污染这次授权后的状态。
     // 这里不能只依赖 reauth_target：用户从 OAuth 入口重新授权时可能没有
     // 携带旧卡片 ID，但仍然会复用同一个账号记录。
-    account.client_auth_status = None;
-    account.last_client_auth_observed_at = None;
-    account.last_client_login_redirect_at = None;
-    account.last_client_launch_at = None;
-    account.last_client_auth_instance_id = None;
 
     // 远端 API 鉴权拒绝描述的是旧 access_token。OAuth 已换入新凭据后继续
     // 保留它，会让 sidecar 账号池错误地把新凭据当成仍被远端拒绝。
@@ -667,6 +667,9 @@ pub fn remove_accounts(account_ids: &[String]) -> Result<(), String> {
         delete_account_file_unlocked(&account_id)?;
     }
     drop(_guard);
+    for id in &deleted_account_ids {
+        crate::modules::codex_device_restrictions::retire_account(id);
+    }
     // 账号删除后，引用它的混合模型路由必须自动关闭（渠道配置保留），
     // 否则后台监控会反复尝试恢复失败的网关，并弹出与删除账号无关的报错。
     match crate::modules::codex_instance::disable_model_routing_for_deleted_accounts(

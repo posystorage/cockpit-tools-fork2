@@ -72,7 +72,7 @@ function collectPortableFiles({ releaseDir, executablePath }) {
     for (const sourcePath of listFilesRecursive(resourcesDir)) {
       files.push({
         sourcePath,
-        archivePath: path.join('resources', path.relative(resourcesDir, sourcePath)),
+        archivePath: path.join('resources', path.relative(resourcesDir, sourcePath)).replaceAll(path.sep, '/'),
       });
     }
   }
@@ -82,8 +82,7 @@ function collectPortableFiles({ releaseDir, executablePath }) {
   for (const entry of fs.readdirSync(path.dirname(executablePath), { withFileTypes: true })) {
     if (
       entry.isFile() &&
-      (entry.name.toLowerCase().endsWith('.dll') ||
-        /^cockpit-cliproxy(?:[-_].*)?\.exe$/i.test(entry.name))
+      entry.name.toLowerCase().endsWith('.dll')
     ) {
       files.push({
         sourcePath: path.join(path.dirname(executablePath), entry.name),

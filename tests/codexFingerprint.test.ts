@@ -1,13 +1,35 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { buildFingerprintTargets, fingerprintExcludedAccountIds, normalizeFingerprintPreferences, runFingerprintQueue } from '../src/utils/codexFingerprint.ts';
 import { generateChallenges } from '../src/vendor/modeltrace/challenge-browser.js';
 import { analyzeGlobalOutputs } from '../src/vendor/modeltrace/fingerprint-core.js';
 import bank from '../src/vendor/modeltrace/unified_bank.json';
+import referenceMetadata from '../src/vendor/modeltrace/metadata.json';
 import type { CodexAccount } from '../src/types/codex.ts';
 import type { CodexModelProvider } from '../src/services/codexModelProviderService.ts';
 import { FINGERPRINT_MODELS } from '../src/types/codexFingerprint.ts';
+
+test('the complete pinned ModelTrace bank and scorer match their shipped integrity metadata', () => {
+  const bytes = (file: string) => readFileSync(new URL('../src/vendor/modeltrace/' + file, import.meta.url));
+  const hash = (value: Uint8Array | string) => createHash('sha256').update(value).digest('hex');
+  assert.equal(hash(bytes('unified_bank.json').toString().replaceAll('\r\n', '\n')), referenceMetadata.packagedBankSha256);
+  for (const [file, expected] of [
+    ['fingerprint-core.js', referenceMetadata.scorerSha256],
+    ['challenge-browser.js', referenceMetadata.challengeSha256],
+  ]) assert.equal(hash(bytes(file).toString().replaceAll('\r\n', '\n')), expected);
+  assert.equal(referenceMetadata.sourceCommit, '6cd4a8ff0f3f4e49d6d6969dd2fbadfa1569fde2');
+  assert.equal(bank.models.length, referenceMetadata.modelCount);
+  assert.equal(bank.built_at, referenceMetadata.builtAt);
+  assert.deepEqual(bank.robust.model_order, bank.models.map((model) => model.id));
+  assert.ok(bank.models.some((model) => model.id === 'claude-sonnet-5-5'));
+  assert.ok(bank.models.some((model) => model.id === 'claude-haiku-5-5'));
+  assert.ok(!bank.models.some((model) => model.id.startsWith('gpt-6.1-')));
+  assert.deepEqual(Object.keys(bank.calibration).sort(), ['1', '2', '3']);
+  assert.equal(readFileSync(new URL('../public/licenses/ModelTrace-LICENSE.txt', import.meta.url), 'utf8').replaceAll('\r\n', '\n'),
+    bytes('LICENSE').toString().replaceAll('\r\n', '\n'));
+});
 
 test('GPT-6.1 Sol selection survives preference restoration and matches the backend allowlist', () => {
   assert.ok(FINGERPRINT_MODELS.includes('gpt-6.1-sol'));
@@ -39,7 +61,7 @@ test('saved empty model selection stays empty and invalid settings are repaired'
 test('OAuth and every distinct upstream API key can be tested together', () => {
   const accounts = [
     { id: 'oauth', email: 'person@example.test', tokens: { access_token: 'token' } },
-    { id: 'duplicate', auth_mode: 'apikey', openai_api_key: 'key1', api_base_url: 'https://example.test/v1/' },
+    { id: 'duplicate', auth_mode: 'apikey', openai_api_key: 'key1', api_base_url: 'https://example.test/v1/', api_wire_api: 'chat_completions' },
     { id: 'standalone', auth_mode: 'apikey', openai_api_key: 'key3', api_base_url: 'https://other.test/v1' },
   ] as CodexAccount[];
   const providers = [{ id: 'upstream', name: 'Relay', baseUrl: 'https://example.test/v1', wireApi: 'chat_completions', apiKeys: [
@@ -49,6 +71,21 @@ test('OAuth and every distinct upstream API key can be tested together', () => {
   assert.deepEqual(targets.map((target) => target.id), ['provider:upstream:one', 'provider:upstream:two', 'account:oauth', 'account:standalone']);
   assert.ok(targets.every((target) => !target.label.includes('key1')));
 });
+test('provider targets preserve explicit Anthropic authentication and distinct protocols', () => {
+  const providers = [
+    { id: 'messages', name: 'Messages', baseUrl: 'https://example.test/v1', wireApi: 'anthropic', authScheme: 'bearer', apiKeys: [{ id: 'one', apiKey: 'shared' }] },
+    { id: 'responses', name: 'Responses', baseUrl: 'https://example.test/v1', wireApi: 'responses', apiKeys: [{ id: 'one', apiKey: 'shared' }] },
+  ] as CodexModelProvider[];
+  const accounts = [{ id: 'duplicate', auth_mode: 'apikey', openai_api_key: 'shared', api_base_url: 'https://example.test/v1', api_wire_api: 'anthropic', api_auth_scheme: 'bearer' }] as CodexAccount[];
+  const targets = buildFingerprintTargets(accounts, providers);
+  assert.deepEqual(targets.map((target) => target.id), ['provider:messages:one', 'provider:responses:one']);
+  assert.equal(targets[0].kind, 'provider');
+  if (targets[0].kind === 'provider') {
+    assert.equal(targets[0].wireApi, 'anthropic');
+    assert.equal(targets[0].authScheme, 'bearer');
+  }
+});
+
 test('the batch never exceeds its parallel limit and runs each group once', async () => {
   let active = 0; let peak = 0; const completed: number[] = [];
   await runFingerprintQueue([0, 1, 2, 3, 4, 5, 6], 3, () => false, async (job) => {

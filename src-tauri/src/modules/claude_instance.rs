@@ -1070,9 +1070,10 @@ fn scan_claude_exe_under_root(
 }
 
 #[cfg(target_os = "windows")]
-fn scan_windows_start_apps_for_claude(
+pub(super) fn scan_windows_start_apps_for_claude(
     candidates: &mut Vec<ClaudeDesktopLaunchCandidate>,
     seen: &mut HashSet<String>,
+    timeout: std::time::Duration,
 ) {
     use std::os::windows::process::CommandExt;
 
@@ -1088,8 +1089,7 @@ fn scan_windows_start_apps_for_claude(
         ])
         .creation_flags(0x08000000)
         .stdin(Stdio::null());
-    let output =
-        modules::process_timeout::output_with_timeout(&mut command, WINDOWS_CLAUDE_PROBE_TIMEOUT);
+    let output = modules::process_timeout::output_with_timeout(&mut command, timeout);
     let Ok(output) = output else {
         return;
     };
@@ -1215,7 +1215,7 @@ pub fn scan_claude_desktop_launch_targets(
         }
     }
 
-    scan_windows_start_apps_for_claude(&mut candidates, &mut seen);
+    scan_windows_start_apps_for_claude(&mut candidates, &mut seen, WINDOWS_CLAUDE_PROBE_TIMEOUT);
 
     candidates
 }
@@ -1461,6 +1461,54 @@ fn resolve_expected_claude_launch_path_for_match() -> Option<String> {
             None
         }
     }
+}
+
+#[cfg(target_os = "windows")]
+pub(super) fn windows_store_desktop_profile_dir() -> Option<PathBuf> {
+    let root = dirs::data_local_dir()?.join("Claude-Data");
+    if !root.is_dir() {
+        return None;
+    }
+    let profile_name = match resolve_claude_windows_launch_target() {
+        Ok(ClaudeWindowsLaunchTarget::ShellApp(target)) => {
+            let family = target.rsplit('\\').next()?.split_once('!')?.0;
+            Some(family.to_ascii_lowercase())
+        }
+        Ok(ClaudeWindowsLaunchTarget::Executable(path)) => path.ancestors().find_map(|ancestor| {
+            let name = ancestor.file_name()?.to_str()?.to_ascii_lowercase();
+            let (product, publisher) = name.rsplit_once("__")?;
+            product.starts_with("claude_").then(|| format!("claude_{publisher}"))
+        }),
+        Err(_) => Some("claude_pzs8sxrjxfjjc".to_string()),
+    };
+    if let Some(profile_name) = profile_name {
+        let publisher = profile_name.strip_prefix("claude_")?;
+        if publisher.is_empty() || !publisher.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
+            return None;
+        }
+        // The Store family identifies the same profile before and after
+        // shutdown. Do not choose another publisher's profile by timestamps.
+        let profile = root.join(profile_name);
+        return profile.is_dir().then_some(profile);
+    }
+    // A configured executable can also be the running Store program itself.
+    // Accept only the actual command line for the matched desktop process.
+    let root = PathBuf::from(normalize_path_for_compare(root.to_str()?));
+    let mut profiles = collect_claude_process_entries()
+        .into_iter()
+        .filter_map(|(_, dir)| dir.map(PathBuf::from))
+        .filter(|dir| {
+            dir.parent() == Some(root.as_path())
+                && dir.file_name().and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("claude_"))
+        })
+        .collect::<Vec<_>>();
+    profiles.sort_unstable();
+    profiles.dedup();
+    if profiles.len() == 1 {
+        return profiles.pop();
+    }
+    None
 }
 
 pub fn collect_claude_process_entries() -> Vec<(u32, Option<String>)> {
@@ -1745,7 +1793,7 @@ fn spawn_claude_windows(
         .stderr(Stdio::null());
     if let Some(target) = target {
         cmd.env(CLAUDE_USER_DATA_DIR_ENV, target);
-        cmd.arg("--user-data-dir").arg(target);
+        cmd.arg(format!("--user-data-dir={}", target));
     }
     if use_new_window {
         cmd.arg("--new-window");
@@ -1797,7 +1845,7 @@ fn spawn_claude_macos_open(
     cmd.arg("-n").arg("-a").arg(&app_root);
     cmd.arg("--args");
     if let Some(target) = target {
-        cmd.arg("--user-data-dir").arg(target);
+        cmd.arg(format!("--user-data-dir={}", target));
     }
     if use_new_window {
         cmd.arg("--new-window");
@@ -1844,7 +1892,7 @@ fn spawn_claude_unix(
         .filter(|value| !value.is_empty())
     {
         cmd.env(CLAUDE_USER_DATA_DIR_ENV, target);
-        cmd.arg("--user-data-dir").arg(target);
+        cmd.arg(format!("--user-data-dir={}", target));
     }
     if use_new_window {
         cmd.arg("--new-window");

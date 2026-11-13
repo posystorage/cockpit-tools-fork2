@@ -40,7 +40,8 @@ fn get_accounts_index_path() -> Result<PathBuf, String> {
 }
 
 pub fn accounts_index_path_string() -> Result<String, String> {
-    Ok(get_accounts_index_path()?.to_string_lossy().to_string())
+    Ok(crate::modules::provider_account_index::storage_path::<GitHubCopilotAccountIndex>(&get_accounts_index_path()?)?
+        .to_string_lossy().into_owned())
 }
 
 /// Load a single account by ID (public wrapper)
@@ -84,10 +85,17 @@ fn load_account_file(account_id: &str) -> Option<GitHubCopilotAccount> {
 
 fn save_account_file(account: &GitHubCopilotAccount) -> Result<(), String> {
     let path = get_accounts_dir()?.join(format!("{}.json", account.id));
-    let content =
-        crate::modules::secure_account_storage::serialize_account_file("github_copilot", account)?;
-    crate::modules::atomic_write::write_string_atomic(&path, &content)
+    crate::modules::secure_account_storage::write_account_preserving_switch_time(&path, "github_copilot", account)
         .map_err(|e| format!("保存账号失败: {}", e))
+}
+
+// Record credential-switch success separately from refresh activity.
+pub fn touch_last_used(account_id: &str) -> Result<(), String> {
+    let mut account = load_account(account_id)
+        .ok_or_else(|| format!("GitHub Copilot account not found: {}", account_id))?;
+    account.last_switched_at = Some(now_ts());
+    save_account_file(&account)?;
+    Ok(())
 }
 
 fn persist_quota_query_error(account_id: &str, message: &str) {
@@ -99,111 +107,27 @@ fn persist_quota_query_error(account_id: &str, message: &str) {
     let _ = upsert_account_record(account);
 }
 
-fn delete_account_file(account_id: &str) -> Result<(), String> {
-    let path = get_accounts_dir()?.join(format!("{}.json", account_id));
-    if path.exists() {
-        crate::modules::atomic_write::remove_file_locked(&path)
-            .map_err(|e| format!("删除账号失败: {}", e))?;
-    }
-    Ok(())
-}
-
 fn load_account_index() -> GitHubCopilotAccountIndex {
-    let path = match get_accounts_index_path() {
-        Ok(p) => p,
-        Err(_) => return GitHubCopilotAccountIndex::new(),
-    };
-
-    if !path.exists() {
-        return repair_account_index_from_details("索引文件不存在")
-            .unwrap_or_else(GitHubCopilotAccountIndex::new);
-    }
-
-    match fs::read_to_string(&path) {
-        Ok(content) if content.trim().is_empty() => {
-            repair_account_index_from_details("索引文件为空")
-                .unwrap_or_else(GitHubCopilotAccountIndex::new)
-        }
-        Ok(content) => match crate::modules::atomic_write::parse_json_with_auto_restore::<
-            GitHubCopilotAccountIndex,
-        >(&path, &content)
-        {
-            Ok(index) if !index.accounts.is_empty() => index,
-            Ok(_) => repair_account_index_from_details("索引账号列表为空")
-                .unwrap_or_else(GitHubCopilotAccountIndex::new),
-            Err(err) => {
-                logger::log_warn(&format!(
-                    "[GitHub Copilot Account] 账号索引解析失败，尝试按详情文件自动修复: path={}, error={}",
-                    path.display(),
-                    err
-                ));
-                repair_account_index_from_details("索引文件损坏")
-                    .unwrap_or_else(GitHubCopilotAccountIndex::new)
-            }
-        },
-        Err(_) => GitHubCopilotAccountIndex::new(),
-    }
+    load_account_index_checked().unwrap_or_else(|error| {
+        logger::log_warn(&format!("[GitHubCopilot Account] {error}"));
+        GitHubCopilotAccountIndex::new()
+    })
 }
 
 fn load_account_index_checked() -> Result<GitHubCopilotAccountIndex, String> {
-    let path = get_accounts_index_path()?;
-    if !path.exists() {
-        if let Some(index) = repair_account_index_from_details("索引文件不存在") {
-            return Ok(index);
-        }
-        return Ok(GitHubCopilotAccountIndex::new());
-    }
-
-    let content = match fs::read_to_string(&path) {
-        Ok(content) => content,
-        Err(err) => {
-            if let Some(index) = repair_account_index_from_details("索引文件读取失败") {
-                return Ok(index);
-            }
-            return Err(format!("读取账号索引失败: {}", err));
-        }
-    };
-
-    if content.trim().is_empty() {
-        if let Some(index) = repair_account_index_from_details("索引文件为空") {
-            return Ok(index);
-        }
-        return Ok(GitHubCopilotAccountIndex::new());
-    }
-
-    match crate::modules::atomic_write::parse_json_with_auto_restore::<GitHubCopilotAccountIndex>(
-        &path, &content,
-    ) {
-        Ok(index) if !index.accounts.is_empty() => Ok(index),
-        Ok(index) => {
-            if let Some(repaired) = repair_account_index_from_details("索引账号列表为空") {
-                return Ok(repaired);
-            }
-            Ok(index)
-        }
-        Err(err) => {
-            if let Some(index) = repair_account_index_from_details("索引文件损坏") {
-                return Ok(index);
-            }
-            Err(crate::error::file_corrupted_error(
-                ACCOUNTS_INDEX_FILE,
-                &path.to_string_lossy(),
-                &err.to_string(),
-            ))
-        }
-    }
+    crate::modules::provider_account_index::checked(
+        &get_accounts_index_path()?,
+        crate::modules::provider_index_maintenance::schedule,
+        repair_account_index_from_details,
+        |index| index.accounts.is_empty(),
+    )
 }
 
 fn save_account_index(index: &GitHubCopilotAccountIndex) -> Result<(), String> {
-    let path = get_accounts_index_path()?;
-    let content =
-        serde_json::to_string_pretty(index).map_err(|e| format!("序列化账号索引失败: {}", e))?;
-    crate::modules::atomic_write::write_string_atomic(&path, &content)
-        .map_err(|e| format!("写入账号索引失败: {}", e))
+    crate::modules::provider_account_index::save(&get_accounts_index_path()?, index)
 }
 
 fn repair_account_index_from_details(reason: &str) -> Option<GitHubCopilotAccountIndex> {
-    let index_path = get_accounts_index_path().ok()?;
     let accounts_dir = get_accounts_dir().ok()?;
     let mut accounts = crate::modules::account_index_repair::load_accounts_from_details(
         &accounts_dir,
@@ -225,35 +149,14 @@ fn repair_account_index_from_details(reason: &str) -> Option<GitHubCopilotAccoun
     let mut index = GitHubCopilotAccountIndex::new();
     index.accounts = accounts.iter().map(|account| account.summary()).collect();
 
-    let backup_path = crate::modules::account_index_repair::backup_existing_index(&index_path)
-        .unwrap_or_else(|err| {
-            logger::log_warn(&format!(
-                "[GitHub Copilot Account] 自动修复前备份索引失败，继续尝试重建: path={}, error={}",
-                index_path.display(),
-                err
-            ));
-            None
-        });
-
-    if let Err(err) = save_account_index(&index) {
-        logger::log_warn(&format!(
-            "[GitHub Copilot Account] 自动修复索引保存失败，将以内存结果继续运行: reason={}, recovered_accounts={}, error={}",
-            reason,
-            index.accounts.len(),
-            err
-        ));
+    if let Err(error) = save_account_index(&index) {
+        logger::log_warn(&format!("[GitHubCopilot Account] 保存恢复索引失败: reason={reason}, error={error}"));
+        return None;
     }
-
-    logger::log_warn(&format!(
-        "[GitHub Copilot Account] 检测到账号索引异常，已根据详情文件自动重建: reason={}, recovered_accounts={}, backup_path={}",
-        reason,
-        index.accounts.len(),
-        backup_path
-            .as_ref()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "-".to_string())
+    logger::log_info(&format!(
+        "[GitHubCopilot Account] 已恢复账号索引: reason={reason}, accounts={}",
+        index.accounts.len()
     ));
-
     Some(index)
 }
 
@@ -320,6 +223,7 @@ pub fn upsert_account(
     let created_at = existing.as_ref().map(|acc| acc.created_at).unwrap_or(now);
 
     let mut account = existing.unwrap_or(GitHubCopilotAccount {
+        last_switched_at: None,
         id: account_id.clone(),
         github_login: payload.github_login.clone(),
         github_id: payload.github_id,
@@ -334,6 +238,7 @@ pub fn upsert_account(
         copilot_chat_enabled: payload.copilot_chat_enabled,
         copilot_expires_at: payload.copilot_expires_at,
         copilot_refresh_in: payload.copilot_refresh_in,
+        copilot_token_based_billing: payload.copilot_token_based_billing,
         copilot_quota_snapshots: payload.copilot_quota_snapshots.clone(),
         copilot_quota_reset_date: payload.copilot_quota_reset_date.clone(),
         copilot_limited_user_quotas: payload.copilot_limited_user_quotas.clone(),
@@ -357,6 +262,7 @@ pub fn upsert_account(
     account.copilot_chat_enabled = payload.copilot_chat_enabled;
     account.copilot_expires_at = payload.copilot_expires_at;
     account.copilot_refresh_in = payload.copilot_refresh_in;
+    account.copilot_token_based_billing = payload.copilot_token_based_billing;
     account.copilot_quota_snapshots = payload.copilot_quota_snapshots;
     account.copilot_quota_reset_date = payload.copilot_quota_reset_date;
     account.copilot_limited_user_quotas = payload.copilot_limited_user_quotas;
@@ -386,6 +292,7 @@ async fn refresh_account_token_once(account_id: &str) -> Result<GitHubCopilotAcc
     account.copilot_chat_enabled = bundle.chat_enabled;
     account.copilot_expires_at = bundle.expires_at;
     account.copilot_refresh_in = bundle.refresh_in;
+    account.copilot_token_based_billing = bundle.token_based_billing;
     account.copilot_quota_snapshots = bundle.quota_snapshots;
     account.copilot_quota_reset_date = bundle.quota_reset_date;
     account.copilot_limited_user_quotas = bundle.limited_user_quotas;
@@ -449,10 +356,13 @@ pub fn remove_account(account_id: &str) -> Result<(), String> {
     let _lock = GHCP_ACCOUNT_INDEX_LOCK
         .lock()
         .map_err(|_| "获取 GitHub Copilot 账号锁失败".to_string())?;
+    let path = get_accounts_dir()?.join(format!("{}.json", account_id));
+    let _file_lock = crate::modules::account_file_crypto::lock_account_file_for_write(&path)?;
     let mut index = load_account_index();
     index.accounts.retain(|item| item.id != account_id);
     save_account_index(&index)?;
-    delete_account_file(account_id)?;
+    crate::modules::atomic_write::remove_file_locked(&path)
+        .map_err(|error| format!("删除账号文件失败: {error}"))?;
     Ok(())
 }
 
@@ -925,6 +835,7 @@ mod tests {
 
     fn account_with_snapshots(snapshots: serde_json::Value) -> GitHubCopilotAccount {
         GitHubCopilotAccount {
+            last_switched_at: None,
             id: "ghcp_test".to_string(),
             github_login: "tester".to_string(),
             github_id: 1,
@@ -939,6 +850,7 @@ mod tests {
             copilot_chat_enabled: Some(true),
             copilot_expires_at: None,
             copilot_refresh_in: None,
+            copilot_token_based_billing: None,
             copilot_quota_snapshots: Some(snapshots),
             copilot_quota_reset_date: Some("2026-07-01".to_string()),
             copilot_limited_user_quotas: None,

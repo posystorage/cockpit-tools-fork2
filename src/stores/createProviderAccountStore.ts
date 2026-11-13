@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { PlatformId } from '../types/platform';
 import { emitAccountsChanged, emitCurrentAccountChanged } from '../utils/accountSyncEvents';
+import { replaceLegacyAccountDisplayCache, toProviderAccountDisplayCache } from '../utils/providerAccountDisplayCache';
 
 type ProviderUsage = {
   inlineSuggestionsUsedPercent: number | null;
@@ -64,6 +65,7 @@ export interface ProviderAccountStoreState<TAccount> {
   setCurrentAccountId: (accountId: string | null) => void;
   fetchAccounts: () => Promise<void>;
   switchAccount: (accountId: string) => Promise<void>;
+  touchLastUsed: (accountId: string) => void;
   deleteAccounts: (accountIds: string[]) => Promise<void>;
   refreshToken: (accountId: string) => Promise<void>;
   refreshAllTokens: () => Promise<void>;
@@ -95,7 +97,11 @@ export function createProviderAccountStore<TAccount extends ProviderAccountAugme
       const raw = localStorage.getItem(cacheKey);
       if (!raw) return [];
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? (parsed as TAccount[]) : [];
+      if (!Array.isArray(parsed)) return [];
+      const cached = parsed.filter((account): account is TAccount => typeof account?.id === 'string')
+        .map(account => toProviderAccountDisplayCache(account, options.platformId));
+      replaceLegacyAccountDisplayCache(cacheKey, raw, JSON.stringify(cached));
+      return cached;
     } catch {
       return [];
     }
@@ -103,7 +109,7 @@ export function createProviderAccountStore<TAccount extends ProviderAccountAugme
 
   const persistAccountsCache = (accounts: TAccount[]) => {
     try {
-      localStorage.setItem(cacheKey, JSON.stringify(accounts));
+      localStorage.setItem(cacheKey, JSON.stringify(accounts.map(account => toProviderAccountDisplayCache(account, options.platformId))));
     } catch {
       // ignore cache write failures
     }
@@ -328,9 +334,11 @@ export function createProviderAccountStore<TAccount extends ProviderAccountAugme
       // 其他平台仍乐观写入当前账号，再拉取列表/状态。
       if (acceptEmptyCurrentAccountId && hasCurrentAccountResolver) {
         allowNextEmptyCurrentAccountId = true;
+        get().touchLastUsed(accountId);
         await get().fetchAccounts();
       } else {
         get().setCurrentAccountId(accountId);
+        get().touchLastUsed(accountId);
         await get().fetchAccounts();
       }
       await emitCurrentAccountChanged({
@@ -338,6 +346,16 @@ export function createProviderAccountStore<TAccount extends ProviderAccountAugme
         accountId: get().currentAccountId,
         reason: 'switch',
       });
+    },
+
+    touchLastUsed: (accountId: string) => {
+      const accounts = get().accounts.map((account) => {
+        if (account.id !== accountId) return account;
+        // 后端以秒级 UTC 时间戳存储 last_used，这里也用秒，保持与 fetchAccounts 回流值一致
+        return { ...account, last_used: Math.floor(Date.now() / 1000) };
+      });
+      set({ accounts });
+      persistAccountsCache(accounts);
     },
 
     refreshToken: async (accountId: string) => {

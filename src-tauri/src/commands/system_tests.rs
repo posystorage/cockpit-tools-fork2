@@ -11,6 +11,20 @@
     use std::thread;
     use std::time::Duration;
 
+    #[test]
+    fn antigravity_desktop_path_and_ide_path_patch_independently() {
+        let mut config = UserConfig::default();
+        let settings = serde_json::json!({
+            "antigravity_app_path": "/Applications/Antigravity IDE.app",
+            "antigravity_legacy_app_path": "/Applications/Antigravity.app",
+        });
+        apply_general_config_updates(&mut config, settings.as_object().unwrap()).unwrap();
+        let clear_desktop = serde_json::json!({"antigravity_legacy_app_path": ""});
+        apply_general_config_updates(&mut config, clear_desktop.as_object().unwrap()).unwrap();
+        assert!(config.antigravity_legacy_app_path.is_empty());
+        assert_eq!(config.antigravity_app_path, "/Applications/Antigravity IDE.app");
+    }
+
     struct MetadataTestDir(PathBuf);
 
     impl MetadataTestDir {
@@ -257,29 +271,104 @@
     }
 
     #[test]
+    fn tray_visibility_defaults_on_and_round_trips_without_changing_preferences() {
+        let mut legacy = serde_json::to_value(UserConfig::default()).unwrap();
+        legacy.as_object_mut().unwrap().remove("show_tray_icon");
+        let mut config: UserConfig = serde_json::from_value(legacy).unwrap();
+        assert!(config.show_tray_icon);
+
+        config.hide_dock_icon = true;
+        config.menu_bar_quota_enabled = true;
+        config.startup_minimized = true;
+        for visible in [false, true] {
+            let patch = serde_json::json!({ "show_tray_icon": visible });
+            apply_general_config_updates(&mut config, patch.as_object().unwrap()).unwrap();
+            let saved = serde_json::to_value(&config).unwrap();
+            let restored: UserConfig = serde_json::from_value(saved).unwrap();
+            assert_eq!(restored.show_tray_icon, visible);
+            assert!(restored.hide_dock_icon);
+            assert!(restored.menu_bar_quota_enabled);
+            assert_eq!(crate::should_hide_dock_icon(&restored), visible);
+            assert_eq!(crate::should_hide_startup_minimized_window(&restored, true), visible);
+        }
+    }
+
+    #[test]
+    fn menu_bar_quota_keeps_claude_cli_separate_from_desktop() {
+        let mut config = UserConfig::default();
+        for platform in ["claude_cli", "claude_manager"] {
+            let patch = serde_json::json!({ "menu_bar_quota_platform": platform });
+            apply_general_config_updates(&mut config, patch.as_object().unwrap()).unwrap();
+            let saved = serde_json::to_value(&config).unwrap();
+            let reloaded: UserConfig = serde_json::from_value(saved).unwrap();
+            assert_eq!(reloaded.menu_bar_quota_platform, platform);
+        }
+    }
+
+    #[test]
+    fn antigravity_menu_quota_metric_defaults_and_survives_unrelated_settings() {
+        let mut old = serde_json::to_value(UserConfig::default()).unwrap();
+        old.as_object_mut().unwrap().remove("menu_bar_antigravity_metric");
+        let mut config: UserConfig = serde_json::from_value(old).unwrap();
+        assert!(config.menu_bar_antigravity_metric.is_empty());
+        let patch = serde_json::json!({ "menu_bar_antigravity_metric": " gemini:weekly " });
+        apply_general_config_updates(&mut config, patch.as_object().unwrap()).unwrap();
+        let patch = serde_json::json!({ "menu_bar_quota_platform": "codex" });
+        apply_general_config_updates(&mut config, patch.as_object().unwrap()).unwrap();
+        let reloaded: UserConfig = serde_json::from_value(serde_json::to_value(config).unwrap()).unwrap();
+        assert_eq!(reloaded.menu_bar_antigravity_metric, "gemini:weekly");
+    }
+
+    #[test]
     fn general_config_patch_validates_codex_app_enhancements_atomically() {
         let mut config = UserConfig::default();
         config.language = "ja".to_string();
         let updates = serde_json::json!({
-            "codex_app_native_fast_enabled": true,
             "codex_app_api_quota_compat_enabled": true
         });
         apply_general_config_updates(&mut config, updates.as_object().unwrap()).unwrap();
-        assert!(config.codex_app_native_fast_enabled);
         assert!(config.codex_app_api_quota_compat_enabled);
         assert_eq!(config.language, "ja");
         let invalid = serde_json::json!({
-            "codex_app_native_fast_enabled": false,
             "codex_app_api_quota_compat_enabled": "invalid boolean"
         });
         assert!(apply_general_config_updates(&mut config, invalid.as_object().unwrap()).is_err());
-        assert!(config.codex_app_native_fast_enabled);
         assert!(config.codex_app_api_quota_compat_enabled);
+    }
+
+    #[test]
+    fn general_config_patch_native_predictions_preserves_other_preferences() {
+        let mut config = UserConfig::default();
+        config.language = "ja".to_string();
+
+        let before = serde_json::to_value(&config).unwrap();
+        let updates = serde_json::json!({"codex_app_native_predictions_enabled": true});
+        apply_general_config_updates(&mut config, updates.as_object().unwrap())
+            .expect("enable predictions independently");
+        let mut expected = before;
+        expected["codex_app_native_predictions_enabled"] = serde_json::json!(true);
+        assert_eq!(serde_json::to_value(&config).unwrap(), expected);
+
+        let invalid = serde_json::json!({
+            "codex_app_native_fast_enabled": true,
+            "codex_app_native_predictions_enabled": "true"
+        });
+        assert!(apply_general_config_updates(&mut config, invalid.as_object().unwrap()).is_err());
+        assert_eq!(serde_json::to_value(&config).unwrap(), expected);
+
+        let disabled = serde_json::json!({"codex_app_native_predictions_enabled": false});
+        apply_general_config_updates(&mut config, disabled.as_object().unwrap())
+            .expect("disable predictions independently");
+        assert!(!config.codex_app_native_predictions_enabled);
+
+        assert!(config.codex_app_api_quota_compat_enabled);
+        assert_eq!(config.language, "ja");
     }
 
     #[test]
     fn general_config_patch_rejects_retired_codex_api_dictation_fields_atomically() {
         for (field, value) in [
+            ("codex_app_native_fast_enabled", serde_json::json!(false)),
             ("codex_app_api_dictation_enabled", serde_json::json!(true)),
             (
                 "codex_app_api_dictation_model",
@@ -288,7 +377,7 @@
         ] {
             let mut config = UserConfig::default();
             let before = serde_json::to_value(&config).expect("serialize current configuration");
-            let mut updates = serde_json::json!({"codex_app_native_fast_enabled": false});
+            let mut updates = serde_json::json!({"codex_app_api_quota_compat_enabled": false});
             updates.as_object_mut().unwrap().insert(field.into(), value);
             let error = apply_general_config_updates(&mut config, updates.as_object().unwrap())
                 .expect_err("retired dictation fields must not be writable");
@@ -434,4 +523,84 @@
             let updates = serde_json::json!({(field): false}).as_object().unwrap().clone();
             assert!(apply_general_config_updates(&mut config, &updates).is_err());
         }
+    }
+
+
+#[test]
+fn antigravity_shared_login_requires_ide_2_6_or_newer() {
+    for (version, expected) in [
+        ("2.5.9", Some(false)),
+        ("2.6.0", Some(true)),
+        ("2.10.1", Some(true)),
+        ("3.0.0", Some(true)),
+        ("1.107.0", Some(false)),
+        ("unknown", None),
+    ] {
+        assert_eq!(super::antigravity_ide_version_uses_shared_credentials(version), expected);
+    }
+}
+    #[test]
+    fn minimax_code_general_config_patch_round_trips_fields() {
+        let mut config = UserConfig::default();
+        let updates = serde_json::json!({
+            "minimax_code_auto_refresh_minutes": 7,
+            "minimax_code_app_path": r"\\?\C:\Program Files\MiniMax Code\MiniMax Code.exe",
+            "minimax_code_region": "EN",
+            "minimax_code_quota_alert_enabled": true,
+            "minimax_code_quota_alert_threshold": 55,
+        })
+        .as_object()
+        .expect("patch should be an object")
+        .clone();
+
+        apply_general_config_updates(&mut config, &updates)
+            .expect("minimax code patch should succeed");
+
+        assert_eq!(config.minimax_code_auto_refresh_minutes, 7);
+        assert_eq!(
+            config.minimax_code_app_path,
+            r"C:\Program Files\MiniMax Code\MiniMax Code.exe"
+        );
+        assert_eq!(config.minimax_code_region, "en");
+        assert!(config.minimax_code_quota_alert_enabled);
+        assert_eq!(config.minimax_code_quota_alert_threshold, 55);
+    }
+
+    #[test]
+    fn load_user_config_backfills_minimax_code_fields() {
+        let _lock = crate::modules::test_support::env_lock()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time should be after unix epoch")
+            .as_nanos();
+        let data_dir = std::env::temp_dir().join(format!(
+            "cockpit-tools-minimaxcode-config-{}-{}",
+            std::process::id(),
+            unique
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).expect("create config test directory");
+        std::env::set_var("COCKPIT_TOOLS_TEST_DATA_DIR", &data_dir);
+
+        let config_path = data_dir.join("config.json");
+        std::fs::write(
+            &config_path,
+            r#"{
+  "workbuddy_auto_refresh_minutes": 12,
+  "quota_alert_enabled": true,
+  "quota_alert_threshold": 42
+}
+"#,
+        )
+        .expect("write legacy config");
+
+        let loaded = crate::modules::config::load_user_config().expect("load legacy config");
+        assert_eq!(loaded.minimax_code_auto_refresh_minutes, 12);
+        assert!(loaded.minimax_code_quota_alert_enabled);
+        assert_eq!(loaded.minimax_code_quota_alert_threshold, 42);
+
+        std::env::remove_var("COCKPIT_TOOLS_TEST_DATA_DIR");
+        std::fs::remove_dir_all(&data_dir).expect("remove temp dir");
     }

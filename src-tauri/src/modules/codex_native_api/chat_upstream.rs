@@ -12,6 +12,7 @@ mod messages;
 #[path = "chat_upstream_tools.rs"]
 mod tools;
 pub(crate) use tools::ToolContext;
+pub(crate) use tools::unwrap_input;
 
 pub fn responses_to_chat(body: &Value) -> Result<Value, ServiceError> {
     responses_to_chat_inner(body, false)
@@ -22,10 +23,12 @@ pub(crate) fn responses_to_native_chat(body: &Value) -> Result<Value, ServiceErr
 }
 
 fn responses_to_chat_inner(body: &Value, native: bool) -> Result<Value, ServiceError> {
-    let mut out = body
+    // Do not clone the complete transcript and tool schemas only to delete them.
+    let mut out: serde_json::Map<String, Value> = body
         .as_object()
         .ok_or_else(|| invalid("body", "expected an object"))?
-        .clone();
+        .iter().filter(|(key,_)| !matches!(key.as_str(), "input" | "instructions" | "previous_response_id" | "conversation" | "background" | "include" | "text" | "reasoning" | "max_output_tokens" | "truncation" | "store" | "tools" | "tool_choice"))
+        .map(|(key,value)| (key.clone(),value.clone())).collect();
     if body
         .get("previous_response_id")
         .is_some_and(|v| !v.is_null())
@@ -70,7 +73,11 @@ fn responses_to_chat_inner(body: &Value, native: bool) -> Result<Value, ServiceE
         out.insert("max_completion_tokens".into(), v.clone());
     }
     if let Some(v) = body.pointer("/reasoning/effort") {
-        out.insert("reasoning_effort".into(), v.clone());
+        if v.as_str() == Some("none") && body["model"].as_str().is_some_and(crate::modules::codex_protocol::is_deepseek_model) {
+            out.insert("thinking".into(), json!({"type":"disabled"}));
+        } else {
+            out.insert("reasoning_effort".into(), v.clone());
+        }
     }
     if let Some(v) = body.pointer("/text/verbosity") {
         out.insert("verbosity".into(), v.clone());

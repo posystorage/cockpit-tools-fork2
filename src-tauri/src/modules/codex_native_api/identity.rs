@@ -25,6 +25,11 @@ mod identity_handoff;
 pub(crate) use identity_handoff::begin_handoff;
 #[path = "identity_automatic_history.rs"]
 mod automatic_history;
+#[path = "identity_key_continuity.rs"]
+mod key_continuity;
+#[path = "identity_partial_history.rs"]
+mod partial_history;
+pub(crate) use partial_history::PartialHistory;
 #[cfg(test)]
 #[path = "identity_opaque_replay_tests.rs"]
 mod opaque_replay_tests;
@@ -42,6 +47,7 @@ pub struct IdentityStore {
     connection: Mutex<Connection>,
     path: PathBuf,
     session_identity_mapping_enabled: AtomicBool,
+    shared_continuation_references: AtomicBool,
 }
 
 #[derive(Clone, Debug)]
@@ -72,6 +78,13 @@ pub struct RequestIdentity {
     unregistered_blobs: std::collections::HashSet<String>,
 }
 
+impl RequestIdentity {
+    pub(super) fn restrict_session_mapping(&mut self, allowed: bool) -> bool {
+        self.session_identity_mapping_enabled &= allowed;
+        self.session_identity_mapping_enabled
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Binding {
     caller: String,
@@ -86,9 +99,28 @@ pub struct Binding {
     input_blobs: Vec<OpaqueRef>,
     generation: Option<rebuild::Generation>,
     pending_input: Option<Arc<automatic_history::Admission>>,
+    partial_content_seen: Arc<AtomicBool>,
 }
 
 impl Binding {
+    pub(super) fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
+    }
+
+    pub(super) fn repair_rejected_reasoning(&mut self, repair: &super::encrypted_reasoning::Repair) {
+        if let Some(input) = self.generation.as_mut().and_then(|generation|generation.input.as_mut()) {
+            repair.apply_items(input);
+        }
+    }
+    /// Steering has upstream-owned history. Preserve ownership references, but
+    /// never advertise a partial control payload as a complete replay checkpoint.
+    pub(super) fn steering_scope(&self) -> Self {
+        let mut binding = self.clone();
+        binding.generation = None;
+        binding.pending_input = None;
+        binding.input_blobs.clear();
+        binding
+    }
     /// A provider projection may omit incompatible opaque state. A successful
     /// request cannot establish ownership of bytes that were never sent.
     pub(crate) fn retain_transmitted_input_blobs(&mut self, body: &Value) {
@@ -343,10 +375,12 @@ impl IdentityStore {
                 account TEXT NOT NULL, owner TEXT NOT NULL, completed_at INTEGER NOT NULL);"
         ).map_err(|error| error.to_string())?;
         rebuild::initialize(&connection).map_err(|error| error.to_string())?;
+        partial_history::initialize(&connection).map_err(|error| error.to_string())?;
         Ok(Self {
             connection: Mutex::new(connection),
             path,
             session_identity_mapping_enabled: AtomicBool::new(true),
+            shared_continuation_references: AtomicBool::new(false),
         })
     }
 
@@ -407,6 +441,7 @@ impl IdentityStore {
         if checked_identity(caller)?.is_none() {
             return Err(invalid("A caller identity is required"));
         }
+        self.adopt_client_continuation(caller, headers, body)?;
         let canonical_value = canonical_metadata(headers, body)?;
         let canonical = canonical_value.as_ref();
         let flat = body.get("client_metadata");
@@ -416,6 +451,11 @@ impl IdentityStore {
             headers,
             "session-id",
         )?;
+        if session_id.is_none() {
+            // Legacy clients such as Pi use the underscore spelling. Resolve it
+            // before generating a root, preserving the existing validation order.
+            session_id = header_identity(headers, "session_id")?;
+        }
         let mut thread_id = primary_identity(
             canonical.and_then(|v| v.get("thread_id")),
             flat.and_then(|v| v.get("thread_id")),
@@ -835,6 +875,18 @@ impl IdentityStore {
         if checked_identity(account_id)?.is_none() || checked_identity(owner_id)?.is_none() {
             return Err(invalid("An upstream account and stable owner are required"));
         }
+        // The request and checkpoint input stay fixed throughout the transaction.
+        // Validate them once before taking the shared publication lock.
+        let complete_unregistered_history = context.portable_body
+            && !context.forwarding
+            && context.opaque.iter().any(|reference| {
+                automatic_history::is_unregistered(context, reference)
+            })
+            && (automatic_history::complete_input(headers, body)
+                || (context.rebuild_enabled
+                    && context.rebuild_input.as_ref().is_some_and(|input| {
+                        super::responses_custom_results::replayable(input)
+                    })));
         let mut connection = self.connection.lock().map_err(storage)?;
         let transaction = connection
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
@@ -857,13 +909,8 @@ impl IdentityStore {
                 if context.forwarding {
                     continue;
                 }
-                if context.portable_body
+                if complete_unregistered_history
                     && automatic_history::is_unregistered(context, reference)
-                    && (automatic_history::complete_input(headers, body)
-                        || (context.rebuild_enabled
-                            && context.rebuild_input.as_ref().is_some_and(|input| {
-                                rebuild::replay_items(input) && rebuild::paired_tools(input)
-                            })))
                 {
                     continue;
                 }
@@ -953,6 +1000,7 @@ impl IdentityStore {
                 .collect(),
             generation,
             pending_input,
+            partial_content_seen: Default::default(),
         })
     }
 
@@ -975,8 +1023,21 @@ impl IdentityStore {
     }
 
     pub fn observe_event(&self, binding: &Binding, event: &Value) -> Result<(), ServiceError> {
+        self.observe_event_with_partial_history(binding, event, None)
+    }
+
+    pub(crate) fn observe_event_with_partial_history(
+        &self,
+        binding: &Binding,
+        event: &Value,
+        replay: Option<&Value>,
+    ) -> Result<(), ServiceError> {
+        binding.note_partial_content(event);
         rebuild::observe_output(binding, event)?;
         automatic_history::observe_output(binding, event)?;
+        if event["type"] == "response.incomplete" {
+            self.commit_partial_history(binding, event, replay)?;
+        }
         if matches!(
             event.get("type").and_then(Value::as_str),
             Some(
@@ -1192,6 +1253,9 @@ fn supplement_identities(
     if header_identity(headers, "session-id")?.is_none() {
         set_identity_header(headers, "session-id", context.session_id.as_deref())?;
     }
+    // Forward only the canonical spelling through the caller/owner mapping;
+    // never leave the original alias alongside the isolated upstream identity.
+    headers.remove("session_id");
     for (name, value) in [
         ("thread-id", context.thread_id.as_deref()),
         ("x-client-request-id", context.thread_id.as_deref()),

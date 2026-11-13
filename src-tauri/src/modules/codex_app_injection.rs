@@ -21,6 +21,25 @@ mod output_speed;
 
 #[path = "codex_app_injection_dialog_data.rs"]
 mod dialog_data;
+#[path = "codex_app_injection_remote.rs"]
+mod remote_view;
+
+#[path = "codex_app_injection_ssh.rs"]
+mod ssh_reconnect;
+
+pub(crate) async fn refresh_ssh_connection(
+    server: &crate::models::ssh_server::SshServer,
+    account: &CodexAccount,
+    wait_for_desktop: bool,
+) -> Result<bool, String> {
+    ssh_reconnect::refresh(server, account, wait_for_desktop).await
+}
+
+pub(crate) fn remote_key_session_metrics(conn: &rusqlite::Connection, key: &str,
+    query: &crate::modules::codex_remote_service::KeyQuery) -> Result<serde_json::Value, String> {
+    output_speed::key_session_metrics(conn,key,query.thread_id.as_deref().ok_or("session requires threadId")?,
+        query.instance_id.as_deref(),query.installation_id.as_deref(),query.model.as_deref(),query.service_tier.as_deref())
+}
 
 #[path = "codex_app_injection_pool.rs"]
 mod pool;
@@ -54,7 +73,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Instant, UNIX_EPOCH};
 #[cfg(not(target_os = "macos"))]
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::task::JoinSet;
 use tokio::time::{timeout, Duration};
@@ -82,7 +101,6 @@ mod native_quota_policy;
 const NATIVE_QUOTA_SCRIPT: &str = include_str!("codex_native_quota_banner.js");
 const VOICE_SCRIPT_KIND: &str = "voice-create";
 const AUTH_DIAGNOSTIC_INTERVAL: Duration = Duration::from_secs(5);
-const AUTH_IDENTITY_RETRY_INTERVAL: Duration = Duration::from_secs(30);
 const AUTH_NETWORK_DIAGNOSTIC_INTERVAL: Duration = Duration::from_secs(30);
 const AUTH_SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(1);
 const AUTH_NETWORK_CAPTURE_WINDOW: Duration = Duration::from_secs(4);
@@ -209,9 +227,8 @@ pub fn enabled_for_app() -> bool {
     config::get_user_config().codex_app_ui_injection_enabled
 }
 
-/// 实例级 CDP 只读观察始终开启；它记录官方客户端实际是否进入登录页，
-/// 不注入脚本、不拦截事件，也不改变官方认证状态机。
-fn auth_observation_enabled(bind_account_id: Option<&str>) -> bool {
+/// 只读诊断用于排障与官方明确的设备限制反馈；页面信号不产生账号认证状态。
+fn auth_diagnostics_enabled(bind_account_id: Option<&str>) -> bool {
     observed_oauth_account_id(bind_account_id).is_some()
 }
 
@@ -276,6 +293,8 @@ fn bind_uses_deepseek_balance_injection(bind_account_id: Option<&str>) -> bool {
 
 pub fn should_enable_injection(bind_account_id: Option<&str>) -> bool {
     (enabled_for_app() && supports_bind_account(bind_account_id))
+        || (enabled_for_app() && bound_api_key_account(bind_account_id)
+            .is_some_and(|account| crate::modules::codex_remote_service::for_routing_account(&account).is_some()))
         || bind_uses_cdp_model_injection(bind_account_id)
         || (enabled_for_app() && bind_uses_deepseek_balance_injection(bind_account_id))
 }
@@ -284,9 +303,10 @@ pub fn should_enable_injection(bind_account_id: Option<&str>) -> bool {
 pub fn should_enable_cdp(bind_account_id: Option<&str>, hide_native_quota_banner: bool) -> bool {
     hide_native_quota_banner
         || supports_bind_account(bind_account_id)
-        || auth_observation_enabled(bind_account_id)
+        || auth_diagnostics_enabled(bind_account_id)
         || should_enable_injection(bind_account_id)
         || crate::modules::codex_app_enhancements::enabled()
+        || crate::modules::ssh_server::has_auto_sync_targets()
 }
 
 pub fn native_quota_banner_enabled(
@@ -454,50 +474,6 @@ async fn observe_profile_oauth_identity(
     }
 }
 
-fn log_profile_oauth_identity_observation(
-    instance_id: &str,
-    profile_key: &str,
-    observation: &ProfileOAuthIdentityObservation,
-) {
-    match observation {
-        ProfileOAuthIdentityObservation::Matched {
-            account_id,
-            observed,
-        } => logger::log_codex_auth_diagnostic(&format!(
-            "[Codex Auth Identity] matched: instance_id={}, profile={}, account_id={}, observed_account_id={}, observed_user_id={}, observed_email={}, observed_organization_id={}",
-            instance_id,
-            profile_key,
-            account_id,
-            observed.account_id.as_deref().unwrap_or(""),
-            observed.user_id.as_deref().unwrap_or(""),
-            observed.email,
-            observed.organization_id.as_deref().unwrap_or(""),
-        )),
-        ProfileOAuthIdentityObservation::Mismatched {
-            account_id,
-            observed,
-        } => logger::log_warn(&format!(
-            "[Codex Auth Identity] profile identity mismatched: instance_id={}, profile={}, expected_account_id={}, observed_account_id={}, observed_user_id={}, observed_email={}, observed_organization_id={}",
-            instance_id,
-            profile_key,
-            account_id,
-            observed.account_id.as_deref().unwrap_or(""),
-            observed.user_id.as_deref().unwrap_or(""),
-            observed.email,
-            observed.organization_id.as_deref().unwrap_or(""),
-        )),
-        ProfileOAuthIdentityObservation::Unknown { account_id, reason } => {
-            logger::log_codex_auth_diagnostic(&format!(
-                "[Codex Auth Identity] unknown: instance_id={}, profile={}, expected_account_id={}, reason={}",
-                instance_id,
-                profile_key,
-                account_id.as_deref().unwrap_or(""),
-                reason,
-            ));
-        }
-    }
-}
-
 fn bind_account_id_value(bind_account_id: Option<&str>) -> Option<String> {
     let bind = bind_account_id
         .map(str::trim)
@@ -656,12 +632,12 @@ pub fn restore_running_profiles(app: AppHandle) -> Result<usize, String> {
         );
         restored += 1;
         logger::log_codex_auth_diagnostic(&format!(
-            "[Codex Auth CDP] restored_running_instance: instance_id={}, pid={}, port={}, injection_enabled={}, auth_observation_enabled={}",
+            "[Codex Auth CDP] restored_running_instance: instance_id={}, pid={}, port={}, injection_enabled={}, auth_diagnostics_enabled={}",
             instance_id,
             pid,
             port,
             injection_enabled,
-            auth_observation_enabled(bind_account_id.as_deref()),
+            auth_diagnostics_enabled(bind_account_id.as_deref()),
         ));
     }
 
@@ -815,7 +791,7 @@ fn start_profile(
             .is_some_and(|id| supports_bind_account(Some(id)))
             || profile_has_managed_api_service(&profile_dir),
     );
-    if auth_observation_enabled(bind_account_id.as_deref()) {
+    if auth_diagnostics_enabled(bind_account_id.as_deref()) {
         start_auth_diagnostics_for_profile(
             app.clone(),
             &instance_id,
@@ -980,7 +956,7 @@ const VOICE_INSTALL_SCRIPT: &str = r#"(() => {
     if (!body || typeof body.sdp !== "string" || !body.sdp.trim() || !body.session || typeof body.session !== "object" || Array.isArray(body.session)) return forward();
     const target = request.url;
     const validTarget = typeof target === "string" && target.startsWith("/") && !target.startsWith("//") && !/[\\#\u0000-\u0020\u007f]/.test(target);
-    const allowed = new Set(["content-type", "openai-alpha", "thread-id", "session-id", "x-session-id", "x-codex-turn-metadata", "originator"]);
+    const allowed = new Set(["content-type", "openai-alpha", "thread-id", "session-id", "x-session-id", "voice-session-id", "x-codex-turn-metadata", "originator"]);
     const nextHeaders = {};
     headers.forEach((value, name) => { if (allowed.has(name.toLowerCase())) nextHeaders[name] = value; });
     nextHeaders.Authorization = "Bearer " + config.apiKey;
@@ -1132,6 +1108,8 @@ struct InjectionGrokQuotaLine {
 #[derive(Debug, Deserialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 struct QuotaResponse {
+    #[serde(default)]
+    remote: Option<Value>,
     weekly_remaining_percent: Option<i64>,
     five_hour_remaining_percent: Option<i64>,
     weekly_capacity_percent: Option<i64>,
@@ -1142,26 +1120,30 @@ struct QuotaResponse {
     cooldown_account_count: Option<i64>,
     #[serde(default)]
     plans: Vec<QuotaPlanSummary>,
+    #[serde(default)]
+    provider_quotas: Vec<crate::modules::codex_provider_pool_quota::ProviderPoolQuota>,
 }
 
 impl QuotaResponse {
     fn empty_pool() -> Self {
         Self {
-            weekly_remaining_percent: Some(0),
-            five_hour_remaining_percent: Some(0),
-            weekly_capacity_percent: Some(0),
-            five_hour_capacity_percent: Some(0),
+            remote: None,
+            weekly_remaining_percent: None,
+            five_hour_remaining_percent: None,
+            weekly_capacity_percent: None,
+            five_hour_capacity_percent: None,
             account_count: Some(0),
             available_account_count: Some(0),
             abnormal_account_count: Some(0),
             cooldown_account_count: Some(0),
             plans: Vec::new(),
+            provider_quotas: Vec::new(),
         }
     }
 
     fn normalize_empty_pool(self) -> Self {
         if self.account_count == Some(0) {
-            Self::empty_pool()
+            Self { provider_quotas: self.provider_quotas, ..Self::empty_pool() }
         } else {
             self
         }
@@ -1171,8 +1153,13 @@ impl QuotaResponse {
 async fn fetch_quota(
     client: &Client,
     gateway: Option<&ProfileGatewayConfig>,
+    remote: bool,
 ) -> Option<QuotaResponse> {
     let gateway = gateway?;
+    if remote {
+        let remote = crate::modules::codex_remote_service::discover(&gateway.base_url, &gateway.api_key, true).await.ok()??;
+        return Some(QuotaResponse { remote: serde_json::to_value(remote).ok(), ..Default::default() });
+    }
     let url = local_quota_url(&gateway.base_url)?;
     let response = client
         .get(url)
@@ -1375,6 +1362,10 @@ struct CdpTarget {
 #[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct AuthPageSnapshot {
+    #[serde(skip)]
+    device_limit_observed: bool,
+    #[serde(skip)]
+    device_limit_account_id: Option<String>,
     #[serde(default)]
     route: String,
     #[serde(default)]
@@ -1435,6 +1426,7 @@ impl AuthDiagnosticObservation {
     fn login_signal(&self) -> bool {
         self.login_route || self.login_ui_signal
     }
+
 }
 
 fn is_official_login_route(route: &str) -> bool {
@@ -1552,8 +1544,8 @@ fn deepseek_model_injection_script(
         // depending on release, and a missing value would hide image input.
         item.inputModalities = modalities;
         item.input_modalities = modalities;
-        item.supportsImageDetailOriginal = supportsImage;
-        item.supports_image_detail_original = supportsImage;
+        item.supportsImageDetailOriginal = false;
+        item.supports_image_detail_original = false;
       }};
       const listMethods = {{ "model/list": true, "list-models-for-host": true }};
       const writeMethods = {{
@@ -1930,7 +1922,7 @@ fn deepseek_balance_injection_script(
         let host = document.querySelector('[data-cockpit-deepseek-balance]');
         let details = document.querySelector('[data-cockpit-deepseek-balance-details]');
         const card = usageMetrics.visibleCard(root.card);
-        const footer = card?.querySelector('[class*="_ComposerLayoutFooter_"], [class*="_footer_"]') || card;
+        const footer = usageMetrics.composerFooter(card);
         const permissions = footer && [...footer.querySelectorAll('[data-composer-navigation-target="permissions"]')].find((node) => node.getClientRects().length > 0);
         if (root.card !== card) root.detailsOpen = false;
         root.card = card;
@@ -2564,6 +2556,29 @@ fn cdp_auth_signal(value: &Value) -> Option<&'static str> {
     None
 }
 
+fn confirmed_device_limit_subject(
+    before: &ProfileOAuthIdentityObservation, after: &ProfileOAuthIdentityObservation, request_account: Option<&str>,
+) -> Option<String> {
+    if before != after { return None; }
+    match after {
+        ProfileOAuthIdentityObservation::Matched { account_id, observed }
+            if request_account.is_some() && request_account == observed.account_id.as_deref() => Some(account_id.clone()),
+        _ => None,
+    }
+}
+
+fn official_device_limit_response(url: &str, response: &Value) -> bool {
+    let Ok(url) = url::Url::parse(url) else { return false; };
+    let official = url.scheme() == "https" && match url.host_str() {
+        Some("auth.openai.com") => url.path().starts_with("/api/accounts/") || url.path() == "/oauth/token",
+        Some("chatgpt.com") => url.path().starts_with("/backend-api/accounts/check"),
+        _ => false,
+    };
+    official && response.pointer("/result/base64Encoded").and_then(Value::as_bool) != Some(true)
+        && response.pointer("/result/body").and_then(Value::as_str)
+            .is_some_and(crate::modules::codex_device_restrictions::explicit_message)
+}
+
 async fn monitor_cdp_target(
     instance_id: &str,
     profile_key: &str,
@@ -2594,6 +2609,9 @@ async fn monitor_cdp_target(
         return None;
     };
 
+    let mut device_limit_observed = false;
+    let mut device_limit_account_id = None;
+    let mut request_accounts: HashMap<String, String> = HashMap::new();
     let mut next_command_id = 100i64;
     let mut pending_body_requests: HashMap<i64, (String, String)> = HashMap::new();
     let mut body_candidates: HashMap<String, (String, u64)> = HashMap::new();
@@ -2703,6 +2721,12 @@ async fn monitor_cdp_target(
                     .cloned()
                     .and_then(|result| serde_json::from_value::<AuthPageSnapshot>(result).ok());
             } else if let Some((request_id, url)) = pending_body_requests.remove(&command_id) {
+                // Only structured errors from official authentication endpoints; never
+                // console output, chat text or the absence of login UI.
+                if official_device_limit_response(&url, &value) {
+                    device_limit_observed = true;
+                    device_limit_account_id = request_accounts.get(&request_id).cloned();
+                }
                 let body =
                     cdp_body_preview(&value).unwrap_or_else(|| "body_unavailable=true".to_string());
                 let auth_signal = cdp_auth_signal(&value).unwrap_or("none");
@@ -2735,6 +2759,13 @@ async fn monitor_cdp_target(
                     .to_string();
                 let request = params.get("request").cloned().unwrap_or_else(|| json!({}));
                 let url = request.get("url").and_then(Value::as_str).unwrap_or("");
+                if request_accounts.len() < 64 {
+                    if let Some(id) = request.get("headers").and_then(Value::as_object).and_then(|headers|
+                        headers.iter().find(|(name, _)| name.eq_ignore_ascii_case("chatgpt-account-id"))
+                            .and_then(|(_, value)| value.as_str()).filter(|id| id.len() <= 160)) {
+                        request_accounts.insert(request_id.clone(), id.to_owned());
+                    }
+                }
                 request_started.insert(request_id.clone(), Instant::now());
                 logger::log_codex_auth_diagnostic(&format!(
                     "[Codex Auth Network] request: instance_id={}, profile={}, target_id={}, request_id={}, type={}, method={}, url={}, has_post_data={}, headers={}",
@@ -2996,6 +3027,11 @@ async fn monitor_cdp_target(
             _ => {}
         }
     }
+    if device_limit_observed {
+        let snapshot = snapshot.get_or_insert_with(AuthPageSnapshot::default);
+        snapshot.device_limit_observed = true;
+        snapshot.device_limit_account_id = device_limit_account_id;
+    }
     if let Some(snapshot) = snapshot.as_ref() {
         logger::log_codex_auth_diagnostic(&format!(
             "[Codex Auth CDP] target_snapshot: instance_id={}, profile={}, target_id={}, target_type={}, target_url={}, physical_url={}, route={}, route_source={}, title={}, ready_state={}, official_login_route={}, login_signal={}, login_ui_signal={}, login_ui_markers={:?}",
@@ -3136,7 +3172,7 @@ fn auth_diagnostic_observation(
 }
 
 async fn run_auth_diagnostic_loop(
-    app: AppHandle,
+    _app: AppHandle,
     instance_id: String,
     profile_key: String,
     profile_dir: PathBuf,
@@ -3144,17 +3180,9 @@ async fn run_auth_diagnostic_loop(
     bind_account_id: Option<String>,
 ) {
     let client = Client::new();
-    // 监测任务由实例进程启动后立即创建；记录该时刻作为本次客户端启动时间。
-    let launch_started_at = chrono::Utc::now().timestamp();
-    let mut launch_recorded = false;
     let mut previous: Option<AuthDiagnosticObservation> = None;
     let mut previous_app_server: Option<AppServerDiagnosticObservation> = None;
-    let mut previous_profile_identity: Option<ProfileOAuthIdentityObservation> = None;
-    let mut last_identity_check_at: Option<Instant> = None;
-    let mut last_identity_status: Option<String> = None;
     let mut last_network_diagnostic_at: Option<Instant> = None;
-    let mut login_streak = 0u8;
-    let mut available_streak = 0u8;
     loop {
         if app_lifecycle::is_shutdown_started() {
             return;
@@ -3195,7 +3223,7 @@ async fn run_auth_diagnostic_loop(
                 port,
             ));
         }
-        // 认证状态使用轻量快照高频检查，避免每轮都打开 Network/Log 事件流。
+        // 轻量快照只用于诊断日志，不判断或写入账号的授权状态。
         let mut snapshot_tasks = JoinSet::new();
         for target in targets.iter().cloned() {
             let instance_id = instance_id.clone();
@@ -3276,8 +3304,22 @@ async fn run_auth_diagnostic_loop(
             for target in targets.iter().cloned() {
                 let instance_id = instance_id.clone();
                 let profile_key = profile_key.clone();
+                let profile_dir = profile_dir.clone();
+                let bind_account_id = bind_account_id.clone();
                 tauri::async_runtime::spawn(async move {
-                    let _ = monitor_cdp_target(&instance_id, &profile_key, &target).await;
+                    let started = crate::modules::codex_device_restrictions::now();
+                    let before = observe_profile_oauth_identity(profile_dir.clone(), bind_account_id.clone()).await;
+                    let result = monitor_cdp_target(&instance_id, &profile_key, &target).await;
+                    if let Some(snapshot) = result.filter(|snapshot| snapshot.device_limit_observed) {
+                        let after = observe_profile_oauth_identity(profile_dir, bind_account_id).await;
+                        // A stable auth.json alone does not identify a different account
+                        // being entered in a sign-in page. Require request identity too.
+                        let subject = confirmed_device_limit_subject(&before, &after, snapshot.device_limit_account_id.as_deref())
+                            .unwrap_or_else(|| format!("login:desktop-{instance_id}"));
+                        crate::modules::codex_device_restrictions::observe(subject,
+                            crate::modules::codex_device_restrictions::DESKTOP, "official_auth_response",
+                            Some(instance_id), started, true).await;
+                    }
                 });
             }
         }
@@ -3325,131 +3367,6 @@ async fn run_auth_diagnostic_loop(
                 ));
             }
             previous = Some(observation.clone());
-        }
-
-        let mut stable_status = None;
-        if observation.login_signal() {
-            login_streak = login_streak.saturating_add(1);
-            available_streak = 0;
-            if login_streak >= 2 {
-                stable_status = Some(("login_required", true));
-            }
-        } else if observation.cdp_available {
-            available_streak = available_streak.saturating_add(1);
-            login_streak = 0;
-            if available_streak >= 2 {
-                stable_status = Some(("available", false));
-            }
-        }
-
-        logger::log_codex_auth_diagnostic(&format!(
-            "[Codex Auth CDP] status_evaluation: instance_id={}, profile={}, bind_account_id={}, route={}, cdp_available={}, target_count={}, login_route={}, login_ui_signal={}, login_streak={}, available_streak={}, stable_status={}",
-            instance_id,
-            profile_key,
-            bind_account_id.as_deref().unwrap_or(""),
-            observation.route,
-            observation.cdp_available,
-            observation.target_count,
-            observation.login_route,
-            observation.login_ui_signal,
-            login_streak,
-            available_streak,
-            stable_status
-                .as_ref()
-                .map(|(status, _)| *status)
-                .unwrap_or("none"),
-        ));
-
-        if let Some((status, login_redirect)) = stable_status {
-            let status_changed = last_identity_status.as_deref() != Some(status);
-            let retry_due = last_identity_check_at
-                .map(|checked_at| checked_at.elapsed() >= AUTH_IDENTITY_RETRY_INTERVAL)
-                .unwrap_or(true);
-            if !status_changed && !retry_due {
-                tokio::time::sleep(AUTH_DIAGNOSTIC_INTERVAL).await;
-                continue;
-            }
-            last_identity_check_at = Some(Instant::now());
-            last_identity_status = Some(status.to_string());
-            logger::log_codex_auth_diagnostic(&format!(
-                "[Codex Auth Identity] persistence_attempt: instance_id={}, profile={}, status={}, login_redirect={}, reason=status_stable",
-                instance_id, profile_key, status, login_redirect,
-            ));
-            let identity =
-                observe_profile_oauth_identity(profile_dir.clone(), bind_account_id.clone()).await;
-            if previous_profile_identity.as_ref() != Some(&identity) {
-                log_profile_oauth_identity_observation(&instance_id, &profile_key, &identity);
-                previous_profile_identity = Some(identity.clone());
-            }
-            if let ProfileOAuthIdentityObservation::Matched { account_id, .. } = identity {
-                if !launch_recorded {
-                    match codex_account::record_client_launch(
-                        &account_id,
-                        &instance_id,
-                        launch_started_at,
-                    )
-                    .await
-                    {
-                        Ok(()) => {
-                            launch_recorded = true;
-                            let _ = app.emit(
-                                "accounts:changed",
-                                json!({
-                                    "platformId": "codex",
-                                    "accountId": account_id,
-                                    "reason": "client-auth-launch",
-                                    "instanceId": instance_id,
-                                }),
-                            );
-                            logger::log_codex_auth_diagnostic(&format!(
-                                "[Codex Auth Identity] launch_time_recorded: instance_id={}, profile={}, account_id={}, launched_at={}",
-                                instance_id, profile_key, account_id, launch_started_at,
-                            ));
-                        }
-                        Err(error) => logger::log_warn(&format!(
-                            "[Codex Auth Identity] failed to record launch time: instance_id={}, profile={}, account_id={}, error={}",
-                            instance_id, profile_key, account_id, error,
-                        )),
-                    }
-                }
-                match codex_account::update_client_auth_observation(
-                    &account_id,
-                    &instance_id,
-                    status,
-                    login_redirect,
-                )
-                .await
-                {
-                    Ok(()) => {
-                        logger::log_codex_auth_diagnostic(&format!(
-                            "[Codex Auth Identity] persistence_succeeded: instance_id={}, profile={}, account_id={}, status={}, login_redirect={}",
-                            instance_id, profile_key, account_id, status, login_redirect,
-                        ));
-                        // 仅在状态发生变化时通知前端，避免 30 秒重试周期反复触发账号列表刷新。
-                        if status_changed {
-                            let _ = app.emit(
-                                "accounts:changed",
-                                json!({
-                                    "platformId": "codex",
-                                    "accountId": account_id,
-                                    "reason": "client-auth-observation",
-                                    "status": status,
-                                    "loginRedirect": login_redirect,
-                                    "instanceId": instance_id,
-                                }),
-                            );
-                            logger::log_codex_auth_diagnostic(&format!(
-                                "[Codex Auth Identity] frontend_sync_emitted: instance_id={}, profile={}, account_id={}, status={}, login_redirect={}",
-                                instance_id, profile_key, account_id, status, login_redirect,
-                            ));
-                        }
-                    }
-                    Err(error) => logger::log_warn(&format!(
-                        "[Codex Auth Identity] failed to persist observation: instance_id={}, profile={}, account_id={}, status={}, error={}",
-                        instance_id, profile_key, account_id, status, error,
-                    )),
-                }
-            }
         }
 
         tokio::time::sleep(AUTH_DIAGNOSTIC_INTERVAL).await;
@@ -3725,6 +3642,7 @@ async fn run_injection_loop(
         }
         // 只有「CDP 模型注入」或「可查官方余额」时才需要进入注入分支：
         // 第三方中转没有官方余额接口，只做模型清单注入。
+        let remote_account = deepseek_account_cache.as_ref().filter(|account| crate::modules::codex_remote_service::for_routing_account(account).is_some());
         let deepseek_account = deepseek_account_cache.as_ref().filter(|account| {
             crate::modules::codex_account::account_uses_cdp_model_injection(account)
                 || deepseek_balance_endpoint(account).is_some()
@@ -3786,7 +3704,7 @@ async fn run_injection_loop(
                     }
                 }
             }
-            if enabled_for_app() {
+            if enabled_for_app() && remote_account.is_none() {
                 if last_balance_at.elapsed() >= DEEPSEEK_BALANCE_REFRESH_INTERVAL {
                     if let Some(value) =
                         fetch_deepseek_balance(&balance_client, deepseek_account).await
@@ -3839,10 +3757,13 @@ async fn run_injection_loop(
                     }
                 }
             }
-            tokio::time::sleep(INJECTION_INTERVAL).await;
-            continue;
+            if remote_account.is_none() {
+                tokio::time::sleep(INJECTION_INTERVAL).await;
+                continue;
+            }
         }
-        if !supports_bind_account(bind_account_id.as_deref()) {
+        if (!supports_bind_account(bind_account_id.as_deref()) && remote_account.is_none())
+            || (remote_account.is_some() && !enabled_for_app()) {
             tokio::time::sleep(INJECTION_INTERVAL).await;
             continue;
         }
@@ -3856,6 +3777,7 @@ async fn run_injection_loop(
             last_quota_at = Instant::now();
             let client = client.clone();
             let profile = profile_dir.clone();
+            let remote_account = remote_account.cloned();
             quota_fetch_tasks.spawn(async move {
                 let gateway = tauri::async_runtime::spawn_blocking(move || {
                     read_profile_gateway_config(&profile)
@@ -3863,7 +3785,14 @@ async fn run_injection_loop(
                 .await
                 .ok()
                 .flatten();
-                let value = fetch_quota(&client, gateway.as_ref()).await?;
+                let remote = remote_account.is_some();
+                // Discover through the profile's actual hop. This also primes
+                // the same endpoint identity used by dialog/speed readers.
+                let gateway = gateway.or_else(||remote_account.and_then(|account| Some(ProfileGatewayConfig {
+                    base_url: account.api_base_url?, api_key: account.openai_api_key?,
+                    provider_name: "Cockpit Tools".into(), managed_voice: false,
+                })));
+                let value = fetch_quota(&client, gateway.as_ref(), remote).await?;
                 if value.account_count == Some(0)
                     && !api_service_account_pool_is_empty()
                         .await
@@ -3877,9 +3806,9 @@ async fn run_injection_loop(
             });
         }
         // Slow balance requests must never delay the usage status line or its heartbeat.
-        if balance_fetch_due
+        if remote_account.is_none() && (balance_fetch_due
             || last_api_service_balance_at.elapsed() >= DEEPSEEK_BALANCE_REFRESH_INTERVAL
-        {
+        ) {
             if balance_fetch_tasks.is_empty() {
                 let client = balance_client.clone();
                 let locale = locale.clone();
@@ -3895,6 +3824,7 @@ async fn run_injection_loop(
         }
         let gateway = read_profile_gateway_config(&profile_dir);
         if let Some(state) = usage_state.as_object_mut() {
+            if let Some(remote) = &quota.remote { state.insert("__remoteService".into(), remote.clone()); }
             state.insert(
                 "__accountPool".into(),
                 pool_poller.collect(gateway.as_ref()),
@@ -3992,6 +3922,13 @@ async fn run_injection_loop(
         }
         if let Some(token) = refresh_request_token.filter(|_| refresh_tasks.is_empty()) {
             handled_refresh_token = Some(token);
+            if remote_account.is_some() {
+                quota_fetch_due = true;
+                quota_snapshot_pending = true;
+                snapshot_wait_started = Some(Instant::now());
+                quota_refresh_error = None;
+                continue;
+            }
             pool_poller.refresh();
             quota_refresh_error = None;
             // 手动刷新同时把余额与 Grok 额度快照请求一次，点刷新不会只更新账号池。

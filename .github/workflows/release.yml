@@ -6,10 +6,16 @@ on:
       - "v*"
       - "[0-9]*"
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Upload to a draft GitHub Release (false creates validation artifacts only)"
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' && inputs.publish != true }}
 
 jobs:
   prepare-release:
@@ -20,17 +26,32 @@ jobs:
       contents: write
     outputs:
       version: ${{ steps.app_version.outputs.VERSION }}
+      publish: ${{ steps.publish_mode.outputs.PUBLISH }}
       release_tag: ${{ steps.release_tag.outputs.RELEASE_TAG }}
     env:
       GH_REPO: ${{ github.repository }}
     steps:
+      - name: 🧭 Determine publication mode
+        id: publish_mode
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ inputs.publish }}" = "true" ]; then
+              echo "PUBLISH=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "PUBLISH=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "PUBLISH=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
       - name: ⚙️ Node.js setup
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: 📖 Read app version
         id: app_version
@@ -145,6 +166,9 @@ jobs:
               "1.3.57")
                 RELEASE_VERSIONS=("1.3.57" "1.3.56" "1.3.55" "1.3.54" "1.3.53" "1.3.52" "1.3.51" "1.3.50" "1.3.49" "1.3.48" "1.3.47" "1.3.46" "1.3.45" "1.3.44" "1.3.43")
                 ;;
+              "1.3.82")
+                RELEASE_VERSIONS=("1.3.82" "1.3.81" "1.3.80" "1.3.79" "1.3.78" "1.3.77" "1.3.76")
+                ;;
               "1.3.75")
                 RELEASE_VERSIONS=("1.3.75" "1.3.74")
                 ;;
@@ -222,6 +246,7 @@ jobs:
       # Fork release tags are cloud-build candidates. Keep the release private
       # until it has been reviewed and published manually.
       - name: 🚀 Create or update draft release
+        if: steps.publish_mode.outputs.PUBLISH == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -260,9 +285,42 @@ jobs:
             published-at.txt
             legacy-latest.json
 
+  prepare-frontend:
+    name: "🌐 Prepare production frontend"
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Node.js setup
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+
+      - name: 📦 Install frontend dependencies
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - name: 🔄 Sync release versions
+        run: npm run sync-version
+
+      - name: 🏗️ Build production frontend assets
+        run: npm run build
+
+      - name: 📤 Share production frontend
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-inputs-release-frontend
+          path: dist
+          retention-days: 1
+          compression-level: 0
+
   build-windows:
     name: "🏗️ Build: Windows"
-    needs: prepare-release
+    needs:
+      - prepare-release
+      - prepare-frontend
     runs-on: windows-latest
     permissions:
       contents: write
@@ -282,16 +340,10 @@ jobs:
         with:
           target: windows
 
-      - name: 🐹 Go setup
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: sidecars/cockpit-cliproxy/go.mod
-          cache-dependency-path: sidecars/cockpit-cliproxy/go.sum
-
       - name: ⚙️ Node.js setup
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: "npm"
 
       - name: 📦 Install frontend dependencies
@@ -300,12 +352,19 @@ jobs:
       - name: 🔄 Sync versions
         run: npm run sync-version
 
+      - name: 📥 Reuse production frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: build-inputs-release-frontend
+          path: dist
+
       - name: 🏗️ Build Windows app
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          COCKPIT_PREBUILT_FRONTEND_DIST: "dist"
         run: |
           set -euo pipefail
           npx tauri build --ci
@@ -336,6 +395,7 @@ jobs:
           cp portable-assets/* release-assets/
 
       - name: 📤 Upload Windows release assets
+        if: needs.prepare-release.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -351,20 +411,62 @@ jobs:
       - name: 📤 Build and upload Windows updater manifests
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_PUBLISH: ${{ needs.prepare-release.outputs.publish }}
         shell: bash
         run: |
           set -euo pipefail
           node scripts/release/build_target_latest_json.cjs \
             --version "${VERSION}" \
+            --release-tag "${RELEASE_TAG}" \
             --repo "${GITHUB_REPOSITORY}" \
             --assets-dir "release-assets" \
             --notes-file "release-metadata/release-notes.md" \
             --published-at "$(cat release-metadata/published-at.txt)" \
             --targets "windows-x86_64-msi,windows-x86_64-nsis" \
             --output-dir "target-manifests"
-          node scripts/release/upload_release_assets.cjs "${RELEASE_TAG}" target-manifests/*.json
+          if [ "${RELEASE_PUBLISH}" = "true" ]; then
+            node scripts/release/upload_release_assets.cjs "${RELEASE_TAG}" target-manifests/*.json
+          fi
+
+      - name: 📦 Upload Windows validation artifacts
+        if: needs.prepare-release.outputs.publish != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            release-assets
+            target-manifests
+
+      - name: 🧾 Publish Windows package summary
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          shopt -s nullglob
+          assets=(release-assets/*)
+          {
+            echo "### 🪟 Windows packages"
+            echo
+            echo "**Mode:** ${{ needs.prepare-release.outputs.publish == 'true' && 'GitHub Release' || 'Validation artifact' }}"
+            echo
+            if [ "${#assets[@]}" -gt 0 ]; then
+              for asset in "${assets[@]}"; do
+                printf -- '- `%s`\n' "$(basename "$asset")"
+              done
+            else
+              echo "❌ No staged release packages were produced."
+            fi
+            if [ "$JOB_STATUS" != "success" ]; then
+              echo
+              echo "❌ The Windows release job did not complete successfully."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 💾 Preserve legacy updater in draft release
+        if: needs.prepare-release.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -391,10 +493,13 @@ jobs:
     # Parallel with Windows / macOS Intel after prepare (no hard platform deps).
     needs:
       - prepare-release
+      - prepare-frontend
     runs-on: macos-latest
+    timeout-minutes: 120
     permissions:
       contents: write
     env:
+      APPLE_SIGNING_ENABLED: ${{ vars.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_CERTIFICATE_PASSWORD != '' && secrets.APPLE_SIGNING_IDENTITY != '' && secrets.APPLE_ID != '' && secrets.APPLE_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
       GH_REPO: ${{ github.repository }}
       VERSION: ${{ needs.prepare-release.outputs.version }}
       RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
@@ -412,16 +517,10 @@ jobs:
         with:
           target: macos-aarch64
 
-      - name: 🐹 Go setup
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: sidecars/cockpit-cliproxy/go.mod
-          cache-dependency-path: sidecars/cockpit-cliproxy/go.sum
-
       - name: ⚙️ Node.js setup
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: "npm"
 
       - name: 📦 Install frontend dependencies
@@ -430,12 +529,34 @@ jobs:
       - name: 🔄 Sync versions
         run: npm run sync-version
 
+      - name: 📥 Reuse production frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: build-inputs-release-frontend
+          path: dist
+
+      - name: 🔐 Prepare Apple signing and notarization
+        if: env.APPLE_SIGNING_ENABLED == 'true'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_TEAM_ID || '' }}
+        run: node scripts/release/macos-signing.cjs prepare
+
       - name: 🏗️ Build macOS Apple Silicon app
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_TEAM_ID || '' }}
+          COCKPIT_PREBUILT_FRONTEND_DIST: "dist"
         run: |
           set -euo pipefail
           node scripts/tauri.cjs build --ci --target aarch64-apple-darwin
@@ -458,12 +579,19 @@ jobs:
           compression-level: 1
           if-no-files-found: error
 
-      - name: 📝 Rebuild DMG with the Gatekeeper troubleshooting note
+      - name: 📝 Rebuild DMG with installation instructions
         shell: bash
         run: |
           set -euo pipefail
           node scripts/release/inject-dmg-readme.cjs \
             --bundle-dir "target/aarch64-apple-darwin/release/bundle"
+
+      - name: ✅ Notarize final DMG and verify macOS assets
+        if: env.APPLE_SIGNING_ENABLED == 'true'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_TEAM_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_TEAM_ID || '' }}
+        run: node scripts/release/macos-signing.cjs finalize "target/aarch64-apple-darwin/release/bundle"
 
       - name: 📥 Download release metadata
         uses: actions/download-artifact@v4
@@ -482,6 +610,7 @@ jobs:
             --output-dir "release-assets"
 
       - name: 📤 Upload macOS Apple Silicon assets
+        if: needs.prepare-release.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -497,28 +626,76 @@ jobs:
       - name: 📤 Build and upload macOS Apple Silicon updater manifest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_PUBLISH: ${{ needs.prepare-release.outputs.publish }}
         shell: bash
         run: |
           set -euo pipefail
           node scripts/release/build_target_latest_json.cjs \
             --version "${VERSION}" \
+            --release-tag "${RELEASE_TAG}" \
             --repo "${GITHUB_REPOSITORY}" \
             --assets-dir "release-assets" \
             --notes-file "release-metadata/release-notes.md" \
             --published-at "$(cat release-metadata/published-at.txt)" \
             --targets "darwin-aarch64-app" \
             --output-dir "target-manifests"
-          node scripts/release/upload_release_assets.cjs "${RELEASE_TAG}" target-manifests/*.json
+          if [ "${RELEASE_PUBLISH}" = "true" ]; then
+            node scripts/release/upload_release_assets.cjs "${RELEASE_TAG}" target-manifests/*.json
+          fi
+
+      - name: 📦 Upload macOS Apple Silicon validation artifacts
+        if: needs.prepare-release.outputs.publish != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos-aarch64
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            release-assets
+            target-manifests
+
+      - name: 🧾 Publish macOS Apple Silicon package summary
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          shopt -s nullglob
+          assets=(release-assets/*)
+          {
+            echo "### 🍎 macOS Apple Silicon packages"
+            echo
+            echo "**Mode:** ${{ needs.prepare-release.outputs.publish == 'true' && 'GitHub Release' || 'Validation artifact' }}"
+            echo
+            if [ "${#assets[@]}" -gt 0 ]; then
+              for asset in "${assets[@]}"; do
+                printf -- '- `%s`\n' "$(basename "$asset")"
+              done
+            else
+              echo "❌ No staged release packages were produced."
+            fi
+            if [ "$JOB_STATUS" != "success" ]; then
+              echo
+              echo "❌ The macOS Apple Silicon release job did not complete successfully."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 🧹 Remove temporary Apple signing keychain
+        if: always()
+        run: node scripts/release/macos-signing.cjs cleanup
 
   build-macos-x86_64:
     name: "🏗️ Build: macOS Intel"
     # Parallel with Windows / macOS Apple Silicon after prepare.
     needs:
       - prepare-release
+      - prepare-frontend
     runs-on: macos-latest
+    timeout-minutes: 120
     permissions:
       contents: write
     env:
+      APPLE_SIGNING_ENABLED: ${{ vars.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_CERTIFICATE_PASSWORD != '' && secrets.APPLE_SIGNING_IDENTITY != '' && secrets.APPLE_ID != '' && secrets.APPLE_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
       GH_REPO: ${{ github.repository }}
       VERSION: ${{ needs.prepare-release.outputs.version }}
       RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
@@ -536,16 +713,10 @@ jobs:
         with:
           target: macos-x86_64
 
-      - name: 🐹 Go setup
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: sidecars/cockpit-cliproxy/go.mod
-          cache-dependency-path: sidecars/cockpit-cliproxy/go.sum
-
       - name: ⚙️ Node.js setup
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: "npm"
 
       - name: 📦 Install frontend dependencies
@@ -554,12 +725,34 @@ jobs:
       - name: 🔄 Sync versions
         run: npm run sync-version
 
+      - name: 📥 Reuse production frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: build-inputs-release-frontend
+          path: dist
+
+      - name: 🔐 Prepare Apple signing and notarization
+        if: env.APPLE_SIGNING_ENABLED == 'true'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_TEAM_ID || '' }}
+        run: node scripts/release/macos-signing.cjs prepare
+
       - name: 🏗️ Build macOS Intel app
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_TEAM_ID || '' }}
+          COCKPIT_PREBUILT_FRONTEND_DIST: "dist"
         run: |
           set -euo pipefail
           node scripts/tauri.cjs build --ci --target x86_64-apple-darwin
@@ -582,12 +775,19 @@ jobs:
           compression-level: 1
           if-no-files-found: error
 
-      - name: 📝 Rebuild DMG with the Gatekeeper troubleshooting note
+      - name: 📝 Rebuild DMG with installation instructions
         shell: bash
         run: |
           set -euo pipefail
           node scripts/release/inject-dmg-readme.cjs \
             --bundle-dir "target/x86_64-apple-darwin/release/bundle"
+
+      - name: ✅ Notarize final DMG and verify macOS assets
+        if: env.APPLE_SIGNING_ENABLED == 'true'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_TEAM_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_TEAM_ID || '' }}
+        run: node scripts/release/macos-signing.cjs finalize "target/x86_64-apple-darwin/release/bundle"
 
       - name: 📥 Download release metadata
         uses: actions/download-artifact@v4
@@ -606,6 +806,7 @@ jobs:
             --output-dir "release-assets"
 
       - name: 📤 Upload macOS Intel assets
+        if: needs.prepare-release.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -621,18 +822,63 @@ jobs:
       - name: 📤 Build and upload macOS Intel updater manifest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_PUBLISH: ${{ needs.prepare-release.outputs.publish }}
         shell: bash
         run: |
           set -euo pipefail
           node scripts/release/build_target_latest_json.cjs \
             --version "${VERSION}" \
+            --release-tag "${RELEASE_TAG}" \
             --repo "${GITHUB_REPOSITORY}" \
             --assets-dir "release-assets" \
             --notes-file "release-metadata/release-notes.md" \
             --published-at "$(cat release-metadata/published-at.txt)" \
             --targets "darwin-x86_64-app" \
             --output-dir "target-manifests"
-          node scripts/release/upload_release_assets.cjs "${RELEASE_TAG}" target-manifests/*.json
+          if [ "${RELEASE_PUBLISH}" = "true" ]; then
+            node scripts/release/upload_release_assets.cjs "${RELEASE_TAG}" target-manifests/*.json
+          fi
+
+      - name: 📦 Upload macOS Intel validation artifacts
+        if: needs.prepare-release.outputs.publish != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos-x86_64
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            release-assets
+            target-manifests
+
+      - name: 🧾 Publish macOS Intel package summary
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          shopt -s nullglob
+          assets=(release-assets/*)
+          {
+            echo "### 🍎 macOS Intel packages"
+            echo
+            echo "**Mode:** ${{ needs.prepare-release.outputs.publish == 'true' && 'GitHub Release' || 'Validation artifact' }}"
+            echo
+            if [ "${#assets[@]}" -gt 0 ]; then
+              for asset in "${assets[@]}"; do
+                printf -- '- `%s`\n' "$(basename "$asset")"
+              done
+            else
+              echo "❌ No staged release packages were produced."
+            fi
+            if [ "$JOB_STATUS" != "success" ]; then
+              echo
+              echo "❌ The macOS Intel release job did not complete successfully."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 🧹 Remove temporary Apple signing keychain
+        if: always()
+        run: node scripts/release/macos-signing.cjs cleanup
 
   build-macos-universal:
     name: "🏗️ Build: macOS Universal"
@@ -642,9 +888,11 @@ jobs:
       - build-macos-aarch64
       - build-macos-x86_64
     runs-on: macos-latest
+    timeout-minutes: 120
     permissions:
       contents: write
     env:
+      APPLE_SIGNING_ENABLED: ${{ vars.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_CERTIFICATE_PASSWORD != '' && secrets.APPLE_SIGNING_IDENTITY != '' && secrets.APPLE_ID != '' && secrets.APPLE_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
       GH_REPO: ${{ github.repository }}
       VERSION: ${{ needs.prepare-release.outputs.version }}
       RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
@@ -660,7 +908,7 @@ jobs:
       - name: ⚙️ Node.js setup
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: "npm"
 
       - name: 📦 Install frontend dependencies
@@ -688,22 +936,44 @@ jobs:
           node scripts/release/macos-universal.cjs --mode merge \
             --inputs universal-inputs --version "${VERSION}"
 
+      - name: 🔐 Prepare Apple signing and notarization
+        if: env.APPLE_SIGNING_ENABLED == 'true'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_TEAM_ID || '' }}
+        run: node scripts/release/macos-signing.cjs prepare
+
       - name: 📦 Bundle macOS Universal app
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_TEAM_ID || '' }}
         run: |
           set -euo pipefail
           node scripts/tauri.cjs bundle --ci --target universal-apple-darwin
 
-      - name: 📝 Rebuild DMG with the Gatekeeper troubleshooting note
+      - name: 📝 Rebuild DMG with installation instructions
         shell: bash
         run: |
           set -euo pipefail
           node scripts/release/inject-dmg-readme.cjs \
             --bundle-dir "target/universal-apple-darwin/release/bundle"
+
+      - name: ✅ Notarize final DMG and verify macOS assets
+        if: env.APPLE_SIGNING_ENABLED == 'true'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_TEAM_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_TEAM_ID || '' }}
+        run: node scripts/release/macos-signing.cjs finalize "target/universal-apple-darwin/release/bundle"
 
       - name: 📦 Stage macOS Universal assets
         shell: bash
@@ -716,6 +986,7 @@ jobs:
             --output-dir "release-assets"
 
       - name: 📤 Upload macOS Universal assets
+        if: needs.prepare-release.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -728,12 +999,53 @@ jobs:
           node scripts/release/upload_release_assets.cjs "${TAG}" "${ASSETS[@]}"
           echo "Uploaded ${#ASSETS[@]} macOS Universal assets"
 
+      - name: 📦 Upload macOS Universal validation artifacts
+        if: needs.prepare-release.outputs.publish != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos-universal
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            release-assets
+
+      - name: 🧾 Publish macOS Universal package summary
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          shopt -s nullglob
+          assets=(release-assets/*)
+          {
+            echo "### 🍎 macOS Universal packages"
+            echo
+            echo "**Mode:** ${{ needs.prepare-release.outputs.publish == 'true' && 'GitHub Release' || 'Validation artifact' }}"
+            echo
+            if [ "${#assets[@]}" -gt 0 ]; then
+              for asset in "${assets[@]}"; do
+                printf -- '- `%s`\n' "$(basename "$asset")"
+              done
+            else
+              echo "❌ No staged release packages were produced."
+            fi
+            if [ "$JOB_STATUS" != "success" ]; then
+              echo
+              echo "❌ The macOS Universal release job did not complete successfully."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 🧹 Remove temporary Apple signing keychain
+        if: always()
+        run: node scripts/release/macos-signing.cjs cleanup
+
   build-linux:
     name: "🏗️ Build: Linux (${{ matrix.label }})"
     if: ${{ false }}
     # Parallel with Windows / macOS after prepare; matrix arches run in parallel.
     needs:
       - prepare-release
+      - prepare-frontend
     runs-on: ${{ matrix.platform }}
     permissions:
       contents: write
@@ -768,16 +1080,10 @@ jobs:
         with:
           target: linux-${{ matrix.label }}
 
-      - name: 🐹 Go setup
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: sidecars/cockpit-cliproxy/go.mod
-          cache-dependency-path: sidecars/cockpit-cliproxy/go.sum
-
       - name: ⚙️ Node.js setup
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: "npm"
 
       - name: 📦 Install frontend dependencies
@@ -786,12 +1092,19 @@ jobs:
       - name: 🔄 Sync versions
         run: npm run sync-version
 
+      - name: 📥 Reuse production frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: build-inputs-release-frontend
+          path: dist
+
       - name: 🏗️ Build Linux app
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          COCKPIT_PREBUILT_FRONTEND_DIST: "dist"
         run: |
           set -euo pipefail
           npx tauri build --ci
@@ -812,6 +1125,7 @@ jobs:
             --output-dir "release-assets"
 
       - name: 📤 Upload Linux assets
+        if: needs.prepare-release.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -827,6 +1141,7 @@ jobs:
       - name: 📤 Build and upload Linux updater manifests
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_PUBLISH: ${{ needs.prepare-release.outputs.publish }}
         shell: bash
         run: |
           set -euo pipefail
@@ -838,7 +1153,46 @@ jobs:
             --published-at "$(cat release-metadata/published-at.txt)" \
             --targets "${{ matrix.targets }}" \
             --output-dir "target-manifests"
-          node scripts/release/upload_release_assets.cjs "v${VERSION}" target-manifests/*.json
+          if [ "${RELEASE_PUBLISH}" = "true" ]; then
+            node scripts/release/upload_release_assets.cjs "${RELEASE_TAG}" target-manifests/*.json
+          fi
+
+      - name: 📦 Upload Linux validation artifacts
+        if: needs.prepare-release.outputs.publish != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-${{ matrix.label }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            release-assets
+            target-manifests
+
+      - name: 🧾 Publish Linux package summary
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          shopt -s nullglob
+          assets=(release-assets/*)
+          {
+            echo "### 🐧 Linux ${{ matrix.label }} packages"
+            echo
+            echo "**Mode:** ${{ needs.prepare-release.outputs.publish == 'true' && 'GitHub Release' || 'Validation artifact' }}"
+            echo
+            if [ "${#assets[@]}" -gt 0 ]; then
+              for asset in "${assets[@]}"; do
+                printf -- '- `%s`\n' "$(basename "$asset")"
+              done
+            else
+              echo "❌ No staged release packages were produced."
+            fi
+            if [ "$JOB_STATUS" != "success" ]; then
+              echo
+              echo "❌ The Linux release job did not complete successfully."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
   finalize-legacy-latest:
     name: 🏁 Finalize Legacy Updater Manifest
@@ -864,7 +1218,7 @@ jobs:
       - name: ⚙️ Node.js setup
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: 📥 Download release metadata
         uses: actions/download-artifact@v4
@@ -951,7 +1305,7 @@ jobs:
       - name: ⚙️ Node.js setup
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: 📥 Download release assets
         env:
@@ -1098,3 +1452,115 @@ jobs:
 
           echo "Unable to enable auto-merge for cask PR ${PR_NUMBER}: state=${PR_STATE}, merge_state=${PR_MERGE_STATE}"
           exit 1
+
+  validate-release-artifacts:
+    name: "🧪 Validate packaged release"
+    if: needs.prepare-release.outputs.publish != 'true'
+    needs:
+      - prepare-release
+      - build-windows
+      - build-macos-aarch64
+      - build-macos-x86_64
+      - build-macos-universal
+      - build-linux
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.prepare-release.outputs.version }}
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 📥 Download packaged release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: validation-workspace
+          merge-multiple: true
+
+      - name: 🏗️ Build and validate complete updater manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/release/build_merged_latest_json.cjs \
+            --version "${VERSION}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --assets-dir "validation-workspace/release-assets" \
+            --notes-file "validation-workspace/release-notes.md" \
+            --published-at "$(cat validation-workspace/published-at.txt)" \
+            --output "latest.json"
+
+          jq -e '
+            .platforms["darwin-aarch64"] and
+            .platforms["darwin-x86_64"] and
+            .platforms["windows-x86_64"] and
+            .platforms["windows-x86_64-nsis"] and
+            .platforms["linux-x86_64-appimage"] and
+            .platforms["linux-x86_64-deb"] and
+            .platforms["linux-x86_64-rpm"] and
+            .platforms["linux-aarch64-appimage"] and
+            .platforms["linux-aarch64-deb"] and
+            .platforms["linux-aarch64-rpm"]
+          ' latest.json > /dev/null
+
+          test -n "$(find validation-workspace/release-assets -name '*_universal.dmg' -print -quit)"
+
+      - name: 🔗 Generate validation checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd validation-workspace/release-assets
+            find . -type f -print0 \
+              | sort -z \
+              | while IFS= read -r -d '' file; do
+                  shasum -a 256 "$file"
+                done \
+              | sed 's#  \./#  #'
+          ) > SHA256SUMS.txt
+          test -s SHA256SUMS.txt
+
+      - name: 📤 Upload complete release validation bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-validation-${{ env.VERSION }}
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+          path: |
+            validation-workspace/release-assets
+            validation-workspace/target-manifests
+            latest.json
+            SHA256SUMS.txt
+
+      - name: 🧾 Publish release validation summary
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          asset_count="$(find validation-workspace/release-assets -type f 2>/dev/null | wc -l | tr -d ' ')"
+          manifest_count="$(find validation-workspace/target-manifests -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')"
+          checksum_count="$(wc -l < SHA256SUMS.txt 2>/dev/null || printf '0')"
+          platform_count="$(jq '.platforms | length' latest.json 2>/dev/null || printf '0')"
+          {
+            echo "### 🧪 Complete release validation"
+            echo
+            echo "| Check | Result |"
+            echo "| --- | --- |"
+            echo "| Packaged assets | ${asset_count} |"
+            echo "| Target updater manifests | ${manifest_count} |"
+            echo "| Legacy updater platforms | ${platform_count} |"
+            echo "| SHA-256 entries | ${checksum_count} |"
+            if [ "$JOB_STATUS" = "success" ]; then
+              echo "| Validation bundle | ✅ Uploaded |"
+            else
+              echo "| Validation bundle | ❌ Incomplete |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

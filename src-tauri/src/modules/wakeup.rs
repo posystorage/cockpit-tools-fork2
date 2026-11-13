@@ -8,14 +8,8 @@ use tokio::sync::watch;
 
 use crate::modules;
 
-const CLOUD_CODE_BASE_URLS: [&str; 3] = [
-    "https://daily-cloudcode-pa.googleapis.com",
-    "https://cloudcode-pa.googleapis.com",
-    "https://daily-cloudcode-pa.sandbox.googleapis.com",
-];
 const STREAM_PATH: &str = "/v1internal:streamGenerateContent?alt=sse";
 const FETCH_MODELS_PATH: &str = "/v1internal:fetchAvailableModels";
-const USER_AGENT: &str = "antigravity";
 const ANTIGRAVITY_SYSTEM_PROMPT: &str = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**";
 const DEFAULT_ATTEMPTS: usize = 2;
 const BACKOFF_BASE_MS: u64 = 500;
@@ -24,8 +18,8 @@ const WAKEUP_ERROR_JSON_PREFIX: &str = "AG_WAKEUP_ERROR_JSON:";
 const CLIENT_GATEWAY_POLL_INTERVAL_MS: u64 = 250;
 const CLIENT_GATEWAY_MAX_POLL_ROUNDS: usize = 240; // 240 * 250ms = 60s
 const CLIENT_GATEWAY_UPSTREAM_RETRY_DELAY_MS: u64 = 1200;
+const CLIENT_GATEWAY_SLOW_ATTEMPT: std::time::Duration = std::time::Duration::from_secs(10);
 const WAKEUP_CANCELLED_MESSAGE: &str = "唤醒测试已取消";
-static BASE_URL_ORDER: OnceLock<Mutex<Vec<&'static str>>> = OnceLock::new();
 static WAKEUP_CANCEL_SCOPES: OnceLock<Mutex<HashMap<String, watch::Sender<bool>>>> =
     OnceLock::new();
 
@@ -209,7 +203,7 @@ fn generate_request_id() -> String {
 }
 
 fn build_request_body(
-    project_id: &str,
+    project_id: Option<&str>,
     model: &str,
     prompt: &str,
     max_output_tokens: u32,
@@ -223,8 +217,7 @@ fn build_request_body(
         }
     }
 
-    json!({
-        "project": project_id,
+    let mut body = json!({
         "requestId": request_id,
         "model": model,
         "userAgent": "antigravity",
@@ -239,7 +232,11 @@ fn build_request_body(
             },
             "generationConfig": generation_config
         }
-    })
+    });
+    if let Some(project_id) = project_id {
+        body["project"] = json!(project_id);
+    }
+    body
 }
 
 fn get_backoff_delay_ms(attempt: usize) -> u64 {
@@ -249,24 +246,6 @@ fn get_backoff_delay_ms(attempt: usize) -> u64 {
     let raw = BACKOFF_BASE_MS.saturating_mul(2u64.saturating_pow((attempt - 2) as u32));
     let jitter = rand::thread_rng().gen_range(0..100);
     std::cmp::min(raw + jitter, BACKOFF_MAX_MS)
-}
-
-fn get_base_url_order() -> Vec<&'static str> {
-    let lock = BASE_URL_ORDER.get_or_init(|| Mutex::new(CLOUD_CODE_BASE_URLS.to_vec()));
-    match lock.lock() {
-        Ok(list) => list.clone(),
-        Err(_) => CLOUD_CODE_BASE_URLS.to_vec(),
-    }
-}
-
-fn promote_base_url(base: &'static str) {
-    let lock = BASE_URL_ORDER.get_or_init(|| Mutex::new(CLOUD_CODE_BASE_URLS.to_vec()));
-    if let Ok(mut list) = lock.lock() {
-        if let Some(pos) = list.iter().position(|item| *item == base) {
-            list.remove(pos);
-            list.insert(0, base);
-        }
-    }
 }
 
 fn truncate_log_text(text: &str, max_len: usize) -> String {
@@ -365,7 +344,6 @@ fn parse_stream_result(text: &str) -> Result<StreamParseResult, String> {
     let mut trace_id: Option<String> = None;
     let mut response_id: Option<String> = None;
     let mut got_event = false;
-    let mut last_data: Option<serde_json::Value> = None;
 
     for line in text.lines() {
         let trimmed = line.trim();
@@ -385,8 +363,8 @@ fn parse_stream_result(text: &str) -> Result<StreamParseResult, String> {
         };
 
         if let Some(payload) = payload {
-            got_event = true;
             if let Ok(value) = serde_json::from_str::<serde_json::Value>(payload) {
+                got_event = true;
                 process_stream_object(
                     &value,
                     &mut reply_parts,
@@ -396,7 +374,6 @@ fn parse_stream_result(text: &str) -> Result<StreamParseResult, String> {
                     &mut trace_id,
                     &mut response_id,
                 );
-                last_data = Some(value);
             }
         }
     }
@@ -420,25 +397,10 @@ fn parse_stream_result(text: &str) -> Result<StreamParseResult, String> {
         return Err("Cloud Code stream received no data".to_string());
     }
 
-    if reply_parts.is_empty() {
-        if let Some(value) = last_data.as_ref() {
-            process_stream_object(
-                value,
-                &mut reply_parts,
-                &mut prompt_tokens,
-                &mut completion_tokens,
-                &mut total_tokens,
-                &mut trace_id,
-                &mut response_id,
-            );
-        }
+    let reply = reply_parts.join("");
+    if reply.trim().is_empty() {
+        return Err("WAKEUP_DIRECT_NO_REPLY".to_string());
     }
-
-    let reply = if reply_parts.is_empty() {
-        "(无回复)".to_string()
-    } else {
-        reply_parts.join("")
-    };
     if completion_tokens.is_none() {
         completion_tokens = Some(0);
     }
@@ -455,173 +417,75 @@ fn parse_stream_result(text: &str) -> Result<StreamParseResult, String> {
 
 async fn send_stream_request(
     client: &reqwest::Client,
-    access_token: &str,
+    token: &crate::models::token::TokenData,
     body: &serde_json::Value,
     cancel_rx: Option<&watch::Receiver<bool>>,
 ) -> Result<StreamParseResult, String> {
-    let mut last_error: Option<String> = None;
-    for base in get_base_url_order() {
-        for attempt in 1..=DEFAULT_ATTEMPTS {
-            if is_wakeup_cancelled(cancel_rx) {
-                return Err(wakeup_cancelled_error());
-            }
-            let url = format!("{}{}", base, STREAM_PATH);
-            crate::modules::logger::log_info(&format!(
-                "[Wakeup] 发送请求: url={}, attempt={}/{}",
-                url, attempt, DEFAULT_ATTEMPTS
-            ));
-            let response = await_with_cancel(
-                cancel_rx,
-                client
-                    .post(&url)
-                    .bearer_auth(access_token)
-                    .header(reqwest::header::USER_AGENT, USER_AGENT)
-                    .header(reqwest::header::CONTENT_TYPE, "application/json")
-                    .header(reqwest::header::ACCEPT_ENCODING, "gzip")
-                    .json(body)
-                    .send(),
-            )
-            .await?;
-
-            match response {
-                Ok(res) => {
-                    let status = res.status();
-                    if status.is_success() {
-                        let text = await_with_cancel(cancel_rx, res.text())
-                            .await?
-                            .unwrap_or_default();
-                        crate::modules::logger::log_info(&format!(
-                            "[Wakeup] stream响应已接收: body_len={}",
-                            summarize_body_len(&text)
-                        ));
-                        match parse_stream_result(&text) {
-                            Ok(parsed) => {
-                                promote_base_url(base);
-                                crate::modules::logger::log_info(&format!(
-                                    "[Wakeup] 请求成功: url={}, status={}",
-                                    url, status
-                                ));
-                                return Ok(parsed);
-                            }
-                            Err(err) => {
-                                last_error = Some(err.clone());
-                                crate::modules::logger::log_warn(&format!(
-                                    "[Wakeup] 解析响应失败: url={}, error={}",
-                                    url, err
-                                ));
-                                if attempt < DEFAULT_ATTEMPTS {
-                                    let delay = get_backoff_delay_ms(attempt + 1);
-                                    if delay > 0 {
-                                        crate::modules::logger::log_info(&format!(
-                                            "[Wakeup] 准备重试: delay={}ms",
-                                            delay
-                                        ));
-                                        sleep_with_cancel(
-                                            std::time::Duration::from_millis(delay),
-                                            cancel_rx,
-                                        )
-                                        .await?;
-                                    }
-                                    continue;
-                                }
-                            }
-                        }
-                    } else {
-                        if status == reqwest::StatusCode::UNAUTHORIZED {
-                            crate::modules::logger::log_error("[Wakeup] 授权失效 (401)");
-                            return Err("Authorization expired".to_string());
-                        }
-                        if status == reqwest::StatusCode::FORBIDDEN {
-                            crate::modules::logger::log_error("[Wakeup] 无权限 (403)");
-                            return Err("Cloud Code access forbidden".to_string());
-                        }
-                        let text = await_with_cancel(cancel_rx, res.text())
-                            .await?
-                            .unwrap_or_default();
-                        let retryable = status == reqwest::StatusCode::TOO_MANY_REQUESTS
-                            || status.as_u16() >= 500;
-                        let message = format!("唤醒请求失败: {} - {}", status, text);
-                        last_error = Some(message.clone());
-                        crate::modules::logger::log_warn(&format!(
-                            "[Wakeup] 请求失败: url={}, status={}, retryable={}",
-                            url, status, retryable
-                        ));
-                        if retryable && attempt < DEFAULT_ATTEMPTS {
-                            let delay = get_backoff_delay_ms(attempt + 1);
-                            if delay > 0 {
-                                crate::modules::logger::log_info(&format!(
-                                    "[Wakeup] 准备重试: delay={}ms",
-                                    delay
-                                ));
-                                sleep_with_cancel(
-                                    std::time::Duration::from_millis(delay),
-                                    cancel_rx,
-                                )
-                                .await?;
-                            }
-                            continue;
-                        }
-                    }
-                }
-                Err(err) => {
-                    last_error = Some(format!("唤醒请求失败: {}", err));
-                    crate::modules::logger::log_warn(&format!(
-                        "[Wakeup] 网络错误: url={}, error={}",
-                        url, err
-                    ));
-                    if attempt < DEFAULT_ATTEMPTS {
-                        let delay = get_backoff_delay_ms(attempt + 1);
-                        if delay > 0 {
-                            crate::modules::logger::log_info(&format!(
-                                "[Wakeup] 准备重试: delay={}ms",
-                                delay
-                            ));
-                            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
-                        }
-                        continue;
-                    }
-                }
-            }
-        }
-    }
-    Err(last_error.unwrap_or_else(|| "唤醒请求失败".to_string()))
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WakeupTransportMode {
-    LegacyCloudCode,
-    ClientGateway,
-}
-
-fn resolve_wakeup_transport_mode() -> WakeupTransportMode {
-    match std::env::var("AG_WAKEUP_TRANSPORT_MODE")
-        .ok()
-        .unwrap_or_else(|| "client_gateway".to_string())
-        .trim()
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "client_gateway" | "client-gateway" | "gateway" => WakeupTransportMode::ClientGateway,
-        _ => WakeupTransportMode::LegacyCloudCode,
-    }
-}
-
-pub fn wakeup_requires_official_ls() -> bool {
-    matches!(
-        resolve_wakeup_transport_mode(),
-        WakeupTransportMode::ClientGateway
+    let context = modules::quota::QuotaCloudCodeContext::from_token(token);
+    let base_url = modules::quota::resolve_cloud_code_base_url(&context);
+    let url = format!("{}{}", base_url.trim_end_matches('/'), STREAM_PATH);
+    let response = await_with_cancel(
+        cancel_rx,
+        client
+            .post(url)
+            .bearer_auth(&token.access_token)
+            .header(reqwest::header::USER_AGENT, modules::quota::build_cloud_code_user_agent())
+            .header(reqwest::header::ACCEPT_ENCODING, "gzip")
+            .json(body)
+            .send(),
     )
+    .await?
+    .map_err(|error| error.to_string())?;
+    let status = response.status();
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        return Err("Authorization expired".to_string());
+    }
+    if status == reqwest::StatusCode::FORBIDDEN {
+        return Err("Cloud Code access forbidden".to_string());
+    }
+    // A response or transport failure can follow successful upstream generation.
+    // Leave a retry to the caller rather than sending a second request here.
+    let text = await_with_cancel(cancel_rx, response.text())
+        .await?
+        .map_err(|error| error.to_string())?;
+    if !status.is_success() {
+        return Err(format!("{status} - {text}"));
+    }
+    parse_stream_result(&text)
 }
 
-pub fn set_official_ls_version_mode(mode: Option<&str>) -> Result<(), String> {
-    crate::modules::wakeup_gateway::set_official_ls_version_mode(mode)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WakeupTransportMode {
+    LanguageServer,
+    Clientless,
 }
 
-pub fn ensure_wakeup_runtime_ready() -> Result<Option<String>, String> {
-    if !wakeup_requires_official_ls() {
+fn resolve_wakeup_transport_mode(mode: Option<WakeupTransportMode>) -> WakeupTransportMode {
+    mode.unwrap_or_else(|| {
+        match std::env::var("AG_WAKEUP_TRANSPORT_MODE")
+            .ok()
+            .unwrap_or_else(|| "client_gateway".to_string())
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "client_gateway" | "client-gateway" | "gateway" => WakeupTransportMode::LanguageServer,
+            _ => WakeupTransportMode::Clientless,
+        }
+    })
+}
+
+pub async fn ensure_wakeup_runtime_ready(
+    mode: Option<WakeupTransportMode>,
+) -> Result<Option<String>, String> {
+    if resolve_wakeup_transport_mode(mode) == WakeupTransportMode::Clientless {
         return Ok(None);
     }
-    crate::modules::wakeup_gateway::ensure_official_ls_binary_ready().map(Some)
+    tokio::task::spawn_blocking(crate::modules::wakeup_gateway::ensure_official_ls_binary_ready)
+        .await
+        .map_err(|error| error.to_string())?
+        .map(Some)
 }
 
 fn gateway_start_bind_lock() -> &'static tokio::sync::Mutex<()> {
@@ -782,6 +646,31 @@ async fn post_gateway_json(
     })
 }
 
+fn available_models_request(
+    client: &reqwest::Client,
+    token: &crate::models::token::TokenData,
+) -> reqwest::RequestBuilder {
+    let context = modules::quota::QuotaCloudCodeContext::from_token(token);
+    let base_url = modules::quota::resolve_cloud_code_base_url(&context);
+    let payload = context
+        .preferred_project_id
+        .map(|project| json!({ "project": project }))
+        .unwrap_or_else(|| json!({}));
+    client
+        .post(format!(
+            "{}{}",
+            base_url.trim_end_matches('/'),
+            FETCH_MODELS_PATH
+        ))
+        .bearer_auth(&token.access_token)
+        .header(
+            reqwest::header::USER_AGENT,
+            modules::quota::build_cloud_code_user_agent(),
+        )
+        .header(reqwest::header::ACCEPT_ENCODING, "gzip")
+        .json(&payload)
+}
+
 async fn resolve_requested_model_for_official_ls(
     account_id: &str,
     model: &str,
@@ -829,146 +718,122 @@ async fn resolve_requested_model_for_official_ls(
     };
 
     let client = crate::utils::http::create_client(15);
-    let payload = json!({});
     let mut last_error: Option<String> = None;
 
-    for base in CLOUD_CODE_BASE_URLS {
-        for attempt in 1..=DEFAULT_ATTEMPTS {
-            if is_wakeup_cancelled(cancel_rx) {
-                return Err(wakeup_cancelled_error());
-            }
-            let url = format!("{}{}", base, FETCH_MODELS_PATH);
-            let response = await_with_cancel(
-                cancel_rx,
-                client
-                    .post(&url)
-                    .bearer_auth(&token.access_token)
-                    .header(reqwest::header::USER_AGENT, USER_AGENT)
-                    .header(reqwest::header::CONTENT_TYPE, "application/json")
-                    .header(reqwest::header::ACCEPT_ENCODING, "gzip")
-                    .json(&payload)
-                    .send(),
-            )
-            .await?;
+    for attempt in 1..=DEFAULT_ATTEMPTS {
+        if is_wakeup_cancelled(cancel_rx) {
+            return Err(wakeup_cancelled_error());
+        }
+        let response =
+            await_with_cancel(cancel_rx, available_models_request(&client, &token).send()).await?;
 
-            match response {
-                Ok(res) => {
-                    let status = res.status();
-                    if status.is_success() {
-                        match await_with_cancel(cancel_rx, res.json::<AvailableModelsResponse>())
-                            .await?
-                        {
-                            Ok(parsed) => {
-                                if let Some(models) = extract_available_models_map(&parsed) {
-                                    if let Some(meta) = models.get(trimmed) {
-                                        if let Some(model_constant) = meta
-                                            .model_constant
-                                            .as_deref()
-                                            .map(str::trim)
-                                            .filter(|v| !v.is_empty())
-                                        {
-                                            if let Ok(num) = model_constant.parse::<i64>() {
-                                                crate::modules::logger::log_info(&format!(
-                                                    "[Wakeup] requestedModel 解析: {} -> modelConstant({})",
-                                                    trimmed, num
-                                                ));
-                                                return Ok(json!({ "model": num }));
-                                            }
-                                            if let Some(num) =
-                                                parse_codeium_model_enum_name(model_constant)
-                                            {
-                                                crate::modules::logger::log_info(&format!(
-                                                    "[Wakeup] requestedModel 解析: {} -> model({})（由 enum 名 {} 映射）",
-                                                    trimmed, num, model_constant
-                                                ));
-                                                return Ok(json!({ "model": num }));
-                                            }
-
-                                            last_error = Some(format!(
-                                                "requestedModel 严格模式解析失败（模型常量无法映射）: model={}, model_constant={}",
-                                                trimmed, model_constant
+        match response {
+            Ok(res) => {
+                let status = res.status();
+                if status.is_success() {
+                    match await_with_cancel(cancel_rx, res.json::<AvailableModelsResponse>())
+                        .await?
+                    {
+                        Ok(parsed) => {
+                            if let Some(models) = extract_available_models_map(&parsed) {
+                                if let Some(meta) = models.get(trimmed) {
+                                    if let Some(model_constant) = meta
+                                        .model_constant
+                                        .as_deref()
+                                        .map(str::trim)
+                                        .filter(|v| !v.is_empty())
+                                    {
+                                        if let Ok(num) = model_constant.parse::<i64>() {
+                                            crate::modules::logger::log_info(&format!(
+                                                "[Wakeup] requestedModel 解析: {} -> modelConstant({})",
+                                                trimmed, num
                                             ));
-                                        } else {
-                                            last_error = Some(format!(
-                                                "requestedModel 严格模式解析失败（模型缺少 model_constant）: model={}",
-                                                trimmed
-                                            ));
+                                            return Ok(json!({ "model": num }));
                                         }
+                                        if let Some(num) =
+                                            parse_codeium_model_enum_name(model_constant)
+                                        {
+                                            crate::modules::logger::log_info(&format!(
+                                                "[Wakeup] requestedModel 解析: {} -> model({})（由 enum 名 {} 映射）",
+                                                trimmed, num, model_constant
+                                            ));
+                                            return Ok(json!({ "model": num }));
+                                        }
+
+                                        last_error = Some(format!(
+                                            "requestedModel 严格模式解析失败（模型常量无法映射）: model={}, model_constant={}",
+                                            trimmed, model_constant
+                                        ));
                                     } else {
                                         last_error = Some(format!(
-                                            "requestedModel 严格模式解析失败（fetchAvailableModels 未返回该模型）: model={}",
+                                            "requestedModel 严格模式解析失败（模型缺少 model_constant）: model={}",
                                             trimmed
                                         ));
                                     }
                                 } else {
                                     last_error = Some(format!(
-                                        "requestedModel 严格模式解析失败（fetchAvailableModels 响应缺少 models）: model={}",
+                                        "requestedModel 严格模式解析失败（fetchAvailableModels 未返回该模型）: model={}",
                                         trimmed
                                     ));
                                 }
-                                break;
+                            } else {
+                                last_error = Some(format!(
+                                    "requestedModel 严格模式解析失败（fetchAvailableModels 响应缺少 models）: model={}",
+                                    trimmed
+                                ));
                             }
-                            Err(err) => {
-                                last_error = Some(format!("解析模型列表失败: {}", err));
-                            }
+                            break;
                         }
-                    } else {
-                        let text = await_with_cancel(cancel_rx, res.text())
-                            .await?
-                            .unwrap_or_default();
-                        let retryable = status == reqwest::StatusCode::TOO_MANY_REQUESTS
-                            || status.as_u16() >= 500;
-
-                        // 对 403 尝试解析 TOS_VIOLATION / VALIDATION_REQUIRED 并编码为结构化错误
-                        if status == reqwest::StatusCode::FORBIDDEN {
-                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
-                                let details = parsed.get("error").and_then(|e| e.get("details"));
-                                let appeal_url = extract_appeal_url_from_error_details(details);
-                                let validation_url =
-                                    extract_validation_url_from_error_details(details)
-                                        .map(|u| crate::modules::quota::format_google_validation_url(&u, &account.email));
-                                let message = parsed
-                                    .get("error")
-                                    .and_then(|e| e.get("message"))
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or_default()
-                                    .to_string();
-
-                                let detail = GatewayTrajectoryErrorDetail {
-                                    message: if message.is_empty() {
-                                        format!("获取模型列表失败: {}", status)
-                                    } else {
-                                        message
-                                    },
-                                    error_code: Some(403),
-                                    validation_url,
-                                    appeal_url,
-                                    trajectory_id: None,
-                                    error_message_json: text.clone(),
-                                    step_json: String::new(),
-                                };
-                                last_error = Some(encode_wakeup_ui_error_payload(&detail));
-                                break;
-                            }
-                        }
-
-                        last_error = Some(format!("获取模型列表失败: {} - {}", status, text));
-                        if retryable && attempt < DEFAULT_ATTEMPTS {
-                            let delay = get_backoff_delay_ms(attempt + 1);
-                            if delay > 0 {
-                                sleep_with_cancel(
-                                    std::time::Duration::from_millis(delay),
-                                    cancel_rx,
-                                )
-                                .await?;
-                            }
-                            continue;
+                        Err(err) => {
+                            last_error = Some(format!("解析模型列表失败: {}", err));
                         }
                     }
-                }
-                Err(err) => {
-                    last_error = Some(format!("获取模型列表失败: {}", err));
-                    if attempt < DEFAULT_ATTEMPTS {
+                } else {
+                    let text = await_with_cancel(cancel_rx, res.text())
+                        .await?
+                        .unwrap_or_default();
+                    let retryable =
+                        status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.as_u16() >= 500;
+
+                    // 对 403 尝试解析 TOS_VIOLATION / VALIDATION_REQUIRED 并编码为结构化错误
+                    if status == reqwest::StatusCode::FORBIDDEN {
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
+                            let details = parsed.get("error").and_then(|e| e.get("details"));
+                            let appeal_url = extract_appeal_url_from_error_details(details);
+                            let validation_url = extract_validation_url_from_error_details(details)
+                                .map(|u| {
+                                    crate::modules::quota::format_google_validation_url(
+                                        &u,
+                                        &account.email,
+                                    )
+                                });
+                            let message = parsed
+                                .get("error")
+                                .and_then(|e| e.get("message"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or_default()
+                                .to_string();
+
+                            let detail = GatewayTrajectoryErrorDetail {
+                                message: if message.is_empty() {
+                                    format!("获取模型列表失败: {}", status)
+                                } else {
+                                    message
+                                },
+                                error_code: Some(403),
+                                validation_url,
+                                appeal_url,
+                                trajectory_id: None,
+                                error_message_json: text.clone(),
+                                step_json: String::new(),
+                            };
+                            last_error = Some(encode_wakeup_ui_error_payload(&detail));
+                            break;
+                        }
+                    }
+
+                    last_error = Some(format!("获取模型列表失败: {} - {}", status, text));
+                    if retryable && attempt < DEFAULT_ATTEMPTS {
                         let delay = get_backoff_delay_ms(attempt + 1);
                         if delay > 0 {
                             sleep_with_cancel(std::time::Duration::from_millis(delay), cancel_rx)
@@ -976,6 +841,17 @@ async fn resolve_requested_model_for_official_ls(
                         }
                         continue;
                     }
+                }
+            }
+            Err(err) => {
+                last_error = Some(format!("获取模型列表失败: {}", err));
+                if attempt < DEFAULT_ATTEMPTS {
+                    let delay = get_backoff_delay_ms(attempt + 1);
+                    if delay > 0 {
+                        sleep_with_cancel(std::time::Duration::from_millis(delay), cancel_rx)
+                            .await?;
+                    }
+                    continue;
                 }
             }
         }
@@ -1414,6 +1290,7 @@ async fn trigger_wakeup_via_client_gateway_once(
     base_url: &str,
     cancel_rx: Option<&watch::Receiver<bool>>,
 ) -> Result<WakeupResponse, String> {
+    let attempt_started = std::time::Instant::now();
     let client = build_gateway_client(base_url, 30)?;
     post_gateway_json(
         &client,
@@ -1430,9 +1307,14 @@ async fn trigger_wakeup_via_client_gateway_once(
 
     let service_base = format!("{}/exa.language_server_pb.LanguageServerService", base_url);
     let start_resp: serde_json::Value;
+    let queued_at = std::time::Instant::now();
+    let queue_elapsed;
+    let startup_elapsed;
 
     {
         let _bind_guard = gateway_start_bind_lock().lock().await;
+        queue_elapsed = queued_at.elapsed();
+        let startup_started = std::time::Instant::now();
         let prepare_url = format!(
             "{}{}",
             base_url,
@@ -1469,14 +1351,23 @@ async fn trigger_wakeup_via_client_gateway_once(
             )
         })?;
 
-        start_resp = post_gateway_json(
+        let started = post_gateway_json(
             &client,
             &format!("{}/StartCascade", service_base),
             &json!({}),
             "StartCascade",
             cancel_rx,
         )
-        .await?;
+        .await;
+        startup_elapsed = startup_started.elapsed();
+        if started.is_err() && attempt_started.elapsed() >= CLIENT_GATEWAY_SLOW_ATTEMPT {
+            crate::modules::logger::log_warn(&format!(
+                "[Wakeup] 语言服务器启动慢请求: queue_ms={}, start_ms={}",
+                queue_elapsed.as_millis(),
+                startup_elapsed.as_millis(),
+            ));
+        }
+        start_resp = started?;
     }
 
     let cascade_id = start_resp
@@ -1490,9 +1381,13 @@ async fn trigger_wakeup_via_client_gateway_once(
         cascade_id
     ));
 
+    let model_lookup_started = std::time::Instant::now();
+    let mut model_lookup_elapsed = std::time::Duration::ZERO;
+    let mut generation_started = None;
     let wakeup_result: Result<WakeupResponse, String> = async {
-        let requested_model =
-            resolve_requested_model_for_official_ls(account_id, model, cancel_rx).await?;
+        let model_result = resolve_requested_model_for_official_ls(account_id, model, cancel_rx).await;
+        model_lookup_elapsed = model_lookup_started.elapsed();
+        let requested_model = model_result?;
 
         let send_body = json!({
             "cascadeId": cascade_id,
@@ -1500,6 +1395,7 @@ async fn trigger_wakeup_via_client_gateway_once(
             "cascadeConfig": build_client_like_cascade_config(requested_model, max_output_tokens),
         });
 
+        generation_started = Some(std::time::Instant::now());
         post_gateway_json(
             &client,
             &format!("{}/SendUserCascadeMessage", service_base),
@@ -1668,12 +1564,28 @@ async fn trigger_wakeup_via_client_gateway_once(
         return wakeup_result;
     }
 
+    let cleanup_started = std::time::Instant::now();
+    let generation_ms = generation_started.map(|started| started.elapsed().as_millis());
     let delete_resp = client
         .post(format!("{}/DeleteCascadeTrajectory", service_base))
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .json(&json!({ "cascadeId": cascade_id }))
         .send()
         .await;
+
+    let total = attempt_started.elapsed();
+    if total >= CLIENT_GATEWAY_SLOW_ATTEMPT {
+        crate::modules::logger::log_warn(&format!(
+            "[Wakeup] 语言服务器慢请求: total_ms={}, queue_ms={}, start_ms={}, model_lookup_ms={}, generation_ms={:?}, cleanup_ms={}, success={}",
+            total.as_millis(),
+            queue_elapsed.as_millis(),
+            startup_elapsed.as_millis(),
+            model_lookup_elapsed.as_millis(),
+            generation_ms,
+            cleanup_started.elapsed().as_millis(),
+            wakeup_result.is_ok(),
+        ));
+    }
 
     if let Err(err) = delete_resp {
         crate::modules::logger::log_error(&format!(
@@ -1757,7 +1669,7 @@ async fn trigger_wakeup_via_client_gateway(
     Err("网关重试后仍失败".to_string())
 }
 
-/// 旧版直连 Cloud Code 唤醒（保留给兼容模式与网关内部调用）
+/// 通过选中账号直连 Cloud Code，无需本地客户端。
 pub(crate) async fn trigger_wakeup_direct(
     account_id: &str,
     model: &str,
@@ -1784,12 +1696,6 @@ pub(crate) async fn trigger_wakeup_direct(
         modules::quota::fetch_project_id_for_token(&token, &account.email),
     )
     .await?;
-    let final_project_id = project_id
-        .clone()
-        .or_else(|| token.project_id.clone())
-        .ok_or_else(|| "project_id 缺失，无法执行唤醒请求".to_string())?;
-    crate::modules::logger::log_info(&format!("[Wakeup] 项目ID: {}", final_project_id));
-
     if token.project_id.is_none() && project_id.is_some() {
         token.project_id = project_id.clone();
     }
@@ -1802,11 +1708,17 @@ pub(crate) async fn trigger_wakeup_direct(
         let _ = modules::save_account(&account);
     }
 
-    let client = crate::utils::http::create_client(15);
-    let body = build_request_body(&final_project_id, model, prompt, max_output_tokens);
+    let client = crate::utils::http::create_client(25);
+    let context = modules::quota::QuotaCloudCodeContext::from_token(&token);
+    let body = build_request_body(
+        project_id.as_deref().or(context.preferred_project_id.as_deref()),
+        model,
+        prompt,
+        max_output_tokens,
+    );
     let started = std::time::Instant::now();
 
-    match send_stream_request(&client, &token.access_token, &body, cancel_rx).await {
+    match send_stream_request(&client, &token, &body, cancel_rx).await {
         Ok(parsed) => {
             let duration_ms = started.elapsed().as_millis() as u64;
             crate::modules::logger::log_info(&format!(
@@ -1841,13 +1753,14 @@ pub async fn trigger_wakeup(
     prompt: &str,
     max_output_tokens: u32,
     cancel_scope_id: Option<&str>,
+    transport_mode: Option<WakeupTransportMode>,
 ) -> Result<WakeupResponse, String> {
-    // 执行前检查：唤醒链路依赖官方 LS 二进制，未就绪时不再发起网络请求。
-    let _ = ensure_wakeup_runtime_ready()?;
+    let mode = resolve_wakeup_transport_mode(transport_mode);
+    ensure_wakeup_runtime_ready(Some(mode)).await?;
     let cancel_rx = get_wakeup_cancel_receiver(cancel_scope_id)?;
 
-    match resolve_wakeup_transport_mode() {
-        WakeupTransportMode::LegacyCloudCode => {
+    match mode {
+        WakeupTransportMode::Clientless => {
             crate::modules::logger::log_info("[Wakeup] 通道=legacy_cloudcode");
             trigger_wakeup_direct(
                 account_id,
@@ -1858,7 +1771,7 @@ pub async fn trigger_wakeup(
             )
             .await
         }
-        WakeupTransportMode::ClientGateway => {
+        WakeupTransportMode::LanguageServer => {
             crate::modules::logger::log_info("[Wakeup] 通道=client_gateway");
             trigger_wakeup_via_client_gateway(
                 account_id,
@@ -1991,13 +1904,29 @@ fn build_models_from_available_models_response(
     let mut models = Vec::new();
     if let Some(entries) = extract_available_models_map(response) {
         let ordered_ids = extract_ordered_model_ids(response, entries);
+        let selectable_ids: HashSet<&str> = extract_agent_model_sorts(response)
+            .into_iter()
+            .flatten()
+            .filter_map(|sort| sort.groups.as_ref())
+            .flatten()
+            .filter_map(|group| group.model_ids.as_ref())
+            .flatten()
+            .map(|id| id.trim())
+            .filter(|id| entries.contains_key(*id))
+            .collect();
         for id in ordered_ids {
             if let Some(meta) = entries.get(&id) {
                 models.push(AvailableModel {
                     id: id.clone(),
                     display_name: meta.display_name.clone().unwrap_or_else(|| id.clone()),
                     model_constant: meta.model_constant.clone(),
-                    recommended: meta.recommended,
+                    // The client picker follows agentModelSorts. The models map also
+                    // contains retired and internal models still marked recommended.
+                    recommended: if selectable_ids.is_empty() {
+                        meta.recommended
+                    } else {
+                        Some(selectable_ids.contains(id.as_str()))
+                    },
                 });
             }
         }
@@ -2043,63 +1972,51 @@ fn build_local_fallback_models(accounts: &[crate::models::Account]) -> Vec<Avail
     result
 }
 
-async fn fetch_available_models_from_access_token(
-    access_token: &str,
+async fn fetch_available_models_for_token(
+    token: &crate::models::token::TokenData,
 ) -> Result<AvailableModelsResponse, String> {
-    let payload = json!({});
     let client = crate::utils::http::create_client(15);
     let mut last_error: Option<String> = None;
 
-    for base in CLOUD_CODE_BASE_URLS {
-        for attempt in 1..=DEFAULT_ATTEMPTS {
-            let url = format!("{}{}", base, FETCH_MODELS_PATH);
-            let response = client
-                .post(url)
-                .bearer_auth(access_token)
-                .header(reqwest::header::USER_AGENT, USER_AGENT)
-                .header(reqwest::header::CONTENT_TYPE, "application/json")
-                .header(reqwest::header::ACCEPT_ENCODING, "gzip")
-                .json(&payload)
-                .send()
-                .await;
+    for attempt in 1..=DEFAULT_ATTEMPTS {
+        let response = available_models_request(&client, token).send().await;
 
-            match response {
-                Ok(res) => {
-                    if res.status().is_success() {
-                        let parsed: AvailableModelsResponse = res
-                            .json()
-                            .await
-                            .map_err(|e| format!("解析模型列表失败: {}", e))?;
-                        return Ok(parsed);
-                    }
-                    if res.status() == reqwest::StatusCode::UNAUTHORIZED {
-                        return Err("Authorization expired".to_string());
-                    }
-                    if res.status() == reqwest::StatusCode::FORBIDDEN {
-                        return Err("Cloud Code access forbidden".to_string());
-                    }
-                    let status = res.status();
-                    let text = res.text().await.unwrap_or_default();
-                    let retryable =
-                        status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.as_u16() >= 500;
-                    last_error = Some(format!("获取模型列表失败: {} - {}", status, text));
-                    if retryable && attempt < DEFAULT_ATTEMPTS {
-                        let delay = get_backoff_delay_ms(attempt + 1);
-                        if delay > 0 {
-                            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
-                        }
-                        continue;
-                    }
+        match response {
+            Ok(res) => {
+                if res.status().is_success() {
+                    let parsed: AvailableModelsResponse = res
+                        .json()
+                        .await
+                        .map_err(|e| format!("解析模型列表失败: {}", e))?;
+                    return Ok(parsed);
                 }
-                Err(err) => {
-                    last_error = Some(format!("获取模型列表失败: {}", err));
-                    if attempt < DEFAULT_ATTEMPTS {
-                        let delay = get_backoff_delay_ms(attempt + 1);
-                        if delay > 0 {
-                            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
-                        }
-                        continue;
+                if res.status() == reqwest::StatusCode::UNAUTHORIZED {
+                    return Err("Authorization expired".to_string());
+                }
+                if res.status() == reqwest::StatusCode::FORBIDDEN {
+                    return Err("Cloud Code access forbidden".to_string());
+                }
+                let status = res.status();
+                let text = res.text().await.unwrap_or_default();
+                let retryable =
+                    status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.as_u16() >= 500;
+                last_error = Some(format!("获取模型列表失败: {} - {}", status, text));
+                if retryable && attempt < DEFAULT_ATTEMPTS {
+                    let delay = get_backoff_delay_ms(attempt + 1);
+                    if delay > 0 {
+                        tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
                     }
+                    continue;
+                }
+            }
+            Err(err) => {
+                last_error = Some(format!("获取模型列表失败: {}", err));
+                if attempt < DEFAULT_ATTEMPTS {
+                    let delay = get_backoff_delay_ms(attempt + 1);
+                    if delay > 0 {
+                        tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                    }
+                    continue;
                 }
             }
         }
@@ -2170,7 +2087,7 @@ pub async fn fetch_available_models() -> Result<Vec<AvailableModel>, String> {
             }
         };
 
-        match fetch_available_models_from_access_token(&token.access_token).await {
+        match fetch_available_models_for_token(&token).await {
             Ok(response) => {
                 let models = build_models_from_available_models_response(&response);
                 if !models.is_empty() {
@@ -2207,6 +2124,30 @@ pub async fn fetch_available_models() -> Result<Vec<AvailableModel>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clientless_wakeup_omits_the_project_field_for_consumer_accounts() {
+        let model = "claude-sonnet-5-5-medium";
+        let consumer = build_request_body(None, model, "Reply OK.", 0);
+        assert!(consumer.get("project").is_none());
+        assert_eq!(consumer["model"], model);
+        let managed = build_request_body(Some("selected-project"), model, "Reply OK.", 0);
+        assert_eq!(managed["project"], "selected-project");
+        assert_eq!(managed["model"], model);
+    }
+
+    #[test]
+    fn clientless_wakeup_requires_a_model_reply() {
+        let usage_only = "data: {\"response\":{\"usageMetadata\":{\"totalTokenCount\":12}}}";
+        assert_eq!(
+            parse_stream_result(usage_only).err().as_deref(),
+            Some("WAKEUP_DIRECT_NO_REPLY"),
+        );
+        let reply = r#"data: {"response":{"candidates":[{"content":{"parts":[{"text":"OK"}]}}]}}"#;
+        let response = parse_stream_result(&format!("{usage_only}\n\n{reply}")).unwrap();
+        assert_eq!(response.reply, "OK");
+        assert_eq!(response.total_tokens, Some(12));
+    }
 
     fn parse_available_models(value: serde_json::Value) -> AvailableModelsResponse {
         serde_json::from_value(value).expect("available-model response should deserialize")
@@ -2281,5 +2222,109 @@ mod tests {
         }));
 
         assert_eq!(model_ids(&response), ["alpha", "beta", "zeta"]);
+    }
+
+    #[test]
+    fn official_picker_excludes_retired_and_internal_models_but_preserves_metadata() {
+        let response: AvailableModelsResponse = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/antigravity-available-models.json"
+        ))
+        .unwrap();
+        let models = build_models_from_available_models_response(&response);
+        let expected = response.agent_model_sorts.as_ref().unwrap()[0]
+            .groups
+            .as_ref()
+            .unwrap()[0]
+            .model_ids
+            .as_ref()
+            .unwrap();
+        let selectable: Vec<&String> = models
+            .iter()
+            .filter(|model| model.recommended == Some(true))
+            .map(|model| &model.id)
+            .collect();
+        assert_eq!(selectable, expected.iter().collect::<Vec<_>>());
+        for (id, number) in [
+            ("gemini-3.8-flash-high", 1318),
+            ("gemini-3.8-flash-medium", 1319),
+            ("gemini-3.8-flash-low", 1320),
+            ("gemini-4-argon-high", 1417),
+            ("gemini-4-argon-medium", 1418),
+            ("gemini-4-argon-low", 1419),
+            ("claude-opus-5-5-low", 1400),
+            ("claude-opus-5-5-medium", 1401),
+            ("claude-opus-5-5-high", 1402),
+            ("claude-sonnet-5-5-low", 1403),
+            ("claude-sonnet-5-5-medium", 1404),
+            ("claude-sonnet-5-5-high", 1405),
+            ("gpt-oss-120b-medium", 342),
+        ] {
+            let model = models.iter().find(|model| model.id == id).unwrap();
+            let constant = model.model_constant.as_deref().unwrap();
+            assert_eq!(
+                parse_codeium_model_enum_name(constant),
+                Some(number),
+                "{id}"
+            );
+            assert_eq!(
+                parse_codeium_model_enum_name(constant.strip_prefix("MODEL_").unwrap()),
+                Some(number)
+            );
+        }
+        assert_eq!(
+            models
+                .iter()
+                .find(|model| model.id == "gemini-3-flash")
+                .unwrap()
+                .recommended,
+            Some(false)
+        );
+        assert_eq!(
+            models
+                .iter()
+                .find(|model| model.id == "gemini-3.8-flash-tiered")
+                .unwrap()
+                .recommended,
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn wakeup_model_requests_share_quota_routing_project_and_versioned_headers() {
+        for project in [Some(" project-123 "), Some("aicode-consumers"), None] {
+            let mut token = crate::models::token::TokenData::new(
+                "test-access".into(),
+                "test-refresh".into(),
+                3600,
+                None,
+                project.map(str::to_string),
+                None,
+            );
+            token.is_gcp_tos = Some(true);
+            let context = modules::quota::QuotaCloudCodeContext::from_token(&token);
+            let request = available_models_request(&reqwest::Client::new(), &token)
+                .build()
+                .unwrap();
+            let expected_url = format!(
+                "{}{}",
+                modules::quota::resolve_cloud_code_base_url(&context).trim_end_matches('/'),
+                FETCH_MODELS_PATH
+            );
+            assert_eq!(request.url().as_str(), expected_url);
+            assert_eq!(request.headers()[reqwest::header::ACCEPT_ENCODING], "gzip");
+            assert!(request.headers()[reqwest::header::USER_AGENT]
+                .to_str()
+                .unwrap()
+                .starts_with("antigravity/"));
+            let body: serde_json::Value =
+                serde_json::from_slice(request.body().unwrap().as_bytes().unwrap()).unwrap();
+            assert_eq!(
+                body,
+                context
+                    .preferred_project_id
+                    .map(|project| json!({ "project": project }))
+                    .unwrap_or_else(|| json!({}))
+            );
+        }
     }
 }

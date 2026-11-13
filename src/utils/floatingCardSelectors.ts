@@ -10,7 +10,8 @@ import { getGrokUsage } from '../types/grok';
 import type { GitHubCopilotAccount } from '../types/githubCopilot';
 import type { KiroAccount } from '../types/kiro';
 import { getKiroCreditsSummary, isKiroAccountBanned } from '../types/kiro';
-import type { PlatformId } from '../types/platform';
+import type { MinimaxCodeAccount } from '../types/minimaxCode';
+import { getMiniMaxCodeQuotaGroups } from '../utils/minimaxCode/parser';
 import type { QoderAccount } from '../types/qoder';
 import { getQoderSubscriptionInfo } from '../types/qoder';
 import type { TraeAccount } from '../types/trae';
@@ -23,90 +24,14 @@ import type { ZedAccount } from '../types/zed';
 import { getZedUsage } from '../types/zed';
 import type { ZcodeAccount } from '../types/zcode';
 
-export const GHCP_CURRENT_ACCOUNT_ID_KEY = 'agtools.github_copilot.current_account_id';
-export const WINDSURF_CURRENT_ACCOUNT_ID_KEY = 'agtools.windsurf.current_account_id';
-export const KIRO_CURRENT_ACCOUNT_ID_KEY = 'agtools.kiro.current_account_id';
-export const CURSOR_CURRENT_ACCOUNT_ID_KEY = 'agtools.cursor.current_account_id';
-export const GROK_CURRENT_ACCOUNT_ID_KEY = 'agtools.grok.current_account_id';
-export const CODEBUDDY_CURRENT_ACCOUNT_ID_KEY = 'agtools.codebuddy.current_account_id';
-export const CODEBUDDY_CN_CURRENT_ACCOUNT_ID_KEY = 'agtools.codebuddycn.current_account_id';
-export const QODER_CURRENT_ACCOUNT_ID_KEY = 'agtools.qoder.current_account_id';
-export const ZCODE_CURRENT_ACCOUNT_ID_KEY = 'agtools.zcode.current_account_id';
-export const TRAE_CURRENT_ACCOUNT_ID_KEY = 'agtools.trae.current_account_id';
-export const TRAE_SOLO_CURRENT_ACCOUNT_ID_KEY = 'agtools.trae_solo.current_account_id';
-export const TRAE_CN_CURRENT_ACCOUNT_ID_KEY = 'agtools.trae_cn.current_account_id';
-export const TRAE_SOLO_CN_CURRENT_ACCOUNT_ID_KEY = 'agtools.trae_solo_cn.current_account_id';
-export const WORKBUDDY_CURRENT_ACCOUNT_ID_KEY = 'agtools.workbuddy.current_account_id';
-export const ZED_CURRENT_ACCOUNT_ID_KEY = 'agtools.zed.current_account_id';
-
 type TimestampedAccount = {
   id: string;
   last_used?: number | null;
   created_at?: number | null;
 };
 
-export type StoredCurrentPlatformId =
-  | 'github-copilot'
-  | 'windsurf'
-  | 'kiro'
-  | 'cursor'
-  | 'grok'
-  | 'codebuddy'
-  | 'codebuddy_cn'
-  | 'qoder'
-  | 'zcode'
-  | 'trae'
-  | 'trae_solo'
-  | 'trae_cn'
-  | 'trae_solo_cn'
-  | 'workbuddy'
-  | 'zed';
-
-const CURRENT_ACCOUNT_STORAGE_KEYS: Record<StoredCurrentPlatformId, string> = {
-  'github-copilot': GHCP_CURRENT_ACCOUNT_ID_KEY,
-  windsurf: WINDSURF_CURRENT_ACCOUNT_ID_KEY,
-  kiro: KIRO_CURRENT_ACCOUNT_ID_KEY,
-  cursor: CURSOR_CURRENT_ACCOUNT_ID_KEY,
-  grok: GROK_CURRENT_ACCOUNT_ID_KEY,
-  codebuddy: CODEBUDDY_CURRENT_ACCOUNT_ID_KEY,
-  codebuddy_cn: CODEBUDDY_CN_CURRENT_ACCOUNT_ID_KEY,
-  qoder: QODER_CURRENT_ACCOUNT_ID_KEY,
-  zcode: ZCODE_CURRENT_ACCOUNT_ID_KEY,
-  trae: TRAE_CURRENT_ACCOUNT_ID_KEY,
-  trae_solo: TRAE_SOLO_CURRENT_ACCOUNT_ID_KEY,
-  trae_cn: TRAE_CN_CURRENT_ACCOUNT_ID_KEY,
-  trae_solo_cn: TRAE_SOLO_CN_CURRENT_ACCOUNT_ID_KEY,
-  workbuddy: WORKBUDDY_CURRENT_ACCOUNT_ID_KEY,
-  zed: ZED_CURRENT_ACCOUNT_ID_KEY,
-};
-
 function toFiniteNumber(value: number | null | undefined): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-export function readStoredCurrentAccountId(platformId: StoredCurrentPlatformId): string | null {
-  const storageKey = CURRENT_ACCOUNT_STORAGE_KEYS[platformId];
-  try {
-    return localStorage.getItem(storageKey);
-  } catch {
-    return null;
-  }
-}
-
-export function writeStoredCurrentAccountId(
-  platformId: StoredCurrentPlatformId,
-  accountId: string | null,
-) {
-  const storageKey = CURRENT_ACCOUNT_STORAGE_KEYS[platformId];
-  try {
-    if (accountId) {
-      localStorage.setItem(storageKey, accountId);
-    } else {
-      localStorage.removeItem(storageKey);
-    }
-  } catch {
-    // ignore storage write failures
-  }
 }
 
 export function resolveCurrentOrMostRecentAccount<T extends TimestampedAccount>(
@@ -578,6 +503,50 @@ export function getRecommendedWorkbuddyAccount(
   });
 }
 
+export function getRecommendedMiniMaxCodeAccount(
+  accounts: MinimaxCodeAccount[],
+  currentId: string | null | undefined,
+): MinimaxCodeAccount | null {
+  if (accounts.length <= 1) return null;
+  const others = accounts.filter((account) => account.id !== currentId);
+  if (others.length === 0) return null;
+
+  const getScore = (account: MinimaxCodeAccount) => {
+    const groups = getMiniMaxCodeQuotaGroups(
+      account,
+      (key, defaultValue) => defaultValue ?? key,
+    );
+    const baseResources = groups
+      .flatMap((group) => group.items)
+      .filter((resource) => resource.total > 0 || resource.remain > 0);
+
+    let avgRemainPercent = -1;
+    if (baseResources.length > 0) {
+      const totalRemainPercent = baseResources.reduce((sum, resource) => {
+        const percent = resource.remainPercent ?? (
+          resource.total > 0 ? Math.max(0, (resource.remain / resource.total) * 100) : 0
+        );
+        return sum + percent;
+      }, 0);
+      avgRemainPercent = totalRemainPercent / baseResources.length;
+    }
+
+    return {
+      remaining: avgRemainPercent,
+      freshness: account.last_used || account.created_at || 0,
+    };
+  };
+
+  return others.reduce((best, candidate) => {
+    const bestScore = getScore(best);
+    const candidateScore = getScore(candidate);
+    if (candidateScore.remaining !== bestScore.remaining) {
+      return candidateScore.remaining > bestScore.remaining ? candidate : best;
+    }
+    return candidateScore.freshness > bestScore.freshness ? candidate : best;
+  });
+}
+
 export function getZedRecommendationScore(account: ZedAccount): {
   remainingPercent: number;
   freshness: number;
@@ -626,8 +595,4 @@ export function getRecommendedZedAccount(
     }
     return candidateScore.freshness > bestScore.freshness ? candidate : best;
   });
-}
-
-export function isStoredCurrentPlatformId(platformId: PlatformId): platformId is StoredCurrentPlatformId {
-  return platformId in CURRENT_ACCOUNT_STORAGE_KEYS;
 }

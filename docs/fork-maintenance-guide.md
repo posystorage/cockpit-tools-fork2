@@ -37,6 +37,45 @@ Release workflow 中 `build-windows`、`build-macos-aarch64`、`build-macos-x86_
 
 ## 2. 当前基线与历史锚点
 
+### 2.0 v1.3.82 升级施工边界（2026-11-13）
+
+从 fork 1.3.75b1（`0c691d3b`）直接合入上游 v1.3.82（`817f9945`），
+分支 `codex/upgrade-upstream-v1.3.82`。本节优先于下列历史版本中关于 Go 默认、
+双引擎与模型目录联网的旧要求。用户已确认跟随上游仅保留 Rust，允许启动下载
+第三方公共模型目录并保留缓存和内置回退；没有新增版本 tag 或远端发布。
+
+删除 Go 源码、构建与打包链及引擎选择入口；旧 legacy/sidecar 配置迁为 native，
+不改变账号、Key、预算和实例显示偏好。接入上游预算、并发限制、本地拒绝日志、
+分钟汇总、后台写入、官方授权、账号与实例安全存储等能力。实际发送活动沿用
+上游 dispatch checkpoint；未发送 HTTP、已连接但未发推理帧的 WebSocket 均回滚
+精确请求活动。本地策略拒绝不计入上游用量或预算结算。
+
+后台用量事件在入队时固定实际官方账号身份与邮箱，出队不按当前账号补查身份；
+同一事件重试不覆盖原身份。保留历史别名、已删除账号行、全部现存账号窗口统计、
+API 页滚动区间与独立 `*` 暂停。Terra 历史补算接入新后台分批调度，保留用户定价
+和零价覆盖，价格簿完全采用上游。
+
+Desktop 接受新版 Fast、预测和 Rspack 适配，同时保留本地发送解锁、独立提示隐藏、
+默认关闭的额度显示兼容三个职责。完整验证当前文档使用的模块链后才报告显示兼容
+就绪，不能以 Fast/预测成功代替；关闭恢复原额度状态，官方/远端/cloud/direct
+隔离规则及用户草稿保护继续执行。
+
+公共模型目录仅在启动初始化时按上游获取：公共主源、备用源、有效缓存、内置目录
+依次回退。该例外不恢复远端公告、推广活动、远端开关或运行时更新器。
+APIKEY.FUN 密钥库迁移保留自定义 baseUrl，加密、恢复备份和旧格式导出均不得丢失。
+
+ModelTrace 固定到 `6cd4a8ff0f3f4e49d6d6969dd2fbadfa1569fde2`，整体更新为
+18 候选统一库并同步 robust/校准数据；两个算法文件和 MIT 许可已核对。七个请求模型
+与默认三模型保持，含 `gpt-6.1-sol`，不提供 `gpt-5.5` 请求选项。新库仍无 GPT-6.1
+校准指纹，界面明确说明；参考候选中的历史 GPT-5.5 保留以匹配上游完整校准。
+指纹直连适配 Anthropic 协议和显式鉴权，继续无自动换号、换模型或隐藏重试。
+
+发布说明覆盖 `.76–.82` 及 fork 适配。Windows MSI/NSIS/portable 与 macOS
+ARM/Intel/Universal 同一真实 beta 草稿 tag、stable manifest 保护、Cask 删除及
+Linux/finalize/checksum/Homebrew 禁用要求继续执行；Apple 签名只在 fork 明确启用
+且完整自有凭据可用时执行。下载清单 URL 也必须使用实际 beta tag。
+实际检查结果和剩余验收边界见 [v1.3.82 合并审计](upstream-v1.3.82-review.md)。
+
 ### 2.0 v1.3.75 升级施工边界（2026-10-28）
 
 从 fork 1.3.73b1（83ca9ff8）直接合入上游 v1.3.75（2cfe5e51314bfc0bf70bdda1ba08aed82c7dc8bf），
@@ -734,7 +773,7 @@ Provider 目录处理边界：
 
 事件生命周期：
 
-1. sidecar 的 `auth_selected` 事件或 legacy HTTP/WebSocket 路由选中账号时，调用 `record_account_activity_selected()`。
+1. Native `RequestTracker` 在实际 dispatch checkpoint 发出选择 hook，宿主调用 `record_account_activity_selected()`；候选路由或本地策略拒绝不能开始账号活动。
 2. 正常完成、上游失败、流式失败、WebSocket 结束等路径调用 `finish_account_activity()`。
 3. `prune_account_activity()` 清理陈旧运行请求和超出最近窗口的账号活动。
 4. `build_account_activity_snapshot()` 计算每个账号的 `running_count`，按运行数和最近时间排序。
@@ -742,13 +781,13 @@ Provider 目录处理边界：
 
 升级重点：上游若重构请求执行路径，必须逐一检查“选中后记录”和所有 terminal path 的 finish；只补成功路径会造成永久“调度中”。
 
-Sidecar 选择事件所有权：
+Native 活动事件所有权：
 
-- `sidecars/cockpit-cliproxy/main.go` 的 `recordingSelector` 位于完整选择器链最外层，负责在最终账号返回后记录计费账号并且发送一次 `auth_selected`。
-- `cockpitSelector` 只负责实际选择和填写候选/可用账号诊断计数，不得再直接发送 `auth_selected`，否则普通选择会产生重复事件。
-- `SessionAffinitySelector.Pick()` 在 cache hit 和 fallback cache hit 时会直接返回缓存账号，不进入 fallback `cockpitSelector`。因此调度事件不得放回 `cockpitSelector.Pick()`；否则同一会话的首次请求可显示“调度中”，后续请求会漏报。
-- `recordingSelector` 注入每次选择独享的诊断上下文：普通路径使用 `cockpitSelector` 给出的精确计数；未进入根选择器的 affinity cache-hit 路径使用外层候选集补算。诊断数据只用于事件展示，不能参与选择。
-- `TestRecordingSelectorRecordsSessionAffinityCacheHit` 必须同时验证计费账号元数据，以及首次选择和 cache hit 都各发送且只发送一次选择事件。
+- `codex_native_api/lifecycle.rs` 管理尝试、发送证据及活动 hook，宿主在 `codex_local_access_native.rs` 记录实际账号和诊断请求 ID。
+- 所有 HTTP、图片、辅助请求和 WebSocket 入口必须使用同一实际发送边界；换号结束旧活动，再开始新账号活动，重试不重复累积运行数。
+- 未发送 HTTP、已连接但尚未发推理帧的 WebSocket 使用对应 discard 路径回滚精确请求 ID，不能结束同账号的其他并发活动。
+- 正常完成、失败、取消、下游断开和本地完成均释放活动；诊断只用于观测，不能改变路由或计费。
+- 用量事件在入队时固定实际账号 ID/邮箱；出队不能读取当前账号后补身份，重试也不能覆盖原有身份。
 
 ### 5.3 前端显示与轮询
 
@@ -777,7 +816,7 @@ Sidecar 选择事件所有权：
 - 易失：数据只在当前进程内存在，重启后清空，不写数据库/配置文件。
 - 隐私：不记录 API Key secret；UI 继续使用现有账号脱敏函数。
 - 性能：不新增独立高频 command；复用已有 state snapshot 和条件轮询。
-- 兼容：运行时以 sidecar 为唯一路径；legacy 只保留迁移、历史日志筛选和旧数据读取兼容，不能重新作为启动分支。
+- 兼容：运行时仅 Native；legacy/sidecar 字段与部分旧测试 oracle 只用于迁移、历史筛选和兼容读取，不能重新作为生产启动分支。
 
 ### 5.5 OAuth 保留额度窗口语义
 
@@ -785,20 +824,20 @@ OpenAI 的 `primary_window`/`secondary_window` 表示窗口顺序，不保证永
 
 - `quota_reserve_windows_snapshot()` 必须优先使用实际窗口分钟数分类：达到一周的窗口使用周保留阈值，较短窗口使用五小时保留阈值。
 - 只有旧持久化数据缺少窗口分钟数时，才兼容回退为 primary 使用五小时阈值、secondary 使用周阈值。
-- Rust legacy 路由的屏蔽判断、`quota_reserve_status` 告警和写给 Sidecar 的 `quota-reserve.json` 必须共用同一份语义解析结果，不能分别按字段位置判断。
+- Rust Native 的屏蔽判断和 `quota_reserve_status` 告警必须共用同一份语义解析结果，不能分别按字段位置判断。
 - OpenAI 恢复 `primary=300 分钟`、`secondary=10080 分钟` 后，两组阈值应自动同时恢复生效；不得通过永久交换 primary/secondary 字段修复周窗口。
-- Sidecar 继续接收已有 `hourly*`/`weekly*` JSON 契约，但这些字段必须由 Rust 按真实时长完成语义归一化后再写出。
+- 兼容读取旧 `hourly*`/`weekly*` 字段时仍按真实时长完成语义归一化。
 - 回归检查至少覆盖 weekly-only primary、恢复后的 5 小时+周双窗口，以及缺少窗口时长的旧数据兼容。
 
-### 5.6 v1.3.28 sidecar 统一与官方账号标识
+### 5.6 Rust-only 运行时与官方账号标识
 
-上游 `v1.3.22` 起把 Codex API Service 的运行时统一到 sidecar；`v1.3.28` 继续沿用这一边界。后续合并时：
+v1.3.82 起按用户决定跟随上游，仅使用 Native Rust。后续合并时：
 
-- 不恢复普通设置页的 legacy/sidecar 运行时切换控件，也不把 legacy gateway 重新作为启动分支；`gateway_mode`、旧目录和旧日志仍只用于迁移、历史筛选和兼容读取。
-- 保留 sidecar 的 `auth_selected`、`usage`、`auth_result` 事件处理。`auth_selected` 负责开始账号活动，`usage` 及所有失败/取消/重试终点负责结束活动；上游若调整事件字段，先扩展解析器再改 UI。
+- 不恢复引擎切换控件，也不把 legacy/sidecar gateway 重新作为启动分支；`gateway_mode`、旧目录和旧日志只用于迁移、历史筛选和兼容读取。
+- 活动生命周期以 5.2 的 Native dispatch/hook 为准；上游调整执行 checkpoint 或 hook 字段时，先适配宿主和回滚，再调整 UI。
 - 账号统计以本地 `account_id` 为主键；`official_account_id` 只能在官方 ID 与邮箱同时匹配时作为受控历史别名，用于删除后重新授权/重新导入同一账号，不能仅凭共享官方 ID 合并 Team/Workspace 成员；删除账号不删除请求日志，历史费用继续保留。
-- `sidecars/cockpit-cliproxy/third_party/CLIProxyAPI` 是唯一供应商源码目录。上游路径迁移时必须同时检查 Rust build script、发布工作流和本地开发命令，不能留下可被误选的旧副本。
-- Linux 官方 ChatGPT/Codex 桌面实例管理、CLI/App 模式边界、Windows 恢复弹框和 Trae 修复直接跟随上游；除非触及本节的 sidecar 调度观测或去广告边界，不要回退上游生命周期逻辑。
+- 公共模型目录和许可由 `resources/codex/` 与 `codex_model_catalog.rs` 管理，启动下载、缓存和内置回退跟随上游；不恢复已删除 Go 源码、构建链或可被误选的二进制。
+- Linux 官方 ChatGPT/Codex 桌面实例管理、CLI/App 模式边界、Windows 恢复弹框和其他平台修复直接跟随上游；触及 fork 行为时局部适配，不回退上游生命周期逻辑。
 
 ## 6. 修改集 C：上游计费、用量与余额查询
 
@@ -926,7 +965,7 @@ New API URL 构造：
 - 账号从最低优先级改为正常或最高优先级时，后端必须同步移除该账号的 `*`，避免开关消失后账号仍被全部禁用；该账号其他模型排除规则必须保留。
 - 非最低优先级账号若从未发生上述优先级迁移，其手工配置的 `*` 仍属于模型规则，不得被无条件清理。
 - 账号继续保留在 API 服务集合、成员数量、优先级和页面列表中。
-- sidecar 与 legacy HTTP/WebSocket 路径都必须把 `*` 视为禁用全部模型，因此即使其他账号均不可用也不得选择该账号。
+- Native HTTP/WebSocket、图片和无模型辅助请求均必须遵守 `*` 暂停，因此即使其他账号均不可用也不得选择该账号；它与官方授权暂停独立。
 - 两个页面共享同一持久化状态；开关必须调用单账号原子后端命令，不能从页面快照写回整份 `accountModelRules`，否则会覆盖另一页面或模型规则弹窗的并发修改。
 - “禁用模型”弹窗仍是整表编辑，打开时必须记录集合 `updatedAt`，保存时由后端做乐观并发校验；配置已被开关或其他页面更新时拒绝旧草稿，不能反向覆盖新状态。
 - 保存后发送现有 `codex-local-access-state-updated` 事件，并继续依赖已有五秒运行态轮询收敛其他页面。
@@ -945,7 +984,7 @@ New API URL 构造：
 - 前端测试覆盖 `*` 的添加、移除、其他模型规则保留和空规则清理。
 - Rust 测试覆盖单账号原子开关，以及暂停账号从最低优先级改为正常/最高后的 `*` 清理；不得误删普通账号手工配置的 `*`。
 - 账号池页同时覆盖当前账号、未加入历史账号和已删除历史账号；套餐 Tag 与状态 Tag 的顺序稳定。
-- legacy 与 sidecar 测试覆盖“其他账号均不可用时，暂停的最低账号仍不被选中”；重新打开后恢复兜底。
+- Native 与旧配置迁移测试覆盖“其他账号均不可用时，暂停的最低账号仍不被选中”；重新打开后恢复兜底。
 - 普通 Codex 摘要卡片继续完整渲染所有成员并保持内部滚动，新增开关不得挤掉额度、套餐或移出按钮。
 - 普通 Codex 页中移出 API 服务的现存账号仍显示窗口内 API 用量；独立 API 页仅把已删除账号放入历史区。
 - 独立 API 页的 24H/48H/7Day 查询使用固定时长边界并持续刷新，共享弹窗不出现这些标签。
@@ -996,7 +1035,7 @@ MIT 许可随 public/licenses/CodexInputUnlock-LICENSE.txt 打包。不得重新
 
 ## 9. 修改集 F：模型指纹测智
 
-这是 `1.3.59b3` 相对 `1.3.59b2` 的 fork 增量，用模型输出统计进行候选归因，不是 OAuth 设备／会话身份指纹，也不修改第 8 节的额度提示隐藏逻辑。操作说明见 `docs/model-fingerprint-testing.md`。应用版本仍为 `1.3.59`，数字 tag `1.3.59b3` 触发草稿构建；该 tag 的 `RELEASE_VERSIONS` 只取 `1.3.59b3` 中英文增量章节，不重复收录此前 beta 或上游章节。Windows 与 macOS Apple Silicon、Intel、Universal 构建均须启用。
+指纹测智最初在 `1.3.59b3` 加入，以模型输出统计进行候选归因。操作说明见 `docs/model-fingerprint-testing.md`；当前版本、发布说明范围和运行时边界以第 2 节最新记录为准。Windows 与 macOS Apple Silicon、Intel、Universal 构建均须启用。
 
 ### 9.1 双入口位置与名称
 
@@ -1010,7 +1049,7 @@ MIT 许可随 public/licenses/CodexInputUnlock-LICENSE.txt 打包。不得重新
 
 - 可选模型固定为 `gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`、`gpt-6-astra`、`gpt-6-sol`、`gpt-6-luna`、`gpt-6.1-sol`。首次仅勾选 `gpt-5.6-sol`、`gpt-6-sol`、`gpt-6-astra`；保存过的空模型选择不能被默认值覆盖。
 - 首次账号选择为空。开始测试后记录实际使用的账号／API Key；未启动测试的账号选择编辑不覆盖上次测试记录。模型、并行数和采样数的编辑立即记忆。
-- OAuth、独立 API Key 账号和供应商各 API Key 可共同选择；相同上游地址与 Key 去重。Web Session、待完成 OAuth 和缺少凭据的目标不列为可测账号。
+- OAuth、独立 API Key 账号和供应商各 API Key 可共同选择；相同上游地址、Key、协议和鉴权方式去重。Web Session、待完成 OAuth 和缺少凭据的目标不列为可测账号。
 - 按账号／上游 × 请求模型生成组合，最大并行数 1–10、默认 3；每组采样数 1／2／3、默认 3，同组内顺序采样。OAuth 仍受原有账号级内部调度器限制。
 - 指纹测试不自动重试或补采失败样本，不更换目标账号或请求模型；有效样本不足时标为“部分完成”。请求模型、上游返回 model 字段、统计候选及有效样本数必须分别保留。
 - 停止操作取消原生 HTTP 请求和尚未启动的队列组合；关闭／最小化面板继续测试。结果仅保留在本次应用会话内。
@@ -1020,7 +1059,7 @@ MIT 许可随 public/licenses/CodexInputUnlock-LICENSE.txt 打包。不得重新
 
 | 文件／区域 | 必须保留的职责 |
 |---|---|
-| `src/types/codexFingerprint.ts` | 八模型集合（含 gpt-6.1-sol）、首次默认三模型、并行上限和请求／样本／结果类型 |
+| `src/types/codexFingerprint.ts` | 七模型集合（含 gpt-6.1-sol）、首次默认三模型、并行上限和请求／样本／结果类型 |
 | `src/utils/codexFingerprint.ts` | 偏好校验、目标聚合去重和有界工作队列 |
 | `src/stores/useCodexFingerprintStore.ts` | 选择记忆、批次生命周期、账号 × 模型矩阵、采样、停止和部分结果 |
 | `src/components/codex/fingerprint/CodexFingerprintHost.tsx`、`fingerprint.css` | 统一弹窗、多选与参数控件、逐组结果和详情 |
@@ -1030,19 +1069,19 @@ MIT 许可随 public/licenses/CodexInputUnlock-LICENSE.txt 打包。不得重新
 | `src-tauri/src/lib.rs` | `codex_fingerprint_begin/probe/cancel/finish` 四个 Tauri 命令注册 |
 | `tests/codexFingerprint.test.ts`、`tests/codexFingerprintStore.test.ts` | 默认值、空选择、去重、并行、矩阵、记忆、部分失败和取消回归 |
 
-v1.3.63 起 OAuth 使用 prepare_direct_codex_account 与上游账号直连／代理传输，不启动 API Service；每次采样使用独立 session／turn，不能继承鹈鹕 HTML delivery instructions 或引入工具。新版 SSE 详细错误必须在指纹出口再次脱敏。API 上游按保存的 Responses／Chat Completions 协议直接请求；不要恢复不兼容的固定 temperature 或旧式 max_tokens 参数。不得为指纹测试改写当前账号、路由集合或 Provider 配置；供应商 Key 排除记录必须过滤关联账号，避免删除后回流。
+v1.3.63 起 OAuth 使用 prepare_direct_codex_account 与上游账号直连／代理传输，不启动 API Service；每次采样使用独立 session／turn，不能继承鹈鹕 HTML delivery instructions 或引入工具。新版 SSE 详细错误必须在指纹出口再次脱敏。API 上游按保存的 Responses／Chat Completions／Anthropic 协议和显式鉴权直接请求；Chat Completions 不固定 temperature 或旧式 max_tokens，Anthropic 按协议提供 token 上限并拒绝不完整结束。不得为指纹测试改写当前账号、路由集合或 Provider 配置；供应商 Key 排除记录必须过滤关联账号，避免删除后回流。
 
 ### 9.4 ModelTrace 资产、许可与同步
 
-- 来源：`https://github.com/xqy2006/ModelTrace`，固定 commit `55a2e4a55170423b484d701e9a82ab62b268c811`。
-- `src/vendor/modeltrace/` 包含原版 `fingerprint-core.js`、`challenge-browser.js`、压缩排版的 `unified_bank.json`、本地类型声明、README 和 MIT LICENSE；当前参考库有 16 个候选模型。
+- 来源：`https://github.com/xqy2006/ModelTrace`，固定 commit `6cd4a8ff0f3f4e49d6d6969dd2fbadfa1569fde2`。
+- `src/vendor/modeltrace/` 包含原版 `fingerprint-core.js`、`challenge-browser.js`、压缩排版的 `unified_bank.json`、完整性 metadata、本地类型声明、README 和 MIT LICENSE；当前参考库有 18 个候选模型，仍无 GPT-6.1 校准指纹。
 - `public/licenses/ModelTrace-LICENSE.txt` 必须随生产产物复制到 `dist/licenses/`，不能只保留源码许可证。
 - 算法与参考库必须匹配更新，并在 README 记录新的精确来源版本；不得单独替换题目、系数或模型标签后沿用旧校准。分析与参考库在本地，不上传用户凭据或回答到 ModelTrace。
 - 合并上游账号、Provider 或 Local Access 重构时适配这些接点；不要整文件采用 ours/theirs 覆盖页面，或把本功能误合并为 OAuth 身份指纹。
 
 ### 9.5 当前验证状态
 
-代码阶段的 21 项指纹／鹈鹕 TypeScript 定向测试、前端类型检查、Vite 生产构建和 Rust 主库检查已通过。3 项 `fingerprint_transport_tests` 已编译，但本机 Windows 加载测试程序返回 `0xC0000139`，尚未计为运行通过；同步或发布时应在可运行环境重跑。没有用真实账号发起验收请求，也未以本次源码增量生成新安装包。
+最新验证结果见第 2 节对应合并审计。真实账号探针、客户端额度耗尽场景和平台安装包验收须单独报告，不能由合成测试或编译结果替代。
 
 ## 10. 发布与仓库身份差异
 
@@ -1125,12 +1164,13 @@ npm run check:provider-presets
 npm run build
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 $env:COCKPIT_TOOLS_DATA_DIR = Join-Path $PWD "target/test-data-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
-cargo test --manifest-path src-tauri/Cargo.toml
+cargo test --manifest-path src-tauri/Cargo.toml --lib -- --test-threads=1
+cargo test -p cockpit-core -- --test-threads=1
 ```
 
 注意：`npm run build` 会先运行版本同步脚本。执行后检查 Git 状态，确认版本文件变化来自目标 release，而不是意外脏改。
 
-Windows 上不得在未设置 `COCKPIT_TOOLS_DATA_DIR` 时运行 Rust 账号测试。该变量必须指向 workspace 内新建的测试专用目录；`HOME`、`CODEX_HOME` 和 `COCKPIT_TOOLS_TEST_DATA_DIR` 不能替代它。若本机没有 Go，可用已忽略的目标名 sidecar 占位文件配合 `COCKPIT_SKIP_CLIPROXY_BUILD=1` 只验证 Rust，但发布构建仍必须由 CI 真实编译并测试 Go sidecar。
+Windows 上不得在未设置 `COCKPIT_TOOLS_DATA_DIR` 时运行 Rust 账号测试。该变量必须指向 workspace 内新建的测试专用目录；`HOME`、`CODEX_HOME` 和 `COCKPIT_TOOLS_TEST_DATA_DIR` 不能替代它。自 v1.3.82 起仅构建 Rust，不再需要 Go 工具链、sidecar 占位或旧跳过构建环境变量。无法启动的测试程序必须单独报告原因，编译成功不能记作运行通过。
 
 ### 13.2 去广告/外链扫描
 
@@ -1146,7 +1186,7 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 1. 启动 Codex API 服务并加入至少两个账号。
 2. 发起普通、流式和 WebSocket 请求（若该模式受支持）。
 3. 在普通 Codex 页和独立 API 服务页确认被选账号在 5 秒内显示“调度中”，并在普通页成员列表中移到最前。
-4. 开启 session affinity，使用完全相同的会话标识连续发起至少两个请求；首次 cache miss 和后续 cache hit 都必须显示“调度中”，Sidecar 每个请求只输出一条 `auth_selected`。
+4. 开启 session affinity，使用完全相同的会话标识连续发起至少两个请求；首次和后续命中均显示真实活动，每次实际发送只记录一次，不因缓存命中漏报。
 5. 加入足以超过普通 API 服务卡片高度的账号，确认所有账号均已渲染、成员区域出现纵向滚动条，滚动到底能够看到最后一个成员，卡片本身不无限增高。
 6. 请求结束后显示“刚调度”，约 30 秒后消失。
 7. 失败、取消和重试后不能永久显示“调度中”。
@@ -1169,7 +1209,7 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 3. 让一个仍在账号总览的账号产生请求后移出 API 服务，在相同时间范围确认其进入“历史账号”并显示 `未加入`，原套餐 Tag 位于状态 Tag 之前。
 4. 删除该账号并刷新，在相同时间范围确认显示 `已删除`，费用和请求数仍保留。
 5. 将一个账号设为最低优先级，在独立页面和普通摘要卡片确认都出现无文字开关；任一位置切换后另一位置同步。
-6. 关闭开关并使其他账号全部不可用，分别验证 Go 与 Rust 不会调度该账号；同时用旧 collection 数据启动一次，确认 legacy 模式只迁移为 sidecar 而不绕过暂停状态；重新打开后恢复兜底。
+6. 关闭开关并使其他账号全部不可用，验证 Native 不会调度该账号；用旧 collection 数据启动，确认 legacy/sidecar 模式迁为 Native 且不绕过暂停状态；重新打开后恢复兜底。
 7. 为账号预先配置其他模型排除规则，来回切换开关后确认这些规则未被覆盖。
 8. 暂停最低优先级账号后把它改为正常或最高优先级，确认 `*` 自动清理、其他模型排除仍保留，账号恢复可调度且不留下不可见暂停状态。
 9. 打开“禁用模型”弹窗后从另一页面切换兜底开关，再尝试保存旧草稿；后端必须拒绝旧版本，重新打开弹窗后才能保存。
@@ -1183,7 +1223,7 @@ rg -n "ANNOUNCEMENT_URL|REMOTE_CONFIG_URL|should_check_for_updates|ADS_AND_SPONS
 4. 刷新页面、替换 Renderer、多窗口、停止与重启、改绑、删除实例时，验证断点和 Observer 的清理与重建。
 5. 当前基线及新增额度显示兼容开关关闭时，检查额度查询缓存未被修改。新增开关开启后，只允许第 2.0 节限定的页面内存状态兼容，关闭后恢复原始状态和订阅；数字用量及图片额度不变。可用 API 上游完成真实请求，不可用上游保留 429／鉴权／账号池错误。
 6. 检查正式版独立 codex-quota-ui 日志，页面无新增诊断 UI，日志无凭据或对话内容。
-7. v1.3.73 混合方案必须覆盖“提示隐藏 × 额度显示兼容”的四种开关组合，以及缺失新字段的旧配置迁移；四种组合均保留 API Service 本地发送解锁。验证缓存改写不会绕过隐藏开关，刷新、重启、改绑、Go/Rust 切换均保留各自偏好。
+7. 混合方案必须覆盖“提示隐藏 × 额度显示兼容”的四种开关组合，以及缺失新字段的旧配置迁移；四种组合均保留 API Service 本地发送解锁。验证缓存改写不会绕过隐藏开关，刷新、重启、改绑及旧引擎配置迁移后均保留各自偏好。
 
 ### 13.7 Release 平台范围与多版本变更信息检查
 

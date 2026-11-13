@@ -23,8 +23,8 @@ fn runtimes() -> &'static Mutex<HashMap<PathBuf, watch::Sender<bool>>> {
 }
 
 pub fn enabled() -> bool {
-    let cfg = config::get_user_config();
-    cfg.codex_app_native_fast_enabled || cfg.codex_app_api_quota_compat_enabled
+    // API-only Fast adaptation is automatic; actual credentials gate each profile.
+    true
 }
 
 pub fn start_for_profile(
@@ -72,13 +72,14 @@ pub fn stop_all() {
 #[derive(Clone, Default, PartialEq, Eq)]
 struct Profile {
     native_fast: bool,
+    native_predictions: bool,
     api_key_auth_verified: bool,
     quota_compat: bool,
 }
 
 impl Profile {
     fn active(&self) -> bool {
-        self.native_fast || self.quota_compat
+        self.native_fast || self.quota_compat || self.native_predictions
     }
 }
 
@@ -90,6 +91,7 @@ fn profile_from_values(
     doc: &toml_edit::Document,
     auth: &Value,
     cfg: &config::UserConfig,
+    verify_api_service: impl FnOnce(&str, &str, &str) -> bool,
 ) -> Profile {
     let selected = doc
         .get("profile")
@@ -134,8 +136,22 @@ fn profile_from_values(
                 && url.fragment().is_none()
         })
     });
+    let native_predictions = cfg.codex_app_native_predictions_enabled
+        && valid_api_base
+        && (api_key_auth_verified
+            || requires_auth == Some(true)
+                && oauth
+                && custom_api
+                && provider
+                    .and_then(|provider| provider.get("wire_api"))
+                    .and_then(|item| item.as_str())
+                    == Some("responses")
+                && base.zip(bearer).is_some_and(|(base, bearer)| {
+                    verify_api_service(provider_id, base, bearer)
+                }));
     Profile {
-        native_fast: cfg.codex_app_native_fast_enabled && api_key_auth_verified,
+        native_fast: api_key_auth_verified,
+        native_predictions,
         api_key_auth_verified,
         quota_compat: cfg.codex_app_api_quota_compat_enabled
             && requires_auth == Some(true)
@@ -154,7 +170,9 @@ fn read_profile(profile: &Path, instance: &str, api_service: bool) -> Result<Pro
     let auth = codex_account::read_configured_codex_auth_value(profile)
         .map_err(|_| ())?
         .unwrap_or(Value::Null);
-    let mut result = profile_from_values(&doc, &auth, &cfg);
+    let mut result = profile_from_values(&doc, &auth, &cfg, |provider, base, bearer| {
+        api_service && super::codex_local_access::bound_oauth_prediction_route_matches(provider, base, bearer)
+    });
     if api_service {
         result.quota_compat = instance_quota_display_enabled(instance);
     }
@@ -183,6 +201,37 @@ fn instance_quota_display_enabled(instance: &str) -> bool {
 
 pub(crate) fn native_fast_enabled_for_profile(profile: &Path) -> bool {
     read_profile(profile, "", false).is_ok_and(|profile| profile.native_fast)
+}
+
+pub(crate) fn prepare_native_fast_for_profile(base_dir: &Path) -> Result<(), String> {
+    if !native_fast_enabled_for_profile(base_dir) {
+        return Ok(());
+    }
+    enable_native_fast_feature(base_dir)
+}
+
+fn enable_native_fast_feature(base_dir: &Path) -> Result<(), String> {
+    let text = std::fs::read_to_string(base_dir.join("config.toml")).map_err(|e| e.to_string())?;
+    let mut doc = crate::modules::codex_config_format::read_codex_config_doc_from_str(&text)
+        .map_err(|e| e.to_string())?;
+    if doc
+        .get("features")
+        .and_then(|v| v.get("fast_mode"))
+        .and_then(|v| v.as_bool())
+        == Some(true)
+    {
+        return Ok(());
+    }
+    if doc.get("features").is_none() {
+        doc["features"] = toml_edit::table();
+    }
+    doc["features"]["fast_mode"] = toml_edit::value(true);
+    let text = crate::modules::codex_config_format::codex_config_doc_to_string(&mut doc);
+    crate::modules::codex_config_format::write_codex_config_toml_atomic(
+        &base_dir.join("config.toml"),
+        &text,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[derive(Deserialize)]
@@ -254,22 +303,11 @@ fn profile_or_api_fallback(profile: Option<Profile>, api_service: bool) -> Optio
     profile.or_else(|| api_service.then(Profile::default))
 }
 
-fn trusted_preload_source(
-    profile: Option<&Profile>,
-    api_service: bool,
-    port: u16,
-) -> Option<String> {
-    profile
-        .filter(|profile| profile.active() || api_service)
-        .map(|profile| {
-            fast::browser_preload_source(
-                profile.native_fast,
-                profile.quota_compat,
-                profile.api_key_auth_verified,
-                api_service,
-                &format!("preload-{port}"),
-            )
-        })
+fn trusted_preload_source(profile: Option<&Profile>, api_service: bool, port: u16) -> Option<String> {
+    profile.filter(|profile| profile.active() || api_service).map(|profile| {
+        fast::browser_preload_source(profile.native_fast, profile.native_predictions, profile.quota_compat,
+            profile.api_key_auth_verified, api_service, &format!("preload-{port}"))
+    })
 }
 
 // Browser pre-registration also protects restored macOS conversations from
@@ -432,7 +470,7 @@ async fn run_profile(
         let allow_blank = preload_first
             || (cfg!(target_os = "windows")
                 && startup.is_some()
-                && profile.native_fast
+                && (profile.native_fast || profile.native_predictions)
                 && profile.api_key_auth_verified
                 && !profile.quota_compat);
         let Some(available) = targets(&client, port, allow_blank).await else {
@@ -469,6 +507,7 @@ async fn run_profile(
                     socket,
                     draft_profile,
                     profile.native_fast,
+                    profile.native_predictions,
                     profile.quota_compat,
                     profile.api_key_auth_verified,
                     api_service,
@@ -553,57 +592,131 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn enabling_native_fast_preserves_catalog_reference_and_selected_speed() {
+        let dir = tempfile::tempdir().unwrap();
+        for reference in [None, Some("cockpit-model-catalog.json"), Some("user-models.json")] {
+            let mut text = "service_tier = 'default'\n".to_string();
+            if let Some(reference) = reference {
+                text.push_str(&format!("model_catalog_json = '{reference}'\n"));
+            }
+            text.push_str("[features]\nfast_mode = false\nother = true\n");
+            std::fs::write(dir.path().join("config.toml"), text).unwrap();
+            enable_native_fast_feature(dir.path()).unwrap();
+            let content = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+            let doc = crate::modules::codex_config_format::read_codex_config_doc_from_str(&content).unwrap();
+            assert_eq!(doc.get("model_catalog_json").and_then(|v| v.as_str()), reference);
+            assert_eq!(doc["service_tier"].as_str(), Some("default"));
+            assert_eq!(doc["features"]["fast_mode"].as_bool(), Some(true));
+            assert_eq!(doc["features"]["other"].as_bool(), Some(true));
+            assert!(!dir.path().join("cockpit-model-catalog.json").exists());
+            assert!(!dir.path().join("cockpit-native-speed-models.json").exists());
+            enable_native_fast_feature(dir.path()).unwrap();
+            assert_eq!(std::fs::read_to_string(dir.path().join("config.toml")).unwrap(), content);
+        }
+    }
+
+    #[test]
     fn enhancement_scope_requires_actual_auth_and_separate_api_route() {
-        let mut cfg = config::UserConfig::default();
-        cfg.codex_app_native_fast_enabled = true;
-        cfg.codex_app_api_quota_compat_enabled = true;
+        // Retired user opt-out must not suppress the automatic API adaptation.
+        let cfg: config::UserConfig = serde_json::from_value(json!({
+            "codex_app_native_fast_enabled": false,
+            "codex_app_api_quota_compat_enabled": true
+        })).unwrap();
         let doc: toml_edit::Document = "model_provider='relay'\n[model_providers.relay]\nbase_url='http://127.0.0.1:8000/v1'\nexperimental_bearer_token='local-key'\nrequires_openai_auth=true\n".parse().unwrap();
         let oauth = json!({"tokens":{"id_token":"id", "access_token":"access"}});
-        let profile = profile_from_values(&doc, &oauth, &cfg);
+        let profile = profile_from_values(&doc, &oauth, &cfg, |_, _, _| false);
         assert!(!profile.native_fast);
         assert!(!profile.api_key_auth_verified);
         assert!(profile.quota_compat);
         let api = json!({"auth_mode":"apikey","OPENAI_API_KEY":"api-key"});
-        let profile = profile_from_values(&doc, &api, &cfg);
+        let profile = profile_from_values(&doc, &api, &cfg, |_, _, _| false);
         assert!(profile.native_fast);
         assert!(profile.api_key_auth_verified);
         assert!(!profile.quota_compat);
-        assert!(!profile_from_values(&toml_edit::Document::new(), &oauth, &cfg).quota_compat);
+        assert!(!profile_from_values(&toml_edit::Document::new(), &oauth, &cfg, |_, _, _| false).quota_compat);
         let same_token: toml_edit::Document = doc
             .to_string()
             .replace("local-key", "access")
             .parse()
             .unwrap();
-        assert!(!profile_from_values(&same_token, &oauth, &cfg).quota_compat);
+        assert!(!profile_from_values(&same_token, &oauth, &cfg, |_, _, _| false).quota_compat);
     }
 
     #[test]
     fn pure_api_verification_uses_profile_evidence_and_oauth_takes_precedence() {
         let cfg = config::UserConfig::default();
         let blank = toml_edit::Document::new();
-        assert!(!profile_from_values(&blank, &Value::Null, &cfg).api_key_auth_verified);
+        assert!(!profile_from_values(&blank, &Value::Null, &cfg, |_, _, _| false).api_key_auth_verified);
         assert!(
-            !profile_from_values(&blank, &json!({"OPENAI_API_KEY":"  "}), &cfg)
+            !profile_from_values(&blank, &json!({"OPENAI_API_KEY":"  "}), &cfg, |_, _, _| false)
                 .api_key_auth_verified
         );
         assert!(
-            profile_from_values(&blank, &json!({"OPENAI_API_KEY":"api-key"}), &cfg)
+            profile_from_values(&blank, &json!({"OPENAI_API_KEY":"api-key"}), &cfg, |_, _, _| false)
                 .api_key_auth_verified
         );
         let no_oauth: toml_edit::Document =
             "model_provider='local'\n[model_providers.local]\nrequires_openai_auth=false\n"
                 .parse()
                 .unwrap();
-        assert!(profile_from_values(&no_oauth, &Value::Null, &cfg).api_key_auth_verified);
+        assert!(profile_from_values(&no_oauth, &Value::Null, &cfg, |_, _, _| false).api_key_auth_verified);
         let bearer: toml_edit::Document = "model_provider='relay'\n[model_providers.relay]\nexperimental_bearer_token='provider-key'\n".parse().unwrap();
-        let profile = profile_from_values(&bearer, &Value::Null, &cfg);
+        let profile = profile_from_values(&bearer, &Value::Null, &cfg, |_, _, _| false);
         assert!(profile.api_key_auth_verified);
         assert!(profile.native_fast);
         let oauth =
             json!({"OPENAI_API_KEY":"api-key","tokens":{"id_token":"id","access_token":"access"}});
-        let profile = profile_from_values(&bearer, &oauth, &cfg);
+        let profile = profile_from_values(&bearer, &oauth, &cfg, |_, _, _| false);
         assert!(!profile.api_key_auth_verified);
         assert!(!profile.native_fast);
+    }
+
+    #[test]
+    fn prediction_only_profile_is_opt_in_local_api_and_independent_of_fast() {
+        let mut cfg = config::UserConfig::default();
+
+        cfg.codex_app_api_quota_compat_enabled = false;
+        let doc: toml_edit::Document = "model_provider='relay'\n[model_providers.relay]\nbase_url='https://api.example.test/v1'\nrequires_openai_auth=false\n".parse().unwrap();
+        let api = json!({"auth_mode":"apikey", "OPENAI_API_KEY":"synthetic-key"});
+        assert!(!profile_from_values(&doc, &api, &cfg, |_, _, _| false).native_predictions);
+        cfg.codex_app_native_predictions_enabled = true;
+        let profile = profile_from_values(&doc, &api, &cfg, |_, _, _| false);
+        assert!(profile.native_predictions);
+        assert!(profile.active());
+        assert!(profile.native_fast);
+        assert!(!profile.quota_compat);
+        let script = trusted_preload_source(Some(&profile), false, 9333).unwrap();
+        assert!(script.contains("\"nativePredictions\":true"));
+        assert!(script.contains("__cockpitNativePredictions"));
+        let oauth = json!({"tokens":{"id_token":"synthetic-id", "access_token":"synthetic-access"}});
+        assert!(!profile_from_values(&doc, &oauth, &cfg, |_, _, _| false).native_predictions);
+        let unsafe_base: toml_edit::Document = doc.to_string().replace("https://api.example.test/v1", "https://api.example.test/v1?key=secret").parse().unwrap();
+        assert!(!profile_from_values(&unsafe_base, &api, &cfg, |_, _, _| false).native_predictions);
+    }
+
+    #[test]
+    fn bound_oauth_predictions_require_verified_responses_route_without_enabling_fast() {
+        let mut cfg = config::UserConfig::default();
+        let doc: toml_edit::Document = "model_provider='codex_local_access'\n[model_providers.codex_local_access]\nbase_url='http://localhost:2566/v1'\nwire_api='responses'\nrequires_openai_auth=true\nexperimental_bearer_token='service-key'\n".parse().unwrap();
+        let oauth = json!({"tokens":{"id_token":"synthetic-id","access_token":"synthetic-access"}});
+        let verified = |provider: &str, base: &str, key: &str| {
+            (provider, base, key) == ("codex_local_access", "http://localhost:2566/v1", "service-key")
+        };
+        assert!(!profile_from_values(&doc, &oauth, &cfg, verified).native_predictions);
+        cfg.codex_app_native_predictions_enabled = true;
+        let profile = profile_from_values(&doc, &oauth, &cfg, verified);
+        assert!(profile.native_predictions);
+        assert!(!profile.api_key_auth_verified);
+        assert!(!profile.native_fast);
+        for (from, to) in [
+            ("localhost:2566", "localhost:8080"),
+            ("service-key", "other-key"),
+            ("responses", "chat"),
+            ("codex_local_access", "other_provider"),
+        ] {
+            let other = doc.to_string().replace(from, to).parse().unwrap();
+            assert!(!profile_from_values(&other, &oauth, &cfg, verified).native_predictions);
+        }
     }
 
     #[test]
@@ -621,8 +734,7 @@ mod tests {
 
     #[test]
     fn quota_route_does_not_accept_embedded_credentials_or_url_queries() {
-        let mut cfg = config::UserConfig::default();
-        cfg.codex_app_api_quota_compat_enabled = true;
+        let cfg = config::UserConfig::default();
         let auth = json!({"tokens":{"id_token":"id", "access_token":"access"}});
         for base in [
             "https://user:secret@example.test/v1",
@@ -630,7 +742,7 @@ mod tests {
             "file:///tmp/audio",
         ] {
             let doc: toml_edit::Document = format!("model_provider='relay'\n[model_providers.relay]\nbase_url='{base}'\nexperimental_bearer_token='api-key'\nrequires_openai_auth=true\n").parse().unwrap();
-            assert!(!profile_from_values(&doc, &auth, &cfg).quota_compat);
+            assert!(!profile_from_values(&doc, &auth, &cfg, |_, _, _| false).quota_compat);
         }
     }
     #[test]
@@ -655,11 +767,7 @@ mod tests {
         assert!(trusted_preload_source(None, true, 9333).is_none());
         assert!(trusted_preload_source(None, false, 9333).is_none());
         assert!(trusted_preload_source(Some(&Profile::default()), false, 9333).is_none());
-        let verified = Profile {
-            native_fast: true,
-            api_key_auth_verified: true,
-            quota_compat: false,
-        };
+        let verified = Profile { native_fast:true, api_key_auth_verified:true, quota_compat:false, ..Profile::default() };
         let script = trusted_preload_source(Some(&verified), true, 9333).unwrap();
         assert!(script.contains("\"nativeFast\":true"));
         assert!(script.contains("\"apiKeyAuthVerified\":true"));

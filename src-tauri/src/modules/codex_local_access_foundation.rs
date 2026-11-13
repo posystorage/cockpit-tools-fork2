@@ -422,20 +422,6 @@ const CODEX_IMAGE_MODEL_ID: &str = "gpt-image-2.5";
 const LEGACY_CODEX_IMAGE_MODEL_ID: &str = "gpt-image-2";
 const CODEX_GPT_RESERVE_MODEL_ID: &str = "gpt-reserve";
 const CODEX_AUTO_REVIEW_MODEL_ID: &str = "codex-auto-review";
-/// API 服务 / 本地网关 profile 向客户端展示的 GPT 系列模型。
-///
-/// 只保留官方客户端推荐集里的这几个模型，显示名与官方客户端保持一致（`GPT-` 前缀、空格分隔）；
-/// 其它历史模型仍然可以路由，只是不再出现在客户端模型选择器里。
-const LOCAL_GATEWAY_VISIBLE_GPT_MODELS: &[(&str, &str)] = &[
-    ("gpt-6.1-sol", "GPT-6.1 Sol"),
-    ("gpt-6.1-terra", "GPT-6.1 Terra"),
-    ("gpt-6-astra", "GPT-6 Astra"),
-    ("gpt-6-sol", "GPT-6 Sol"),
-    ("gpt-6-luna", "GPT-6 Luna"),
-    ("gpt-5.6-sol", "GPT-5.6 Sol"),
-    ("gpt-5.6-terra", "GPT-5.6 Terra"),
-    ("gpt-5.6-luna", "GPT-5.6 Luna"),
-];
 const DEFAULT_IMAGES_MAIN_MODEL: &str = "gpt-5.6-luna";
 
 fn effective_image_generation_main_model(model: Option<&str>) -> &str {
@@ -1002,19 +988,10 @@ struct ParsedRequest {
 }
 
 fn request_uses_responses_lite(request: &ParsedRequest) -> bool {
-    request
-        .headers
-        .keys()
-        .any(|name| name.eq_ignore_ascii_case(CODEX_RESPONSES_LITE_HEADER))
-}
-
-fn request_body_uses_responses_lite(request: &ParsedRequest) -> bool {
-    request_uses_responses_lite(request)
-        || parse_request_body_json(&request.body)
-            .as_ref()
-            .and_then(|body| body.get("model"))
-            .and_then(Value::as_str)
-            .is_some_and(codex_protocol::codex_model_uses_responses_lite)
+    request.headers.iter().any(|(name, value)| {
+        name.eq_ignore_ascii_case(CODEX_RESPONSES_LITE_HEADER)
+            && value.trim().eq_ignore_ascii_case("true")
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -1055,6 +1032,7 @@ struct RoutingCandidate {
     plan_rank: Option<i32>,
     remaining_quota: Option<i32>,
     subscription_expiry_ms: Option<i64>,
+    five_hour_reset_at: Option<i64>,
 }
 
 fn gateway_runtime() -> &'static TokioMutex<GatewayRuntime> {
@@ -1764,6 +1742,7 @@ fn preserve_runtime_collection_fields(
 ) {
     // Only the dedicated settings command changes this field after initial load.
     collection.request_payload_logging = current.request_payload_logging;
+    collection.continuous_overload_retry = current.continuous_overload_retry;
     collection.capability_fallback = current.capability_fallback.clone();
     collection.multi_agent = current.multi_agent.clone();
     prune_multi_agent_references(collection);
@@ -1781,6 +1760,8 @@ fn preserve_runtime_collection_fields(
     for api_key in &mut collection.api_keys {
         if let Some(current_api_key) = current.api_keys.iter().find(|item| item.id == api_key.id) {
             api_key.token_used = api_key.token_used.max(current_api_key.token_used);
+            merge_key_budget_usage(&mut api_key.budget_usage, &current_api_key.budget_usage);
+            if current_api_key.updated_at > api_key.updated_at { api_key.budget = current_api_key.budget.clone(); }
         }
     }
 }
@@ -1802,10 +1783,9 @@ fn sync_runtime_collection(
     if let Some(current) = runtime.collection.as_ref() {
         preserve_runtime_collection_fields(&mut collection, current);
         collection.native_gateway_default_migrated |= current.native_gateway_default_migrated;
-        if current.gateway_mode != CodexLocalAccessGatewayMode::Legacy {
-            collection.gateway_mode = current.gateway_mode;
-        }
     }
+    collection.gateway_mode = CodexLocalAccessGatewayMode::Native;
+    collection.native_gateway_default_migrated = true;
     sync_quota_reserve_policy(&collection);
     REQUEST_PAYLOAD_LOGGING_ENABLED.store(collection.request_payload_logging, Ordering::SeqCst);
     if let Some(handle) = runtime.native_handle.as_ref() {
@@ -2427,18 +2407,15 @@ fn api_service_experimental_model_catalog() -> Option<Vec<String>> {
 
 /// 客户端模型选择器里展示的 GPT 模型 ID（官方推荐集）。
 fn local_gateway_visible_gpt_model_ids() -> Vec<String> {
-    LOCAL_GATEWAY_VISIBLE_GPT_MODELS
-        .iter()
-        .map(|(model_id, _)| model_id.to_string())
+    local_gateway_visible_gpt_model_definitions()
+        .into_iter()
+        .map(|(model_id, _)| model_id)
         .collect()
 }
 
 /// 客户端模型目录（profile `model_catalog_json`）里的 GPT 条目：模型 ID + 官方显示名。
 fn local_gateway_visible_gpt_model_definitions() -> Vec<(String, String)> {
-    LOCAL_GATEWAY_VISIBLE_GPT_MODELS
-        .iter()
-        .map(|(model_id, display_name)| (model_id.to_string(), display_name.to_string()))
-        .collect()
+    crate::modules::codex_model_catalog::recommended_models()
 }
 
 /// API 服务对外展示的模型清单：官方推荐 GPT 集 + 客户端内部需要的隐藏模型。
@@ -2498,7 +2475,11 @@ pub(crate) fn refresh_api_service_experimental_model_ids() {
     if let Ok(store) = crate::modules::codex_instance::load_instance_store() {
         profile_dirs.extend(store.instances.into_iter().filter_map(|instance| {
             let profile = instance.user_data_dir.trim();
-            (!profile.is_empty()).then(|| PathBuf::from(profile))
+            let uses_api_service = instance
+                .bind_account_id
+                .as_deref()
+                .is_some_and(crate::modules::codex_instance::is_api_service_bind_account_id);
+            (uses_api_service && !profile.is_empty()).then(|| PathBuf::from(profile))
         }));
     }
 
@@ -2777,21 +2758,26 @@ fn apply_model_aliases_to_ids(
         return model_ids;
     }
 
-    let alias_map: HashMap<String, &CodexLocalAccessModelAlias> = aliases
-        .iter()
-        .map(|alias| (alias.source_model.to_ascii_lowercase(), alias))
-        .collect();
+    let mut alias_map: HashMap<String, Vec<&CodexLocalAccessModelAlias>> = HashMap::new();
+    for alias in aliases {
+        alias_map
+            .entry(alias.source_model.to_ascii_lowercase())
+            .or_default()
+            .push(alias);
+    }
     let mut seen = HashSet::new();
     let mut visible = Vec::new();
 
     for model in model_ids {
         let key = model.to_ascii_lowercase();
-        if let Some(alias) = alias_map.get(&key) {
-            if alias.fork && seen.insert(key) {
+        if let Some(aliases) = alias_map.get(&key) {
+            if aliases.iter().any(|alias| alias.fork) && seen.insert(key) {
                 visible.push(model.clone());
             }
-            if seen.insert(alias.alias.to_ascii_lowercase()) {
-                visible.push(alias.alias.clone());
+            for alias in aliases {
+                if seen.insert(alias.alias.to_ascii_lowercase()) {
+                    visible.push(alias.alias.clone());
+                }
             }
         } else if seen.insert(key) {
             visible.push(model);

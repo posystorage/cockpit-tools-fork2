@@ -31,9 +31,7 @@ fn automatic_api_service_visible_model_ids_with_explicit_catalog(
                 || key == CODEX_GPT_RESERVE_MODEL_ID
                 || key == CODEX_AUTO_REVIEW_MODEL_ID
                 || key.starts_with("gpt-image")
-                || LOCAL_GATEWAY_VISIBLE_GPT_MODELS
-                    .iter()
-                    .any(|(model_id, _)| model_id.eq_ignore_ascii_case(&key))
+                || is_local_gateway_visible_gpt_model(&key)
         })
         .collect()
 }
@@ -82,7 +80,7 @@ fn automatic_api_service_provider_route_eligible(
     if !account.is_api_key_auth() {
         return false;
     }
-    if provider_gateway_wire_api_for_account(account) == "chat_completions" {
+    if matches!(provider_gateway_wire_api_for_account(account).as_str(), "chat_completions" | "anthropic") {
         return true;
     }
     if account
@@ -224,10 +222,7 @@ fn pool_provides_gpt_models(accounts: &[CodexAccount]) -> bool {
 
 /// 该模型是否属于官方推荐 GPT 集（只用于展示收敛，内部隐藏模型不受影响）。
 fn is_local_gateway_visible_gpt_model(model: &str) -> bool {
-    let key = model.trim();
-    LOCAL_GATEWAY_VISIBLE_GPT_MODELS
-        .iter()
-        .any(|(model_id, _)| model_id.eq_ignore_ascii_case(key))
+    crate::modules::codex_model_catalog::is_recommended_model(model)
 }
 
 fn automatic_api_service_pool_model_ids(
@@ -353,6 +348,21 @@ const DEEPSEEK_DEFAULT_REASONING_EFFORT: &str = "max";
 /// 账号模型的官方模板（目前覆盖 DeepSeek 官方目录）。
 fn account_model_template(account: &CodexAccount, model: &str) -> Option<Value> {
     let model = model.trim();
+    if let Some(catalog) = remote_catalog_for_account(account) {
+        return catalog["models"].as_array()?.iter()
+            .find(|entry| entry["slug"].as_str() == Some(model)).cloned();
+    }
+    if !is_official_deepseek_account(account) {
+        if let Some(template) = codex_protocol::deepseek_model_template(model) {
+            return Some(template);
+        }
+    }
+    if !model.is_empty() && account.api_wire_api.as_deref() == Some("anthropic") {
+        let mut catalog = codex_protocol::build_codex_client_models_response(&[model.to_string()]);
+        let mut template = catalog["models"].as_array_mut()?.pop()?;
+        crate::modules::codex_native_api::anthropic::customize_model_template(model, &mut template);
+        return Some(template);
+    }
     if model.is_empty() || !is_official_deepseek_account(account) {
         return None;
     }
@@ -524,8 +534,8 @@ fn automatic_api_service_account_model_entries(
                 .get("clientModel")
                 .and_then(Value::as_str)?
                 .to_string();
-            let image_capable =
-                routed_vision || automatic_api_service_account_model_vision(account, &client_model);
+            let upstream = model.get("upstreamModel").and_then(Value::as_str)?;
+            let image_capable = routed_vision || native_account_model_vision(account, upstream);
             Some((client_model, image_capable))
         })
         .collect()
@@ -559,20 +569,26 @@ fn automatic_api_service_profile_extra_models(
                 }
             }
         }
-        models.extend(automatic_api_service_account_model_entries(
-            collection, account,
-        ));
+        // Native OAuth mappings are added below after validating the actual
+        // account route, including the separate official authorization catalog.
+        if collection.gateway_mode != CodexLocalAccessGatewayMode::Native
+            || !native_is_oauth_authorization_account(account)
+            || account.api_model_mappings.is_empty()
+        {
+            models.extend(automatic_api_service_account_model_entries(collection, account));
+        }
     }
     // 该 API Key 自己的供应商网关模型同样要在客户端可选。
     if let Some(gateway) = api_key.provider_gateway.as_ref() {
-        let image_capable = provider_gateway_has_vision_support(gateway);
-        for model in
-            apply_model_aliases_to_ids(gateway.upstream_models.clone(), &collection.model_aliases)
-        {
-            if is_gpt_or_codex_namespace_model(&model) {
-                gpt_backed_models.insert(model.trim().to_ascii_lowercase());
+        let routed_vision = provider_gateway_has_vision_support(gateway);
+        for upstream in &gateway.upstream_models {
+            let image_capable = routed_vision || provider_gateway_model_vision(gateway, upstream);
+            for model in apply_model_aliases_to_ids(vec![upstream.clone()], &collection.model_aliases) {
+                if is_gpt_or_codex_namespace_model(&model) {
+                    gpt_backed_models.insert(model.trim().to_ascii_lowercase());
+                }
+                models.push((model, image_capable));
             }
-            models.push((model, image_capable));
         }
     }
     // GPT / Codex 命名空间只保留两类：官方推荐集（显示名与档位跟随官方客户端），以及账号自己
@@ -593,6 +609,40 @@ fn automatic_api_service_profile_extra_models(
             && !model_matches_any_rule(model, &api_key.excluded_models)
             && seen.insert(key)
     });
+    if collection.gateway_mode == CodexLocalAccessGatewayMode::Native {
+        let key = collection.api_keys.iter().find(|key| key.id == api_key.id);
+        for account in accounts.iter().filter(|account| {
+            scoped_ids.contains(&account.id)
+                && native_is_oauth_authorization_account(account)
+                && !account.api_model_mappings.is_empty()
+        }) {
+            let overlay = collection.official_account_bindings.get(&account.id).map(|registration| {
+                crate::modules::chatgpt_plan::official_runtime_overlay(account.clone(), registration)
+            });
+            let account = overlay.as_ref().unwrap_or(account);
+            for mapping in &account.api_model_mappings {
+                let model = &mapping.client_model;
+                let fingerprint = model.to_ascii_lowercase();
+                if seen.contains(&fingerprint) {
+                    continue;
+                }
+                let exposed = api_key.model_prefix.as_deref().filter(|prefix| !prefix.is_empty())
+                    .map(|prefix| format!("{}/{model}", prefix.trim_end_matches('/')))
+                    .unwrap_or_else(|| model.clone());
+                let Ok(public) = native_model_for_key(collection, key, &exposed) else { continue };
+                let Ok(plan) = native_model_route_plan(collection, key, &public) else { continue };
+                if !plan.provider && native_model_visible(collection, key, &plan, account) {
+                    seen.insert(fingerprint);
+                    let vision = codex_protocol::known_codex_model_template(&mapping.upstream_model)
+                        .and_then(|template| template["input_modalities"].as_array().map(|items| {
+                            items.iter().any(|item| item.as_str() == Some("image"))
+                        }))
+                        .unwrap_or(account.api_supports_vision);
+                    models.push((exposed, vision));
+                }
+            }
+        }
+    }
     models
 }
 
@@ -650,6 +700,7 @@ pub(crate) fn overlay_rendered_pool_models_on_experimental_catalog(
             model_id,
             reasoning_efforts: None,
             default_reasoning_effort: None,
+            ultra_reasoning_effort: None,
             context_window: None,
             auto_compact_token_limit: None,
         });

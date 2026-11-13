@@ -7,7 +7,6 @@ import type {
   CodexLocalAccessAccountModelRule,
   CodexLocalAccessAppendAccountsResult,
   CodexLocalAccessClientBaseUrlHost,
-  CodexLocalAccessGatewayMode,
   CodexLocalAccessModelAlias,
   CodexLocalAccessAccountWindowQuery,
   CodexLocalAccessAccountWindowStats,
@@ -27,6 +26,25 @@ import type {
   CodexLocalAccessImageGenerationPolicy,
   CodexInstanceGatewayView,
 } from "../types/codexLocalAccess";
+
+export interface CodexClaudeCodeSettingsPreview {
+  path: string;
+  revision: string;
+  changes: Record<string, string | null>;
+  changed: boolean;
+}
+
+export function previewCodexClaudeCodeSettings(keyId: string): Promise<CodexClaudeCodeSettingsPreview> {
+  return invoke("codex_local_access_preview_claude_code_settings", { keyId });
+}
+
+export function applyCodexClaudeCodeSettings(keyId: string, revision: string): Promise<void> {
+  return invoke("codex_local_access_apply_claude_code_settings", { keyId, revision });
+}
+
+export function restoreCodexClaudeCodeSettings(): Promise<void> {
+  return invoke("codex_local_access_restore_claude_code_settings");
+}
 
 export async function getCodexLocalAccessState(): Promise<CodexLocalAccessState> {
   return await invoke("codex_local_access_get_state");
@@ -143,8 +161,14 @@ export async function queryCodexLocalAccessRequestLogs(
     endAt: query.endAt ?? null,
     modelQuery: query.modelQuery ?? null,
     accountQuery: query.accountQuery ?? null,
+    accountNameMatches: query.accountNameMatches ?? null,
+    accountId: query.accountId ?? null,
+    apiKeyId: query.apiKeyId ?? null,
     apiKeyQuery: query.apiKeyQuery ?? null,
     instanceQuery: query.instanceQuery ?? null,
+    sourceKind: query.sourceKind ?? null,
+    peerIp: query.peerIp?.trim() || null,
+    sessionQuery: query.sessionQuery?.trim() || null,
     gatewayMode: query.gatewayMode ?? null,
     requestKind: query.requestKind ?? null,
     success: query.success ?? null,
@@ -202,6 +226,10 @@ export async function restartCodexLocalAccessSidecar(): Promise<CodexLocalAccess
 
 export async function killCodexLocalAccessPort(): Promise<CodexLocalAccessPortCleanupResult> {
   return await invoke("codex_local_access_kill_port");
+}
+
+export async function changeCodexLocalAccessToRandomPort(): Promise<CodexLocalAccessState> {
+  return await invoke("codex_local_access_change_random_port");
 }
 
 export async function updateCodexLocalAccessPort(
@@ -310,13 +338,6 @@ export async function updateCodexLocalAccessUpstreamProxyConfig(
   });
 }
 
-export async function updateCodexLocalAccessGatewayMode(
-  gatewayMode: CodexLocalAccessGatewayMode,
-): Promise<CodexLocalAccessState> {
-  return await invoke("codex_local_access_update_gateway_mode", {
-    gatewayMode,
-  });
-}
 
 export async function updateCodexLocalAccessDebugLogs(
   debugLogs: boolean,
@@ -397,7 +418,9 @@ export async function updateCodexLocalAccessApiKey(
     modelPrefix?: string | null;
     allowedModels?: string[] | null;
     excludedModels?: string[] | null;
+    maxReasoningEffort?: import("../types/codexLocalAccess").CodexApiKeyReasoningCeiling | "";
     tokenLimit?: number | null;
+    budget?: import('../types/codexRemoteService').CodexApiKeyBudget;
     accountIds?: string[] | null;
     inheritAccountPool?: boolean | null;
   },
@@ -409,7 +432,9 @@ export async function updateCodexLocalAccessApiKey(
     modelPrefix: payload.modelPrefix ?? null,
     allowedModels: payload.allowedModels ?? null,
     excludedModels: payload.excludedModels ?? null,
+    maxReasoningEffort: payload.maxReasoningEffort ?? null,
     tokenLimit: payload.tokenLimit ?? null,
+    budget: payload.budget ?? null,
     accountIds: payload.accountIds ?? null,
     inheritAccountPool: payload.inheritAccountPool ?? null,
   });
@@ -442,13 +467,7 @@ export async function deleteCodexLocalAccessApiKey(
 export async function setCodexLocalAccessEnabled(
   enabled: boolean,
 ): Promise<CodexLocalAccessState> {
-  const state = enabled
-    ? await withCodexPathRecovery(
-        () => invoke<CodexLocalAccessState>("codex_local_access_set_enabled", { enabled }),
-        { key: codexPathRecoveryKey("codex_local_access_set_enabled", { enabled }) },
-      )
-    : await invoke<CodexLocalAccessState>("codex_local_access_set_enabled", { enabled });
-  return state;
+  return await invoke<CodexLocalAccessState>("codex_local_access_set_enabled", { enabled });
 }
 
 export async function activateCodexLocalAccess(
@@ -524,5 +543,34 @@ export async function streamCodexLocalAccessChatTest(
     sessionId,
     modelId,
     messages,
+  });
+}
+
+export interface CodexOverloadAttempt {
+  id: number;
+  requestId: string;
+  accountId: string;
+  model: string;
+  sequence: number;
+  timestamp: number;
+  outcome?: 'recovered' | 'cancelled' | 'failed';
+  finalAccountId?: string;
+}
+
+export function getCodexOverloadStatus(): Promise<{ enabled: boolean; activeRequests: number }> {
+  return invoke('codex_local_access_get_overload_status');
+}
+
+export function updateCodexOverloadRetry(enabled: boolean): Promise<boolean> {
+  return invoke('codex_local_access_update_overload_retry', { enabled });
+}
+
+export function queryCodexOverloadCounts(startAt: number, endAt: number): Promise<Record<string, number>> {
+  return invoke('codex_local_access_query_overload_counts', { startAt, endAt });
+}
+
+export function queryCodexOverloadAttempts(accountId: string, startAt: number, endAt: number, before?: CodexOverloadAttempt): Promise<CodexOverloadAttempt[]> {
+  return invoke('codex_local_access_query_overload_attempts', {
+    accountId, startAt, endAt, beforeTimestamp: before?.timestamp ?? null, beforeId: before?.id ?? null,
   });
 }

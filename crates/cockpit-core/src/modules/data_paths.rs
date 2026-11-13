@@ -160,6 +160,13 @@ fn without_compatibility_alias_at(path: &Path, base: &Path) -> PathBuf {
 }
 
 fn select_root(base: &Path, dev: bool) -> Result<RootSelection, String> {
+    // Windows reports a child of an occupied file as NotFound, so checking
+    // only the candidate paths can mistake an invalid base for a fresh store.
+    let base_metadata = fs::metadata(base)
+        .map_err(|error| format!("读取数据根目录状态失败 ({}): {error}", base.display()))?;
+    if !base_metadata.is_dir() {
+        return Err(format!("数据根目录不可用: {}", base.display()));
+    }
     let current = base.join(if dev { DEV_DATA_DIR } else { DATA_DIR });
     let legacy = base.join(if dev {
         LEGACY_DEV_DATA_DIR

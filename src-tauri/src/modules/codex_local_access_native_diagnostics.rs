@@ -41,6 +41,7 @@ fn native_diagnostic_detail(
             .into_iter()
             .take(REQUEST_DIAGNOSTICS_MAX_ATTEMPTS)
             .map(|item| CodexLocalAccessRequestAttempt {
+                image_request: item.image_request,
                 authorization_route: item.authorization_route,
                 service_tier_adaptation: item.service_tier_adaptation,
                 authorization_fallback: item.authorization_fallback.map(|trace| {
@@ -60,6 +61,7 @@ fn native_diagnostic_detail(
                 sequence: item.sequence,
                 transport_error: item.transport_error,
                 transport_pool_retired: item.transport_pool_retired,
+                transport_http1_fallback: item.transport_http1_fallback,
                 upstream_http_version: item.upstream_http_version,
                 upstream_identity_captured: item.upstream_identity_captured,
                 upstream_session_id: item.upstream_session_id,
@@ -71,6 +73,10 @@ fn native_diagnostic_detail(
                 account_id: item.account_id,
                 account_email: item.account_email,
                 model_id: item.model_id,
+                response_model: item.response_model,
+                request_size: item.request_size,
+                upstream_request_bytes: item.upstream_request_bytes,
+                overload_retry: item.overload_retry,
                 transport: item.transport,
                 started_at_ms: item.started_at_ms,
                 latency_ms: item.latency_ms,
@@ -257,7 +263,13 @@ async fn native_management(
     request: NativeManagementRequest,
 ) -> Result<Value, native_contract::ServiceError> {
     native_management_permission(caller, &request)?;
+    if let Some(result)=forward_remote_key_view(bridge,caller,&request).await {return result;}
     match request {
+        NativeManagementRequest::Connection => native_remote_connection(bridge, caller).await,
+        NativeManagementRequest::Usage { range } => native_remote_usage(caller, &range).await,
+        NativeManagementRequest::KeyStats { query } => native_remote_key_query(caller,query,false).await,
+        NativeManagementRequest::KeyRequests { query } => native_remote_key_query(caller,query,true).await,
+        NativeManagementRequest::KeySession { query } => native_remote_key_resource(caller,query,"session").await,
         NativeManagementRequest::DiagnosticsConfig { enabled } => {
             // Compatibility ACK for the host's already-persisted setting, not a second writer.
             // Reject stale retries rather than overwrite a newer local preference.
@@ -330,13 +342,21 @@ async fn native_management(
                 .filter(|(_, state)| state.until > Instant::now())
                 .map(|(key, _)| key.account.clone())
                 .collect();
-            Ok(native_quota_summary(
+            let now = chrono::Utc::now().timestamp();
+            let mut summary = native_quota_summary(
                 &scope,
                 &accounts,
                 &cooling,
-                chrono::Utc::now().timestamp(),
+                now,
                 &official_plans,
-            ))
+            );
+            summary["providerQuotas"] = json!(crate::modules::codex_provider_pool_quota::scoped_rows(
+                &scope,
+                &original_accounts,
+                now,
+                crate::modules::codex_quota::relay_balance_disabled(),
+            ));
+            Ok(summary)
         }
         NativeManagementRequest::ResetAuth { account_ids }
         | NativeManagementRequest::ResetScheduler { account_ids } => {
@@ -711,6 +731,12 @@ mod native_diagnostic_tests {
                 crate::modules::codex_native_api::diagnostics::DiagnosticAttempt {
                     sequence: 1,
                     account_id: "a".into(),
+                    image_request: Some(crate::models::codex_local_access::CodexLocalAccessImageRequestDiagnostic {
+                        requested_model: None,
+                        upstream_model: "gpt-image-2.6-flare".into(),
+                        responses_model: None,
+                        upstream_status: Some(200),
+                    }),
                     upstream_identity_captured: true,
                     upstream_session_id: Some("mapped-session".into()),
                     upstream_thread_id: Some("mapped-thread".into()),
@@ -736,6 +762,10 @@ mod native_diagnostic_tests {
             .iter()
             .all(|payload| !payload.body.contains("never-persist")));
         let disabled = native_diagnostic_detail(context, false);
+        let encoded = serde_json::to_value(&disabled).unwrap();
+        assert_eq!(encoded["attempts"][0]["imageRequest"], json!({
+            "upstreamModel":"gpt-image-2.6-flare","upstreamStatus":200,
+        }));
         assert!(disabled.payloads.is_empty());
         assert_eq!(disabled.client_session_id.as_deref(), Some("raw-session"));
         assert!(disabled.client_identity_captured);

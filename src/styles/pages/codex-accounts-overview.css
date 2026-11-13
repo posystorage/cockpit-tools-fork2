@@ -1655,6 +1655,11 @@
   cursor: not-allowed;
 }
 
+.codex-batch-import-quota-hint {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
 .codex-batch-import-task {
   display: flex;
   align-items: center;

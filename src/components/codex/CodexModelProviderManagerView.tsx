@@ -1,18 +1,19 @@
+import { canShowCodexProviderBalance } from "../../utils/codexDeepSeekAccess";
+import { resolveNewApiQuotaSnapshot } from "../../services/modelProviderUsageService";
+import { OpenAIOfficialUsagePanel } from './OpenAIOfficialUsagePanel';
+import { currentOpenAIUsageState, isOpenAIOfficialUsageUrl } from '../../utils/openaiOfficialUsage';
 import { ModalErrorMessage } from "../ModalErrorMessage";
-import { Bird, ArrowDownWideNarrow, ArrowDown, ArrowUp, Check, CircleAlert, ChevronDown, Copy, Clock, Database, ExternalLink, GripVertical, HelpCircle, KeyRound, Link2, LayoutGrid, Pencil, Plus, Rows3, Star, Trash2, X, Search, Settings, Activity, RefreshCw, RotateCw, Play } from "lucide-react";
+import { Bird, ArrowDownWideNarrow, ArrowDown, ArrowUp, CircleAlert, ChevronDown, Copy, Clock, Database, ExternalLink, FileCode, GripVertical, Link2, LayoutGrid, Pencil, Plus, Rows3, Trash2, X, Search, Settings, Activity, RefreshCw, RotateCw, Play } from "lucide-react";
 import { MultiSelectFilterDropdown } from "../MultiSelectFilterDropdown";
 import { useCodexFingerprintStore } from "../../stores/useCodexFingerprintStore";
 import { SingleSelectFilterDropdown } from "../SingleSelectFilterDropdown";
 import { SingleSelectDropdown } from "../SingleSelectDropdown";
 import { AccountTagFilterDropdown } from "../AccountTagFilterDropdown";
 import { PaginationControls } from "../PaginationControls";
-import { CodexModelContextWindowTable } from "./CodexModelContextWindowTable";
-import { resolveNewApiQuotaSnapshot } from "../../services/modelProviderUsageService";
-import { CODEX_API_PROVIDER_CUSTOM_ID, CODEX_API_PROVIDER_PRESETS, DEEPSEEK_API_PROVIDER_ID, resolveCodexApiProviderPresetId } from "../../utils/codexProviderPresets";
+import { DEEPSEEK_API_PROVIDER_ID, resolveCodexApiProviderPresetId } from "../../utils/codexProviderPresets";
 import { resolveCodexModelProviderForApiKey } from "../../utils/codexModelProviderKeyConfig";
 import { normalizeApiKeyFunOfficialUrl } from "../../utils/apikeyFunLinks";
 import { getCodexSubscriptionPresentation } from "../../types/codex";
-import { canConfigureCodexProviderVision, resolveCodexProviderCapabilityProfile } from "../../utils/codexProviderGateway";
 import { CodexQuickConfigCard } from "./CodexQuickConfigCard";
 import {
   CodexServicePanelModal,
@@ -29,6 +30,10 @@ export type CodexModelProviderManagerViewProps = ReturnType<typeof useCodexModel
 /** 渲染 CodexModelProviderManager 的界面；业务状态与动作统一由 Controller 提供。 */
 export function CodexModelProviderManagerView(props: CodexModelProviderManagerViewProps) {
   const {
+    formatUsageDetailLabel,
+    formatUsageDetailValue,
+    formatUsageQuotaValue,
+    formatUsageMoney,
     apiKeyPickerProviderId,
     openProviderPelican,
     batchTestCancelling,
@@ -46,48 +51,33 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
     batchTestSession,
     batchTestStep,
     closeBatchTestModal,
-    closeModal,
-    currentEditingProvider,
     providerLaunchDialog,
     displayInstances,
+    deletingProviders,
+    deletingProviderIds,
     draggedProviderCustomSortId,
-    editingApiKey,
     enablingProviderId,
     error,
-    existingApiKeySearchQuery,
     filteredProviderBatchTestRecords,
     filteredProviderIds,
     filteredProviders,
-    form,
     formatDateTime,
     formatDurationMs,
     formatProviderBatchTestErrorMessage,
-    formatUsageDetailLabel,
-    formatUsageDetailValue,
-    formatUsageMoney,
-    formatUsageQuotaValue,
-    formError,
     getInstanceName,
     getProviderInstanceId,
     getSelectedProviderApiKey,
     handleBatchDeleteProviders,
-    handleDeleteApiKey,
     handleDeleteBatchTestResults,
     handleDeleteProvider,
     handleEnableProvider,
+    handleOpenInstanceConfig,
     handleProviderCustomSortDragMove,
     handleProviderCustomSortDragStart,
     handleProviderInstanceChange,
     handleProviderOauthBindingChange,
     handleProviderSortByChange,
-    handleRenameApiKey,
-    handleSaveApiKeyEdit,
-    handleSaveProvider,
-    handleSelectPresetEndpoint,
-    handleSelectProviderPreset,
-    handleSelectSponsorTemplate,
     handleStartBatchProviderTest,
-    handleTestProvider,
     instancePickerProviderId,
     isAllBatchTestProvidersSelected,
     isAllProvidersSelected,
@@ -99,14 +89,11 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
     maskAccountText,
     maskApiKey,
     moveProviderCustomSortProvider,
-    mutateForm,
     notice,
     openBatchTestModal,
     openCreateModal,
     openEditModal,
-    parseModelCatalogText,
     pickerSearchQuery,
-    previewPaths,
     providerBatchTestCounts,
     providerBatchTestFilterOptions,
     providerBatchTestSelectableIds,
@@ -124,6 +111,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
     providerOauthHasExistingBinding,
     providerOauthPagination,
     providerOauthSaving,
+    providerOauthError,
     providerOauthSearchQuery,
     providerOauthSelectedAccountId,
     providerOauthSortBy,
@@ -137,6 +125,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
     providerSortBy,
     providerSortDirection,
     providerUsageMap,
+    relayBalanceDisabled,
     providerUsageRefreshingAll,
     providerViewMode,
     refreshAllProviderUsage,
@@ -144,20 +133,14 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
     requestBatchTestCancellation,
     resetProviderCustomSortOrder,
     resolveBoundOAuthAccount,
-    resolveEnableModePreferenceForWireApi,
     resolveInstanceById,
     resolvePresentation,
     resolveProviderApiKeyLabel,
     resolveProviderWireApi,
-    saving,
     searchQuery,
-    selectedPreset,
-    selectedPresetId,
     selectedProviderApiKeyMap,
     selectedProviderIds,
     selectedProviderOauthAccount,
-    selectedSponsorTemplate,
-    selectedSponsorTemplateId,
     selectFailedBatchTestResults,
     setApiKeyPickerProviderId,
     setBatchTestFilter,
@@ -165,8 +148,6 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
     setBatchTestModelId,
     setBatchTestSearchQuery,
     setBatchTestStep,
-    setEditingApiKey,
-    setExistingApiKeySearchQuery,
     setInstancePickerProviderId,
     setNotice,
     setPickerSearchQuery,
@@ -185,13 +166,11 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
     setSelectedProviderApiKeyMap,
     setShowProviderCustomSortModal,
     setShowQuickConfigModal,
-    showModal,
     showProviderCustomSortModal,
     showQuickConfigModal,
     sponsorProviderTemplates,
     stopProviderCustomSortDragging,
     t,
-    testingProviderId,
     toggleAllVisibleBatchTestProviders,
     toggleAllVisibleBatchTestResults,
     toggleBatchTestProvider,
@@ -270,9 +249,12 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
           <SingleSelectFilterDropdown
             value={providerSortBy}
             options={[
+              ...(providerSortBy === "test_result"
+                ? [{ value: "test_result", label: t("codex.modelProviders.batchTest.resultsTitle") }]
+                : []),
               {
                 value: "name",
-                label: t("common.shared.sort.name", "按名称"),
+                label: t("common.shared.sort.name"),
               },
               {
                 value: "created_at",
@@ -287,7 +269,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
             icon={<ArrowDownWideNarrow size={14} />}
             onChange={handleProviderSortByChange}
           />
-          {!isProviderCustomSortActive && (
+          {!isProviderCustomSortActive && providerSortBy !== "test_result" && (
             <button
               className="sort-direction-btn"
               onClick={() =>
@@ -334,9 +316,10 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
             <button
               className="btn btn-danger icon-only"
               onClick={() => void handleBatchDeleteProviders()}
+              disabled={deletingProviders}
               title={`${t("common.delete", "删除")} (${selectedProviderIds.size})`}
             >
-              <Trash2 size={14} />
+              {deletingProviders ? <RefreshCw size={14} className="loading-spinner" /> : <Trash2 size={14} />}
             </button>
           )}
         </div>
@@ -380,7 +363,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={openBatchTestModal}
+              onClick={() => openBatchTestModal()}
               disabled={filteredProviders.every((provider) => !getSelectedProviderApiKey(provider))}
               title={t(
                 "codex.modelProviders.batchTest.entryHint",
@@ -394,7 +377,8 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
         </div>
       )}
 
-      {loading ? (
+      {/* 后台刷新保留卡片，避免列表高度塌缩导致滚动位置被重置。 */}
+      {loading && providers.length === 0 ? (
         <div className="section-desc">{t("common.loading", "加载中...")}</div>
       ) : providers.length === 0 ? (
         <div className="empty-state">
@@ -408,22 +392,16 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
         </div>
       ) : filteredProviders.length === 0 ? (
         <div className="empty-state">
-          <h3>{t("codex.modelProviders.noMatchTitle", "没有匹配的供应商")}</h3>
+          <h3>{t("codex.modelProviders.noMatchingSavedProviders", "没有匹配的供应商")}</h3>
           <p>{t("common.shared.noMatch.desc", "请尝试调整搜索或筛选条件")}</p>
         </div>
       ) : (
         <div className={`codex-provider-grid ${providerViewMode === "compact" ? "compact" : ""}`}>
           {filteredProviders.map((provider) => {
-            const presetId = resolveCodexApiProviderPresetId(provider.baseUrl);
-            const capabilityProfile = resolveCodexProviderCapabilityProfile({
-              presetId,
-              baseUrl: provider.baseUrl,
-              wireApi: provider.wireApi,
-            });
             const primaryApiKey = getSelectedProviderApiKey(provider);
             const enabling = enablingProviderId === provider.id;
-            const testing = testingProviderId === provider.id;
-            const usageState = providerUsageMap[provider.id];
+            const usageState = isOpenAIOfficialUsageUrl(provider.baseUrl)
+              ? currentOpenAIUsageState(provider, primaryApiKey?.apiKey ?? '', providerUsageMap[provider.id]) : providerUsageMap[provider.id];
             const usageSummary = usageState?.summary;
             const usagePrimaryText = usageSummary
               ? formatUsageQuotaValue(
@@ -447,9 +425,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
               sponsorProviderTemplates,
             );
             const selectedApiKeyLine = primaryApiKey
-              ? `${t("codex.addModal.token", "API Key")}：${maskApiKey(
-                  primaryApiKey.apiKey,
-                )}`
+              ? resolveProviderApiKeyLabel(primaryApiKey, t("codex.addModal.token", "API Key"), "")
               : `${t("codex.addModal.token", "API Key")}：${t(
                   "common.none",
                   "暂无",
@@ -469,6 +445,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
             const apiBaseUrlLine = `${t("codex.api.baseUrl", "Base URL")}：${
               provider.baseUrl
             }`;
+            const showBalance = canShowCodexProviderBalance(relayBalanceDisabled, provider.baseUrl, usageSummary?.mode);
             const usageMode =
               usageSummary?.mode === "new_api" ||
               usageSummary?.mode === "sub2api" ||
@@ -506,7 +483,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                     Math.min(
                       100,
                       Math.round(
-                        ((totalGranted - totalAvailable) / totalGranted) * 100,
+                        (totalAvailable / totalGranted) * 100,
                       ),
                     ),
                   )
@@ -547,10 +524,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                             void navigator.clipboard.writeText(primaryApiKey.apiKey);
                             setNotice({
                               tone: "success",
-                              text: t(
-                                "codex.modelProviders.apiKeyCopied",
-                                "API Key 已复制",
-                              ),
+                              text: t("common.copied"),
                             });
                           }}
                           title={t("common.copy", "复制")}
@@ -624,8 +598,10 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                     {apiBaseUrlLine}
                   </span>
                 </div>
-                <div className="codex-quota-section">
-                  {usageMode === "deepseek" ? (
+                {showBalance && <div className="codex-quota-section">
+                  {isOpenAIOfficialUsageUrl(provider.baseUrl) ? (
+                    <OpenAIOfficialUsagePanel provider={provider} apiKey={primaryApiKey?.apiKey ?? ""} sourceBinding={usageState?.sourceBinding} onRefresh={() => void refreshProviderUsage(provider, primaryApiKey)} summary={usageSummary} loading={usageState?.loading} error={usageState?.error} t={t} />
+                  ) : usageMode === "deepseek" ? (
                     <div className="codex-api-key-usage-panel sub2api">
                       <div className="codex-api-key-usage-grid">
                         <div>
@@ -742,7 +718,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                       {t("codex.modelProviders.usage.noKey", "暂无可查询额度")}
                     </div>
                   )}
-                </div>
+                </div>}
                 <div className="codex-card-bottom">
                   <span className="card-date">
                     {new Date(provider.updatedAt || provider.createdAt).toLocaleString()}
@@ -762,13 +738,22 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                   <div className="card-footer">
                     <div className="card-actions">
                       <button
+                        type="button"
+                        className="card-action-btn"
+                        onClick={() => void handleOpenInstanceConfig(targetInstanceId)}
+                        title={`${t("instances.form.codexQuickConfig.openConfig")} · ${targetInstanceName}`}
+                        aria-label={`${t("instances.form.codexQuickConfig.openConfig")} · ${targetInstanceName}`}
+                      >
+                        <FileCode size={14} />
+                      </button>
+                      <button
                         className="card-action-btn"
                         onClick={() => setProviderDetailId(provider.id)}
                         title={t("codex.modelProviders.usage.detailTitle", "服务面板")}
                       >
                         <Database size={14} />
                       </button>
-                      <button
+                      {showBalance && <button
                         className="card-action-btn"
                         disabled={!primaryApiKey || usageState?.loading}
                         onClick={() =>
@@ -781,7 +766,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                           size={14}
                           className={usageState?.loading ? "loading-spinner" : undefined}
                         />
-                      </button>
+                      </button>}
                       <button
                         className="card-action-btn success"
                         disabled={!primaryApiKey || enabling || !targetInstanceReady}
@@ -809,26 +794,20 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                           <Play size={14} />
                         )}
                       </button>
-                      {capabilityProfile.wireApi === "chat_completions" && (
-                        <button
-                          className="card-action-btn"
-                          disabled={!primaryApiKey || testing}
-                          onClick={() =>
-                            primaryApiKey &&
-                            void handleTestProvider(
-                              provider,
-                              primaryApiKey,
-                              capabilityProfile.wireApi,
-                            )
-                          }
-                          title={t("codex.localAccess.testAction", "测试")}
-                        >
-                          <Activity size={14} />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className="card-action-btn"
+                        disabled={!primaryApiKey}
+                        onClick={() => openBatchTestModal(provider)}
+                        title={t("codex.localAccess.testAction", "测试")}
+                      >
+                        <Activity size={14} />
+                      </button>
                       <button
                         className="card-action-btn"
-                        onClick={() => openEditModal(provider)}
+                        onClick={() => openEditModal(
+                          provider, undefined, provider.apiKeys.length > 1 ? primaryApiKey?.id : undefined,
+                        )}
                         title={t("instances.actions.edit", "编辑")}
                       >
                         <Pencil size={14} />
@@ -852,9 +831,12 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                       <button
                         className="card-action-btn danger"
                         onClick={() => void handleDeleteProvider(provider)}
+                        disabled={deletingProviders}
                         title={t("common.delete", "删除")}
                       >
-                        <Trash2 size={14} />
+                        {deletingProviderIds.has(provider.id)
+                          ? <RefreshCw size={14} className="loading-spinner" />
+                          : <Trash2 size={14} />}
                       </button>
                     </div>
                   </div>
@@ -1012,7 +994,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                                     )}
                               </span>
                               <span>
-                                {wireApi === "chat_completions"
+                                {wireApi === "anthropic" ? t("codex.modelProviders.wireApi.anthropic") : wireApi === "chat_completions"
                                   ? t(
                                       "codex.modelProviders.batchTest.gatewayProtocol",
                                       "Chat Completions · 网关",
@@ -1174,7 +1156,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                             disabled={
                               batchTestResultSelectedProviderIds.size === 0 ||
                               batchTestSession.running ||
-                              batchTestDeleting
+                              batchTestDeleting || deletingProviders
                             }
                           >
                             {batchTestDeleting ? (
@@ -1278,7 +1260,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                                   defaultValue:
                                     "{{protocol}} · {{mode}} · {{model}}",
                                   protocol:
-                                    record.wireApi === "chat_completions"
+                                    record.wireApi === "anthropic" ? t("codex.modelProviders.wireApi.anthropic") : record.wireApi === "chat_completions"
                                       ? t(
                                           "codex.modelProviders.wireApi.chatCompletions",
                                           "Chat Completions",
@@ -1323,7 +1305,12 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                               </p>
                               <div className="codex-wakeup-execution-row-meta">
                                 <span>{formatDateTime(record.timestamp)}</span>
-                                <span>{formatDurationMs(record.durationMs)}</span>
+                                {record.firstTextMs != null && (
+                                  <span>{t("codex.modelProviders.batchTest.firstText")} {formatDurationMs(record.firstTextMs)}</span>
+                                )}
+                                {record.durationMs != null && (
+                                  <span>{t("common.codexUsage.totalDuration")} {formatDurationMs(record.durationMs)}</span>
+                                )}
                               </div>
                             </article>
                           );
@@ -1481,7 +1468,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                           <div className="codex-custom-sort-account-title">
                             <span title={provider.name}>{provider.name}</span>
                             <span className="mini-tag">
-                              {wireApi === "chat_completions"
+                              {wireApi === "anthropic" ? t("codex.modelProviders.wireApi.anthropic") : wireApi === "chat_completions"
                                 ? t(
                                     "codex.modelProviders.batchTest.gatewayProtocol",
                                     "Chat Completions · 网关",
@@ -1581,810 +1568,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
         </div>
       )}
 
-      {showModal && (
-        <div className="modal-overlay">
-          <div
-            className="modal codex-provider-modal"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="modal-header">
-              <h2>
-                {form.providerId
-                  ? t("codex.modelProviders.editTitle", "编辑模型供应商")
-                  : t("codex.modelProviders.createTitle", "新增模型供应商")}
-              </h2>
-              <button
-                className="modal-close"
-                onClick={closeModal}
-                aria-label={t("common.close", "关闭")}
-                disabled={saving}
-              >
-                <X />
-              </button>
-            </div>
-            <div className="modal-body">
-              <div className="form-group">
-                <label>{t("codex.api.provider.label", "供应商")}</label>
-                <div className="api-provider-chip-list">
-                  <button
-                    className={`api-provider-chip ${selectedPresetId === CODEX_API_PROVIDER_CUSTOM_ID && !selectedSponsorTemplateId ? "active" : ""}`}
-                    onClick={() =>
-                      handleSelectProviderPreset(CODEX_API_PROVIDER_CUSTOM_ID)
-                    }
-                    type="button"
-                    disabled={saving}
-                  >
-                    <span>{t("codex.api.provider.custom", "自定义")}</span>
-                  </button>
-                  {sponsorProviderTemplates.map((template) => (
-                    <button
-                      key={template.id}
-                      className={`api-provider-chip sponsor ${selectedSponsorTemplateId === template.id ? "active" : ""}`}
-                      onClick={() => handleSelectSponsorTemplate(template)}
-                      type="button"
-                      disabled={saving}
-                    >
-                      <span>{template.name}</span>
-                      <Star size={12} className="api-provider-chip-badge" />
-                    </button>
-                  ))}
-                  {CODEX_API_PROVIDER_PRESETS.filter(
-                    (preset) => !preset.isService,
-                  ).map((preset) => (
-                    <button
-                      key={preset.id}
-                      className={`api-provider-chip ${selectedPresetId === preset.id ? "active" : ""}`}
-                      onClick={() => handleSelectProviderPreset(preset.id)}
-                      type="button"
-                      disabled={saving}
-                    >
-                      <span>
-                        {t(
-                          `codex.api.providers.${preset.id}.name`,
-                          preset.name,
-                        )}
-                      </span>
-                      {preset.isPartner && (
-                        <Star size={12} className="api-provider-chip-badge" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {selectedPreset && selectedPreset.baseUrls.length > 1 && (
-                <div className="form-group">
-                  <label>
-                    {t("codex.api.provider.endpoint", "供应商端点")}
-                  </label>
-                  <div className="api-provider-endpoint-list">
-                    {selectedPreset.baseUrls.map((baseUrl) => (
-                      <button
-                        key={baseUrl}
-                        className={`api-provider-endpoint-chip ${form.baseUrl === baseUrl ? "active" : ""}`}
-                        onClick={() => handleSelectPresetEndpoint(baseUrl)}
-                        type="button"
-                        disabled={saving}
-                      >
-                        {baseUrl}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {selectedPreset && (
-                <div className="api-provider-hint-block">
-                  <p className="api-provider-hint">
-                    {t(
-                      "codex.api.provider.hint",
-                      "已自动填写兼容 Base URL，可继续手动调整。",
-                    )}
-                  </p>
-                  <div className="api-provider-links">
-                    {selectedPreset.website && (
-                      <a
-                        className="btn btn-secondary"
-                        href={selectedPreset.website}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <ExternalLink size={14} />
-                        {t("codex.api.provider.website", "官网")}
-                      </a>
-                    )}
-                    {selectedPreset.apiKeyUrl && (
-                      <a
-                        className="btn btn-secondary"
-                        href={selectedPreset.apiKeyUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <KeyRound size={14} />
-                        {t("codex.api.provider.apiKeyPage", "API Key 页面")}
-                      </a>
-                    )}
-                  </div>
-                </div>
-              )}
-              {selectedSponsorTemplate && (
-                <div className="api-provider-hint-block sponsor">
-                  <p className="api-provider-hint">
-                    {t(
-                      "codex.modelProviders.sponsorHint",
-                      "已按专属中转站配置自动填写兼容服务地址。输入 API Key 后，卡片会自动查询余额和用量。",
-                    )}
-                  </p>
-                  <div className="api-provider-links">
-                    {selectedSponsorTemplate.website && (
-                      <a
-                        className="btn btn-secondary"
-                        href={selectedSponsorTemplate.website}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <ExternalLink size={14} />
-                        {t("codex.api.provider.website", "官网")}
-                      </a>
-                    )}
-                    {selectedSponsorTemplate.apiKeyUrl && (
-                      <a
-                        className="btn btn-secondary"
-                        href={selectedSponsorTemplate.apiKeyUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <KeyRound size={14} />
-                        {t("codex.api.provider.apiKeyPage", "API Key 页面")}
-                      </a>
-                    )}
-                  </div>
-                </div>
-              )}
-              <div className="form-group">
-                <label>
-                  {t("codex.modelProviders.fields.name", "供应商名称")}
-                </label>
-                <input
-                  className="form-input"
-                  type="text"
-                  value={form.name}
-                  onChange={(event) => mutateForm({ name: event.target.value })}
-                  disabled={saving}
-                />
-              </div>
-              <div className="form-group">
-                <label>
-                  {t("codex.modelProviders.fields.baseUrl", "Base URL")}
-                </label>
-                <input
-                  className="form-input"
-                  type="text"
-                  value={form.baseUrl}
-                  onChange={(event) =>
-                    mutateForm({ baseUrl: event.target.value })
-                  }
-                  disabled={saving}
-                />
-              </div>
-              <div className="form-group">
-                <label className="codex-provider-label-with-help">
-                  <span>{t("codex.modelProviders.fields.wireApi", "协议")}</span>
-                  <span
-                    className="codex-provider-inline-help"
-                    title={t(
-                      "codex.modelProviders.wireApi.help",
-                      "大多数供应商请选择 Responses；仅当供应商明确只支持 Chat Completions 时再切换。如果不确定，优先选 Responses。",
-                    )}
-                    aria-label={t(
-                      "codex.modelProviders.wireApi.helpAria",
-                      "查看协议说明",
-                    )}
-                  >
-                    <HelpCircle size={14} />
-                  </span>
-                </label>
-                <div className="api-provider-chip-list">
-                  <button
-                    type="button"
-                    className={`api-provider-chip ${form.wireApi === "responses" ? "active" : ""}`}
-                    onClick={() =>
-                      mutateForm({
-                        wireApi: "responses",
-                        enableModePreference:
-                          resolveEnableModePreferenceForWireApi(
-                            "responses",
-                            selectedPresetId,
-                          ),
-                      })
-                    }
-                    disabled={saving}
-                  >
-                    <span>
-                      {t("codex.modelProviders.wireApi.responses", "Responses 原生")}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`api-provider-chip ${form.wireApi === "chat_completions" ? "active" : ""}`}
-                    onClick={() =>
-                      mutateForm({
-                        wireApi: "chat_completions",
-                        supportsWebsockets: false,
-                        enableModePreference:
-                          resolveEnableModePreferenceForWireApi(
-                            "chat_completions",
-                            selectedPresetId,
-                          ),
-                      })
-                    }
-                    disabled={saving}
-                  >
-                    <span>
-                      {t(
-                        "codex.modelProviders.wireApi.chatCompletions",
-                        "Chat Completions 协议",
-                      )}
-                    </span>
-                  </button>
-                </div>
-                {selectedPresetId === DEEPSEEK_API_PROVIDER_ID && (
-                  <p className="api-provider-hint">
-                    {form.wireApi === "responses"
-                      ? t(
-                          "codex.modelProviders.wireApi.deepseekResponsesHint",
-                          "原生 Responses 直连官方 API，写入官方 models.json（工具/shell/apply_patch），默认模型 deepseek-flash。",
-                        )
-                      : t(
-                          "codex.modelProviders.wireApi.deepseekChatHint",
-                          "DeepSeek Chat Completions 走本地网关协议转换，适合兼容旧链路；需要官方 Codex 工具形态时请选 Responses。",
-                        )}
-                  </p>
-                )}
-              </div>
-              {/* DeepSeek 官方 Responses 强制直连、不支持 WebSocket：不展示该开关。 */}
-              {form.wireApi === "responses" &&
-                selectedPresetId !== DEEPSEEK_API_PROVIDER_ID && (
-                <div className="form-group">
-                  <label>
-                    {t(
-                      "codex.modelProviders.fields.supportsWebsockets",
-                      "WebSocket 传输",
-                    )}
-                  </label>
-                  <label className="provider-vision-toggle">
-                    <span className="provider-vision-toggle-copy">
-                      <span className="provider-vision-toggle-title">
-                        {t(
-                          "codex.modelProviders.websockets.title",
-                          "允许 Codex 使用 Responses WebSocket",
-                        )}
-                      </span>
-                      <span className="provider-vision-toggle-desc">
-                        {t(
-                          "codex.modelProviders.websockets.help",
-                          "仅在供应商明确支持 Responses WebSocket 时开启；连接方式可通过 Codex 或代理服务日志确认。",
-                        )}
-                      </span>
-                    </span>
-                    <span className="provider-vision-switch">
-                      <input
-                        type="checkbox"
-                        checked={form.supportsWebsockets}
-                        onChange={(event) =>
-                          mutateForm({ supportsWebsockets: event.target.checked })
-                        }
-                        disabled={
-                          saving ||
-                          selectedPresetId === "openai_official" ||
-                          selectedPresetId === DEEPSEEK_API_PROVIDER_ID
-                        }
-                      />
-                      <span className="provider-vision-switch-track" />
-                    </span>
-                  </label>
-                </div>
-              )}
-              {(canConfigureCodexProviderVision({ presetId: selectedPresetId, wireApi: form.wireApi }) ||
-                selectedPresetId === DEEPSEEK_API_PROVIDER_ID) && (
-                <>
-                  <div className="form-group">
-                    <label>
-                      {t("codex.modelProviders.fields.modelCatalog", "模型目录")}
-                    </label>
-                    <textarea
-                      className="form-input"
-                      rows={4}
-                      value={form.modelCatalogText}
-                      onChange={(event) =>
-                        mutateForm({ modelCatalogText: event.target.value })
-                      }
-                      placeholder={"deepseek-flash\ndeepseek-v4-pro"}
-                      disabled={saving}
-                    />
-                    <CodexModelContextWindowTable
-                      models={parseModelCatalogText(form.modelCatalogText)}
-                      drafts={form.modelContextWindowsDraft}
-                      showContextWindow={false}
-                      onChange={(model, value) =>
-                        mutateForm({
-                          modelContextWindowsDraft: {
-                            ...form.modelContextWindowsDraft,
-                            [model]: value,
-                          },
-                        })
-                      }
-                      visionStates={form.visionModelStates}
-                      visionDefault={form.supportsVision}
-                      onVisionChange={(model, value) =>
-                        mutateForm({
-                          visionModelStates: {
-                            ...form.visionModelStates,
-                            [model]: value,
-                          },
-                        })
-                      }
-                      disabled={saving}
-                    />
-                  </div>
-                  {/* DeepSeek Responses 只保留逐模型能力；其他第三方协议均可配置默认值。 */}
-                  {canConfigureCodexProviderVision({ presetId: selectedPresetId, wireApi: form.wireApi }) && (
-                    <>
-                  <div className="form-group">
-                    <label>
-                      {t(
-                        "codex.modelProviders.fields.visionCapability",
-                        "图片输入能力",
-                      )}
-                    </label>
-                    <label className="provider-vision-toggle">
-                      <span className="provider-vision-toggle-copy">
-                        <span className="provider-vision-toggle-title">
-                          {t(
-                            "codex.modelProviders.vision.providerDefault",
-                            "该供应商默认支持图片输入",
-                          )}
-                        </span>
-                        <span className="provider-vision-toggle-desc">
-                          {t(
-                            "codex.modelProviders.vision.providerDefaultHint",
-                            "未单独设置的模型使用此默认值，GPT-5.6 Sol、GPT-5.6 Luna 等模型默认支持图片。可在模型列表中单独关闭。网关无法匹配视觉模型时会省略图片并继续处理文本。",
-                          )}
-                        </span>
-                      </span>
-                      <span className="provider-vision-switch">
-                        <input
-                          type="checkbox"
-                          checked={form.supportsVision}
-                          onChange={(event) =>
-                            mutateForm({ supportsVision: event.target.checked })
-                          }
-                          disabled={saving}
-                        />
-                        <span className="provider-vision-switch-track" />
-                      </span>
-                    </label>
-                  </div>
-                  <div className="form-group">
-                    <label>
-                      {t(
-                        "codex.modelProviders.fields.visionModels",
-                        "支持图片的模型",
-                      )}
-                    </label>
-                    {parseModelCatalogText(form.modelCatalogText).length === 0 ? (
-                      <>
-                        <textarea
-                          className="form-input"
-                          rows={3}
-                          value={form.visionModelText}
-                          onChange={(event) =>
-                            mutateForm({ visionModelText: event.target.value })
-                          }
-                          placeholder={"qwen-vl-plus\ngpt-6.1-sol"}
-                          disabled={saving}
-                        />
-                        <p className="api-provider-hint">
-                          {t(
-                            "codex.modelProviders.vision.modelsHint",
-                            "每行一个模型名。适合同一供应商里只有部分视觉模型支持粘贴图片的情况。",
-                          )}
-                        </p>
-                      </>
-                    ) : null}
-                </div>
-                <div className="form-group">
-                  <label>
-                    {t(
-                      "codex.modelProviders.fields.visionRoutingModel",
-                      "图片请求默认模型",
-                    )}
-                  </label>
-                  <input
-                    className="form-input"
-                    value={form.visionRoutingModel}
-                    onChange={(event) =>
-                      mutateForm({ visionRoutingModel: event.target.value })
-                    }
-                    placeholder={"mimo-v2.5"}
-                    disabled={saving}
-                  />
-                  <p className="api-provider-hint">
-                    {t(
-                      "codex.modelProviders.vision.routingModelHint",
-                      "当前模型不支持图片时，网关会改用该模型；留空时自动使用唯一视觉模型，否则省略图片并继续处理文本。",
-                    )}
-                  </p>
-                </div>
-                    </>
-                  )}
-                {form.wireApi === "chat_completions" && (
-                  <p className="api-provider-hint">
-                    {t(
-                      "codex.modelProviders.gatewayHint",
-                      "第三方供应商启动时会使用本地网关隔离实例并完成协议转换；OpenAI 官方供应商保持直连。",
-                    )}
-                  </p>
-                )}
-                </>
-              )}
-              <div className="form-group">
-                <label>
-                  {t("codex.modelProviders.fields.website", "官网（可选）")}
-                </label>
-                <input
-                  className="form-input"
-                  type="text"
-                  value={form.website}
-                  onChange={(event) =>
-                    mutateForm({ website: event.target.value })
-                  }
-                  disabled={saving}
-                />
-              </div>
-              <div className="form-group">
-                <label>
-                  {t(
-                    "codex.modelProviders.fields.apiKeyUrl",
-                    "API Key 页面（可选）",
-                  )}
-                </label>
-                <input
-                  className="form-input"
-                  type="text"
-                  value={form.apiKeyUrl}
-                  onChange={(event) =>
-                    mutateForm({ apiKeyUrl: event.target.value })
-                  }
-                  disabled={saving}
-                />
-              </div>
 
-              {currentEditingProvider &&
-                currentEditingProvider.apiKeys.length > 0 && (
-                  <div className="form-group">
-                    <label>
-                      {t(
-                        "codex.modelProviders.existingApiKeys",
-                        "现有 API Keys",
-                      )}
-                    </label>
-                    {currentEditingProvider.apiKeys.length > 5 && (
-                      <div className="search-box codex-provider-key-search">
-                        <Search className="search-icon" size={16} />
-                        <input
-                          type="text"
-                          placeholder={t(
-                            "codex.modelProviders.existingApiKeysSearch",
-                            "搜索已有 API Key…",
-                          )}
-                          value={existingApiKeySearchQuery}
-                          onChange={(event) =>
-                            setExistingApiKeySearchQuery(event.target.value)
-                          }
-                          disabled={saving}
-                        />
-                      </div>
-                    )}
-                    <div className="codex-provider-key-list inline">
-                      {currentEditingProvider.apiKeys
-                        .filter((item) => {
-                          const query = existingApiKeySearchQuery
-                            .trim()
-                            .toLowerCase();
-                          if (!query) return true;
-                          const label = (
-                            item.name ||
-                            t("codex.modelProviders.unnamedKey", "未命名 Key")
-                          ).toLowerCase();
-                          const masked = maskApiKey(item.apiKey).toLowerCase();
-                          return (
-                            label.includes(query) ||
-                            masked.includes(query) ||
-                            item.apiKey.toLowerCase().includes(query)
-                          );
-                        })
-                        .map((item) => {
-                          const isEditing = editingApiKey?.apiKeyId === item.id;
-                          if (isEditing && editingApiKey) {
-                            return (
-                              <div
-                                className="codex-provider-key-row is-editing"
-                                key={item.id}
-                              >
-                                <div className="codex-provider-key-edit-fields">
-                                  <input
-                                    className="form-input"
-                                    type="text"
-                                    value={editingApiKey.name}
-                                    onChange={(event) =>
-                                      setEditingApiKey((current) =>
-                                        current
-                                          ? { ...current, name: event.target.value }
-                                          : current,
-                                      )
-                                    }
-                                    placeholder={t(
-                                      "codex.modelProviders.fields.newApiKeyName",
-                                      "API Key name (optional)",
-                                    )}
-                                    disabled={saving}
-                                  />
-                                  <input
-                                    className="form-input"
-                                    type="password"
-                                    value={editingApiKey.apiKey}
-                                    onChange={(event) =>
-                                      setEditingApiKey((current) =>
-                                        current
-                                          ? { ...current, apiKey: event.target.value }
-                                          : current,
-                                      )
-                                    }
-                                    placeholder={t(
-                                      "codex.modelProviders.fields.apiKey",
-                                      "API Key",
-                                    )}
-                                    autoComplete="off"
-                                    disabled={saving}
-                                  />
-                                </div>
-                                <div className="codex-provider-key-edit-actions">
-                                  <button
-                                    type="button"
-                                    className="action-btn success"
-                                    onClick={() => void handleSaveApiKeyEdit()}
-                                    disabled={saving}
-                                    title={t("common.save", "Save")}
-                                  >
-                                    <Check size={12} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="action-btn"
-                                    onClick={() => setEditingApiKey(null)}
-                                    disabled={saving}
-                                    title={t("common.cancel", "Cancel")}
-                                  >
-                                    <X size={12} />
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          }
-                          return (
-                            <div className="codex-provider-key-row" key={item.id}>
-                          <div className="codex-provider-key-text">
-                            <span className="codex-provider-key-name">
-                              {item.name ||
-                                t(
-                                  "codex.modelProviders.unnamedKey",
-                                  "未命名 Key",
-                                )}
-                            </span>
-                            <code>{maskApiKey(item.apiKey)}</code>
-                          </div>
-                          <button
-                            type="button"
-                            className="action-btn"
-                            onClick={() =>
-                              setEditingApiKey({
-                                providerId: currentEditingProvider.id,
-                                apiKeyId: item.id,
-                                originalApiKey: item.apiKey,
-                                apiKey: item.apiKey,
-                                name: item.name,
-                              })
-                            }
-                            disabled={saving}
-                            title={t(
-                              "codex.modelProviders.editApiKey",
-                              "Edit API Key",
-                            )}
-                          >
-                            <KeyRound size={12} />
-                          </button>
-                          <button
-                            type="button"
-                            className="action-btn"
-                            onClick={() =>
-                              void handleRenameApiKey(
-                                currentEditingProvider,
-                                item,
-                              )
-                            }
-                            disabled={saving}
-                            title={t("common.rename", "重命名")}
-                          >
-                            <Pencil size={12} />
-                          </button>
-                          <button
-                            type="button"
-                            className="action-btn danger"
-                            onClick={() =>
-                              void handleDeleteApiKey(
-                                currentEditingProvider,
-                                item,
-                              )
-                            }
-                            disabled={saving}
-                            title={t("common.delete", "删除")}
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  </div>
-                )}
-
-              <div className="form-group">
-                <label>
-                  {t(
-                    "codex.modelProviders.fields.newApiKeyName",
-                    "新增 Key 名称（可选）",
-                  )}
-                </label>
-                <input
-                  className="form-input"
-                  type="text"
-                  value={form.newApiKeyName}
-                  onChange={(event) =>
-                    mutateForm({ newApiKeyName: event.target.value })
-                  }
-                  disabled={saving}
-                />
-              </div>
-              <div className="form-group">
-                <label>
-                  {t("codex.modelProviders.fields.newApiKey", "新增 API Key")}
-                </label>
-                <input
-                  className="form-input"
-                  type="text"
-                  value={form.newApiKey}
-                  onChange={(event) =>
-                    mutateForm({ newApiKey: event.target.value })
-                  }
-                  disabled={saving}
-                />
-              </div>
-
-              <div className="provider-save-preview">
-                <div className="provider-save-preview-header">
-                  <div className="provider-save-preview-title">
-                    {t("codex.modelProviders.preview.title", "保存预览")}
-                  </div>
-                  <span className="provider-save-preview-chip primary">
-                    {t("codex.modelProviders.preview.writeNow", "会写入")}
-                  </span>
-                </div>
-                <p className="provider-save-preview-desc">
-                  {t(
-                    "codex.modelProviders.preview.desc",
-                    "保存供应商时会先更新供应商仓库；不会因为这次操作立刻切换官方 Codex 的当前配置。",
-                  )}
-                </p>
-                <div className="provider-save-preview-list">
-                  <div className="provider-save-preview-item primary">
-                    <div className="provider-save-preview-item-head">
-                      <span className="provider-save-preview-item-title">
-                        {t(
-                          "codex.modelProviders.preview.providerStoreTitle",
-                          "模型供应商仓库",
-                        )}
-                      </span>
-                      <span className="provider-save-preview-chip primary">
-                        {t("codex.modelProviders.preview.writeNow", "会写入")}
-                      </span>
-                    </div>
-                    <code>{previewPaths.providerStorePath}</code>
-                    <p>
-                      {t(
-                        "codex.modelProviders.preview.providerStoreDesc",
-                        "保存供应商名称、Base URL、官网/API Key 页面链接，以及本弹框新增的 API Key。",
-                      )}
-                    </p>
-                  </div>
-
-                  <div className="provider-save-preview-item muted">
-                    <div className="provider-save-preview-item-head">
-                      <span className="provider-save-preview-item-title">
-                        {t(
-                          "codex.modelProviders.preview.codexConfigTitle",
-                          "当前 Codex 配置",
-                        )}
-                      </span>
-                      <span className="provider-save-preview-chip muted">
-                        {t(
-                          "codex.modelProviders.preview.noImmediateChange",
-                          "不会立即修改",
-                        )}
-                      </span>
-                    </div>
-                    <code>{previewPaths.codexConfigPath}</code>
-                    <p>
-                      {t(
-                        "codex.modelProviders.preview.codexConfigDesc",
-                        "不会立即改动当前 provider 或 Base URL；只有在保存或切换 Codex API Key 账号时才会更新。",
-                      )}
-                    </p>
-                  </div>
-
-                  <div className="provider-save-preview-item muted">
-                    <div className="provider-save-preview-item-head">
-                      <span className="provider-save-preview-item-title">
-                        {t(
-                          "codex.modelProviders.preview.authFileTitle",
-                          "当前 Codex 登录凭据",
-                        )}
-                      </span>
-                      <span className="provider-save-preview-chip muted">
-                        {t(
-                          "codex.modelProviders.preview.noImmediateChange",
-                          "不会立即修改",
-                        )}
-                      </span>
-                    </div>
-                    <code>{previewPaths.codexAuthPath}</code>
-                    <p>
-                      {t(
-                        "codex.modelProviders.preview.authFileDesc",
-                        "不会因为保存供应商而覆盖当前 auth.json 中的 OPENAI_API_KEY。",
-                      )}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <ModalErrorMessage message={formError} position="bottom" />
-            </div>
-
-            <div className="modal-footer">
-              <button
-                className="btn btn-secondary"
-                onClick={closeModal}
-                disabled={saving}
-              >
-                {t("common.cancel", "取消")}
-              </button>
-              <button
-                className="btn btn-primary codex-provider-save-button"
-                onClick={() => void handleSaveProvider()}
-                disabled={saving}
-              >
-                <span className="codex-provider-save-button-label">
-                  <span aria-hidden={saving}>
-                    {t("common.save", "保存")}
-                  </span>
-                  <span aria-hidden={!saving}>
-                    {t("common.saving", "保存中...")}
-                  </span>
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {apiKeyPickerProviderId && (() => {
         const provider = providers.find((item) => item.id === apiKeyPickerProviderId);
@@ -2528,6 +1712,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
               </button>
             </div>
             <div className="modal-body">
+              <ModalErrorMessage message={providerOauthError} />
               <div className="add-section">
                 <div className="codex-oauth-binding-context">
                   <p className="section-desc codex-oauth-binding-desc">
@@ -2807,17 +1992,20 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
         const storedProvider = providers.find((item) => item.id === providerDetailId);
         const provider = storedProvider ? resolveCodexModelProviderForApiKey(storedProvider, getSelectedProviderApiKey(storedProvider)?.apiKey) : null;
         if (!provider) return null;
-        const usageState = providerUsageMap[provider.id];
         const primaryApiKey = getSelectedProviderApiKey(provider);
-        const usageSummary = usageState?.summary;
+        const usageState = isOpenAIOfficialUsageUrl(provider.baseUrl)
+          ? currentOpenAIUsageState(provider, primaryApiKey?.apiKey ?? '', providerUsageMap[provider.id]) : providerUsageMap[provider.id];
+        const showBalance = canShowCodexProviderBalance(relayBalanceDisabled, provider.baseUrl, usageState?.summary?.mode);
+        const usageSummary = showBalance ? usageState?.summary : undefined;
         const resolvedWireApi = resolveProviderWireApi(provider);
         const usageMode =
+          usageSummary?.mode === "openai_official" ||
           usageSummary?.mode === "new_api" ||
           usageSummary?.mode === "sub2api" ||
           usageSummary?.mode === "deepseek" ||
           usageSummary?.mode === "token_plan"
             ? usageSummary.mode
-            : provider.integrationType ?? null;
+            : showBalance ? provider.integrationType ?? null : null;
         const coreDetailKeys =
           usageMode === "new_api"
             ? new Set(["mode", "totalGranted", "totalAvailable", "expiresAt"])
@@ -2832,19 +2020,16 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                     "toppedUpBalance",
                   ])
                 : usageMode === "token_plan"
-                  ? new Set([
-                      "mode",
-                      "remaining",
-                      "planName",
-                      "expiresAt",
-                    ])
+                  ? new Set(["mode"])
                 : new Set<string>();
         const detailMetrics: CodexServicePanelMetricItem[] = [
           {
             key: "wireApi",
             label: t("codex.modelProviders.fields.wireApi", "协议"),
             value:
-              resolvedWireApi === "chat_completions"
+              resolvedWireApi === "anthropic"
+                ? t("codex.modelProviders.wireApi.anthropic")
+                : resolvedWireApi === "chat_completions"
                 ? t(
                     "codex.modelProviders.wireApi.chatCompletions",
                     "Chat Completions 协议",
@@ -2890,7 +2075,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                   rawKey: "enableMode",
                 },
               ]
-            : resolvedWireApi === "chat_completions"
+            : resolvedWireApi === "chat_completions" || resolvedWireApi === "anthropic"
               ? [
                   {
                     key: "enableMode",
@@ -3008,21 +2193,21 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                   {
                     key: "todayRequests",
                     label: t("codex.modelProviders.usage.fields.todayRequests", "今日请求"),
-                    value: String(usageSummary?.todayRequests ?? 0),
+                    value: usageSummary?.todayRequests == null ? "—" : String(usageSummary.todayRequests),
                   },
                   {
                     key: "todayTokens",
                     label: t("codex.modelProviders.usage.fields.todayTokens", "今日 Token"),
-                    value: (usageSummary?.todayTotalTokens ?? 0).toLocaleString("en-US"),
+                    value: usageSummary?.todayTotalTokens == null ? "—" : usageSummary.todayTotalTokens.toLocaleString("en-US"),
                   },
                 ]
               : [];
 
         const actions: CodexServicePanelActionItem[] = [
-          {
+          ...(showBalance ? [{
             key: "refresh",
             label: t("common.shared.refreshQuota", "刷新配额"),
-            variant: "secondary",
+            variant: "secondary" as const,
             icon: (
               <RefreshCw
                 size={14}
@@ -3035,7 +2220,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                 void refreshProviderUsage(provider, primaryApiKey);
               }
             },
-          },
+          }] : []),
           {
             key: "edit",
             label: t("instances.actions.edit", "编辑"),
@@ -3082,6 +2267,12 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
             baseUrl={provider.baseUrl}
             apiKeyDisplay={primaryApiKey ? maskApiKey(primaryApiKey.apiKey) : "-"}
             rawApiKey={primaryApiKey?.apiKey}
+            connectionExtra={isOpenAIOfficialUsageUrl(provider.baseUrl)
+              ? <OpenAIOfficialUsagePanel provider={provider} apiKey={primaryApiKey?.apiKey ?? ""} sourceBinding={usageState?.sourceBinding} onRefresh={() => void refreshProviderUsage(provider, primaryApiKey)} summary={usageSummary} loading={usageState?.loading} error={usageState?.error} detailed t={t} />
+              : showBalance && <>
+                {usageState?.loading && <p className="codex-daily-usage-note" role="status">{t("common.loading")}</p>}
+                {usageState?.error && <p className="codex-daily-usage-note" role="status">{t("common.shared.quota.queryFailed")}</p>}
+              </>}
             coreMetrics={coreMetrics}
             detailMetrics={detailMetrics}
             actions={actions}

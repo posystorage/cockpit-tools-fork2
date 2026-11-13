@@ -76,8 +76,12 @@ if (!process.versions.electron) {
       assert.equal(result.header.state.nativePatchState, 'unsupported');
       assert.equal(result.header.state.nativePatchReason, 'module-preload-failed');
       assert.equal(result.header.name, 'fixture-original-name');
-      assert.equal(result.unsupported.prepared.ok, false);
-      assert.equal(result.unsupported.fixture.access, null, 'unsupported quota must not activate partial Fast patches');
+      assert.equal(result.unsupported.prepared.ok, true);
+      assert.equal(result.unsupported.prepared.mode, 'fast-only');
+      assert.deepEqual(result.unsupported.fixture.access, { granted: true }, 'all validated Fast gates remain available when quota is unsupported');
+      assert.equal(result.unsupported.state.nativePatchMode, 'fast-only');
+      assert.equal(result.unsupported.state.nativeQuotaPatchState, 'unsupported');
+      assert.equal(result.unsupported.quotaGraph.quota, false, 'Fast success cannot publish a complete quota graph');
       assert.equal(result.unsupported.fixture.dictation, true, 'native dictation stays available even if quota adaptation is unsupported');
       assert.equal(result.unsupported.temporaryElements, 0);
       assert.equal(result.unsupported.name, 'fixture-original-name');
@@ -121,11 +125,11 @@ async function runElectronFixture() {
   const quota = fs.readFileSync(path.join(enhancements, 'quota.js'), 'utf8');
   const runtime = `${guard};${fast};${quota}`;
   const unitTest = fs.readFileSync(path.join(enhancements, 'fast.test.cjs'), 'utf8');
-  const fixtureLiteral = unitTest.match(/const fixture = ([\s\S]*?);\n\nfunction load/);
+  const fixtureLiteral = unitTest.match(/const fixture = ([\s\S]*?);\r?\n\r?\nfunction load/);
   assert.ok(fixtureLiteral, 'reuse the same four structural gate fixture as the unit tests');
   const gates = vm.runInNewContext(fixtureLiteral[1]);
   const dictationUnitTest = fs.readFileSync(path.join(enhancements, 'native_dictation.test.cjs'), 'utf8');
-  const dictationLiteral = dictationUnitTest.match(/const fixture = ([\s\S]*?);\n\nfunction load/);
+  const dictationLiteral = dictationUnitTest.match(/const fixture = ([\s\S]*?);\r?\n\r?\nfunction load/);
   assert.ok(dictationLiteral);
   const dictationFixture = vm.runInNewContext(dictationLiteral[1]);
   const quotaFixture = require('./helpers/codexNativeQuotaFixture.cjs')();
@@ -301,8 +305,8 @@ window.fixturePrimary={importUrl:import.meta.url};`;
     return {fixture:window.fixtureResult,state:window.__cockpitEnhancements,name:window.name};})()`);
   await evaluate("window.__cockpitNativeFast.cancelHandoff('header-nonce')");
   await send('Page.removeScriptToEvaluateOnNewDocument', { identifier: headerRegistration.identifier });
-  // Unsupported quota adaptation must leave the entire native module intact,
-  // including its dictation capability, rather than install a partial mode.
+  // A failed quota contract retains the independently validated Fast graph.
+  // This fallback cannot claim quota readiness or change native dictation.
   const unsupportedMessagesStart = messages.length;
   headerCsp = false;
   files.set('/assets/app-primary-fixture.js', ['text/javascript', primaryModule.replace('submitDisabled:disabled', 'unsupportedDisabled:disabled')]);
@@ -310,9 +314,20 @@ window.fixturePrimary={importUrl:import.meta.url};`;
   await waitForModule();
   await evaluate(`window.name='fixture-original-name';${bootstrap}`);
   const unsupportedPrepared = await evaluate("window.__cockpitNativeFast.prepareHandoff('unsupported-nonce')");
-  assert.equal(unsupportedPrepared.ok, false, JSON.stringify(unsupportedPrepared));
+  assert.equal(unsupportedPrepared.ok, true, JSON.stringify(unsupportedPrepared));
+  assert.equal(unsupportedPrepared.mode, 'fast-only', JSON.stringify(unsupportedPrepared));
+  await send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `${bootstrap};window.installResult=window.__cockpitNativeFast.consumeHandoff('unsupported-nonce');`,
+  });
+  await new Promise((resolve, reject) => {
+    window.webContents.once('did-finish-load', resolve);
+    evaluate("window.__cockpitNativeFast.reloadPreparedDocument('unsupported-nonce')").then(result => {
+      if (!result?.ok) reject(Error(JSON.stringify(result)));
+    }, reject);
+  });
+  await waitForModule();
   const unsupported = await evaluate(`({fixture:window.fixtureResult,
-    state:window.__cockpitEnhancements,name:window.name,
+    state:window.__cockpitEnhancements,quotaGraph:window.__cockpitNativeEvaluatedGraph,name:window.name,
     temporaryElements:document.querySelectorAll('script[type=importmap],link[rel=modulepreload]').length})`);
   unsupported.prepared = unsupportedPrepared;
   unsupported.moduleErrors = messages.slice(unsupportedMessagesStart);

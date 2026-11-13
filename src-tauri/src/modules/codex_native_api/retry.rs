@@ -1,7 +1,10 @@
 //! Bounded retries before response bytes are exposed to a caller.
 use crate::modules::codex_native_api::deadline::{self, Deadline};
 use super::{
-    contract::{ExecutionPolicy, OfficialFallbackFailure, ServiceError, WireApi},
+    contract::{
+        ExecutionPolicy, OfficialFallbackFailure, ServiceError, WireApi,
+        MIXED_MODEL_ROUTING_CALLER_ID,
+    },
     events::retry_after_headers,
     lifecycle::{stopping_error, RequestTracker},
     mapping::{self, Prepared},
@@ -44,17 +47,19 @@ pub(super) async fn send(
                 "The selected account does not support the original native Chat request",
             ));
         }
-        return send_inner(
+        return Box::pin(send_inner(
             state,
             prepared,
             tracker,
             compact,
             policy,
             Some((&raw.body, raw.endpoint)),
-        )
+        ))
         .await;
     }
-    send_inner(state, prepared, tracker, compact, policy, None).await
+    // Keep the retry state machine off callers' stacks. HTTP and WebSocket
+    // bridging both wrap it in their own execution deadlines.
+    Box::pin(send_inner(state, prepared, tracker, compact, policy, None)).await
 }
 
 pub(super) async fn send_native_chat(
@@ -65,15 +70,22 @@ pub(super) async fn send_native_chat(
     body: &Value,
     endpoint: &str,
 ) -> Result<reqwest::Response, ServiceError> {
-    send_inner(
+    Box::pin(send_inner(
         state,
         prepared,
         tracker,
         false,
         policy,
         Some((body, endpoint)),
-    )
+    ))
     .await
+}
+
+fn mixed_provider_responses(prepared: &Prepared) -> bool {
+    prepared.caller.id == MIXED_MODEL_ROUTING_CALLER_ID
+        && prepared.route.wire_api == WireApi::Responses
+        && !prepared.route.chatgpt
+        && !prepared.route.chatgpt_plan
 }
 
 async fn send_inner(
@@ -84,10 +96,18 @@ async fn send_inner(
     policy: &ExecutionPolicy,
     raw: Option<(&Value, &str)>,
 ) -> Result<reqwest::Response, ServiceError> {
+    if prepared.route.wire_api==WireApi::Anthropic && prepared.body["previous_response_id"].is_string() {
+        mapping::recover_previous(state,prepared).await?;
+    }
     let mut refreshed = false;
     // Selection can skip incompatible candidates without dispatching anything.
     // Only replacements of actual upstream attempts consume this budget.
-    let mut credential_attempts = 0;
+    let mut credential_attempts = if tracker.overload.continuous() {
+        // A WebSocket-to-HTTP reopen can start partway through a pool round.
+        prepared.request.excluded_account_ids.len()
+    } else {
+        0
+    };
     let mut send_attempts = 0u8;
     let mut status_attempts = 0u8;
     let mut open_attempts = 1u8;
@@ -95,13 +115,16 @@ async fn send_inner(
     let mut bootstrap_attempts = 0u8;
     let mut local_fallback_sources = std::collections::HashSet::new();
     let mut last_upstream_failure: Option<ServiceError> = None;
+    let mut local_quota_rejections = std::collections::HashSet::new();
     let deadline = prepared
         .execution
         .total_deadline
         .min(tracker.deadline(policy.total_timeout));
     let mut previous_open_deadline = None;
     loop {
+        let deadline = tracker.overload.deadline(deadline);
         let compact = compact
+            || (prepared.route.wire_api == WireApi::Anthropic && super::anthropic_compact::triggered(&prepared.body))
             || (super::grok_errors::applies(&prepared.route)
                 && super::grok_wire::compaction::triggered(&prepared.body));
         if state.stop.stopped() {
@@ -131,7 +154,8 @@ async fn send_inner(
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/json"),
         );
-        let chat = prepared.route.wire_api == WireApi::Chat && !compact;
+        let chat = prepared.route.wire_api == WireApi::Chat && (!compact || prepared.route.compact_endpoint.is_none());
+        let anthropic = prepared.route.wire_api == WireApi::Anthropic;
         let path = if let Some((_, endpoint)) = raw {
             endpoint
         } else if chat {
@@ -147,11 +171,19 @@ async fn send_inner(
             body
         } else {
             let mut body = prepared.body.clone();
+            body = super::anthropic_compact::expand_wire(state,body).await?;
+            if !prepared.route.chatgpt && !prepared.route.chatgpt_plan {
+                super::responses_http_input::normalize_external_results(&mut body);
+            }
             super::multi_agent_transport::sanitize_reasoning(prepared, &mut body);
-            if chat || super::grok_errors::applies(&prepared.route) {
+            if chat || anthropic || super::grok_errors::applies(&prepared.route) {
                 super::multi_agent_transport::prepare(prepared, &mut body)?;
             }
-            if chat { super::chat_upstream::responses_to_chat(&body)? } else { body }
+            if chat {
+                if compact || super::anthropic_compact::triggered(&body) { super::anthropic_compact::prepare(&mut body)?; }
+                if super::chatgpt_plan_tools::has_client_declaration(&body) { super::chatgpt_plan_tools::prepare(&mut body)?; }
+                super::chat_upstream::responses_to_chat(&body)?
+            } else { body }
         };
         if prepared.request.auxiliary.as_deref() == Some("responses.websocket") {
             // The replay retains the downstream socket envelope. Each HTTP
@@ -224,10 +256,33 @@ async fn send_inner(
                 compact,
             )?;
         }
-        if raw.is_none() && !chat && !super::grok_errors::applies(&prepared.route) {
+        if raw.is_none() && !chat && !anthropic && !super::grok_errors::applies(&prepared.route) {
             super::multi_agent_transport::prepare(prepared, &mut body)?;
         }
+        if prepared.route.chatgpt && prepared.source_headers.get("x-cockpit-compat-source").is_some_and(|value| value == "claude")
+            && body["max_output_tokens"].as_u64().is_some_and(|tokens| (1..16).contains(&tokens)) {
+            body["max_output_tokens"] = Value::from(16);
+        }
         let codex_backend = prepared.route.chatgpt && !super::grok_errors::applies(&prepared.route);
+        headers.remove(super::compat_http::CLAUDE_CACHE_SCOPE);
+        if !compact && !chat && !anthropic && (codex_backend || prepared.route.chatgpt_plan) {
+            headers.remove("x-claude-code-session-id");
+            headers.remove("x-claude-code-agent-id");
+            if let Some(scope) = prepared.source_headers.get(super::compat_http::CLAUDE_CACHE_SCOPE)
+                .and_then(|value| value.to_str().ok())
+                .filter(|_| body.get("prompt_cache_key").is_none())
+            {
+                // Each upstream attempt uses its selected account and model.
+                // The request's Claude session and agent never leave the gateway.
+                body["prompt_cache_key"] = Value::String(super::compat_http::cache_digest([
+                    "claude-code-cache",
+                    &prepared.caller.id,
+                    &prepared.route.owner_id,
+                    body["model"].as_str().unwrap_or(&prepared.route.model),
+                    scope,
+                ]));
+            }
+        }
         if codex_backend || prepared.route.chatgpt_plan {
             super::codex_cpa_wire::sanitize_input_ids(&mut body);
         }
@@ -239,7 +294,21 @@ async fn send_inner(
         let base_url = endpoint.as_ref().map_or(prepared.route.base_url.as_str(), |endpoint| {
             endpoint.base_url.as_str()
         });
-        let url = format!("{}/{}", base_url.trim_end_matches('/'), path);
+        if path == "responses"
+            && prepared.route.wire_api == WireApi::Responses
+            && crate::modules::codex_account::is_official_deepseek_base_url(base_url)
+        {
+            super::responses_tool_history::normalize_deepseek_tool_history(&mut body);
+        }
+        super::opencode_go::apply_session_header(
+            base_url, &prepared.caller.id, &prepared.binding, &mut tracker.opencode_go_session, &mut headers,
+        );
+        let url = if anthropic {
+            state.anthropic_search.restore(super::anthropic_search_cache::scope(prepared).as_deref(),&mut body);
+            body = if compact { super::anthropic_compact::messages(&body)? } else { super::anthropic::responses_to_messages(&body)? };
+            headers.insert("anthropic-version", HeaderValue::from_static(super::anthropic::VERSION));
+            super::anthropic::endpoint(base_url, "messages")?
+        } else { format!("{}/{}", base_url.trim_end_matches('/'), path) };
         let streaming = !compact && body.get("stream").and_then(Value::as_bool).unwrap_or(false);
         headers.insert(
             header::ACCEPT,
@@ -249,12 +318,84 @@ async fn send_inner(
                 "application/json"
             }),
         );
+        tracker.field_compat.apply(&prepared.route, &mut body);
+        let protocol = if anthropic {
+            WireApi::Anthropic
+        } else if chat || raw.is_some() {
+            WireApi::Chat
+        } else {
+            WireApi::Responses
+        };
+        let parent = if protocol == WireApi::Responses {
+            state.reasoning_proofs.parent(prepared, &body)
+        } else {
+            None
+        };
+        prepared.reasoning_ceiling_proof = super::reasoning_policy::check_dispatch_with_parent(
+            state, &prepared.caller, &prepared.route, &prepared.source_body, &body, protocol, parent,
+        ).await?;
         let request = prepared.route.client.post(url).headers(headers).json(&body);
         let (client, request) = request.build_split();
         let request = request.map_err(|error| super::diagnostics::transport_failure(
             502, "upstream_request_invalid", "Unable to prepare the upstream request", &error,
         ))?;
-        tracker.check_quota_before_send()?;
+        let (request, plain_request) = super::http_compression::request(
+            state, request, codex_backend && !prepared.route.chatgpt_plan,
+        ).await?;
+        if let Err(error) = tracker.check_quota_before_send() {
+            let safe_replay = mapping::local_quota_prepared_replay_is_safe(prepared);
+            if error.code == "quota_reserved"
+                && error.upstream_not_sent
+                && !prepared.transport_pinned
+                && !prepared.compact
+                && prepared.image_route_request.is_none()
+                && prepared.request.target_account_id.is_none()
+                && safe_replay
+                && local_quota_rejections.insert(prepared.route.account_id.clone())
+            {
+                // No upstream operation has started for this candidate. Drop
+                // both references to its permit and exclude it for this request
+                // without charging a credential retry or reporting a failure.
+                tracker.release_route();
+                let mut stop = state.stop.clone();
+                let replacement = tokio::select! {
+                    _ = stop.wait() => Err(stopping_error()),
+                    result = deadline::timeout_at(deadline, mapping::retry_local_quota_account(state, prepared)) =>
+                        result.map_err(|_| total_timeout())?,
+                };
+                match replacement {
+                    Ok(()) => {
+                        send_attempts = 0;
+                        status_attempts = 0;
+                        open_attempts = 1;
+                        refreshed = false;
+                        tracker.routed(&prepared.caller, &prepared.route, &prepared.request.model);
+                        tracker.routing_identity(&prepared.request);
+                        tracker.track_rebuild(prepared.binding.rebuild_abort_handle());
+                        tracker.prepared_metadata(&prepared);
+                        // Preserve the original opening deadline across local
+                        // skips; genuine later retry attempts may renew it.
+                        previous_open_deadline = None;
+                        continue;
+                    }
+                    Err(replacement_error)
+                        if state.stop.stopped() || tokio::time::Instant::now() >= deadline =>
+                    {
+                        return Err(replacement_error);
+                    }
+                    Err(replacement_error) => {
+                        return Err(last_upstream_failure.clone().unwrap_or_else(|| {
+                            if matches!(replacement_error.code, "no_available_account" | "quota_reserved") {
+                                error
+                            } else {
+                                replacement_error
+                            }
+                        }));
+                    }
+                }
+            }
+            return Err(last_upstream_failure.clone().unwrap_or(error));
+        }
         let mut stop = state.stop.clone();
         let mut connect_failed = false;
         let open_deadline = deadline.cap(prepared.execution.prepare_deadline());
@@ -265,27 +406,52 @@ async fn send_inner(
                 super::connection_error::timeout(&prepared.route)
             });
         }
+        let mut inspecting_rejection = false;
         let result = tokio::select! {
             biased;
             _ = stop.wait() => Err(stopping_error()),
             result = deadline::timeout_at(open_deadline, async {
                 tracker.begin_attempt("http").await;
+                if let Some(bytes) = request.body().and_then(reqwest::Body::as_bytes) { tracker.upstream_request_bytes(bytes.len()); }
                 tracker.capability_fallback(prepared.capability_fallback.clone());
                 tracker.payload("upstream_request", "http", request.headers(), &body.to_string());
                 tracker.upstream_headers(request.headers());
-                client.execute(request).await
+                tracker.quota_request_started();
+                let response = client.execute(request).await?;
+                // Keep decoder/read failures separate from connection failures:
+                // an error body is not permission to replay a dispatched turn.
+                if matches!(response.status().as_u16(), 400 | 415) {
+                    if let Some(plain) = plain_request {
+                        inspecting_rejection = true;
+                        let (response, safe) = match super::http_compression::rejected_before_execution(response).await {
+                            Ok(result) => result,
+                            Err(error) => return Ok(Err(error)),
+                        };
+                        inspecting_rejection = false;
+                        if !safe { return Ok(Ok(response)); }
+                        tracker.attempt_result(response.status().as_u16(), false, Some("compressed_request_rejected"));
+                        drop(response);
+                        tracker.begin_attempt("http").await;
+                        if let Some(bytes) = plain.body().and_then(reqwest::Body::as_bytes) { tracker.upstream_request_bytes(bytes.len()); }
+                        tracker.upstream_headers(plain.headers());
+                        return client.execute(plain).await.map(Ok);
+                    }
+                }
+                Ok(Ok(response))
             }) => match result {
                 Ok(Ok(value)) => Ok(value),
                 Ok(Err(error)) => {
                     connect_failed = error.is_connect() || error.is_builder();
                     Err(super::connection_error::request(&prepared.route, &error))
                 },
+                Err(_) if inspecting_rejection => Ok(Err(ServiceError::new(504, "upstream_idle_timeout", "Upstream compression rejection body did not complete before the deadline"))),
                 Err(_) if tokio::time::Instant::now() >= deadline => Err(total_timeout()),
                 Err(_) => Err(super::connection_error::timeout(&prepared.route)),
             }
         };
         let mut response = match result {
-            Ok(value) => value,
+            Ok(Ok(value)) => value,
+            Ok(Err(error)) => return Err(error),
             Err(error) => {
                 if connect_failed {
                     // reqwest proves no HTTP request reached the account.
@@ -297,10 +463,11 @@ async fn send_inner(
                 if state.stop.stopped() || tokio::time::Instant::now() >= deadline {
                     return Err(error);
                 }
-                // No received output is not proof that a sent official turn
-                // did not execute. Only a definite connection failure may be
-                // rebuilt; headers timeouts and disconnects remain ambiguous.
-                if prepared.route.chatgpt_plan && !connect_failed {
+                // A sent official or mixed-provider turn may have executed
+                // before headers timed out or the connection dropped.
+                if !connect_failed
+                    && (prepared.route.chatgpt_plan || mixed_provider_responses(prepared))
+                {
                     return Err(error);
                 }
                 let official_connect_failed = prepared.route.chatgpt_plan && connect_failed;
@@ -386,6 +553,7 @@ async fn send_inner(
                 });
             }
         };
+        response = super::http_compression::decode_response(response)?;
         tracker.upstream_http_version(response.version());
         tracker.upstream_response_headers(response.headers());
         tracker.quota_headers(response.headers());
@@ -415,7 +583,7 @@ async fn send_inner(
             response = match probe.await {
                 Ok(response) => response,
                 Err(error)
-                    if !prepared.route.chatgpt_plan && matches!(
+                    if !prepared.route.chatgpt_plan && !mixed_provider_responses(prepared) && matches!(
                         error.code,
                         "upstream_stream_error"
                             | "incomplete_upstream_stream"
@@ -444,9 +612,12 @@ async fn send_inner(
         let mut failure_message = None;
         let mut model_unavailable = false;
         let mut request_scoped = false;
+        let mut execution_observed = false;
         let mut capability_rejection = false;
         let mut official_failure = None;
         let mut upstream_error_code = None;
+        let mut explicit_capacity = false;
+        let mut exhausted = None;
         if !status.is_success() {
             let inspected = inspect_status_error(
                 state,
@@ -457,6 +628,14 @@ async fn send_inner(
                 super::grok_errors::applies(&prepared.route),
             )
             .await?;
+            exhausted = inspected.10.as_ref().and_then(super::quota_exhaustion::code);
+            explicit_capacity = inspected.10.as_ref().is_some_and(super::overload::event);
+            if explicit_capacity { tracker.observe_overload(); }
+            if prepared.route.wire_api == WireApi::Responses && !prepared.route.chatgpt_plan && inspected.10.as_ref().is_some_and(|error| tracker.field_compat.rejected_for(prepared, &body, inspected.0.status().as_u16(), error)) {
+                tracker.field_compat.commit_reasoning(prepared);
+                tracker.attempt_result(400, false, Some(tracker.field_compat.reason()));
+                continue;
+            }
             response = inspected.0;
             status = response.status();
             credential_scope = inspected.1;
@@ -468,14 +647,25 @@ async fn send_inner(
             capability_rejection = inspected.6;
             official_failure = inspected.7;
             upstream_error_code = inspected.8.clone();
+            execution_observed = inspected.9;
             tracker.capture_request_fault(request_scoped);
             tracker.attempt_result(status.as_u16(), false, Some(inspected.8.as_deref().unwrap_or("upstream_http_error")));
+        }
+        // A provider device refusal is terminal for this request. Preserve its
+        // error and let the final report record the original request timestamp;
+        // do not refresh tokens, rotate accounts or replay the conversation.
+        if prepared.route.chatgpt && failure_message.as_deref()
+            .is_some_and(crate::modules::codex_device_restrictions::explicit_message) {
+            return Ok(response);
         }
         let wait = match (retry_after_headers(response.headers()), body_retry_after) {
             (Some(headers), Some(body)) => Some(headers.max(body)),
             (headers, body) => headers.or(body),
         };
         tracker.set_retry_after(wait);
+        if let Some(code) = exhausted {
+            super::quota_exhaustion::record(state, tracker, &prepared.route, code, status.as_u16(), wait, deadline).await?;
+        }
         if !status.is_success() {
             let code = upstream_error_code.as_deref().unwrap_or("upstream_http_error");
             let message = failure_message.clone().unwrap_or_else(|| "Upstream rejected the request".into());
@@ -484,17 +674,23 @@ async fn send_inner(
                 .with_credential_scope(credential_scope)
                 .with_retry_after(wait));
         }
+        if !status.is_success() {
+            tracker.capture_transient_rate_limit(last_upstream_failure.as_ref().is_some_and(|error| error.transient_rate_limit));
+        }
         if prepared.route.chatgpt_plan {
             if let Some(failure) = official_failure.as_mut() {
                 failure.retry_after = wait;
                 // An actual upstream rejection affects health even when the
                 // conversation cannot be replayed on a different credential.
-                super::execution::within(state, async {
-                    state.host.observe_official_failure(&prepared.route, &prepared.route.model, failure).await;
-                    Ok(())
-                }).await?;
+                if exhausted.is_none() {
+                    super::execution::within(state, async {
+                        state.host.observe_official_failure(&prepared.route, &prepared.route.model, failure).await;
+                        Ok(())
+                    }).await?;
+                }
             }
         }
+        if execution_observed { return Ok(response); }
         let official_fallback_considered = prepared.route.chatgpt_plan && official_failure.is_some();
         let official_auth_failure = prepared.route.chatgpt_plan && official_failure.as_ref()
             .is_some_and(|failure| super::official_fallback::reason(failure) == Some("authorization_failed"));
@@ -531,6 +727,7 @@ async fn send_inner(
             return Ok(response);
         }
         if status == StatusCode::UNAUTHORIZED
+            && exhausted.is_none()
             && !refreshed
             && !model_unavailable
             && can_refresh_credentials(prepared)
@@ -564,16 +761,31 @@ async fn send_inner(
                 Err(_) => {}
             }
         }
-        let retryable = model_unavailable || official_auth_failure
+        let retryable = exhausted.is_some() || model_unavailable || official_auth_failure
             || matches!(
                 status.as_u16(),
                 401 | 402 | 403 | 408 | 429 | 500 | 502 | 503 | 504
             );
+        if status.as_u16() == 503 {
+            tracing::info!(target: "codex_api", "[NativeAPI][recovery] request_id={} status=503 switch_allowed={} rebuild_available={} credential_attempts={} credential_limit={} status_attempts={} status_limit={}",
+                tracker.diagnostic_request_id(), can_switch_account(prepared), prepared.rebuild_plan.is_some(),
+                credential_attempts, policy.credential_retries, status_attempts, policy.status_retries);
+        }
+        let overload = !request_scoped && !compact && raw.is_none()
+            && !prepared.route.chatgpt_plan && prepared.route.wire_api == WireApi::Responses
+            && (if policy.continuous_overload_retry {
+                explicit_capacity
+            } else {
+                !last_upstream_failure.as_ref().is_some_and(|error| error.transient_rate_limit)
+                    && upstream_error_code.as_deref().is_some_and(super::overload::capacity_code)
+            });
         // Status failures have an independent budget from transport send errors.
         // Authentication refresh is separate; invalid credentials, throttling and
         // forbidden responses are never blindly retried on the same account.
         if matches!(status.as_u16(), 408 | 500 | 502 | 503 | 504)
             && !official_fallback_considered
+            && exhausted.is_none()
+            && !(policy.continuous_overload_retry && overload)
             && !model_unavailable
             && status_attempts < policy.status_retries
         {
@@ -591,13 +803,17 @@ async fn send_inner(
             .await?;
             continue;
         }
-        let mut failure_recorded = false;
+        let failed_route = overload.then(|| {
+            let mut route = prepared.route.clone();
+            route.permit = None;
+            route
+        });
+        let mut failure_recorded = exhausted.is_some();
         if retryable
-            && credential_limit_allows(policy, credential_attempts)
+            && (failure_recorded || credential_limit_allows(policy, credential_attempts))
             && can_switch_account(prepared)
         {
-            note_failed(
-                state,
+            if !overload && !failure_recorded { note_failed(state, tracker,
                 prepared,
                 if model_unavailable {
                     404
@@ -607,13 +823,17 @@ async fn send_inner(
                 wait,
                 credential_scope,
                 failure_message.as_deref(),
+                last_upstream_failure.as_ref().is_some_and(|error| error.transient_rate_limit),
                 deadline,
             )
             .await?;
-            failure_recorded = true;
+            failure_recorded = true; }
             tracker.release_route();
             match alternate(state, prepared, deadline).await {
                 Ok(()) => {
+                    if let Some(route) = &failed_route {
+                        note_failed_route(state, tracker,route,503,wait,credential_scope,failure_message.as_deref(),deadline).await?;
+                    }
                     drop(response);
                     credential_attempts += 1;
                     send_attempts = 0;
@@ -631,10 +851,29 @@ async fn send_inner(
                     return Err(error)
                 }
                 // Preserve the real upstream status if the alternate pool is exhausted.
-                Err(_) => {}
+                Err(error) => {
+                    tracing::info!(target: "codex_api", "[NativeAPI][recovery] request_id={} result=alternate_unavailable code={} status={}", tracker.diagnostic_request_id(), error.code, error.status);
+                }
             }
         }
-        if retryable
+        if let Some(route) = &failed_route {
+            if let Some(recovery) = super::overload::retry(state,prepared,tracker,wait,deadline,policy).await? {
+                drop(response);
+                if policy.continuous_overload_retry {
+                    credential_attempts = usize::from(recovery == super::overload::RetryRoute::Alternate);
+                }
+                if recovery == super::overload::RetryRoute::Alternate {
+                    send_attempts = 0;
+                    status_attempts = 0;
+                    open_attempts = 1;
+                    refreshed = false;
+                }
+                continue;
+            }
+            note_failed_route(state, tracker,route,503,wait,credential_scope,failure_message.as_deref(),deadline).await?;
+            return Ok(response);
+        }
+        if exhausted.is_none() && retryable
             && !round_attempted
             && !compact_availability_neutral(
                 prepared,
@@ -644,8 +883,7 @@ async fn send_inner(
             )
         {
             if !failure_recorded {
-                note_failed(
-                    state,
+                note_failed(state, tracker,
                     prepared,
                     if model_unavailable {
                         404
@@ -655,6 +893,7 @@ async fn send_inner(
                     wait,
                     credential_scope,
                     failure_message.as_deref(),
+                    last_upstream_failure.as_ref().is_some_and(|error| error.transient_rate_limit),
                     deadline,
                 )
                 .await?;
@@ -682,7 +921,7 @@ pub(super) async fn renew_transport_after_tls(
     tracker: &mut RequestTracker,
     error: &ServiceError,
 ) -> Result<(), ServiceError> {
-    if error.transport_failure != Some(super::contract::TransportFailureKind::TlsDecrypt) {
+    if !matches!(error.transport_failure, Some(super::contract::TransportFailureKind::TlsDecrypt | super::contract::TransportFailureKind::TlsDecryptHttp2)) {
         return Ok(());
     }
     tracker.release_route();
@@ -721,7 +960,7 @@ async fn cooldown_round_inner(
     status: u16,
 ) -> Result<bool, ServiceError> {
     let mut request = prepared.request.clone();
-    request.excluded_account_ids.clear();
+    request.excluded_account_ids.retain(|id| tracker.quota_exhausted_accounts.contains(id));
     if let Some(image_request) = &prepared.image_route_request {
         request.model = image_request
             .model
@@ -736,6 +975,7 @@ async fn cooldown_round_inner(
             .into(),
         );
     }
+    let excluded = request.excluded_account_ids.clone();
     let mut stop = state.stop.clone();
     let wait = tokio::select! {
         _ = stop.wait() => return Err(stopping_error()),
@@ -756,7 +996,7 @@ async fn cooldown_round_inner(
     let mut stop = state.stop.clone();
     tokio::select! {
         _ = stop.wait() => return Err(stopping_error()),
-        result = deadline::timeout_at(deadline, mapping::retry_cooldown_round(state, prepared)) => result.map_err(|_| total_timeout())??,
+        result = deadline::timeout_at(deadline, mapping::retry_cooldown_round(state, prepared, excluded)) => result.map_err(|_| total_timeout())??,
     }
     tracker
         .routed(&prepared.caller, &prepared.route, &prepared.request.model);
@@ -820,22 +1060,42 @@ fn retry_delay(policy: &ExecutionPolicy, attempt: u8) -> Duration {
 }
 
 async fn note_failed(
-    state: &AppState,
+    state: &AppState, tracker: &mut RequestTracker,
     prepared: &Prepared,
     status: u16,
     wait: Option<Duration>,
     credential_scope: bool,
     message: Option<&str>,
+    transient: bool,
     deadline: Deadline,
 ) -> Result<(), ServiceError> {
     if compact_availability_neutral(prepared, status, credential_scope, message) {
         return Ok(());
     }
+    note_failed_classified(state, tracker, &prepared.route, status, wait, credential_scope, message, transient, deadline).await
+}
+
+pub(super) async fn note_failed_route(
+    state: &AppState, tracker: &mut RequestTracker, route: &super::contract::Route, status: u16,
+    wait: Option<Duration>, credential_scope: bool, message: Option<&str>, deadline: Deadline,
+) -> Result<(), ServiceError> {
+    note_failed_classified(state, tracker, route, status, wait, credential_scope, message, false, deadline).await
+}
+
+pub(super) async fn note_failed_classified(
+    state: &AppState, tracker: &mut RequestTracker, route: &super::contract::Route, status: u16, wait: Option<Duration>,
+    credential_scope: bool, message: Option<&str>, transient: bool, deadline: Deadline,
+) -> Result<(), ServiceError> {
     let mut stop = state.stop.clone();
-    tokio::select! {
+    let result = tokio::select! {
         _ = stop.wait() => Err(stopping_error()),
-        result = deadline::timeout_at(deadline, state.host.route_failed_attempt(&prepared.route, &prepared.route.model, status, wait, credential_scope, message)) => result.map_err(|_| total_timeout()),
-    }
+        result = deadline::timeout_at(deadline, async {
+            if transient { state.host.route_transient_rate_limited(route, &route.model, wait).await; }
+            else { state.host.route_failed_attempt(route, &route.model, status, wait, credential_scope, message).await; }
+        }) => result.map_err(|_| total_timeout()),
+    };
+    if result.is_ok() { tracker.mark_failure_cooldown_recorded(&route.account_id); }
+    result
 }
 
 fn compact_availability_neutral(
@@ -873,6 +1133,8 @@ pub(super) async fn inspect_status_error(
         bool,
         Option<OfficialFallbackFailure>,
         Option<String>,
+        bool,
+        Option<Value>,
     ),
     ServiceError,
 > {
@@ -918,7 +1180,7 @@ pub(super) async fn inspect_status_error(
                 .unwrap_or_else(|| Value::String(String::from_utf8_lossy(&bytes).into_owned())),
         )
     } else {
-        (status.as_u16(), None)
+        (if value.as_ref().is_some_and(super::transient_rate_limit::applies) { 429 } else { status.as_u16() }, None)
     };
     let status = StatusCode::from_u16(normalized_status).unwrap_or(status);
     let (mut message, scope) = value
@@ -931,6 +1193,8 @@ pub(super) async fn inspect_status_error(
         || super::diagnostics::is_cloudflare_challenge(&String::from_utf8_lossy(&bytes));
     if challenge {
         message = Some("cloudflare challenge".into());
+    } else if value.is_none() {
+        message = super::diagnostics::cloudflare_gateway_message(status, &headers).or(message);
     }
     let body_retry_after = value
         .as_ref()
@@ -948,11 +1212,21 @@ pub(super) async fn inspect_status_error(
         && value.as_ref().is_some_and(|value| {
             super::capabilities::pre_execution_rejection(status.as_u16(), value)
         });
-    let code = value.as_ref().and_then(super::official_fallback::code);
+    let code = value.as_ref().and_then(super::quota_exhaustion::code).map(str::to_owned)
+        .or_else(|| value.as_ref().and_then(super::official_fallback::code)).or_else(|| {
+        value.as_ref().filter(|value| super::transient_rate_limit::applies(value)).map(|_| "turn_rate_limit_exceeded".to_owned())
+    }).or_else(|| {
+        value.as_ref().filter(|value| super::overload::event(value)).map(|value| {
+            super::diagnostics::error_object(value).get("type").and_then(Value::as_str)
+                .filter(|kind| super::overload::capacity_code(kind)).unwrap_or("model_at_capacity").to_owned()
+        })
+    });
+    let execution_observed = value.as_ref().is_some_and(super::bootstrap::http_execution_observed);
     let request_scoped = !challenge
+        && value.as_ref().and_then(super::quota_exhaustion::code).is_none()
         && super::upstream_errors::request_fault(
             status.as_u16(),
-            &value.unwrap_or_else(|| Value::String(String::from_utf8_lossy(&bytes).into_owned())),
+            &value.clone().unwrap_or_else(|| Value::String(String::from_utf8_lossy(&bytes).into_owned())),
         );
     let failure = (!request_scoped || (capability_rejection && code.as_deref() == Some("subscription_sharing_unsupported_capability"))).then(|| OfficialFallbackFailure {
         trigger_stage: "upstream",
@@ -974,6 +1248,8 @@ pub(super) async fn inspect_status_error(
         capability_rejection,
         failure,
         code,
+        execution_observed,
+        value.filter(|_| !challenge),
     ))
 }
 
@@ -998,7 +1274,15 @@ pub(super) async fn recover_before_output(
     event: &Value, status: u16, previous_wait: Option<Duration>,
     policy: &ExecutionPolicy, deadline: Deadline,
 ) -> Result<bool,ServiceError> {
-    if prepared.route.chatgpt_plan || prepared.raw_chat.is_some()
+    if !prepared.route.chatgpt_plan && prepared.raw_chat.is_none()
+        && prepared.route.wire_api == WireApi::Responses && super::bootstrap::pre_execution(event)
+        && tracker.field_compat.rejected_for(prepared, &prepared.body, status, event) {
+        tracker.field_compat.commit_reasoning(prepared);
+        tracker.attempt_result(status, false, Some(tracker.field_compat.reason()));
+        return Ok(true);
+    }
+    let exhausted = super::quota_exhaustion::code(event);
+    if (prepared.route.chatgpt_plan && exhausted.is_none()) || prepared.raw_chat.is_some()
         || prepared.route.wire_api!=WireApi::Responses || !super::bootstrap::pre_execution(event)
         || super::upstream_errors::request_fault(status,event) { return Ok(false); }
     let error=super::output_error::event_failure(event,status);
@@ -1007,29 +1291,53 @@ pub(super) async fn recover_before_output(
     tracker.attempt_result(status,false,Some(error.code));
     tracker.set_retry_after(wait);
     let (message,scope)=super::diagnostics::upstream_error_metadata_status(status,event);
-    note_failed(state,prepared,status,wait,scope,message.as_deref(),deadline).await?;
-    let used=tracker.upstream_account_ids().len().max(1);
-    if !can_switch_account(prepared) || policy.credential_retries!=0 && used>=usize::from(policy.credential_retries) { return Ok(false); }
-    tracker.release_route();
-    match alternate(state,prepared,deadline).await {
-        Ok(()) => {},
-        Err(error) if state.stop.stopped() || tokio::time::Instant::now()>=deadline => return Err(error),
-        Err(_) => return Ok(false),
+    let overload = (policy.continuous_overload_retry || !error.transient_rate_limit)
+        && super::overload::event(event);
+    let mut failed_route = prepared.route.clone();
+    failed_route.permit = None;
+    // Do not impose the generic 60-second failure cooldown before the short
+    // same-account capacity fallback has had a chance to reacquire its permit.
+    if let Some(code) = exhausted {
+        super::quota_exhaustion::record(state, tracker, &prepared.route, code, status, wait, deadline).await?;
+    } else if !overload {
+        note_failed(state, tracker,prepared,status,wait,scope,message.as_deref(),error.transient_rate_limit,deadline).await?;
     }
-    tracker.routed(&prepared.caller,&prepared.route,&prepared.request.model);
-    tracker.routing_identity(&prepared.request);
-    tracker.track_rebuild(prepared.binding.rebuild_abort_handle());
-    tracker.prepared_metadata(prepared);
-    Ok(true)
+    let used = if policy.continuous_overload_retry && overload {
+        prepared.request.excluded_account_ids.len() + 1
+    } else {
+        tracker.upstream_account_ids().len().max(1)
+    };
+    if can_switch_account(prepared) && (exhausted.is_some() || policy.credential_retries==0 || used<usize::from(policy.credential_retries)) {
+        tracker.release_route();
+        match alternate(state,prepared,deadline).await {
+            Ok(()) => {
+                if overload { note_failed_route(state, tracker,&failed_route,503,wait,scope,message.as_deref(),deadline).await?; }
+                tracker.routed(&prepared.caller,&prepared.route,&prepared.request.model);
+                tracker.routing_identity(&prepared.request);
+                tracker.track_rebuild(prepared.binding.rebuild_abort_handle());
+                tracker.prepared_metadata(prepared);
+                return Ok(true);
+            },
+            Err(error) if state.stop.stopped() || tokio::time::Instant::now()>=deadline => return Err(error),
+            Err(error) => tracing::info!(target: "codex_api", "[NativeAPI][recovery] request_id={} result=alternate_unavailable code={} status={}", tracker.diagnostic_request_id(), error.code, error.status),
+        }
+    } else {
+        tracing::info!(target: "codex_api", "[NativeAPI][recovery] request_id={} result=blocked switch_allowed={} accounts_used={} credential_limit={}", tracker.diagnostic_request_id(), can_switch_account(prepared), used, policy.credential_retries);
+    }
+    if overload {
+        if super::overload::retry(state,prepared,tracker,wait,deadline,policy).await?.is_some() { return Ok(true); }
+        note_failed_route(state, tracker,&failed_route,503,wait,scope,message.as_deref(),deadline).await?;
+    }
+    Ok(false)
 }
 
 pub(super) fn remaining_credential_policy(
     prepared:&Prepared, tracker:&RequestTracker, policy:&ExecutionPolicy,
 ) -> ExecutionPolicy {
     let mut remaining=policy.clone();
-    if policy.credential_retries!=0 {
-        let accounts=tracker.upstream_account_ids();
-        let used=accounts.len().saturating_sub(usize::from(accounts.contains(&prepared.route.account_id)));
+    if policy.credential_retries!=0 && !tracker.overload.continuous() {
+        let accounts = tracker.upstream_account_ids();
+        let used = accounts.len().saturating_sub(usize::from(accounts.contains(&prepared.route.account_id)));
         remaining.credential_retries=usize::from(policy.credential_retries).saturating_sub(used).max(1).min(u16::MAX as usize) as u16;
     }
     remaining

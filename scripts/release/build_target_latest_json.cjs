@@ -66,8 +66,17 @@ function listFilesRecursive(rootDir) {
   return files;
 }
 
-function buildUrl(repo, version, fileName) {
-  return `https://github.com/${repo}/releases/download/v${version}/${encodeURIComponent(fileName)}`;
+function buildUrl(repo, releaseTag, fileName) {
+  return `https://github.com/${repo}/releases/download/${encodeURIComponent(releaseTag)}/${encodeURIComponent(fileName)}`;
+}
+
+function resolveReleaseTag(version, releaseTag = `v${version}`) {
+  if (!/^\d+\.\d+\.\d+$/.test(version)
+      || !(releaseTag === version || releaseTag === `v${version}`
+        || (releaseTag.startsWith(version) && /^[A-Za-z][A-Za-z0-9._-]*$/.test(releaseTag.slice(version.length))))) {
+    throw new Error('Release tag must match the application version or its draft suffix');
+  }
+  return releaseTag;
 }
 
 function buildTargetManifests(options) {
@@ -80,6 +89,8 @@ function buildTargetManifests(options) {
     outputDir,
     targets,
   } = options;
+
+  const releaseTag = resolveReleaseTag(version, options.releaseTag);
 
   if (!fs.existsSync(assetsDir) || !fs.statSync(assetsDir).isDirectory()) {
     throw new Error(`Assets directory not found: ${assetsDir}`);
@@ -135,7 +146,7 @@ function buildTargetManifests(options) {
       version,
       notes,
       pub_date: normalizedPubDate,
-      url: buildUrl(repo, version, asset.name),
+      url: buildUrl(repo, releaseTag, asset.name),
       signature,
     };
     const output = path.join(outputDir, `latest-${target}.json`);
@@ -156,6 +167,7 @@ function main() {
   const outputs = buildTargetManifests({
     version: requiredArg(args, "version"),
     repo: requiredArg(args, "repo"),
+    releaseTag: args["release-tag"],
     assetsDir: requiredArg(args, "assets-dir"),
     notesFile: requiredArg(args, "notes-file"),
     publishedAt: requiredArg(args, "published-at"),

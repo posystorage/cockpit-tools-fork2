@@ -371,8 +371,10 @@ fn prepare_claude_cli_launch(
 }
 
 #[tauri::command]
-pub fn list_claude_accounts() -> Result<Vec<ClaudeAccount>, String> {
-    claude_account::list_accounts_checked()
+pub async fn list_claude_accounts() -> Result<Vec<ClaudeAccount>, String> {
+    tauri::async_runtime::spawn_blocking(claude_account::list_accounts_checked)
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -808,6 +810,7 @@ fn switch_claude_account_impl(account_id: String) -> Result<String, String> {
     let account = claude_account::load_account(&account_id)
         .ok_or_else(|| format!("Claude account not found: {}", account_id))?;
     claude_account::inject_to_claude(&account_id)?;
+    claude_account::touch_last_used(&account_id)?;
     let current_platform = if matches!(
         account.auth_mode,
         ClaudeAuthMode::DesktopOAuth | ClaudeAuthMode::DesktopGateway

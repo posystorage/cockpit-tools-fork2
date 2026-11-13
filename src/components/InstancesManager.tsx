@@ -1,4 +1,7 @@
+import { useDurableUiSetting } from '../hooks/useDurableUiSetting';
+import { previewDurableUiSetting } from '../utils/durableUiSettings';
 import { isCodexLaunchCancelled } from '../utils/codexLaunchCancellation';
+import { formatAntigravitySwitchError } from '../utils/antigravitySwitchError';
 import {
   useCallback,
   useEffect,
@@ -205,6 +208,7 @@ interface InstancesManagerProps<TAccount extends AccountLike> {
     | "trae_cn"
     | "trae_solo_cn"
     | "workbuddy"
+    | "minimax_code"
     | "zcode";
   onInstanceStarted?: (instance: InstanceProfile) => void | Promise<void>;
   onBeforeStart?: (instance: InstanceProfile) => boolean | Promise<boolean>;
@@ -581,7 +585,7 @@ const resolveInstanceSortStorageKeys = (
 ) => ({
   sortField: `agtools.${appType}.instances.sort_field`,
   sortDirection: `agtools.${appType}.instances.sort_direction`,
-});
+} as const);
 
 const hashDirName = (name: string) => {
   const trimmed = name.trim();
@@ -604,6 +608,8 @@ const resolveFloatingCardPlatformId = (
       return "github-copilot";
     case "claude":
       return "claude_manager";
+    case "minimax_code":
+      return "minimaxcode";
     default:
       return appType;
   }
@@ -711,16 +717,10 @@ export function InstancesManager<TAccount extends AccountLike>({
   const [startingInstanceIds, setStartingInstanceIds] = useState<string[]>([]);
   const [stoppingInstanceIds, setStoppingInstanceIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortField, setSortField] = useState<InstanceSortField>(() => {
-    const keys = resolveInstanceSortStorageKeys(appType);
-    const saved = localStorage.getItem(keys.sortField);
-    return saved === "lastLaunchedAt" ? "lastLaunchedAt" : "createdAt";
-  });
-  const [sortDirection, setSortDirection] = useState<SortDirection>(() => {
-    const keys = resolveInstanceSortStorageKeys(appType);
-    const saved = localStorage.getItem(keys.sortDirection);
-    return saved === "desc" ? "desc" : "asc";
-  });
+  const sortKeys = resolveInstanceSortStorageKeys(appType);
+  const sortField: InstanceSortField = useDurableUiSetting(sortKeys.sortField) === "lastLaunchedAt"
+    ? "lastLaunchedAt" : "createdAt";
+  const sortDirection: SortDirection = useDurableUiSetting(sortKeys.sortDirection) === "desc" ? "desc" : "asc";
   const [privacyModeEnabled, setPrivacyModeEnabled] = useState<boolean>(() =>
     isPrivacyModeEnabledByDefault(),
   );
@@ -734,6 +734,7 @@ export function InstancesManager<TAccount extends AccountLike>({
     [stoppingInstanceIds],
   );
   const isGrokApp = appType === "grok";
+  const canBindBeforeInitialization = isGrokApp || appType === "minimax_code" || appType === "qoder";
   const supportsInstanceInitialization = !isGrokApp;
   const isCodexApp = appType === "codex";
   const isClaudeApp = appType === "claude";
@@ -989,16 +990,6 @@ export function InstancesManager<TAccount extends AccountLike>({
     scrollElementIntoView(formErrorRef.current, { block: "end" });
   }, [formError, formErrorTick, showModal]);
 
-  useEffect(() => {
-    const keys = resolveInstanceSortStorageKeys(appType);
-    localStorage.setItem(keys.sortField, sortField);
-  }, [appType, sortField]);
-
-  useEffect(() => {
-    const keys = resolveInstanceSortStorageKeys(appType);
-    localStorage.setItem(keys.sortDirection, sortDirection);
-  }, [appType, sortDirection]);
-
   const sortedInstances = useMemo(
     () =>
       [...instances].sort((a, b) => {
@@ -1122,14 +1113,14 @@ export function InstancesManager<TAccount extends AccountLike>({
 
   useEffect(() => {
     if (editing) return;
-    if (formInitMode === "empty") {
+    if (formInitMode === "empty" && !canBindBeforeInitialization) {
       setFormBindAccountId("");
       return;
     }
     if (!formCopySourceInstanceId) {
       setFormCopySourceInstanceId(defaultInstanceId);
     }
-  }, [defaultInstanceId, editing, formCopySourceInstanceId, formInitMode]);
+  }, [defaultInstanceId, editing, formCopySourceInstanceId, formInitMode, canBindBeforeInitialization]);
 
   useEffect(() => {
     if (!isAccountAllowedForLaunchMode || !formBindAccountId) return;
@@ -1380,20 +1371,14 @@ export function InstancesManager<TAccount extends AccountLike>({
       ) {
         setFormError(
           formExperimentalModelUnavailableMessage ||
-            t(
-              "instances.form.modelRouting.catalogUnavailable",
-              "当前实例的可见模型目录不可由 Cockpit 管理，暂不能启用模型路由。",
-            ),
+            t("instances.form.modelRouting.catalogUnavailable"),
         );
         setFormErrorTick((prev) => prev + 1);
         return;
       }
       if (formLaunchMode !== "app") {
         setFormError(
-          t(
-            "instances.form.modelRouting.desktopOnly",
-            "混合模型路由仅支持桌面版实例。",
-          ),
+          t("instances.form.modelRouting.desktopOnly"),
         );
         setFormErrorTick((prev) => prev + 1);
         return;
@@ -1408,10 +1393,7 @@ export function InstancesManager<TAccount extends AccountLike>({
         // 绑定账号不是可直接登录的 OAuth 订阅账号：路由自动关闭（渠道配置保留），
         // 不能用路由拦住这次保存或后续启动。
         setMessage({
-          text: t(
-            "instances.form.modelRouting.oauthRequired",
-            "混合模型路由需要绑定一个直接登录的 OAuth 订阅账号。",
-          ),
+          text: t("instances.form.modelRouting.oauthRequired"),
         });
         setFormModelRoutingEnabled(false);
         routingEnabledForSave = false;
@@ -1420,10 +1402,7 @@ export function InstancesManager<TAccount extends AccountLike>({
       // 仍然启用路由时才校验路由配置；绑定账号不支持路由时只保存关闭状态。
       if (formModelRoutes.length === 0) {
         setFormError(
-          t(
-            "instances.form.modelRouting.routeRequired",
-            "请至少添加一个 API 模型路由。",
-          ),
+          t("instances.form.modelRouting.routeRequired"),
         );
         setFormErrorTick((prev) => prev + 1);
         return;
@@ -1438,20 +1417,14 @@ export function InstancesManager<TAccount extends AccountLike>({
           CODEX_RESERVED_MODEL_ROUTE_NAMESPACES.has(namespace)
         ) {
           setFormError(
-            t(
-              "instances.form.modelRouting.invalidNamespace",
-              "命名空间需为 2-32 位小写字母、数字、下划线或连字符，且不能使用保留名称。",
-            ),
+            t("instances.form.modelRouting.invalidNamespace"),
           );
           setFormErrorTick((prev) => prev + 1);
           return;
         }
         if (namespaces.has(namespace)) {
           setFormError(
-            t(
-              "instances.form.modelRouting.duplicateNamespace",
-              "模型路由命名空间不能重复。",
-            ),
+            t("instances.form.modelRouting.duplicateNamespace"),
           );
           setFormErrorTick((prev) => prev + 1);
           return;
@@ -1462,10 +1435,7 @@ export function InstancesManager<TAccount extends AccountLike>({
         );
         if (!provider) {
           setFormError(
-            t(
-              "instances.form.modelRouting.providerRequired",
-              "每个模型路由都必须选择一个 API 账号。",
-            ),
+            t("instances.form.modelRouting.providerRequired"),
           );
           setFormErrorTick((prev) => prev + 1);
           return;
@@ -1478,10 +1448,7 @@ export function InstancesManager<TAccount extends AccountLike>({
       }
       if (!normalizedRoutes.some((route) => route.enabled)) {
         setFormError(
-          t(
-            "instances.form.modelRouting.enabledRouteRequired",
-            "请至少启用一个 API 模型路由。",
-          ),
+          t("instances.form.modelRouting.enabledRouteRequired"),
         );
         setFormErrorTick((prev) => prev + 1);
         return;
@@ -1575,7 +1542,7 @@ export function InstancesManager<TAccount extends AccountLike>({
           updatePayload.name = formName.trim();
         }
         const canEditBind =
-          isGrokApp || !(editing.initialized === false && !isEditingDefault);
+          canBindBeforeInitialization || !(editing.initialized === false && !isEditingDefault);
         if (canEditBind) {
           const nextBindId = resolveBindAccountValue(formBindAccountId);
           if (nextBindId !== (editing.bindAccountId ?? null)) {
@@ -1652,7 +1619,7 @@ export function InstancesManager<TAccount extends AccountLike>({
           initMode: isGrokApp ? "empty" : formInitMode,
           launchMode: nextLaunchMode,
           appSpeed: isCodexApp ? formAppSpeed : undefined,
-          bindAccountId: isCreateEmpty
+          bindAccountId: isCreateEmpty && !canBindBeforeInitialization
             ? null
             : resolveBindAccountValue(formBindAccountId),
           modelRouting: nextModelRouting,
@@ -1671,7 +1638,7 @@ export function InstancesManager<TAccount extends AccountLike>({
           );
         }
         setMessage({
-          text: isCreateEmpty
+          text: isCreateEmpty && !canBindBeforeInitialization
             ? t(
                 "instances.messages.emptyCreated",
                 "空白实例已创建，请先启动一次后再绑定账号",
@@ -1867,7 +1834,10 @@ export function InstancesManager<TAccount extends AccountLike>({
         if (isCodexApp) {
           return "failed";
         }
-        setMessage({ text: String(e), tone: "error" });
+        const message = appType === "antigravity" || appType === "antigravity_ide"
+          ? formatAntigravitySwitchError(t, e)
+          : String(e);
+        setMessage({ text: message, tone: "error" });
         return "failed";
       } finally {
         if (!preMarkedStarting) {
@@ -2206,7 +2176,7 @@ export function InstancesManager<TAccount extends AccountLike>({
       const sourceName = source.isDefault
         ? t("instances.defaultName", "默认实例")
         : source.name?.trim() || source.id;
-      const nextName = t("instances.form.copyName", "{{name}} 副本", {
+      const nextName = t("instances.form.copyName", {
         name: sourceName,
       });
       setFormName((current) => {
@@ -2538,10 +2508,7 @@ export function InstancesManager<TAccount extends AccountLike>({
     if (!nextAccount || nextAccount.auth_mode === "apikey") {
       setFormModelRoutingEnabled(false);
       setMessage({
-        text: t(
-          "instances.form.modelRouting.oauthRequired",
-          "混合模型路由需要绑定一个直接登录的 OAuth 订阅账号。",
-        ),
+        text: t("instances.form.modelRouting.oauthRequired"),
       });
     }
   };
@@ -2568,7 +2535,7 @@ export function InstancesManager<TAccount extends AccountLike>({
     instance: InstanceProfile,
     nextId: string | null,
   ) => {
-    if (!isGrokApp && instance.initialized === false) {
+    if (!canBindBeforeInitialization && instance.initialized === false) {
       setInitGuideInstance(instance);
       return;
     }
@@ -2635,7 +2602,7 @@ export function InstancesManager<TAccount extends AccountLike>({
             <select
               value={sortField}
               onChange={(event) =>
-                setSortField(event.target.value as InstanceSortField)
+                previewDurableUiSetting(sortKeys.sortField, event.target.value)
               }
               aria-label={t("instances.sort.label", "排序")}
             >
@@ -2650,7 +2617,7 @@ export function InstancesManager<TAccount extends AccountLike>({
           <button
             className="sort-direction-btn"
             onClick={() =>
-              setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"))
+              previewDurableUiSetting(sortKeys.sortDirection, sortDirection === "asc" ? "desc" : "asc")
             }
             title={
               sortDirection === "asc"
@@ -2774,7 +2741,7 @@ export function InstancesManager<TAccount extends AccountLike>({
               isApiService: accountIsApiService,
             } = resolveAccount(instance);
             const accountDisabledByInit =
-              !isGrokApp &&
+              !canBindBeforeInitialization &&
               !instance.isDefault &&
               instance.initialized === false;
             const isInstanceStarting = startingInstanceIdSet.has(instance.id);
@@ -2844,10 +2811,7 @@ export function InstancesManager<TAccount extends AccountLike>({
                     )}
                     {isCodexApp && instance.modelRouting?.enabled && (
                       <span className="instance-model-routing-badge">
-                        {t(
-                          "instances.form.modelRouting.statusBadge",
-                          "混合路由",
-                        )}
+                        {t("instances.form.modelRouting.statusBadge")}
                       </span>
                     )}
                   </div>
@@ -2999,7 +2963,7 @@ export function InstancesManager<TAccount extends AccountLike>({
                   )}
                   <button
                     className="icon-button"
-                    title={t("instances.actions.duplicate", "复制实例")}
+                    title={t("instances.actions.duplicate")}
                     onClick={() => openDuplicateModal(instance)}
                     disabled={
                       isInstanceBusy || restartingAll || bulkActionLoading
@@ -3148,8 +3112,11 @@ export function InstancesManager<TAccount extends AccountLike>({
                 className="btn btn-danger"
                 onClick={handleConfirmDelete}
                 disabled={actionLoading === deleteConfirmInstance.id}
+                aria-busy={actionLoading === deleteConfirmInstance.id}
               >
-                {t("common.delete", "删除")}
+                {actionLoading === deleteConfirmInstance.id
+                  ? t("common.processing", "处理中...")
+                  : t("common.delete", "删除")}
               </button>
             </div>
           </div>
@@ -3301,7 +3268,7 @@ export function InstancesManager<TAccount extends AccountLike>({
                       </span>
                     </label>
                   </div>
-                  {formInitMode === "empty" && (
+                  {formInitMode === "empty" && !canBindBeforeInitialization && (
                     <div className="instance-init-note">
                       {t(
                         "instances.form.emptyInitHint",
@@ -3482,7 +3449,7 @@ export function InstancesManager<TAccount extends AccountLike>({
                       ? `（${t("instances.form.optional", "可选")}）`
                       : ""}
                   </label>
-                  {supportsInstanceInitialization &&
+                  {!canBindBeforeInitialization &&
                   formInitMode === "empty" ? (
                     <>
                       {renderFormAccountSelect({
@@ -3511,7 +3478,7 @@ export function InstancesManager<TAccount extends AccountLike>({
               ) : (
                 <div className="form-group">
                   <label>{t("instances.form.bindAccount", "绑定账号")}</label>
-                  {!isGrokApp &&
+                  {!canBindBeforeInitialization &&
                   editing?.initialized === false &&
                   !editing.isDefault ? (
                     <>
@@ -3556,10 +3523,7 @@ export function InstancesManager<TAccount extends AccountLike>({
                     hint={
                       editing
                         ? undefined
-                        : t(
-                            "instances.form.modelRouting.createHint",
-                            "新建时请复制默认实例，这样不用先走一遍 Codex 安装。空白实例才需要先启动一次。",
-                          )
+                        : t("instances.form.modelRouting.createHint")
                     }
                     onEnabledChange={(enabled) => {
                       setFormModelRoutingEnabled(enabled);
@@ -3576,10 +3540,7 @@ export function InstancesManager<TAccount extends AccountLike>({
                         !formName.trim()
                       ) {
                         setFormName(
-                          t(
-                            "instances.form.modelRouting.defaultInstanceName",
-                            "混合路由",
-                          ),
+                          t("instances.form.modelRouting.statusBadge"),
                         );
                       }
                       setFormExperimentalModels((prevModels) =>

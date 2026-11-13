@@ -6,7 +6,7 @@ export const FINGERPRINT_DEFAULT_MODELS = ['gpt-5.6-sol', 'gpt-6-sol', 'gpt-6-as
 export const FINGERPRINT_MAX_CONCURRENCY = 10;
 export type FingerprintTarget = { id: string; label: string } & (
   | { kind: 'account'; accountId: string }
-  | { kind: 'provider'; baseUrl: string; apiKey: string; wireApi: 'responses' | 'chat_completions' }
+  | { kind: 'provider'; baseUrl: string; apiKey: string; wireApi: 'responses' | 'chat_completions' | 'anthropic'; authScheme?: 'x-api-key' | 'bearer' }
 );
 export interface FingerprintPreferences {
   targetIds: string[];

@@ -65,6 +65,8 @@ pub struct UserConfig {
     /// NO_PROXY 白名单（逗号分隔）
     #[serde(default = "default_global_proxy_no_proxy")]
     pub global_proxy_no_proxy: String,
+    #[serde(default)]
+    pub codex_proxy_direct_hosts: Vec<String>,
     /// 是否启用匿名错误诊断上报
     #[serde(default = "default_diagnostics_error_reporting_enabled")]
     pub diagnostics_error_reporting_enabled: bool,
@@ -112,9 +114,10 @@ pub struct UserConfig {
     pub codex_app_ui_injection_enabled: bool,
     /// 官方客户端增强，仅在重启目标实例后应用。
     #[serde(default = "default_codex_app_enhancements_enabled")]
-    pub codex_app_native_fast_enabled: bool,
-    #[serde(default = "default_codex_app_enhancements_enabled")]
     pub codex_app_api_quota_compat_enabled: bool,
+    /// 本地 API 模式下的原生下一步预测；额外消耗供应商额度，默认关闭。
+    #[serde(default)]
+    pub codex_app_native_predictions_enabled: bool,
     /// Codex WSL 配置目录 (Windows Only)
     #[serde(default = "default_codex_wsl_config_dir")]
     pub codex_wsl_config_dir: String,
@@ -157,6 +160,9 @@ pub struct UserConfig {
     /// WorkBuddy 自动刷新间隔（分钟），-1 表示禁用
     #[serde(default = "default_workbuddy_auto_refresh")]
     pub workbuddy_auto_refresh_minutes: i32,
+    /// MiniMax Code 自动刷新间隔（分钟），-1 表示禁用
+    #[serde(default = "default_minimax_code_auto_refresh")]
+    pub minimax_code_auto_refresh_minutes: i32,
     /// Qoder 自动刷新间隔（分钟），-1 表示禁用
     #[serde(default = "default_qoder_auto_refresh")]
     pub qoder_auto_refresh_minutes: i32,
@@ -181,6 +187,8 @@ pub struct UserConfig {
     /// 是否隐藏 Dock 图标（macOS）
     #[serde(default = "default_hide_dock_icon")]
     pub hide_dock_icon: bool,
+    #[serde(default = "default_show_tray_icon")]
+    pub show_tray_icon: bool,
     /// 菜单栏图标样式（macOS）
     #[serde(default = "default_tray_icon_style")]
     pub tray_icon_style: TrayIconStyle,
@@ -193,6 +201,9 @@ pub struct UserConfig {
     /// macOS 菜单栏额度监控平台
     #[serde(default = "default_menu_bar_quota_platform")]
     pub menu_bar_quota_platform: String,
+    /// Antigravity 模型或配额窗口；空值沿用最低剩余额度。
+    #[serde(default)]
+    pub menu_bar_antigravity_metric: String,
     /// 是否在启动后自动显示悬浮卡片
     #[serde(default = "default_floating_card_show_on_startup")]
     pub floating_card_show_on_startup: bool,
@@ -302,6 +313,8 @@ pub struct UserConfig {
     /// Antigravity IDE 启动路径（为空则使用默认路径）
     #[serde(default = "default_antigravity_app_path")]
     pub antigravity_app_path: String,
+    #[serde(default)]
+    pub antigravity_legacy_app_path: String,
     /// Codex 启动路径（为空则使用默认路径）
     #[serde(default = "default_codex_app_path")]
     pub codex_app_path: String,
@@ -382,6 +395,12 @@ pub struct UserConfig {
     /// WorkBuddy 启动路径（为空则使用默认路径）
     #[serde(default = "default_workbuddy_app_path")]
     pub workbuddy_app_path: String,
+    /// MiniMax Code 启动路径（为空则使用默认路径）
+    #[serde(default = "default_minimax_code_app_path")]
+    pub minimax_code_app_path: String,
+    /// MiniMax Code 区域
+    #[serde(default = "default_minimax_code_region")]
+    pub minimax_code_region: String,
     /// 切换 WorkBuddy 账号时是否在本机账号间合并本地会话
     #[serde(default = "default_workbuddy_share_sessions_on_switch")]
     pub workbuddy_share_sessions_on_switch: bool,
@@ -574,6 +593,12 @@ pub struct UserConfig {
     /// WorkBuddy 配额预警阈值（百分比）
     #[serde(default = "default_workbuddy_quota_alert_threshold")]
     pub workbuddy_quota_alert_threshold: i32,
+    /// 是否启用 MiniMax Code 配额预警通知
+    #[serde(default = "default_minimax_code_quota_alert_enabled")]
+    pub minimax_code_quota_alert_enabled: bool,
+    /// MiniMax Code 配额预警阈值（百分比）
+    #[serde(default = "default_minimax_code_quota_alert_threshold")]
+    pub minimax_code_quota_alert_threshold: i32,
 }
 
 /// 窗口关闭行为
@@ -773,6 +798,9 @@ fn default_codebuddy_cn_auto_refresh() -> i32 {
 fn default_workbuddy_auto_refresh() -> i32 {
     10
 }
+fn default_minimax_code_auto_refresh() -> i32 {
+    -1
+}
 fn default_qoder_auto_refresh() -> i32 {
     10
 }
@@ -788,6 +816,10 @@ fn default_close_behavior() -> CloseWindowBehavior {
 fn default_minimize_behavior() -> MinimizeWindowBehavior {
     MinimizeWindowBehavior::DockAndTray
 }
+fn default_show_tray_icon() -> bool {
+    true
+}
+
 fn default_hide_dock_icon() -> bool {
     false
 }
@@ -800,6 +832,8 @@ fn default_menu_bar_quota_enabled() -> bool {
 fn default_menu_bar_show_account_prefix() -> bool {
     true
 }
+pub(crate) const MENU_BAR_QUOTA_CLAUDE_CLI: &str = "claude_cli";
+
 fn default_menu_bar_quota_platform() -> String {
     "codex".to_string()
 }
@@ -817,6 +851,14 @@ fn default_remember_main_window_state() -> bool {
 }
 fn default_startup_page() -> String {
     "last".to_string()
+}
+
+/// 规范化 MiniMax Code 区域；仅支持 `cn` / `en`，非法值回退为 `cn`。
+pub fn normalize_minimax_code_region(value: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "en" | "global" | "us" => "en".to_string(),
+        _ => "cn".to_string(),
+    }
 }
 
 /// 规范化启动页配置；非法值回退为 `last`。
@@ -849,6 +891,7 @@ pub fn normalize_startup_page(value: &str) -> String {
         "trae-cn",
         "trae-solo-cn",
         "workbuddy",
+        "minimaxcode",
         "zed",
         "instances",
         "wakeup",
@@ -1006,6 +1049,12 @@ fn default_trae_app_scan_roots() -> String {
 }
 fn default_workbuddy_app_path() -> String {
     String::new()
+}
+fn default_minimax_code_app_path() -> String {
+    String::new()
+}
+fn default_minimax_code_region() -> String {
+    "cn".to_string()
 }
 fn default_workbuddy_share_sessions_on_switch() -> bool {
     true
@@ -1193,6 +1242,12 @@ fn default_workbuddy_quota_alert_enabled() -> bool {
 fn default_workbuddy_quota_alert_threshold() -> i32 {
     20
 }
+fn default_minimax_code_quota_alert_enabled() -> bool {
+    false
+}
+fn default_minimax_code_quota_alert_threshold() -> i32 {
+    200
+}
 
 impl Default for UserConfig {
     fn default() -> Self {
@@ -1205,6 +1260,7 @@ impl Default for UserConfig {
             global_proxy_enabled: default_global_proxy_enabled(),
             global_proxy_url: default_global_proxy_url(),
             global_proxy_no_proxy: default_global_proxy_no_proxy(),
+            codex_proxy_direct_hosts: Vec::new(),
             diagnostics_error_reporting_enabled: default_diagnostics_error_reporting_enabled(),
             diagnostics_error_reporting_debug: default_diagnostics_error_reporting_debug(),
             language: default_language(),
@@ -1220,8 +1276,8 @@ impl Default for UserConfig {
             codex_auto_refresh_plan_types: default_codex_auto_refresh_plan_types(),
             codex_sync_wsl: default_codex_sync_wsl(),
             codex_app_ui_injection_enabled: default_codex_app_ui_injection_enabled(),
-            codex_app_native_fast_enabled: default_codex_app_enhancements_enabled(),
             codex_app_api_quota_compat_enabled: default_codex_app_enhancements_enabled(),
+            codex_app_native_predictions_enabled: false,
             codex_wsl_config_dir: default_codex_wsl_config_dir(),
             zed_auto_refresh_minutes: default_zed_auto_refresh(),
             ghcp_auto_refresh_minutes: default_ghcp_auto_refresh(),
@@ -1237,6 +1293,7 @@ impl Default for UserConfig {
             codebuddy_auto_refresh_minutes: default_codebuddy_auto_refresh(),
             codebuddy_cn_auto_refresh_minutes: default_codebuddy_cn_auto_refresh(),
             workbuddy_auto_refresh_minutes: default_workbuddy_auto_refresh(),
+            minimax_code_auto_refresh_minutes: default_minimax_code_auto_refresh(),
             qoder_auto_refresh_minutes: default_qoder_auto_refresh(),
             zcode_auto_refresh_minutes: default_zcode_auto_refresh(),
             trae_auto_refresh_minutes: default_trae_auto_refresh(),
@@ -1246,10 +1303,12 @@ impl Default for UserConfig {
             close_behavior: default_close_behavior(),
             minimize_behavior: default_minimize_behavior(),
             hide_dock_icon: default_hide_dock_icon(),
+            show_tray_icon: default_show_tray_icon(),
             tray_icon_style: default_tray_icon_style(),
             menu_bar_quota_enabled: default_menu_bar_quota_enabled(),
             menu_bar_show_account_prefix: default_menu_bar_show_account_prefix(),
             menu_bar_quota_platform: default_menu_bar_quota_platform(),
+            menu_bar_antigravity_metric: String::new(),
             floating_card_show_on_startup: default_floating_card_show_on_startup(),
             startup_minimized: default_startup_minimized(),
             startup_minimized_default_off_migrated:
@@ -1289,6 +1348,7 @@ impl Default for UserConfig {
             floating_card_position_y: None,
             opencode_app_path: default_opencode_app_path(),
             antigravity_app_path: default_antigravity_app_path(),
+            antigravity_legacy_app_path: String::new(),
             codex_app_path: default_codex_app_path(),
             codex_oauth_app_version: String::new(),
             grok_cli_path: None,
@@ -1319,6 +1379,8 @@ impl Default for UserConfig {
             trae_cn_app_scan_roots: default_trae_app_scan_roots(),
             trae_solo_cn_app_scan_roots: default_trae_app_scan_roots(),
             workbuddy_app_path: default_workbuddy_app_path(),
+            minimax_code_app_path: default_minimax_code_app_path(),
+            minimax_code_region: default_minimax_code_region(),
             workbuddy_share_sessions_on_switch: default_workbuddy_share_sessions_on_switch(),
             opencode_sync_on_switch: default_opencode_sync_on_switch(),
             opencode_auth_overwrite_on_switch: default_opencode_auth_overwrite_on_switch(),
@@ -1389,6 +1451,8 @@ impl Default for UserConfig {
             trae_solo_cn_quota_alert_threshold: default_trae_quota_alert_threshold(),
             workbuddy_quota_alert_enabled: default_workbuddy_quota_alert_enabled(),
             workbuddy_quota_alert_threshold: default_workbuddy_quota_alert_threshold(),
+            minimax_code_quota_alert_enabled: default_minimax_code_quota_alert_enabled(),
+            minimax_code_quota_alert_threshold: default_minimax_code_quota_alert_threshold(),
         }
     }
 }
@@ -1545,6 +1609,28 @@ pub fn get_user_config_path() -> Result<PathBuf, String> {
     Ok(data_dir.join(USER_CONFIG_FILE))
 }
 
+fn split_legacy_antigravity_app_path(config: &mut serde_json::Map<String, serde_json::Value>) {
+    if config.contains_key("antigravity_legacy_app_path") {
+        return;
+    }
+    let Some(path) = config.get("antigravity_app_path").and_then(|value| value.as_str()) else {
+        return;
+    };
+    let normalized = path.trim().trim_matches('"').replace('\\', "/");
+    let lower = normalized.to_ascii_lowercase();
+    let desktop_bundle = lower.split('/').any(|part| part == "antigravity.app");
+    let windows_desktop = lower.as_bytes().get(1) == Some(&b':')
+        && lower.split('/').any(|part| part == "antigravity")
+        && !lower.contains("antigravity ide")
+        && !lower.contains("antigravity-ide");
+    let linux_desktop = normalized.trim_end_matches('/') == "/opt/Antigravity"
+        || normalized.starts_with("/opt/Antigravity/");
+    if desktop_bundle || windows_desktop || linux_desktop {
+        let desktop_path = config.remove("antigravity_app_path").unwrap_or_default();
+        config.insert("antigravity_legacy_app_path".to_string(), desktop_path);
+    }
+}
+
 /// 加载用户配置
 pub fn load_user_config() -> Result<UserConfig, String> {
     let config_path = get_user_config_path()?;
@@ -1584,6 +1670,7 @@ pub fn load_user_config() -> Result<UserConfig, String> {
 
     // 兼容旧配置：平台独立预警字段不存在时，继承历史全局预警配置
     if let Some(obj) = value.as_object_mut() {
+        split_legacy_antigravity_app_path(obj);
         if !obj.contains_key("kiro_auto_refresh_minutes") {
             let inherited_refresh = obj
                 .get("windsurf_auto_refresh_minutes")
@@ -1681,6 +1768,20 @@ pub fn load_user_config() -> Result<UserConfig, String> {
                 .unwrap_or_else(default_workbuddy_auto_refresh);
             obj.insert(
                 "workbuddy_auto_refresh_minutes".to_string(),
+                json!(inherited_refresh),
+            );
+        }
+
+        if !obj.contains_key("minimax_code_auto_refresh_minutes") {
+            let inherited_refresh = obj
+                .get("workbuddy_auto_refresh_minutes")
+                .or_else(|| obj.get("codebuddy_cn_auto_refresh_minutes"))
+                .or_else(|| obj.get("codebuddy_auto_refresh_minutes"))
+                .and_then(|v| v.as_i64())
+                .map(|v| v as i32)
+                .unwrap_or_else(default_minimax_code_auto_refresh);
+            obj.insert(
+                "minimax_code_auto_refresh_minutes".to_string(),
                 json!(inherited_refresh),
             );
         }
@@ -2297,6 +2398,18 @@ pub fn load_user_config() -> Result<UserConfig, String> {
                 json!(legacy_threshold),
             );
         }
+        if !obj.contains_key("minimax_code_quota_alert_enabled") {
+            obj.insert(
+                "minimax_code_quota_alert_enabled".to_string(),
+                json!(legacy_enabled),
+            );
+        }
+        if !obj.contains_key("minimax_code_quota_alert_threshold") {
+            obj.insert(
+                "minimax_code_quota_alert_threshold".to_string(),
+                json!(legacy_threshold),
+            );
+        }
     }
 
     let mut config: UserConfig = match serde_json::from_value(value) {
@@ -2519,6 +2632,13 @@ pub fn get_user_config() -> UserConfig {
         .unwrap_or_default()
 }
 
+pub(crate) fn get_codex_proxy_direct_hosts() -> Vec<String> {
+    get_runtime_state()
+        .read()
+        .map(|state| state.user_config.codex_proxy_direct_hosts.clone())
+        .unwrap_or_default()
+}
+
 /// 更新 Grok CLI 路径；空白值恢复为自动检测。
 pub fn set_grok_cli_path(path: Option<String>) -> Result<(), String> {
     let normalized = path.and_then(|value| {
@@ -2592,6 +2712,31 @@ pub fn init_server_status(actual_port: u16, auth_token: String) -> Result<(), St
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn antigravity_desktop_path_migrates_once_without_overwriting_an_explicit_setting() {
+        use serde_json::json;
+
+        for path in [
+            "/Applications/Antigravity.app/Contents/MacOS/Antigravity",
+            r"C:\Users\fixture\AppData\Local\Programs\Antigravity\Antigravity.exe",
+            "/opt/Antigravity/antigravity",
+        ] {
+            let mut old = json!({"antigravity_app_path": path});
+            super::split_legacy_antigravity_app_path(old.as_object_mut().unwrap());
+            let config: UserConfig = serde_json::from_value(old).unwrap();
+            assert_eq!(config.antigravity_legacy_app_path, path);
+            assert!(config.antigravity_app_path.is_empty());
+        }
+        for mut config in [
+            json!({"antigravity_app_path": "/Applications/Antigravity IDE.app"}),
+            json!({"antigravity_app_path": "/opt/custom-app", "antigravity_legacy_app_path": ""}),
+        ] {
+            let expected = config.clone();
+            super::split_legacy_antigravity_app_path(config.as_object_mut().unwrap());
+            assert_eq!(config, expected);
+        }
+    }
+
     #[test]
     fn codex_refresh_scope_legacy_defaults_and_explicit_empty_round_trip() {
         let defaults = UserConfig::default();
@@ -2814,7 +2959,6 @@ mod tests {
             UserConfig::default(),
             serde_json::from_value(serde_json::json!({})).unwrap(),
         ] {
-            assert!(config.codex_app_native_fast_enabled);
             assert!(config.codex_app_api_quota_compat_enabled);
         }
         let disabled: UserConfig = serde_json::from_value(serde_json::json!({
@@ -2822,7 +2966,6 @@ mod tests {
             "codex_app_api_quota_compat_enabled": false
         }))
         .unwrap();
-        assert!(!disabled.codex_app_native_fast_enabled);
         assert!(!disabled.codex_app_api_quota_compat_enabled);
         let config: UserConfig = serde_json::from_value(serde_json::json!({
             "codex_app_native_fast_enabled": true,
@@ -2831,8 +2974,35 @@ mod tests {
         .unwrap();
         let restored: UserConfig =
             serde_json::from_value(serde_json::to_value(config).unwrap()).unwrap();
-        assert!(restored.codex_app_native_fast_enabled);
         assert!(restored.codex_app_api_quota_compat_enabled);
+    }
+
+    #[test]
+    fn codex_native_predictions_remain_opt_in_across_config_upgrades() {
+        for config in [
+            UserConfig::default(),
+            serde_json::from_value(serde_json::json!({})).unwrap(),
+            serde_json::from_value(serde_json::json!({
+                "codex_app_native_fast_enabled": false,
+                "codex_app_api_quota_compat_enabled": true
+            }))
+            .unwrap(),
+        ] {
+            assert!(!config.codex_app_native_predictions_enabled);
+        }
+        for enabled in [true, false] {
+            let config: UserConfig = serde_json::from_value(serde_json::json!({
+                "codex_app_native_fast_enabled": false,
+                "codex_app_api_quota_compat_enabled": true,
+                "codex_app_native_predictions_enabled": enabled
+            }))
+            .expect("read an explicit prediction preference");
+            let restored: UserConfig =
+                serde_json::from_value(serde_json::to_value(config).unwrap()).unwrap();
+            assert_eq!(restored.codex_app_native_predictions_enabled, enabled);
+
+            assert!(restored.codex_app_api_quota_compat_enabled);
+        }
     }
 
     #[test]
@@ -2852,13 +3022,13 @@ mod tests {
         )
         .expect("write legacy configuration");
         let legacy = load_test_config(&path);
-        assert!(!legacy.codex_app_native_fast_enabled);
         assert!(legacy.codex_app_api_quota_compat_enabled);
         persist_test_config(&path, &legacy).expect("save supported configuration fields");
         let persisted: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(&path).expect("read saved configuration"))
                 .expect("parse saved configuration");
         for retired in [
+            "codex_app_native_fast_enabled",
             "codex_app_api_dictation_enabled",
             "codex_app_api_dictation_model",
         ] {
@@ -2866,7 +3036,6 @@ mod tests {
         }
         let reloaded = load_test_config(&path);
         assert_eq!(reloaded.language, "ja");
-        assert!(!reloaded.codex_app_native_fast_enabled);
         assert!(reloaded.codex_app_api_quota_compat_enabled);
         fs::remove_dir_all(dir).expect("remove temporary configuration");
     }

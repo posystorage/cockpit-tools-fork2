@@ -16,6 +16,7 @@ struct Recorder {
     quota_checks: Mutex<Vec<String>>,
     quota_denied: Mutex<Vec<String>>,
     selection_pause: Mutex<Option<Arc<Notify>>>,
+    quota_requests: Mutex<Vec<String>>,
 }
 
 impl Host for Recorder {
@@ -42,6 +43,9 @@ impl Host for Recorder {
         Box::pin(async move {
             self.finishes.lock().unwrap().push(id.into());
         })
+    }
+    fn quota_request_started(&self, account_id: &str) {
+        self.quota_requests.lock().unwrap().push(account_id.into());
     }
     fn check_quota_before_send(&self, account_id: &str) -> Result<(), ServiceError> {
         self.quota_checks.lock().unwrap().push(account_id.into());
@@ -86,6 +90,37 @@ impl Host for Recorder {
 }
 
 include!("lifecycle_dispatch_tests.rs");
+
+#[tokio::test]
+async fn native_lifecycle_local_quota_checks_are_not_inference_dispatch() {
+    let (mut tracker, host, _activity, _stop, _gate) = fixture().await;
+    tracker.quota_account = Some("quota-check-only".into());
+    tracker.check_quota_before_send().unwrap();
+    tracker.check_quota_before_send().unwrap();
+    assert!(host.quota_requests.lock().unwrap().is_empty());
+    tracker.quota_request_started();
+    assert_eq!(*host.quota_requests.lock().unwrap(), ["quota-check-only"]);
+    host.quota_denied.lock().unwrap().push("quota-check-only".into());
+    assert_eq!(tracker.check_quota_before_send().unwrap_err().code, "quota_reserved");
+    assert_eq!(host.quota_requests.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn native_lifecycle_records_last_reasoning_configuration_update() {
+    let (mut tracker, _host, _activity, _stop, _gate) = fixture().await;
+    tracker.request_metadata(&json!({
+        "reasoning": {"effort": "medium"},
+        "input": [
+            {"type": "configuration_update", "reasoning": {"effort": "low"}},
+            {"type": "configuration_update", "reasoning": {"effort": " High "}},
+            {"type": "configuration_update", "reasoning": {"effort": null}},
+            {"type": "message", "reasoning": {"effort": "xhigh"}}
+        ]
+    }));
+    assert_eq!(tracker.metadata_report().unwrap().reasoning_effort.as_deref(), Some("high"));
+    tracker.request_metadata(&json!({"reasoning": {"effort": "medium"}}));
+    assert_eq!(tracker.metadata_report().unwrap().reasoning_effort.as_deref(), Some("medium"));
+}
 
 fn usage() -> Value {
     json!({"input_tokens": 17, "output_tokens": 23, "total_tokens": 40})
@@ -302,6 +337,7 @@ async fn native_lifecycle_unsettled_adapter_has_a_bounded_deadline() {
         receiver,
         tracker.stop.clone(),
         tracker.started,
+        tracker.response_started,
         Duration::from_millis(10),
     )
     .await;
@@ -410,6 +446,31 @@ async fn fork_activity_unsent_rollback_clears_and_same_candidate_can_dispatch_ag
     tracker.complete(200, true, None, None).await;
     assert_eq!(recorded(&host).await.account_id, "rollback-account");
     assert_eq!(*host.finishes.lock().unwrap(), vec![id.clone(), id]);
+    drop(tracker);
+    assert_eq!(activity.count.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn fork_activity_connected_websocket_without_inference_rolls_back_exact_request() {
+    let (mut tracker, host, activity, _stop) = unsent_fixture();
+    select_candidate(&mut tracker, "connected-no-frame");
+    tracker.begin_attempt("websocket").await;
+    let id = host.selections.lock().unwrap()[0].0.clone();
+    assert!(tracker.discard_unstarted_websocket_attempt().await);
+    assert!(!tracker.discard_unstarted_websocket_attempt().await);
+    assert_eq!(*host.finishes.lock().unwrap(), [id.clone()]);
+    assert!(!tracker.has_upstream_attempt());
+    assert!(tracker.diagnostics.as_ref().unwrap().attempts.is_empty());
+    assert!(host.quota_requests.lock().unwrap().is_empty());
+    select_candidate(&mut tracker, "replacement");
+    tracker.begin_attempt("websocket").await;
+    tracker.quota_request_started();
+    tracker.complete(200, true, None, None).await;
+    let report = recorded(&host).await;
+    assert_eq!(report.account_id, "replacement");
+    assert_eq!(report.diagnostics.unwrap().attempts.len(), 1);
+    assert_eq!(*host.quota_requests.lock().unwrap(), ["replacement"]);
+    assert_eq!(*host.finishes.lock().unwrap(), [id.clone(), id]);
     drop(tracker);
     assert_eq!(activity.count.load(Ordering::SeqCst), 0);
 }

@@ -8,6 +8,7 @@ import { buildFingerprintTargets, fingerprintExcludedAccountIds } from '../../..
 import { FINGERPRINT_MAX_CONCURRENCY, FINGERPRINT_MODELS } from '../../../types/codexFingerprint';
 import { isPrivacyModeEnabledByDefault, maskSensitiveValue, PRIVACY_MODE_CHANGED_EVENT } from '../../../utils/privacy';
 import { useModalScrollLock } from '../../../hooks/useModalScrollLock';
+import referenceMetadata from '../../../vendor/modeltrace/metadata.json';
 import '../pelican/pelican.css';
 import './fingerprint.css';
 
@@ -72,7 +73,7 @@ export function CodexFingerprintHost() {
       <div className="pelican-actions"><button className="btn" title="最小化，测试继续" aria-label="最小化" onClick={state.close}><Minus size={18} /></button>
         <button className="btn" title="关闭面板，测试继续" aria-label="关闭" onClick={state.close}><X size={18} /></button></div></header>
     <div className="pelican-body">
-      <p className="pelican-muted">基于 ModelTrace 数字输出统计，与内置的 16 模型参考库比较。结果是候选库内的相似性归因，不能作为模型身份的确定证明。</p>
+      <p className="pelican-muted">基于 ModelTrace 数字输出统计，与内置的 {referenceMetadata.modelCount} 模型参考库比较。结果是候选库内的相似性归因，不能作为模型身份的确定证明。GPT-6.1 系列尚无对应校准指纹。</p>
       <form className="pelican-setup" onSubmit={(event) => { event.preventDefault(); if (validConcurrency) { state.configure({ concurrency: concurrencyValue }); void state.start(targets); } }}>
         <fieldset disabled={state.running} className="fingerprint-models"><legend>请求模型（可多选）</legend>
           {FINGERPRINT_MODELS.map((model) => <label key={model}><input type="checkbox" checked={state.preferences.models.includes(model)} onChange={() => toggle('models', model)} />{model}</label>)}

@@ -1,4 +1,7 @@
+import { previewDurableUiSetting, readDurableUiSetting, saveDurableUiSetting } from './durableUiSettings';
+
 export const CURRENT_ACCOUNT_REFRESH_STORAGE_KEY = 'agtools.current_account_refresh_minutes.v1';
+export const CURRENT_ACCOUNT_REFRESH_PREFERENCES_CHANGED_EVENT = 'agtools:current-account-refresh-preferences-changed';
 export const DEFAULT_CURRENT_ACCOUNT_REFRESH_MINUTES = 1;
 export const MIN_CURRENT_ACCOUNT_REFRESH_MINUTES = 1;
 export const MAX_CURRENT_ACCOUNT_REFRESH_MINUTES = 999;
@@ -15,6 +18,7 @@ export type CurrentAccountRefreshPlatform =
   | 'codebuddy'
   | 'codebuddy_cn'
   | 'workbuddy'
+  | 'minimaxcode'
   | 'qoder'
   | 'zcode'
   | 'trae'
@@ -35,6 +39,7 @@ export const CURRENT_ACCOUNT_REFRESH_PLATFORMS: CurrentAccountRefreshPlatform[] 
   'codebuddy',
   'codebuddy_cn',
   'workbuddy',
+  'minimaxcode',
   'qoder',
   'zcode',
   'trae',
@@ -74,6 +79,7 @@ export function buildDefaultCurrentAccountRefreshMinutesMap(): CurrentAccountRef
     codebuddy: DEFAULT_CURRENT_ACCOUNT_REFRESH_MINUTES,
     codebuddy_cn: DEFAULT_CURRENT_ACCOUNT_REFRESH_MINUTES,
     workbuddy: DEFAULT_CURRENT_ACCOUNT_REFRESH_MINUTES,
+    minimaxcode: DEFAULT_CURRENT_ACCOUNT_REFRESH_MINUTES,
     qoder: DEFAULT_CURRENT_ACCOUNT_REFRESH_MINUTES,
     zcode: DEFAULT_CURRENT_ACCOUNT_REFRESH_MINUTES,
     trae: DEFAULT_CURRENT_ACCOUNT_REFRESH_MINUTES,
@@ -101,7 +107,7 @@ function normalizeCurrentAccountRefreshMinutesMap(
 
 export function loadCurrentAccountRefreshMinutesMap(): CurrentAccountRefreshMinutesMap {
   try {
-    const raw = localStorage.getItem(CURRENT_ACCOUNT_REFRESH_STORAGE_KEY);
+    const raw = readDurableUiSetting(CURRENT_ACCOUNT_REFRESH_STORAGE_KEY);
     if (!raw) {
       return buildDefaultCurrentAccountRefreshMinutesMap();
     }
@@ -116,12 +122,17 @@ export function saveCurrentAccountRefreshMinutesMap(
   raw: Partial<Record<CurrentAccountRefreshPlatform, unknown>>,
 ): CurrentAccountRefreshMinutesMap {
   const normalized = normalizeCurrentAccountRefreshMinutesMap(raw);
-  try {
-    localStorage.setItem(CURRENT_ACCOUNT_REFRESH_STORAGE_KEY, JSON.stringify(normalized));
-  } catch {
-    // 忽略持久化失败，保持运行时可用
-  }
+  previewDurableUiSetting(CURRENT_ACCOUNT_REFRESH_STORAGE_KEY, JSON.stringify(normalized));
   return normalized;
+}
+
+export function persistCurrentAccountRefreshMinutesMap(
+  raw: Partial<Record<CurrentAccountRefreshPlatform, unknown>>,
+): Promise<void> {
+  return saveDurableUiSetting(
+    CURRENT_ACCOUNT_REFRESH_STORAGE_KEY,
+    JSON.stringify(normalizeCurrentAccountRefreshMinutesMap(raw)),
+  );
 }
 
 export const ACCOUNT_REFRESH_OVERRIDES_KEY = 'agtools.account_refresh_overrides.v1';
@@ -130,7 +141,7 @@ export type AccountRefreshOverrides = Partial<Record<CurrentAccountRefreshPlatfo
 
 export function loadAccountRefreshOverrides(): AccountRefreshOverrides {
   try {
-    const raw = localStorage.getItem(ACCOUNT_REFRESH_OVERRIDES_KEY);
+    const raw = readDurableUiSetting(ACCOUNT_REFRESH_OVERRIDES_KEY);
     if (!raw) {
       return {};
     }
@@ -141,11 +152,7 @@ export function loadAccountRefreshOverrides(): AccountRefreshOverrides {
 }
 
 export function saveAccountRefreshOverrides(overrides: AccountRefreshOverrides): void {
-  try {
-    localStorage.setItem(ACCOUNT_REFRESH_OVERRIDES_KEY, JSON.stringify(overrides));
-  } catch {
-    // 忽略持久化失败
-  }
+  previewDurableUiSetting(ACCOUNT_REFRESH_OVERRIDES_KEY, JSON.stringify(overrides));
 }
 
 export function getAccountRefreshMinutes(

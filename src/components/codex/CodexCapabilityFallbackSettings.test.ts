@@ -13,6 +13,9 @@ test('general settings retain payload privacy, refresh scope and account refresh
     '../components/CodexRefreshPlanScopeControl': { CodexRefreshPlanScopeControl: 'Scope' },
     '../components/codex/CodexAppEnhancementSettings': { CodexAppEnhancementSettings: 'Enhancements' },
     '../components/codex/CodexRequestPayloadSetting': { CodexRequestPayloadSetting: 'PayloadPrivacy' },
+    '../components/codex/CodexOverloadRetrySetting': { CodexOverloadRetrySetting: 'OverloadRetry' },
+    '../components/codex/CodexQuotaRecoverySettings': { CodexQuotaRecoverySettings: 'QuotaRecovery' },
+    '../components/codex/CodexQuotaHistorySettings': { CodexQuotaHistorySettings: 'QuotaHistoryStorage' },
     '../components/AutoSwitchAccountScopeSelector': { AutoSwitchAccountScopeSelector: 'AccountScope' },
     '../components/codex/CodexContextManagementControl': { CodexContextManagementControl: 'Context' },
     '../components/codex/CodexSshSyncSettingsControl': { CodexSshSyncSettingsControl: 'SshSync' },
@@ -30,8 +33,10 @@ test('general settings retain payload privacy, refresh scope and account refresh
   });
   const tree = nodes(hook.render(() => hook.exports.SettingsCodexPlatformPanel(props)));
   assert.equal(tree.filter((entry) => entry.type === 'PayloadPrivacy').length, 1);
+  assert.equal(tree.filter((entry) => entry.type === 'OverloadRetry').length, 1);
   assert.equal(tree.filter((entry) => entry.type === 'Scope').length, 1);
   assert.equal(tree.filter((entry) => entry.type === 'Enhancements').length, 1);
+  assert.equal(tree.filter((entry) => entry.type === 'QuotaHistoryStorage').length, 1);
   assert.deepEqual(callbacks, ['current', 'accounts']);
   assert.equal(tree.some((entry) => /^(multiAgent|capabilityFallback|codex\.quotaSync)\./.test(String(entry.props.children))), false);
   hook.unmount();
