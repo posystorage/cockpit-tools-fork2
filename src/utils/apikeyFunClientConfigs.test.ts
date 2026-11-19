@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { APIKEY_FUN_FAMILIES, buildApiKeyFunClientPreview, buildCodexConfigToml, buildClaudeCodeSettingsJson, normalizeApiKeyFunClientBaseUrl, resolveDefaultModel } from './apikeyFunClientConfigs';
+import { APIKEY_FUN_FAMILIES, buildApiKeyFunClientPreview, buildCodexConfigToml, buildClaudeCodeSettingsJson, normalizeApiKeyFunClientBaseUrl, resolveApiKeyFunGrokModel, resolveDefaultModel } from './apikeyFunClientConfigs';
 import { APIKEY_FUN_DEFAULT_MODEL_CATALOG } from './apikeyFunLinks';
 
 const family = (id: string) => {
@@ -91,4 +91,10 @@ test('legacy or invalid addresses never produce a destination for a private key'
     assert.throws(() => buildApiKeyFunClientPreview({ family: family('claude'), client: 'claude_desktop',
       apiKey: 'private-key', baseUrl: baseUrl!, model: 'claude-opus-4-6', platform: 'macos' }), /Base URL/);
   }
+});
+
+test('Grok account prefill selects a model actually available to the saved key', () => {
+  assert.equal(resolveApiKeyFunGrokModel(['gpt-5', 'grok-4.6', 'grok-4.7']), 'grok-4.7');
+  assert.equal(resolveApiKeyFunGrokModel(['gpt-5', 'relay/Grok-4.6']), 'relay/Grok-4.6');
+  assert.equal(resolveApiKeyFunGrokModel(['gemini-3', 'gpt-5']), undefined);
 });

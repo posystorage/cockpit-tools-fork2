@@ -14,6 +14,8 @@ interface Snapshot {
 
 const bool = (value: string) => value === '0' || value === '1';
 export const FLOATING_CARD_PLATFORM_STORAGE_KEY = 'agtools.floating_card.platform';
+export const ANTIGRAVITY_LAUNCH_CLIENT_STORAGE_KEY = 'agtools.antigravity.launch_client.v1';
+export const CODEBUDDY_CN_LAUNCH_MODE_STORAGE_KEY = 'agtools.codebuddy_cn.launch_mode.v1';
 const topLayout = (value: string) => {
   try {
     const parsed = JSON.parse(value);
@@ -94,6 +96,9 @@ const settings = {
   'agtools.codex.api_service.request_log_page_size.v1': {
     valid: (value: string) => ['20', '50', '100'].includes(value),
   },
+  'codex.apiService.highTokenThreshold': {
+    valid: (value: string) => /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0,
+  },
   'codex.apiService.logColumns.v1': {
     valid: (value: string) => value !== 'null' && jsonArrayOrNull(value),
   },
@@ -129,6 +134,15 @@ const settings = {
     event: 'agtools-antigravity-runtime-target-changed',
     detail: (value: string | null) => value ?? 'antigravity_ide',
   },
+  [ANTIGRAVITY_LAUNCH_CLIENT_STORAGE_KEY]: {
+    valid: (value: string) => value === 'antigravity' || value === 'antigravity_ide' || value === 'cli',
+    portable: false,
+  },
+  [CODEBUDDY_CN_LAUNCH_MODE_STORAGE_KEY]: {
+    valid: (value: string) => value === 'desktop' || value === 'cli',
+    portable: false,
+  },
+  'agtools.antigravity.cli_working_dir.v1': { valid: (value: string) => !value.includes('\0'), portable: false },
   'agtools.current_account_refresh_minutes.v1': {
     valid: jsonObject, event: 'agtools:current-account-refresh-preferences-changed',
     portable: false, // Keep exporting the legacy current_account_refresh_minutes field.

@@ -1,4 +1,6 @@
+import { CodexKeyMonthlyTokenAlert } from '../components/codex/CodexKeyMonthlyTokenAlert';
 import { CodexClaudeCodeSettings } from "../components/codex/CodexClaudeCodeSettings";
+import { CodexApiModelRefreshButton } from "../components/codex/CodexApiModelRefreshButton";
 import { appendClaudeCodeModelAliases } from "../utils/codexServiceModelAliases";
 import { ModalErrorMessage } from "../components/ModalErrorMessage";
 import { CodexKeyBudgetEditor, CodexKeyBudgetSummary } from '../components/codex/CodexKeyBudgetEditor';
@@ -6,8 +8,10 @@ import { requestCodexOfficialAuthorizationManagement } from "../utils/codexAccou
 import { CodexServiceAccountDetails } from "../components/codex/CodexServiceAccountDetails";
 import { codexServiceDisplayRows } from "../utils/chatgptPlanOverview";
 import { countCodexServiceSourceAccounts } from "../utils/codexServiceMemberView";
+import { codexServiceAccountSources } from "../utils/codexServiceAccountStats";
 import { summarizeAccountPoolHealth } from "../components/codex/codexLocalAccessModalModel";
 import { CodexServiceMemberAuthorization } from "../components/codex/CodexServiceMemberAuthorization";
+import { CodexPoolQuotaFloor } from "../components/codex/CodexPoolQuotaFloor";
 import { CodexServiceEmptyMembers } from "../components/codex/CodexServiceEmptyMembers";
 import { CodexApiRequestLogs } from "./CodexApiRequestLogs";
 import { CodexKeyReasoningLimitEditor } from "../components/codex/CodexKeyReasoningLimitEditor";
@@ -16,7 +20,7 @@ import { useMemo, useState } from "react";
 import { CodexReceiveTimeoutField } from "../components/codex/CodexReceiveTimeoutField";
 import { CodexOverloadRetrySetting } from "../components/codex/CodexOverloadRetrySetting";
 import { CodexOverloadHistory, useCodexOverloadCounts } from "./CodexOverloadHistory";
-import { isCodexApiKeyAccount, isCodexChatgptPlanAccount } from "../types/codex";
+import { isCodexAgentIdentityAccount, isCodexApiKeyAccount, isCodexChatgptPlanAccount, isCodexWebSessionAccount } from "../types/codex";
 import { formatCodexGatewayModeError } from "../utils/codexGatewayError";
 import { CodexSessionIdentityMappingControl } from "../components/codex/CodexSessionIdentityMappingControl";
 import { CodexSpeedControl } from "../components/codex/CodexSpeedControl";
@@ -37,6 +41,7 @@ import { CodexLocalAccessModal } from "../components/CodexLocalAccessModal";
 import { CodexImageForwardConfig } from "../components/CodexImageForwardConfig";
 import { CodexImageModelSelect } from "../components/CodexImageModelConfig";
 import { CodexAccountPoolHealthModal } from "../components/CodexAccountPoolHealthModal";
+import { CodexNamedAccountPools } from "../components/codex/CodexNamedAccountPools";
 import { CodexStatsRangePicker } from "../components/CodexStatsRangePicker";
 import { CodexUsageTrend } from "../components/codex/CodexUsageTrend";
 import { isCodexLocalAccessBackupDispatchEnabled } from "../utils/codexLocalAccessBackupDispatch";
@@ -47,6 +52,7 @@ import { isCodexGatewayKeyRecoveryError } from "../utils/codexGatewayKeyRecovery
 import type {
   CodexLocalAccessCustomRoutingRule,
   CodexLocalAccessScope,
+  CodexLocalAccessUsageStats,
 } from "../types/codexLocalAccess";
 import "./CodexApiServicePage.css";
 import type {
@@ -111,6 +117,7 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
     expandedApiKeyPolicyIds,
     fillDeepSeekAccountModelMappings,
     formatAccountTokenUsage,
+    formatInputTextCoverage,
     formatCompactNumber,
     formatDateTime,
     formatLatencyMs,
@@ -126,6 +133,9 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
     handleCloseTestDialog,
     handleCopy,
     handleCreateApiKey,
+    handleSaveAccountPool,
+    handleDeleteAccountPool,
+    handleDetachApiKeyAccountPool,
     handleCreateTimeoutPreset,
     handleCustomStatsRangeApply,
     handleDeleteApiKey,
@@ -347,6 +357,25 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
     setOverloadAccount({ id, name });
     setStatsLogTab("logs");
     setActiveTab("logs");
+  };
+  const accountSources = useMemo(() => codexServiceAccountSources(accounts, planGrants.accounts, planGrants.displaySourceIds),
+    [accounts, planGrants.accounts, planGrants.displaySourceIds]);
+  const showHighTokenRequests = (account?: { id: string; name: string }) => {
+    setOverloadAccount(null);
+    if (!account) {
+      props.openHighTokenRequests();
+      return;
+    }
+    const source = accountSources.get(account.id) ?? account.id;
+    const ids = [source, ...Array.from(accountSources).flatMap(([endpoint, owner]) => owner === source ? [endpoint] : [])];
+    props.openHighTokenRequests({ ids: [...new Set(ids)], name: account.name });
+  };
+  const renderInputTextUsage = (usage?: CodexLocalAccessUsageStats) => {
+    if (!usage?.inputText) return null;
+    return <span title={formatInputTextCoverage(usage)}>
+      {t("codex.apiService.logs.inputTextCharacters")} {usage.inputText.characters.toLocaleString()}
+      {" · "}{formatInputTextCoverage(usage)}
+    </span>;
   };
   const displayPoolHealth = summarizeAccountPoolHealth(localAccessAccounts, memberIds, state);
   const busy = controllerBusy;
@@ -648,7 +677,7 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
               {summaryCards.map((item) => (
                 <div key={item.key} className="codex-api-service-summary-card">
                   <span>{item.label}</span>
-                  <strong>{item.value}</strong>
+                  <strong title={item.key === "inputText" ? item.value : undefined}>{item.value}</strong>
                   <small>{item.detail}</small>
                 </div>
               ))}
@@ -682,6 +711,16 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                       )}
                     </button>
                   </div>
+                </label>
+                <label>
+                  <span>{t("codex.localAccess.accessScopeLabel", "访问范围")}</span>
+                  <SingleSelectDropdown
+                    value={accessScope}
+                    options={accessScopeOptions}
+                    onChange={(value) => void handleUpdateAccessScope(value)}
+                    disabled={busy || !collection}
+                    ariaLabel={t("codex.localAccess.accessScopeLabel", "访问范围")}
+                  />
                 </label>
                 {lanBaseUrl && (
                   <label>
@@ -789,31 +828,35 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                   </div>
                 </label>
                 <label>
-                  <span>
+                  <span id="codex-api-service-proxy-label">
                     {t("codex.localAccess.upstreamProxyLabel", "API 代理地址")}
                   </span>
-                  <div className="codex-api-service-input-row codex-api-service-proxy-input-row">
-                    <input
-                      type="text"
-                      value={proxyInput}
-                      onChange={(event) => setProxyInput(event.target.value)}
-                      placeholder={t(
-                        "codex.localAccess.upstreamProxyUrlPlaceholderSidecar",
-                        "留空用全局代理",
-                      )}
-                      disabled={busy}
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => void handleSaveProxy()}
-                      disabled={busy}
-                    >
-                      {t(
-                        "codex.localAccess.upstreamProxySaveAction",
-                        "保存代理",
-                      )}
-                    </button>
+                  <div className="codex-api-service-input-row codex-api-service-stacked-control">
+                    <div className="codex-api-service-input-row codex-api-service-proxy-input-row">
+                      <input
+                        type="text"
+                        value={proxyInput}
+                        onChange={(event) => setProxyInput(event.target.value)}
+                        placeholder={t(
+                          "codex.localAccess.upstreamProxyUrlPlaceholderSidecar",
+                          "留空用全局代理",
+                        )}
+                        aria-labelledby="codex-api-service-proxy-label"
+                        aria-describedby="codex-api-service-proxy-hint"
+                        disabled={busy}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => void handleSaveProxy()}
+                        disabled={busy}
+                      >
+                        {t("codex.localAccess.upstreamProxySaveAction", "保存代理")}
+                      </button>
+                    </div>
+                    <small id="codex-api-service-proxy-hint" className="codex-api-service-field-hint">
+                      {t("settings.network.proxyUrlDesc")}
+                    </small>
                   </div>
                 </label>
                 <label>
@@ -964,36 +1007,38 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
           <section className="codex-api-service-panel">
             <div className="codex-api-service-panel-head">
               <h2>{t("codex.localAccess.apiKeysTitle", "客户端 Key")}</h2>
-                <div className="codex-api-service-head-actions">
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  onClick={() => void handleCreateApiKey()}
-                  disabled={busy || !collection}
-                >
-                  <Plus size={14} />
-                  {t("codex.localAccess.apiKeyAdd", "新增 Key")}
-                </button>
-              </div>
             </div>
+            <CodexNamedAccountPools
+              pools={collection?.accountPools ?? []}
+              accounts={localAccessAccounts}
+              busy={busy || !collection}
+              maskAccountText={maskAccountText}
+              onCreateKey={handleCreateApiKey}
+              onSave={handleSaveAccountPool}
+              onRemove={handleDeleteAccountPool}
+            />
             <div className="codex-api-service-table">
               {(collection?.apiKeys ?? []).map((apiKey) => {
                 const labelDraft = apiKeyDrafts[apiKey.id] ?? apiKey.label;
-                const policyDraft =
+                const unsavedPolicy =
                   apiKeyPolicyDrafts[apiKey.id] ??
                   apiKeyPolicyDraftFromValue(apiKey);
+                const namedPoolLinked = Boolean(apiKey.accountPoolId);
+                const namedPool = collection?.accountPools?.find((pool) => pool.id === apiKey.accountPoolId);
                 const persistedInheritAccountPool =
                   apiKeyInheritsAccountPool(apiKey);
                 const persistedAccountIds = apiKey.accountIds ?? [];
+                const policyDraft = namedPoolLinked ? {
+                  ...unsavedPolicy, inheritAccountPool: false, accountIds: persistedAccountIds,
+                } : unsavedPolicy;
                 const accountScopeLocked = apiKeyHasFixedAccountScope(
                   apiKey,
                   collection,
                 );
                 const keySelectableAccounts = selectCodexApiKeyScopeAccounts({
                   accounts: localAccessAccounts,
-                  restrictFreeAccounts: collection?.restrictFreeAccounts ?? true,
                   scopedAccountIds: apiKey.accountIds ?? [],
-                });
+                }).filter((account) => !namedPoolLinked || persistedAccountIds.includes(account.id));
                 const keySelectableAccountIds = keySelectableAccounts.map(
                   (account) => account.id,
                 );
@@ -1005,7 +1050,7 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                   policyDraft,
                 );
                 const customScopeInvalid =
-                  !policyDraft.inheritAccountPool &&
+                  !namedPoolLinked && !policyDraft.inheritAccountPool &&
                   policyDraft.accountIds.length === 0;
                 const keyStats = apiKeyStatsById.get(apiKey.id);
                 const keyUsage = keyStats?.usage;
@@ -1302,6 +1347,7 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                             </small>
                           </div>
                         </div>
+                        <CodexKeyMonthlyTokenAlert keyId={apiKey.id} disabled={busy} />
                         <div className="api-key-account-scope">
                           <div className="api-key-account-scope-header">
                             <span>
@@ -1333,7 +1379,15 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                                       )}
                             </span>
                           </div>
-                          <div
+                          {namedPoolLinked ? (
+                            <div className="codex-named-pools-actions">
+                              <strong>{namedPool?.label ?? t("common.none")}</strong>
+                              <button type="button" className="btn btn-secondary btn-sm" disabled={busy}
+                                onClick={() => void handleDetachApiKeyAccountPool(apiKey.id)}>
+                                {t("codex.apiService.accountPools.detach")}
+                              </button>
+                            </div>
+                          ) : <div
                             className="api-key-account-scope-mode"
                             role="group"
                             aria-label={t(
@@ -1409,7 +1463,7 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                                 "自定义账号池",
                               )}
                             </button>
-                          </div>
+                          </div>}
                           {keySelectableAccounts.length === 0 ? (
                             <div className="codex-api-service-empty">
                               {t(
@@ -1471,7 +1525,7 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                                         disabled={
                                           busy ||
                                           policyDraft.inheritAccountPool ||
-                                          accountScopeLocked
+                                          accountScopeLocked || namedPoolLinked
                                         }
                                       />
                                       <span>
@@ -1664,6 +1718,9 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                   {t("codex.localAccess.accountStatsTitle", "按账号统计")}
                 </h2>
                 <div className="codex-api-service-head-actions">
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => showHighTokenRequests()}>
+                    {t("codex.apiService.logs.highTokenRequests")}
+                  </button>
                   <CodexApiServiceAddAccount disabled={busy || activating || testDialogRunning} />
                   <button
                     type="button"
@@ -1774,6 +1831,7 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                           <span className="codex-api-service-account-meta-token">
                             {formatAccountTokenUsage(stat?.usage)}
                           </span>
+                          {renderInputTextUsage(stat?.usage)}
                           <span>{formatRequestResultDetail(stat?.usage)}</span>
                           <span>
                             {formatUsdCost(stat?.usage.estimatedCostUsd ?? 0)}
@@ -1853,6 +1911,13 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                             </span>
                           )}
                         </div>
+                        {collection && !collection.officialAccountBindings?.[account.id]
+                          && collection.accountIds.includes(account.id)
+                          && !isCodexApiKeyAccount(account) && !isCodexAgentIdentityAccount(account)
+                          && !isCodexWebSessionAccount(account) && !isCodexChatgptPlanAccount(account) && (
+                          <CodexPoolQuotaFloor disabled={busy} value={collection.accountQuotaFloors?.[account.id] ?? null}
+                            onSave={async (value) => setState(await codexLocalAccessService.updateCodexLocalAccessAccountQuotaFloor(account.id, value))} />
+                        )}
                         <CodexServiceMemberAuthorization account={account} accounts={localAccessAccounts} grants={planGrants.accounts} memberIds={collection?.accountIds ?? []} pausedAccountIds={collection?.pausedAccountIds} />
                         <div className="codex-api-service-account-card-actions">
                           {isBackupAccount && (
@@ -2110,6 +2175,7 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                   {t("codex.apiService.models.availableTitle", "可用模型")}
                 </h2>
                 <div className="codex-api-service-head-actions">
+                  <CodexApiModelRefreshButton onNotice={setNotice} onError={setError} />
                   <button
                     type="button"
                     className="btn btn-secondary btn-sm"
@@ -2178,21 +2244,6 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                   </h2>
                 </div>
                 <div className="codex-api-service-config-list">
-                  <label>
-                    <span>
-                      {t("codex.localAccess.accessScopeLabel", "访问范围")}
-                    </span>
-                    <SingleSelectDropdown
-                      value={accessScope}
-                      options={accessScopeOptions}
-                      onChange={(value) => void handleUpdateAccessScope(value)}
-                      disabled={busy || !collection}
-                      ariaLabel={t(
-                        "codex.localAccess.accessScopeLabel",
-                        "访问范围",
-                      )}
-                    />
-                  </label>
                   <p className="codex-api-service-muted">
                     {t(
                       "codex.apiService.models.capabilityDesc",
@@ -2288,6 +2339,11 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                 ))}
               </div>
               <div className="codex-api-service-head-actions">
+                {statsLogTab === "accounts" && (
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => showHighTokenRequests()}>
+                    {t("codex.apiService.logs.highTokenRequests")}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
@@ -2366,6 +2422,7 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                           <span className="codex-api-service-account-meta-token">
                             {formatAccountTokenUsage(stat?.usage)}
                           </span>
+                          {renderInputTextUsage(stat?.usage)}
                           <span>{formatRequestResultDetail(stat?.usage)}</span>
                           <span>
                             {formatUsdCost(stat?.usage.estimatedCostUsd ?? 0)}
@@ -2373,6 +2430,10 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                           {activity && activity.runningCount > 0 ? (
                             <span className="codex-api-service-account-activity is-running"><Activity size={12} />{t("codex.apiService.accountActivity.running", { count: activity.runningCount, defaultValue: "调度中 {{count}}" })}</span>
                           ) : null}
+                          <button type="button" className="btn btn-secondary btn-sm"
+                            onClick={() => showHighTokenRequests({ id: account.id, name: presentation.displayName })}>
+                            {t("codex.apiService.logs.highTokenRequests")}
+                          </button>
                           {overload.counts && (
                             <button type="button" className="btn btn-secondary btn-sm"
                               title={t("codex.overload.countHint")}
@@ -2446,6 +2507,7 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                         <span>
                           {formatCompactNumber(item.usage.totalTokens)} Tokens
                         </span>
+                        {renderInputTextUsage(item.usage)}
                         <span>
                           {formatUsdCost(item.usage.estimatedCostUsd)}
                         </span>
@@ -2484,6 +2546,7 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                         <span>
                           {formatCompactNumber(item.usage.totalTokens)} Tokens
                         </span>
+                        {renderInputTextUsage(item.usage)}
                         <span>
                           {formatUsdCost(item.usage.estimatedCostUsd)}
                         </span>
@@ -2545,23 +2608,20 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                   {t("codex.apiService.timeouts.presetTitle", "参数方案")}
                 </h3>
                 <div className="codex-api-service-timeout-preset-row">
-                  <label className="codex-api-service-timeout-preset-select">
+                  <div className="codex-api-service-timeout-preset-select">
                     <span>
                       {t("codex.apiService.timeouts.presetSelect", "选择方案")}
                     </span>
-                    <select
+                    <SingleSelectDropdown
                       value={selectedTimeoutPresetId}
-                      onChange={(event) =>
-                        applyTimeoutPreset(event.target.value)
-                      }
-                    >
-                      {timeoutPresetOptions.map((preset) => (
-                        <option key={preset.id} value={preset.id}>
-                          {preset.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                      options={timeoutPresetOptions.map((preset) => ({
+                        value: preset.id,
+                        label: preset.name,
+                      }))}
+                      onChange={(value) => applyTimeoutPreset(value)}
+                      ariaLabel={t("codex.apiService.timeouts.presetSelect", "选择方案")}
+                    />
+                  </div>
                   <label className="codex-api-service-timeout-preset-name">
                     <span>
                       {t("codex.apiService.timeouts.presetName", "方案名称")}

@@ -1,4 +1,49 @@
 #[test]
+fn compressed_session_token_stats_match_the_plain_rollout() {
+    let base = make_temp_dir("codex-session-compressed-token-stats");
+    let plain = base.join("rollout-tokens.jsonl");
+    let compressed = plain.with_extension("jsonl.zst");
+    let mut log = String::new();
+    for (input, output) in [(100, 20), (230, 40)] {
+        log.push_str(
+            &json!({
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "total_token_usage": {
+                            "input_tokens": input,
+                            "output_tokens": output,
+                            "total_tokens": input + output,
+                        }
+                    }
+                }
+            })
+            .to_string(),
+        );
+        log.push_str("\r\n");
+    }
+    log.push_str(
+        &json!({"type": "response_item", "payload": "x".repeat(2 * 1024 * 1024)})
+            .to_string(),
+    );
+    log.push('\n');
+    log.push_str("{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":null}}\n");
+    log.push_str(r#"{"type":"event_msg","payload":{"type":"token_count","total_token_usage":"#);
+    fs::write(&plain, &log).unwrap();
+    fs::write(
+        &compressed,
+        zstd::stream::encode_all(log.as_bytes(), 0).unwrap(),
+    )
+    .unwrap();
+
+    for path in [&plain, &compressed] {
+        assert_eq!(read_token_stats_from_rollout(path), Some((230, 40, 270)));
+    }
+    fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
 fn compressed_session_heads_are_listed_once_and_state_selects_current_rollout() {
     let base = make_temp_dir("codex-session-compressed-list");
     let (instance, mut snapshot, _) = isolated_export_fixture(&base, "compressed-head");
@@ -55,6 +100,30 @@ fn compressed_session_heads_are_listed_once_and_state_selects_current_rollout() 
     assert_eq!(listed[0].rollout_path, compressed.with_extension(""));
     drop(database);
     fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
+fn unreadable_compressed_sibling_does_not_hide_a_readable_plain_session() {
+    let base = tempfile::tempdir().unwrap();
+    let (instance, snapshot, _) = isolated_export_fixture(base.path(), "readable-plain");
+    let compressed = snapshot.rollout_path.with_extension("jsonl.zst");
+    fs::write(&compressed, b"invalid zstd frame").unwrap();
+    assert!(read_rollout_session_meta(&compressed).is_err());
+
+    let listed = load_thread_snapshots(&instance).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, "readable-plain");
+    assert_eq!(listed[0].rollout_path, snapshot.rollout_path);
+
+    let plain = fs::read(&snapshot.rollout_path).unwrap();
+    fs::remove_file(&snapshot.rollout_path).unwrap();
+    assert!(load_thread_snapshots(&instance).is_err());
+
+    fs::write(&snapshot.rollout_path, b"\n").unwrap();
+    fs::write(&compressed, zstd::stream::encode_all(plain.as_slice(), 0).unwrap()).unwrap();
+    let listed = load_thread_snapshots(&instance).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].rollout_path, compressed);
 }
 
 #[test]

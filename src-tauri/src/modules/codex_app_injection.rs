@@ -50,6 +50,17 @@ mod live;
 #[path = "codex_app_injection_binding.rs"]
 mod binding;
 
+#[path = "codex_app_injection_resume.rs"]
+mod resume;
+pub(crate) use resume::schedule_desktop_resume;
+
+#[path = "codex_app_injection_activity.rs"]
+mod activity;
+pub(crate) use activity::{
+    capture_before_desktop_stop, capture_default_desktop_thread, default_desktop_activity,
+    record_after_desktop_stop, reopen_desktop_thread_after_switch, DesktopActivity,
+};
+
 use crate::commands::codex::{
     codex_model_provider_deepseek_balance_url, query_deepseek_balance_snapshot,
     DeepSeekBalanceSnapshot,
@@ -1483,6 +1494,7 @@ fn deepseek_model_injection_script(
     handled_selected_model: Option<&str>,
 ) -> String {
     let payload = serde_json::to_string(payload).unwrap_or_else(|_| "{\"models\":[]}".to_string());
+    let reasoning_levels = serde_json::json!(crate::modules::codex_protocol::DEEPSEEK_REASONING_EFFORTS);
     let handled =
         serde_json::to_string(&handled_selected_model).unwrap_or_else(|_| "null".to_string());
     format!(
@@ -1518,7 +1530,8 @@ fn deepseek_model_injection_script(
       }}
       const displayName = {{}};
       for (const item of models) displayName[String(item.id)] = item.name || String(item.id);
-      const reasoningLevels = ["low", "high", "max"];
+      const reasoningLevels = payload.reasoningLevels || {reasoning_levels};
+      const defaultReasoningEffort = payload.defaultReasoningEffort || "high";
       const reasoningDescriptors = () => reasoningLevels.map((effort) => ({{
         effort,
         reasoningEffort: effort,
@@ -1530,9 +1543,9 @@ fn deepseek_model_injection_script(
         // The desktop app has used both camelCase and snake_case model metadata
         // across releases. Keep both shapes in sync so DeepSeek exposes its
         // actual low/high/max picker instead of inheriting Codex defaults.
-        item.defaultReasoningEffort = "high";
+        item.defaultReasoningEffort = defaultReasoningEffort;
         item.supportedReasoningEfforts = levels;
-        item.default_reasoning_level = "high";
+        item.default_reasoning_level = defaultReasoningEffort;
         item.supported_reasoning_levels = levels;
       }};
       const applyVisionMetadata = (item, official) => {{

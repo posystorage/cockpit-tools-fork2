@@ -47,6 +47,7 @@ const PROVIDER_PAGE_PLATFORM_MAP: Record<string, PlatformId> = {
   trae_solo_cn: 'trae_solo_cn',
   traesolocn: 'trae_solo_cn',
   workbuddy: 'workbuddy',
+  workbuddy_ai: 'workbuddy_ai',
   minimaxcode: 'minimaxcode',
 };
 
@@ -115,6 +116,7 @@ export function resolvePlatformIdFromPage(page: Page | string): PlatformId | nul
     normalized === 'api-relay' ||
     normalized === 'wakeup' ||
     normalized === 'verification' ||
+    normalized === 'antigravity-usage' ||
     normalized === '2fa' ||
     normalized === 'proxies' ||
     normalized === 'instances'

@@ -384,13 +384,13 @@ async fn native_ensure_provider_profile(
                 let profile = profile_owned.as_path();
                 let account = &account_owned;
                 save_profile_takeover_backup(profile, &key_owned)?;
-                let preserve_catalog =
-                    slots.is_empty() && account_requires_responses_compatibility_gateway(account);
-                runtime.block_on(write_provider_gateway_profile_takeover(
+                runtime.block_on(write_local_access_profile_takeover_with_provider_name(
                     profile,
                     &published,
-                    &key_owned,
-                    preserve_catalog,
+                    Some(&key_owned),
+                    false,
+                    account.api_provider_name.as_deref(),
+                    None,
                 ))?;
                 cleanup_provider_gateway_profile_model_overrides(profile)?;
                 backup_current_profile_model_before_provider_gateway(
@@ -413,12 +413,10 @@ async fn native_ensure_provider_profile(
                 }
                 codex_account::reapply_experimental_model_policy_if_enabled(profile)?;
                 reapply_deepseek_profile_config_overrides(profile, account)?;
+                prepare_provider_gateway_web_search(profile, account)?;
                 if !crate::modules::codex_remote_service::is_known_account(account)
                     && slots.iter().any(|slot| codex_protocol::deepseek_model_template(&slot.upstream_model).is_some()) {
                     ensure_profile_max_reasoning_effort(profile)?;
-                }
-                if preserve_catalog {
-                    return Ok(());
                 }
                 runtime.block_on(native_sync_profile_catalog_tool_capabilities(
                     profile,

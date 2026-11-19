@@ -3,6 +3,7 @@
 
 mod browser_preload;
 mod fast;
+mod rspack_speed_assets;
 
 use crate::modules::{app_lifecycle, codex_account, config, logger};
 use serde::Deserialize;
@@ -75,6 +76,7 @@ struct Profile {
     native_predictions: bool,
     api_key_auth_verified: bool,
     quota_compat: bool,
+    speed_assets: Option<Arc<rspack_speed_assets::Assets>>,
 }
 
 impl Profile {
@@ -158,6 +160,7 @@ fn profile_from_values(
             && oauth
             && custom_api
             && valid_api_base,
+        speed_assets: None,
     }
 }
 
@@ -175,6 +178,9 @@ fn read_profile(profile: &Path, instance: &str, api_service: bool) -> Result<Pro
     });
     if api_service {
         result.quota_compat = instance_quota_display_enabled(instance);
+    }
+    if result.native_fast {
+        result.speed_assets = rspack_speed_assets::for_client();
     }
     Ok(result)
 }
@@ -203,11 +209,17 @@ pub(crate) fn native_fast_enabled_for_profile(profile: &Path) -> bool {
     read_profile(profile, "", false).is_ok_and(|profile| profile.native_fast)
 }
 
-pub(crate) fn prepare_native_fast_for_profile(base_dir: &Path) -> Result<(), String> {
+pub(crate) fn prepare_native_fast_for_profile(base_dir: &Path, desktop: bool) -> Result<(), String> {
     if !native_fast_enabled_for_profile(base_dir) {
         return Ok(());
     }
-    enable_native_fast_feature(base_dir)
+    enable_native_fast_feature(base_dir)?;
+    if desktop {
+        // Prepare while the launch worker is still outside the client startup
+        // window. The renderer only reads the small set of candidate modules.
+        let _ = rspack_speed_assets::for_client();
+    }
+    Ok(())
 }
 
 fn enable_native_fast_feature(base_dir: &Path) -> Result<(), String> {
@@ -297,17 +309,21 @@ impl Child {
     }
 }
 
-// APIService capability denial must not wait on, or be revoked by, a slow
-// keyring/config read. Optional Fast/quota adaptations fail closed meanwhile.
+// API Service quota adaptation uses the persisted instance binding. Optional
+// Fast/prediction features still wait for their verified profile snapshot.
 fn profile_or_api_fallback(profile: Option<Profile>, api_service: bool) -> Option<Profile> {
     profile.or_else(|| api_service.then(Profile::default))
 }
 
 fn trusted_preload_source(profile: Option<&Profile>, api_service: bool, port: u16) -> Option<String> {
-    profile.filter(|profile| profile.active() || api_service).map(|profile| {
-        fast::browser_preload_source(profile.native_fast, profile.native_predictions, profile.quota_compat,
-            profile.api_key_auth_verified, api_service, &format!("preload-{port}"))
-    })
+    let owner = format!("preload-{port}");
+    match profile {
+        Some(profile) if profile.native_fast || profile.native_predictions
+            || profile.quota_compat && !api_service => Some(fast::browser_preload_source(
+            profile.native_fast, profile.native_predictions, profile.quota_compat,
+            profile.api_key_auth_verified, api_service, &owner, profile.speed_assets.as_deref())),
+        _ => None,
+    }
 }
 
 // Browser pre-registration also protects restored macOS conversations from
@@ -347,7 +363,7 @@ async fn run_profile(
         return;
     };
     let preload_source = if browser_preload_enabled {
-        let (source, receiver) = watch::channel(None);
+        let (source, receiver) = watch::channel(trusted_preload_source(None, api_service, port));
         let preload_stop = stop.clone();
         let launch = startup
             .clone()
@@ -444,7 +460,6 @@ async fn run_profile(
                 let result = read_profile(&path, &instance, api_service);
                 // Publish immediately from the one existing read worker, not
                 // after page discovery's network timeout or the next poll.
-                // An API binding without a verified snapshot publishes nothing.
                 if let Some(sender) = sender {
                     sender.send_replace(trusted_preload_source(
                         result.as_ref().ok(),
@@ -514,6 +529,7 @@ async fn run_profile(
                     child_preload_first,
                     startup,
                     receiver,
+                    profile.speed_assets.as_deref(),
                 )
                 .await;
                 if result.is_err() {
@@ -558,7 +574,7 @@ mod tests {
                 crate::models::InstanceLaunchMode::App,
                 crate::models::InstanceLaunchMode::Cli,
             ] {
-                let mut store = crate::models::InstanceStore::new();
+                let mut store = crate::modules::codex_instance::load_instance_store().unwrap();
                 store.default_settings.quota_display_compatibility = preference;
                 store.default_settings.launch_mode = launch_mode.clone();
                 let mut profile: crate::models::InstanceProfile = serde_json::from_value(serde_json::json!({
@@ -567,7 +583,7 @@ mod tests {
                 })).unwrap();
                 profile.quota_display_compatibility = preference;
                 profile.launch_mode = launch_mode.clone();
-                store.instances.push(profile);
+                store.instances = vec![profile];
                 crate::modules::codex_instance::save_instance_store(&store).unwrap();
                 let expected = preference == Some(true)
                     && launch_mode == crate::models::InstanceLaunchMode::App;
@@ -672,12 +688,14 @@ mod tests {
     }
 
     #[test]
-    fn prediction_only_profile_is_opt_in_local_api_and_independent_of_fast() {
+    fn predictions_default_on_for_local_api_and_respect_manual_disable() {
         let mut cfg = config::UserConfig::default();
 
         cfg.codex_app_api_quota_compat_enabled = false;
         let doc: toml_edit::Document = "model_provider='relay'\n[model_providers.relay]\nbase_url='https://api.example.test/v1'\nrequires_openai_auth=false\n".parse().unwrap();
         let api = json!({"auth_mode":"apikey", "OPENAI_API_KEY":"synthetic-key"});
+        assert!(profile_from_values(&doc, &api, &cfg, |_, _, _| false).native_predictions);
+        cfg.codex_app_native_predictions_enabled = false;
         assert!(!profile_from_values(&doc, &api, &cfg, |_, _, _| false).native_predictions);
         cfg.codex_app_native_predictions_enabled = true;
         let profile = profile_from_values(&doc, &api, &cfg, |_, _, _| false);
@@ -696,14 +714,12 @@ mod tests {
 
     #[test]
     fn bound_oauth_predictions_require_verified_responses_route_without_enabling_fast() {
-        let mut cfg = config::UserConfig::default();
+        let cfg = config::UserConfig::default();
         let doc: toml_edit::Document = "model_provider='codex_local_access'\n[model_providers.codex_local_access]\nbase_url='http://localhost:2566/v1'\nwire_api='responses'\nrequires_openai_auth=true\nexperimental_bearer_token='service-key'\n".parse().unwrap();
         let oauth = json!({"tokens":{"id_token":"synthetic-id","access_token":"synthetic-access"}});
         let verified = |provider: &str, base: &str, key: &str| {
             (provider, base, key) == ("codex_local_access", "http://localhost:2566/v1", "service-key")
         };
-        assert!(!profile_from_values(&doc, &oauth, &cfg, verified).native_predictions);
-        cfg.codex_app_native_predictions_enabled = true;
         let profile = profile_from_values(&doc, &oauth, &cfg, verified);
         assert!(profile.native_predictions);
         assert!(!profile.api_key_auth_verified);
@@ -763,7 +779,7 @@ mod tests {
     }
 
     #[test]
-    fn browser_preload_requires_completed_profile_evidence_even_for_api_service() {
+    fn api_service_preload_waits_for_verified_features_and_never_installs_shared_quota_cache() {
         assert!(trusted_preload_source(None, true, 9333).is_none());
         assert!(trusted_preload_source(None, false, 9333).is_none());
         assert!(trusted_preload_source(Some(&Profile::default()), false, 9333).is_none());
@@ -773,6 +789,7 @@ mod tests {
         assert!(script.contains("\"apiKeyAuthVerified\":true"));
         assert!(script.contains("\"quotaCompat\":false"));
         assert!(script.contains("\"apiService\":true"));
+        assert!(!script.contains("__cockpitQuotaState"));
         assert!(script.contains("__cockpitStartupPreloadStarted"));
         assert!(script.contains("document-already-started"));
     }

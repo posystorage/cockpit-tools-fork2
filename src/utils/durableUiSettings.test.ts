@@ -62,6 +62,7 @@ test('WebView imports only missing settings, native state wins, and privacy is m
 
 test('service display and instance sorting preferences restore independently of WebView storage', async () => {
   const columns = 'codex.apiService.logColumns.v1';
+  const highTokenThreshold = 'codex.apiService.highTokenThreshold';
   const pageSize = 'agtools.codex.api_service.request_log_page_size.v1';
   const sort = 'agtools.antigravity_ide.instances.sort_field';
   const localRange = 'agtools.codex.local_access.stats_range.v1';
@@ -76,17 +77,23 @@ test('service display and instance sorting preferences restore independently of 
     [localRange]: custom, [serviceRange]: 'daily', [sessionRange]: 'month', [address]: 'lan',
     [providerOrder]: '["provider-2","provider-1"]', [providerActive]: '1',
   };
-  const h = harness(legacy, { values: { [serviceRange]: 'weekly' }, revisions: { [serviceRange]: 3 } });
+  const h = harness(legacy, {
+    values: { [serviceRange]: 'weekly', [highTokenThreshold]: '24000' },
+    revisions: { [serviceRange]: 3, [highTokenThreshold]: 1 },
+  });
   await h.exports.hydrateDurableUiSettings();
   assert.equal(h.native.values[localRange], custom);
   assert.equal(h.native.values[serviceRange], 'weekly');
   assert.equal(h.native.values[sessionRange], 'month');
   await h.exports.saveDurableUiSetting(pageSize, '100');
+  assert.equal(h.exports.readDurableUiSetting(highTokenThreshold), '24000');
+  await h.exports.saveDurableUiSetting(highTokenThreshold, '38000');
   assert.equal(legacy[pageSize], '50');
 
   const reopened = harness({}, h.native);
   await reopened.exports.hydrateDurableUiSettings();
   assert.equal(reopened.exports.readDurableUiSetting(pageSize), '100');
+  assert.equal(reopened.exports.readDurableUiSetting(highTokenThreshold), '38000');
   assert.equal(reopened.exports.readDurableUiSetting(columns), legacy[columns]);
   assert.equal(reopened.exports.readDurableUiSetting(sort), 'lastLaunchedAt');
   assert.equal(reopened.exports.readDurableUiSetting(address), 'lan');
@@ -152,6 +159,22 @@ test('a failed load does not send writes or release privacy masking', async () =
   await assert.rejects(h.exports.saveDurableUiSetting(BADGE, 'soft'), /unreadable/);
   assert.equal(h.writes.length, 0);
   assert.equal(h.exports.readDurableUiSetting(PRIVACY), '1');
+});
+
+test('Antigravity and CodeBuddy CN restore their launch choices independently', async () => {
+  const runtimeTarget = 'agtools.antigravity.runtime_target.v1';
+  const h = harness({ [runtimeTarget]: 'antigravity_ide' });
+  const antigravity = h.exports.ANTIGRAVITY_LAUNCH_CLIENT_STORAGE_KEY;
+  const codebuddyCn = h.exports.CODEBUDDY_CN_LAUNCH_MODE_STORAGE_KEY;
+  await h.exports.saveDurableUiSetting(antigravity, 'cli', true);
+  await h.exports.saveDurableUiSetting(codebuddyCn, 'cli', true);
+  await h.exports.saveDurableUiSetting(codebuddyCn, 'desktop', true);
+
+  const reopened = harness({}, h.native);
+  await reopened.exports.hydrateDurableUiSettings();
+  assert.equal(reopened.exports.readDurableUiSetting(antigravity), 'cli');
+  assert.equal(reopened.exports.readDurableUiSetting(codebuddyCn), 'desktop');
+  assert.equal(reopened.exports.readDurableUiSetting(runtimeTarget), 'antigravity_ide');
 });
 
 test('a window event before hydration cannot suppress migration of missing settings', async () => {

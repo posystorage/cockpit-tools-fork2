@@ -24,8 +24,7 @@ fn native_proxy_cold_start_case(test_name: &str, scenario: &str) {
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
     }
-    let status = command
-        .env_clear()
+    let status = crate::modules::test_support::isolated_child_env(&mut command, directory.path())
         .env(SCENARIO, scenario)
         .env("COCKPIT_TEST_NATIVE_PROXY_RESULT", &result_path)
         .env("COCKPIT_TOOLS_DATA_DIR", directory.path().join("data"))

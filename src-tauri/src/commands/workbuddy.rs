@@ -321,11 +321,6 @@ pub async fn inject_workbuddy_to_vscode(
     ) {
         logger::log_warn(&format!("更新 WorkBuddy 默认实例绑定账号失败：{}", err));
     }
-    crate::modules::provider_current_state::set_current_account_id(
-        "workbuddy",
-        Some(account_id.as_str()),
-    )?;
-
     let launch_warning = match crate::commands::workbuddy_instance::workbuddy_start_instance(
         "__default__".to_string(),
     )
@@ -357,6 +352,10 @@ pub async fn inject_workbuddy_to_vscode(
         }
     };
 
+    crate::modules::provider_current_state::set_current_account_id(
+        "workbuddy",
+        Some(account_id.as_str()),
+    )?;
     workbuddy_account::touch_last_used(&account_id)?;
     let _ = crate::modules::tray::update_tray_menu(&app);
 
@@ -571,4 +570,38 @@ pub async fn fetch_workbuddy_cloud_models(
 ) -> Result<Vec<crate::modules::workbuddy_model_probe::WorkbuddyCloudModel>, String> {
     let account = load_billing_account(account_id).await?;
     crate::modules::workbuddy_model_probe::fetch_cloud_models(&account).await
+}
+
+async fn load_codebuddy_cn_probe_account(
+    account_id: String,
+) -> Result<crate::models::codebuddy::CodebuddyAccount, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::modules::codebuddy_cn_account::load_account(&account_id)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .ok_or_else(|| "WORKBUDDY_ACCOUNT_NOT_FOUND".to_string())
+}
+
+#[tauri::command]
+pub async fn probe_codebuddy_cn_model(
+    account_id: String,
+    model: String,
+    keep_conversation: Option<bool>,
+) -> Result<crate::modules::workbuddy_model_probe::WorkbuddyModelProbeResult, String> {
+    let account = load_codebuddy_cn_probe_account(account_id).await?;
+    crate::modules::workbuddy_model_probe::probe_cn_model(
+        &account,
+        &model,
+        keep_conversation.unwrap_or(false),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn fetch_codebuddy_cn_cloud_models(
+    account_id: String,
+) -> Result<Vec<crate::modules::workbuddy_model_probe::WorkbuddyCloudModel>, String> {
+    let account = load_codebuddy_cn_probe_account(account_id).await?;
+    crate::modules::workbuddy_model_probe::fetch_cn_cloud_models(&account).await
 }

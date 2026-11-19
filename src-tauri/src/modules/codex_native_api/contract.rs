@@ -100,7 +100,7 @@ impl Default for ExecutionPolicy {
             account_switch_rebuild: true,
             open_timeout: Duration::from_secs(30),
             idle_timeout: Duration::from_secs(180),
-            image_open_timeout: Duration::from_secs(60),
+            image_open_timeout: Duration::from_secs(600),
             image_idle_timeout: Duration::from_secs(180),
             stream_open_max_attempts: 1,
             total_timeout: Duration::ZERO,
@@ -226,6 +226,7 @@ pub struct ImageRoute {
 pub enum TransportFailureKind {
     TlsDecrypt,
     TlsDecryptHttp2,
+    Network,
 }
 
 #[derive(Clone, Debug)]
@@ -249,6 +250,16 @@ pub struct ServiceError {
 }
 
 impl ServiceError {
+    /// These deadline codes are produced by our transport, never copied from
+    /// upstream error text. Retiring a pool grants no permission to replay.
+    pub(crate) fn transport_failure_kind(&self) -> Option<TransportFailureKind> {
+        self.transport_failure.or_else(|| match self.code {
+            "upstream_connect_timeout" | "upstream_idle_timeout" | "upstream_timeout" =>
+                Some(TransportFailureKind::Network),
+            _ => None,
+        })
+    }
+
     pub fn new(status: u16, code: &'static str, message: impl Into<String>) -> Self {
         Self {
             status,
@@ -331,6 +342,7 @@ pub struct RequestReport {
     pub success: bool,
     pub elapsed: Duration,
     pub usage: Option<Value>,
+    pub input_text_characters: Option<u64>,
     pub error: Option<String>,
     pub error_message: Option<String>,
     pub credential_scope: bool,
@@ -395,6 +407,8 @@ pub trait Host: Send + Sync + 'static {
     }
     fn quota_request_started(&self, _account_id: &str) {}
     fn check_quota_before_send(&self, _account_id: &str) -> Result<(), ServiceError> { Ok(()) }
+    /// Enqueue a bounded single-flight refresh; never perform I/O synchronously.
+    fn request_quota_refresh(&self, _account_id: &str) {}
     /// A runtime policy notification; must not perform blocking I/O.
     fn set_cooling_disabled(&self, _disabled: bool) {}
     /// Disabling affinity clears only the transient routing preference cache.

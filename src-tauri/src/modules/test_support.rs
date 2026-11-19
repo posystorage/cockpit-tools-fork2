@@ -5,6 +5,22 @@ pub fn env_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
+pub(crate) fn isolated_child_env<'a>(
+    command: &'a mut std::process::Command,
+    temp_dir: &std::path::Path,
+) -> &'a mut std::process::Command {
+    command
+        .env_clear()
+        .env("TMP", temp_dir)
+        .env("TEMP", temp_dir)
+        .env("TMPDIR", temp_dir);
+    #[cfg(windows)]
+    if let Some(root) = std::env::var_os("SystemRoot") {
+        command.env("SystemRoot", root);
+    }
+    command
+}
+
 /// Audit fixture declarations in test source without modifying process env.
 /// A single holder must precede the data guard and use lexical RAII cleanup.
 /// TestCacheGuard owns this same mutex; taking both holders would deadlock.

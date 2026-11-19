@@ -46,6 +46,13 @@ function page() {
     '../utils/apikeyFunClientConfigs': clientConfigs,
     '../utils/apiKeyFunPrefill': {},
     '../components/apiKeyFun/ApiKeyFunKeyConfigModal': { ApiKeyFunKeyConfigModal: ConfigModal },
+    '../components/ModalErrorMessage': {
+      ModalErrorMessage: 'ModalErrorMessage',
+      useModalErrorState: () => {
+        const [message, setMessage] = h.hooks.useState(null);
+        return { message, clear: () => setMessage(null), report: setMessage };
+      },
+    },
     '../services/apiKeyFunVault': {
       initializeApiKeyFunVault: async () => {},
       subscribeApiKeyFunVault: (listener: (items: ManagedApiKey[]) => void) => { listener(keys); return () => {}; },

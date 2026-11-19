@@ -67,6 +67,7 @@ import {
   toggleRouteModelInRoutes,
 } from "./CodexModelRoutingFields";
 import { forceRefreshCodexTokens } from "../../services/codexService";
+import { backUpRefreshedCodexAccount } from "../../services/scheduledBackupService";
 import { requestCodexOpenAddAccount } from "../../utils/codexAddAccountRequest";
 import { areCodexModelRoutingsEqual, resolveRoutingCatalog } from "../../utils/codexModelRoutingValue";
 import {
@@ -291,9 +292,11 @@ export function CodexLaunchPreviewModal({
   const [contextConfigOpen, setContextConfigOpen] = useState(false);
   const [forceRefreshing, setForceRefreshing] = useState(false);
   const [manualRefreshResult, setManualRefreshResult] = useState<{
-    status: "running" | "success" | "error";
+    status: "running" | "backing-up" | "success" | "error";
     error?: string;
     requiresReauth?: boolean;
+    backupPath?: string;
+    backupError?: string;
   } | null>(null);
   const [manualRefreshedAccount, setManualRefreshedAccount] =
     useState<CodexAccount | null>(null);
@@ -1628,7 +1631,13 @@ export function CodexLaunchPreviewModal({
       const refreshed = await forceRefreshCodexTokens(account.id);
       useCodexAccountStore.getState().applyAccountSnapshot(refreshed);
       setManualRefreshedAccount(refreshed);
-      setManualRefreshResult({ status: "success" });
+      setManualRefreshResult({ status: "backing-up" });
+      try {
+        const backup = await backUpRefreshedCodexAccount(refreshed);
+        setManualRefreshResult({ status: "success", backupPath: backup?.path });
+      } catch (backupError) {
+        setManualRefreshResult({ status: "success", backupError: String(backupError).replace(/^Error:\s*/, "") });
+      }
     } catch (refreshError) {
       const errorMessage = String(refreshError).replace(/^Error:\s*/, "");
       const latestAccount = useCodexAccountStore.getState().accounts.find((item) => item.id === account.id) ?? account;
@@ -2288,36 +2297,6 @@ export function CodexLaunchPreviewModal({
                   </div>
                 </section>
               )}
-              {!isDeepSeekSubject && mode !== "apiService" && (
-                <section className="codex-launch-preview-tool-row">
-                  <div className="codex-launch-preview-tool-icon">
-                    <RefreshCw size={16} />
-                  </div>
-                  <div className="codex-launch-preview-tool-copy">
-                    <h3>{t("codex.launchPreview.forceRefreshTitle")}</h3>
-                    <p>{t("codex.launchPreview.forceRefreshDescription")}</p>
-                    <div className="codex-launch-preview-tool-meta">
-                      <span>
-                        {account && isStandardCodexOAuthAccount(account)
-                          ? t("codex.launchPreview.forceRefreshReady")
-                          : t("codex.launchPreview.forceRefreshUnavailable")}
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-outline btn-sm codex-launch-preview-tool-action"
-                    onClick={(event) => { rememberChildTrigger(event); void handleForceRefresh(); }}
-                    disabled={
-                      busy || !account || !isStandardCodexOAuthAccount(account)
-                    }
-                  >
-                    {forceRefreshing
-                      ? t("codex.launchPreview.forceRefreshRunning")
-                      : t("codex.launchPreview.forceRefreshAction")}
-                  </button>
-                </section>
-              )}
               <section className="codex-launch-preview-tool-row">
                 <div className="codex-launch-preview-tool-icon">
                   <SlidersHorizontal size={16} />
@@ -2435,70 +2414,118 @@ export function CodexLaunchPreviewModal({
                 </section>
               )}
 
-              <section className="codex-launch-preview-tool-row">
-                <div className="codex-launch-preview-tool-icon">
-                  <Wrench size={16} />
-                </div>
-                <div className="codex-launch-preview-tool-copy">
-                  <h3>
+              <details className="codex-launch-preview-maintenance-group">
+                <summary className="codex-launch-preview-maintenance-summary">
+                  <Wrench size={14} aria-hidden="true" />
+                  <span>
                     {t(
-                      "codex.sessionManager.actions.repairVisibility",
-                      "修复可见性",
+                      "codex.launchPreview.advancedMaintenanceTitle",
+                      "维护与诊断工具",
                     )}
-                  </h3>
-                  <p>
-                    {t(
-                      "codex.sessionManager.repairModal.modeQuickDesc",
-                      "只校正官方 state DB 和会话文件首条元数据，适合日常切号后恢复。",
-                    )}
-                  </p>
-                  <div className="codex-launch-preview-tool-meta">
-                    <span>
-                      {t(
-                        "codex.sessionManager.repairModal.modeQuick",
-                        "快速修复",
-                      )}
-                    </span>
-                    <span>{t("codex.launchPreview.notApplied")}</span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-outline btn-sm codex-launch-preview-tool-action"
-                  onClick={(event) => {
-                    rememberChildTrigger(event);
-                    setRepairKind("visibility");
-                    setRepairOpen(true);
-                  }}
-                  disabled={busy}
-                >
-                  {t(
-                    "codex.sessionManager.actions.repairVisibility",
-                    "修复可见性",
+                  </span>
+                  <ChevronDown
+                    size={14}
+                    className="codex-launch-preview-maintenance-chevron"
+                    aria-hidden="true"
+                  />
+                </summary>
+                <div className="codex-launch-preview-maintenance-items">
+                  {!isDeepSeekSubject && mode !== "apiService" && (
+                    <section className="codex-launch-preview-tool-row">
+                      <div className="codex-launch-preview-tool-icon">
+                        <RefreshCw size={16} />
+                      </div>
+                      <div className="codex-launch-preview-tool-copy">
+                        <h3>{t("codex.launchPreview.forceRefreshTitle")}</h3>
+                        <p>{t("codex.launchPreview.forceRefreshDescription")}</p>
+                        <div className="codex-launch-preview-tool-meta">
+                          <span>
+                            {account && isStandardCodexOAuthAccount(account)
+                              ? t("codex.launchPreview.forceRefreshReady")
+                              : t("codex.launchPreview.forceRefreshUnavailable")}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm codex-launch-preview-tool-action"
+                        onClick={(event) => { rememberChildTrigger(event); void handleForceRefresh(); }}
+                        disabled={
+                          busy || !account || !isStandardCodexOAuthAccount(account)
+                        }
+                      >
+                        {forceRefreshing
+                          ? t("codex.launchPreview.forceRefreshRunning")
+                          : t("codex.launchPreview.forceRefreshAction")}
+                      </button>
+                    </section>
                   )}
-                </button>
-              </section>
-              <section className="codex-launch-preview-tool-row">
-                <div className="codex-launch-preview-tool-icon">
-                  <Wrench size={16} />
+                  <section className="codex-launch-preview-tool-row">
+                    <div className="codex-launch-preview-tool-icon">
+                      <Wrench size={16} />
+                    </div>
+                    <div className="codex-launch-preview-tool-copy">
+                      <h3>
+                        {t(
+                          "codex.sessionManager.actions.repairVisibility",
+                          "修复可见性",
+                        )}
+                      </h3>
+                      <p>
+                        {t(
+                          "codex.sessionManager.repairModal.modeQuickDesc",
+                          "只校正官方 state DB 和会话文件首条元数据，适合日常切号后恢复。",
+                        )}
+                      </p>
+                      <div className="codex-launch-preview-tool-meta">
+                        <span>
+                          {t(
+                            "codex.sessionManager.repairModal.modeQuick",
+                            "快速修复",
+                          )}
+                        </span>
+                        <span>{t("codex.launchPreview.notApplied")}</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm codex-launch-preview-tool-action"
+                      onClick={(event) => {
+                        rememberChildTrigger(event);
+                        setRepairKind("visibility");
+                        setRepairOpen(true);
+                      }}
+                      disabled={busy}
+                    >
+                      {t(
+                        "codex.sessionManager.actions.repairVisibility",
+                        "修复可见性",
+                      )}
+                    </button>
+                  </section>
+                  <section className="codex-launch-preview-tool-row">
+                    <div className="codex-launch-preview-tool-icon">
+                      <Wrench size={16} />
+                    </div>
+                    <div className="codex-launch-preview-tool-copy">
+                      <h3>{t("codex.sessionManager.actions.repairIndex")}</h3>
+                      <p>{t("codex.sessionManager.repairModal.modeHistoryDesc")}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm codex-launch-preview-tool-action"
+                      onClick={(event) => {
+                        rememberChildTrigger(event);
+                        setRepairKind("history");
+                        setRepairOpen(true);
+                      }}
+                      disabled={busy}
+                    >
+                      {t("codex.sessionManager.actions.repairIndex")}
+                    </button>
+                  </section>
                 </div>
-                <div className="codex-launch-preview-tool-copy">
-                  <h3>{t("codex.sessionManager.actions.repairIndex")}</h3>
-                  <p>{t("codex.sessionManager.repairModal.modeHistoryDesc")}</p>
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-outline btn-sm codex-launch-preview-tool-action"
-                  onClick={(event) => {
-                    rememberChildTrigger(event);
-                    setRepairKind("history");
-                    setRepairOpen(true);
-                  }}
-                  disabled={busy}
-                >
-                  {t("codex.sessionManager.actions.repairIndex")}
-                </button>
-              </section>
+              </details>
             </div>
 
             {notice && (
@@ -2778,7 +2805,7 @@ export function CodexLaunchPreviewModal({
                   <p>
                     {manualRefreshResult.status === "running"
                       ? t("codex.launchPreview.forceRefreshRunning")
-                      : manualRefreshResult.status === "success"
+                      : manualRefreshResult.status === "success" || manualRefreshResult.status === "backing-up"
                         ? t("codex.launchPreview.forceRefreshSuccess")
                         : t("codex.launchPreview.forceRefreshDescription")}
                   </p>
@@ -2803,9 +2830,16 @@ export function CodexLaunchPreviewModal({
                   <span>
                     {manualRefreshResult.status === "running"
                       ? t("codex.launchPreview.forceRefreshRunning")
-                      : t("codex.launchPreview.forceRefreshSuccess")}
+                      : manualRefreshResult.status === "backing-up"
+                        ? t("settings.transfer.backup.feedback.running")
+                        : manualRefreshResult.backupPath
+                          ? t("settings.transfer.backup.feedback.runSuccess", { path: manualRefreshResult.backupPath })
+                          : t("codex.launchPreview.forceRefreshSuccess")}
                   </span>
                 </div>
+              )}
+              {manualRefreshResult.backupError && (
+                <ModalErrorMessage message={t("settings.transfer.backup.feedback.runFailed", { error: manualRefreshResult.backupError })} />
               )}
             </div>
             <div className="modal-footer codex-launch-preview-refresh-footer">
@@ -2824,7 +2858,9 @@ export function CodexLaunchPreviewModal({
                 disabled={forceRefreshing}
               >
                 {forceRefreshing
-                  ? t("codex.launchPreview.forceRefreshRunning")
+                  ? manualRefreshResult.status === "backing-up"
+                    ? t("settings.transfer.backup.running")
+                    : t("codex.launchPreview.forceRefreshRunning")
                   : t("codex.launchPreview.forceRefreshRetry", "重新检测")}
               </button>
               {manualRefreshResult.status === "error" && manualRefreshResult.requiresReauth && (

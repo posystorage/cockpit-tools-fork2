@@ -12,7 +12,8 @@ The unified bank contains 18 calibrated candidates, including Claude Sonnet 5.5
 and Haiku 5.5. The scorer and challenge generator are byte-identical to the
 previous pinned version. The full bank, robust feature space and sample-count
 calibration are kept together; candidates are not removed or relabelled.
-GPT-6.1 Sol and Terra have no calibrated reference in this version.
+GPT-6.1 Sol and Terra and GPT-6.2 Sol and Astra have no calibrated reference
+in this version.
 
 metadata.json records the upstream bank hash, the compacted package hash, source
 commit and paired JavaScript hashes. The compacted bank is compared as parsed

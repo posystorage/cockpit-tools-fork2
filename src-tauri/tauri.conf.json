@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Cockpit Tools",
-  "version": "1.3.82",
+  "version": "1.4.2",
   "identifier": "com.jlcodes.cockpit-tools",
   "build": {
     "beforeDevCommand": "node scripts/prepare-tauri.cjs && npm run dev",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "node scripts/prepare-tauri.cjs && npm run build",
     "frontendDist": "../dist"
   },
@@ -92,7 +92,8 @@
       "../src/assets/icons/workbuddy.png": "native-menu-icons/workbuddy.png",
       "../src/assets/icons/zed.png": "native-menu-icons/zed.png",
       "../src/assets/icons/zcode.png": "native-menu-icons/zcode.png",
-      "../resources/codex/LICENSE.CLIProxyAPI": "licenses/CLIProxyAPI.txt"
+      "../resources/codex/LICENSE.CLIProxyAPI": "licenses/CLIProxyAPI.txt",
+      "../resources/licenses/dnd-kit.txt": "licenses/dnd-kit.txt"
     },
     "macOS": {
       "bundleName": "Cockpit Tools",

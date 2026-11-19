@@ -51,7 +51,8 @@ for (const boundary of ['access', 'bind', 'start', 'switch', 'reload-account', '
         resolveCodexApiProviderPresetId: () => 'custom', resolveGatewayModeByWireApi: () => 'gateway',
         resolveProviderWireApi: () => 'responses', buildCodexProviderGatewayBindId: () => 'old-binding',
         resolveCodexProviderBindAccountId: () => 'old-binding',
-        updateCodexInstance: operation('bind'), startCodexInstance: operation('start'),
+        updateCodexInstance: operation('bind', { id: 'old-instance', launchMode: 'desktop' }),
+        startCodexInstance: operation('start'),
         switchInstanceAccount: operation('switch', false), reloadCurrentAccount: operation('reload-account'),
         reloadLocalAccessState: operation('reload-api'), reloadCodexInstances: operation('reload-instances'),
         setLastEnabledProviderId: () => calls.push('provider-state'),
@@ -134,7 +135,9 @@ test('an account launch already dispatched before closing continues without touc
     activeLaunchPreviewAccount: { id: 'old-account' }, launchPreviewInstanceId: 'old-instance', launchPreviewCliIntent: false,
     persistCodexLaunchPreviewLastInstanceId() {}, isCodexApiKeyAccount: () => false,
     DEFAULT_CODEX_INSTANCE_ID: '__default__', resolveCodexProviderBindAccountId: () => 'old-binding',
-    codexInstanceStore: { updateInstance: async () => { calls.push('bind'); },
+    codexInstanceStore: { updateInstance: async () => {
+      calls.push('bind'); return { id: 'old-instance', launchMode: 'desktop' };
+    },
       startInstance: () => { calls.push('start'); return gate.promise; } },
     setLaunchPreviewAccount: () => { calls.push('close'); current = false; },
   };

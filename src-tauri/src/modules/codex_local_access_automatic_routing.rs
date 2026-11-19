@@ -73,9 +73,9 @@ fn automatic_api_service_account_model_slots(account: &CodexAccount) -> Vec<(Str
 /// Chat Completions 账号需要 Gateway 做协议转换。Responses 账号只有在显式配置的图片
 /// 转模型目标能够匹配候选上游模型，或命中官方 DeepSeek 的既有自动转模型规则时，
 /// 才需要 Gateway；模型图片能力表本身不参与这项判断。
-fn automatic_api_service_provider_route_eligible(
+fn automatic_api_service_provider_route_eligible<Models: AsRef<[String]>>(
     account: &CodexAccount,
-    upstream_models: &[String],
+    upstream_models: impl FnOnce() -> Models,
 ) -> bool {
     if !account.is_api_key_auth() {
         return false;
@@ -88,10 +88,10 @@ fn automatic_api_service_provider_route_eligible(
         .as_deref()
         .is_some_and(|model| !model.trim().is_empty())
     {
-        return automatic_api_service_vision_routing_model(account, upstream_models).is_some();
+        return automatic_api_service_vision_routing_model(account, upstream_models().as_ref()).is_some();
     }
     is_official_deepseek_account(account)
-        && automatic_api_service_vision_routing_model(account, upstream_models).is_some()
+        && automatic_api_service_vision_routing_model(account, upstream_models().as_ref()).is_some()
 }
 
 /// 账号在自动路由里是否存在「图片自动转到识图模型」的兜底模型。
@@ -338,19 +338,45 @@ fn automatic_api_service_route_models(
     models
 }
 
-/// DeepSeek 模型在客户端模型列表里的默认推理档位。
-///
-/// 官方 DeepSeek 模板声明为 `high`，但 Cockpit 的 API 服务默认选最高档：DeepSeek 官方目录
-/// 已声明支持 `max`，接管 profile 时也会补齐客户端的 `max` 档位开关。该值只决定
-/// 「尚未选择过档位」或「当前档位对该模型不可用」时的回落值，不会覆盖用户已保存的档位。
-const DEEPSEEK_DEFAULT_REASONING_EFFORT: &str = "max";
+fn bailian_token_plan_model_template(account: &CodexAccount, upstream: &str) -> Option<Value> {
+    if !account.is_api_key_auth() || !upstream.eq_ignore_ascii_case("qwen3.8-max") {
+        return None;
+    }
+    let base = Url::parse(account.api_base_url.as_deref()?.trim()).ok()?;
+    if !matches!(
+        base.host_str(),
+        Some("token-plan.cn-beijing.maas.aliyuncs.com" | "token-plan.ap-southeast-1.maas.aliyuncs.com")
+    ) || provider_gateway_wire_api_for_account(account) != "responses"
+    {
+        return None;
+    }
 
-/// 账号模型的官方模板（目前覆盖 DeepSeek 官方目录）。
+    // Match the official Codex metadata for Bailian Token Plan.
+    let context_window = 983_616;
+    Some(json!({
+        "supports_parallel_tool_calls": false,
+        "default_reasoning_level": "xhigh",
+        "supported_reasoning_levels": [
+            {"effort":"low","description":"Low"},
+            {"effort":"medium","description":"Medium"},
+            {"effort":"xhigh","description":"Extra high"}
+        ],
+        "context_window": context_window,
+        "max_context_window": context_window,
+        "effective_context_window_percent": 95,
+        "auto_compact_token_limit": codex_protocol::derived_auto_compact_token_limit(context_window)
+    }))
+}
+
+/// 账号模型的供应商元数据。
 fn account_model_template(account: &CodexAccount, model: &str) -> Option<Value> {
     let model = model.trim();
     if let Some(catalog) = remote_catalog_for_account(account) {
         return catalog["models"].as_array()?.iter()
             .find(|entry| entry["slug"].as_str() == Some(model)).cloned();
+    }
+    if let Some(template) = bailian_token_plan_model_template(account, model) {
+        return Some(template);
     }
     if !is_official_deepseek_account(account) {
         if let Some(template) = codex_protocol::deepseek_model_template(model) {
@@ -368,7 +394,7 @@ fn account_model_template(account: &CodexAccount, model: &str) -> Option<Value> 
     }
     let catalog = codex_account::deepseek_official_catalog_json_for_account(account).ok()?;
     let catalog: Value = serde_json::from_str(&catalog).ok()?;
-    let mut entry = catalog
+    catalog
         .get("models")
         .and_then(Value::as_array)
         .into_iter()
@@ -379,10 +405,7 @@ fn account_model_template(account: &CodexAccount, model: &str) -> Option<Value> 
                 .and_then(Value::as_str)
                 .is_some_and(|slug| slug.eq_ignore_ascii_case(model))
         })
-        .cloned()?;
-    // 其余字段沿用官方模板，只把默认档位提升为最高档。
-    entry["default_reasoning_level"] = json!(DEEPSEEK_DEFAULT_REASONING_EFFORT);
-    Some(entry)
+        .cloned()
 }
 
 fn automatic_api_service_model_routing_value(
@@ -413,7 +436,7 @@ fn automatic_api_service_model_routing_value(
         );
         // Grok 供应商账号没有上游 API Key：模型直接以原生名称暴露，请求由 sidecar
         // 的 Grok(xAI) 执行器用绑定的 Grok 平台账号凭据发出。
-        if !automatic_api_service_provider_route_eligible(account, &upstream_models)
+        if !automatic_api_service_provider_route_eligible(account, || &upstream_models)
             || codex_account::is_grok_upstream_provider(account)
         {
             for model in models {
@@ -525,7 +548,7 @@ fn automatic_api_service_account_model_entries(
         .collect::<Vec<_>>();
     // 已进入 provider 路由且存在识图兜底模型时，客户端可对该路由暴露的任意模型发图片；
     // 这里描述图片能力，不决定账号是否进入 provider 路由。
-    let routed_vision = automatic_api_service_provider_route_eligible(account, &upstream_models)
+    let routed_vision = automatic_api_service_provider_route_eligible(account, || &upstream_models)
         && automatic_api_service_vision_routing_model(account, &upstream_models).is_some();
     automatic_api_service_route_models(collection, account, &[])
         .into_iter()
@@ -558,7 +581,7 @@ fn automatic_api_service_profile_extra_models(
     let mut gpt_backed_models: HashSet<String> = HashSet::new();
     for account in accounts {
         if !scoped_ids.iter().any(|id| id == &account.id)
-            || !is_local_access_eligible_account(account, collection.restrict_free_accounts)
+            || !is_local_access_eligible_account(account)
         {
             continue;
         }
@@ -679,7 +702,7 @@ pub(crate) fn overlay_rendered_pool_models_on_experimental_catalog(
                 .cloned()
         })
         .filter(|account| {
-            is_local_access_eligible_account(account, collection.restrict_free_accounts)
+            is_local_access_eligible_account(account)
         })
         .collect();
     if !pool_provides_gpt_models(&pool_accounts) {

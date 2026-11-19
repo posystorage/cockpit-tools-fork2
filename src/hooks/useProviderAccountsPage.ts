@@ -1,3 +1,4 @@
+import { readMissingLaunchPathApp } from '../utils/appLaunchPath';
 import { useDurableUiBooleanSetting } from './useDurableUiSetting';
 import type { FlowNoticeSettingKey } from '../utils/durableUiSettings';
 import { useAccountsOverviewFilterState } from './useAccountsOverviewFilterState';
@@ -24,6 +25,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
+import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import {
   isPrivacyModeEnabledByDefault,
@@ -123,6 +125,7 @@ export interface OAuthStartResponse {
 /** 各平台需要提供的数据服务函数 */
 export interface ProviderDataService {
   importFromJson: (content: string) => Promise<unknown[]>;
+  importFromFile?: (path: string) => Promise<unknown[]>;
   importFromLocal?: () => Promise<unknown[]>;
   addWithToken?: (token: string) => Promise<unknown>;
   exportAccounts: (ids: string[]) => Promise<string>;
@@ -1176,6 +1179,12 @@ export function useProviderAccountsPage<TAccount extends ProviderAccountBase>(
         }
         await fetchAccounts();
       } catch (e: unknown) {
+        const missingApp = readMissingLaunchPathApp(e);
+        if (missingApp === 'workbuddy_ai' || missingApp === 'minimaxcode' || missingApp === 'zcode' || missingApp === 'qoder') {
+          setInjecting(null);
+          if (String(e).startsWith('APP_PATH_MISSING_AFTER_SWITCH:')) await fetchAccounts();
+          return;
+        }
         const retrySwitch = async () => {
           await injectFn(accountId);
           let resolvedCurrentAccountId: string | null = accountId;
@@ -1391,12 +1400,13 @@ export function useProviderAccountsPage<TAccount extends ProviderAccountBase>(
 
   const openAddModal = useCallback(
     (tab: string) => {
+      if (showAddModalRef.current && addTabRef.current === tab && oauthTabKeys.includes(tab)) return;
       cancelPendingOauthLogin();
       setAddTab(tab);
       setShowAddModal(true);
       resetAddModalState();
     },
-    [cancelPendingOauthLogin, resetAddModalState],
+    [cancelPendingOauthLogin, oauthTabKeys, resetAddModalState],
   );
 
   const closeAddModal = useCallback(() => {
@@ -1702,20 +1712,15 @@ export function useProviderAccountsPage<TAccount extends ProviderAccountBase>(
     };
   }, [consumeExternalProviderImport, platformId]);
 
-  const handlePickImportFile = useCallback(() => {
-    importFileInputRef.current?.click();
-  }, []);
-
   // ─── Import ───────────────────────────────────────────────────────────
-  const handleImportJsonFile = useCallback(
-    async (file: File) => {
+  const runJsonImport = useCallback(
+    async (importAccounts: () => Promise<unknown[]>) => {
       setImporting(true);
       setAddStatus('loading');
       setAddMessage(t('common.shared.import.importing', '正在导入...'));
 
       try {
-        const content = await file.text();
-        const imported = await dataService.importFromJson(content);
+        const imported = await importAccounts();
         await fetchAccounts();
         if (platformId) {
           await emitAccountsChanged({
@@ -1748,8 +1753,38 @@ export function useProviderAccountsPage<TAccount extends ProviderAccountBase>(
 
       setImporting(false);
     },
-    [dataService, fetchAccounts, platformId, resetAddModalState, t],
+    [fetchAccounts, platformId, resetAddModalState, t],
   );
+
+  const handleImportJsonFile = useCallback(
+    (file: File) => runJsonImport(async () => dataService.importFromJson(await file.text())),
+    [dataService.importFromJson, runJsonImport],
+  );
+
+  const handlePickImportFile = useCallback(async () => {
+    const importFromFile = dataService.importFromFile;
+    if (!importFromFile) {
+      importFileInputRef.current?.click();
+      return;
+    }
+    try {
+      const path = await openFileDialog({
+        multiple: false,
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      });
+      if (typeof path === 'string') {
+        await runJsonImport(() => importFromFile(path));
+      }
+    } catch (error) {
+      setAddStatus('error');
+      setAddMessage(
+        t('common.shared.import.failedMsg', {
+          error: String(error).replace(/^Error:\s*/, ''),
+          defaultValue: '导入失败: {{error}}',
+        }),
+      );
+    }
+  }, [dataService.importFromFile, runJsonImport, t]);
 
   const handleImportFromLocal = useMemo(() => {
     if (!dataService.importFromLocal) return null;
@@ -2086,9 +2121,9 @@ export function useProviderAccountsPage<TAccount extends ProviderAccountBase>(
       typeof oauthAutoPrepareConfig === 'function'
         ? oauthAutoPrepareConfig(addTab)
         : oauthAutoPrepareConfig !== false;
-    if (!showAddModal || !oauthTabKeys.includes(addTab) || oauthUrl || !shouldAutoPrepare) return;
+    if (!showAddModal || !oauthTabKeys.includes(addTab) || oauthUrl || oauthPrepareError || !shouldAutoPrepare) return;
     prepareOauthUrl();
-  }, [showAddModal, addTab, oauthUrl, prepareOauthUrl, oauthTabKeys, oauthAutoPrepareConfig]);
+  }, [showAddModal, addTab, oauthUrl, oauthPrepareError, prepareOauthUrl, oauthTabKeys, oauthAutoPrepareConfig]);
 
   // Cancel OAuth when modal closes or tab changes
   useEffect(() => {
@@ -2289,7 +2324,6 @@ export function useProviderAccountsPage<TAccount extends ProviderAccountBase>(
 
   const handleOpenOauthUrlWithMode = useCallback(async (incognito: boolean) => {
     if (!oauthUrl) return;
-    setOauthCompleteError(null);
     oauthLog('用户点击打开授权链接', {
       loginId: oauthLoginIdRef.current,
       authUrl: oauthUrl,

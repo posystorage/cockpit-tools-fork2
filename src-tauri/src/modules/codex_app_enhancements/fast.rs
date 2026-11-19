@@ -1,4 +1,4 @@
-//! Adapt API-service quota gates in the current document on Windows and macOS.
+//! Adapt incoming API-service quota data on Windows and macOS.
 //! Other native enhancements use document preload or the guarded startup path.
 
 use futures_util::{SinkExt, StreamExt};
@@ -13,6 +13,7 @@ use tokio::sync::watch;
 use tokio::time::{timeout, Instant};
 use tokio_tungstenite::tungstenite::{protocol::WebSocketConfig, Message};
 use tokio_tungstenite::{connect_async_with_config, MaybeTlsStream, WebSocketStream};
+use super::rspack_speed_assets::Assets;
 
 const GUARD_SCRIPT: &str = include_str!("startup_guard.js");
 const PRELOAD_SCRIPT: &str = include_str!("startup_preload.js");
@@ -123,6 +124,7 @@ pub(super) fn browser_preload_source(
     api_key_auth_verified: bool,
     api_service: bool,
     owner: &str,
+    speed_assets: Option<&Assets>,
 ) -> String {
     guard_document_install(
         &format!(
@@ -133,7 +135,8 @@ pub(super) fn browser_preload_source(
                 quota_compat,
                 api_key_auth_verified,
                 api_service,
-                owner
+                owner,
+                speed_assets,
             )
         ),
         "",
@@ -573,10 +576,6 @@ fn safe_reason(value: &Value, fallback: &str) -> String {
 fn command_reason(error: &str) -> String {
     let operation = if error.ends_with("Page.addScriptToEvaluateOnNewDocument") {
         "registration"
-    } else if error.ends_with("Debugger.enable") {
-        "debugger-enable"
-    } else if error.ends_with("Debugger.setBreakpointByUrl") {
-        "breakpoint-registration"
     } else if error.ends_with("Runtime.evaluate") || error.contains("evaluation") {
         "evaluation"
     } else {
@@ -599,10 +598,11 @@ fn bootstrap(
     api_key_auth_verified: bool,
     api_service: bool,
     owner: &str,
+    speed_assets: Option<&Assets>,
 ) -> String {
-    let options = json!({"nativeFast":native_fast,"nativePredictions":native_predictions,"quotaCompat":quota_compat,"apiKeyAuthVerified":api_key_auth_verified,"apiService":api_service,"owner":owner});
+    let options = json!({"nativeFast":native_fast,"nativePredictions":native_predictions,"quotaCompat":quota_compat,"apiKeyAuthVerified":api_key_auth_verified,"apiService":api_service,"owner":owner,"rspackSpeedAssets":speed_assets});
     let state = STATE_SCRIPT.replace("__COCKPIT_STATE_OPTIONS__", &options.to_string());
-    format!("{state}\n{GUARD_SCRIPT}\n{SCRIPT}\n{PREDICTIONS_SCRIPT}\n{PREDICTIONS_RSPACK_SCRIPT}\n{SERVICE_RSPACK_SCRIPT}\n{QUOTA_SCRIPT}\n{QUOTA_CURRENT_SCRIPT}\n;true;")
+    format!("{state}\n{GUARD_SCRIPT}\n{SCRIPT}\n{PREDICTIONS_SCRIPT}\n{PREDICTIONS_RSPACK_SCRIPT}\n{SERVICE_RSPACK_SCRIPT}\n{QUOTA_SCRIPT}\n{QUOTA_CURRENT_SCRIPT}true;")
 }
 
 
@@ -670,7 +670,7 @@ async fn prepare_future_document(
         let result = registration
             .session()
             .evaluate(
-                "window.__cockpitServiceRspack.verifySpeedDocument()".to_string(),
+                "window.__cockpitServiceRspack.verifyRequestedDocument()".to_string(),
                 context,
                 PREPARE_TIMEOUT,
             )
@@ -680,7 +680,7 @@ async fn prepare_future_document(
             return Err("context-changed".to_string());
         }
         if result.get("ok").and_then(Value::as_bool) != Some(true) {
-            return Err(safe_reason(&result, "speed-contract-failed"));
+            return Err(safe_reason(&result, "rspack-contract-failed"));
         }
         return register_live_runtime(registration, context).await;
     }
@@ -1370,25 +1370,8 @@ async fn maintain(registration: &mut Registration) -> Result<(), String> {
         read_activation(registration, context).await?;
     }
     if registration.live_quota {
-        // Rspack may finish evaluating its complete quota graph after Fast or
-        // predictions became active. Recheck that independent quota proof.
-        read_activation(registration, context).await?;
         // A subsequently attached worker must not replace an evaluated Fast
         // module's state with the live-quota guard's narrower feature mask.
-        if registration.native_module_active {
-            if !registration.live_quota_armed {
-                registration
-                    .session()
-                    .evaluate(
-                        "window.__cockpitQuotaCompat.installLiveQuotaGuard({})".to_string(),
-                        context,
-                        COMMAND_TIMEOUT,
-                    )
-                    .await?;
-                registration.live_quota_armed = true;
-            }
-            return Ok(());
-        }
         if registration.script_id.is_none()
             && registration.document.due()
             && registration.session().pending_additions.is_empty()
@@ -1404,19 +1387,19 @@ async fn maintain(registration: &mut Registration) -> Result<(), String> {
                 }
             }
         }
-        if !registration.live_quota_armed && registration.live_quota_attempt.due() {
+        if !registration.native_module_active
+            && !registration.live_quota_armed
+            && registration.live_quota_attempt.due()
+        {
             match arm_live_quota_guard(registration, context).await {
                 Ok(()) => {}
                 Err(reason) => {
                     let retryable = matches!(
                         reason.as_str(),
-                        "quota-location-failed"
-                            | "quota-location-unavailable"
-                            | "context-changed"
+                        "quota-location-unavailable" | "asset-unavailable" | "context-changed"
                             | "evaluation-timeout"
                             | "transport-failed"
-                    ) || reason.starts_with("debugger-enable-")
-                        || reason.starts_with("breakpoint-registration-");
+                    );
                     registration.live_quota_attempt.failed(retryable);
                     registration.report("activation", &reason).await;
                 }
@@ -1502,11 +1485,26 @@ pub(super) async fn run(
     preload_first: bool,
     startup: Option<Arc<StartupReload>>,
     stop: watch::Receiver<bool>,
+    speed_assets: Option<&Assets>,
 ) -> Result<(), String> {
-    let live_quota = cfg!(any(target_os = "windows", target_os = "macos")) && api_service;
-    // Credential reads can temporarily supply the API-service fallback profile.
-    // It must not enter the old startup reload before live quota becomes ready.
-    let startup = if api_service { None } else { startup };
+    // The profile reader has verified either pure API authentication or an
+    // independent API route with OAuth retained. Only those profiles can reuse
+    // a launch transaction's single fresh-document permission.
+    // The profile reader has already verified the API route for predictions.
+    let verified_api_route =
+        (native_fast && api_key_auth_verified) || native_predictions || quota_compat;
+    let startup = if api_service && (!verified_api_route || !native_fast && !native_predictions) {
+        None
+    } else {
+        startup
+    };
+    // Fresh launches install the complete validated module graph. Reattaching
+    // to an existing page never creates permission to reload user work.
+    let live_quota = cfg!(any(target_os = "windows", target_os = "macos"))
+        && api_service
+        && startup.is_none();
+    let preload_first =
+        preload_first || (cfg!(target_os = "windows") && verified_api_route && startup.is_some());
     run_with_live_quota(
         websocket_url,
         profile_dir,
@@ -1519,6 +1517,7 @@ pub(super) async fn run(
         startup,
         stop,
         live_quota,
+        speed_assets,
     )
     .await
 }
@@ -1535,6 +1534,7 @@ async fn run_with_live_quota(
     startup: Option<Arc<StartupReload>>,
     mut stop: watch::Receiver<bool>,
     live_quota: bool,
+    speed_assets: Option<&Assets>,
 ) -> Result<(), String> {
     if !native_fast && !native_predictions && !quota_compat && !api_service || *stop.borrow() {
         return Ok(());
@@ -1569,6 +1569,7 @@ async fn run_with_live_quota(
         api_key_auth_verified,
         api_service,
         &owner,
+        speed_assets,
     );
     let startup_runtime = guard_document_install(&format!("{runtime}\n{PRELOAD_SCRIPT}"), "");
     let browser_snapshot = json!({"owner":format!("preload-{browser_port}"),

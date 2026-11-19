@@ -7,46 +7,88 @@ function nodes(value: any): any[] {
   return value?.props ? [value, ...nodes(value.props.children)] : [];
 }
 
-test('probe avoids duplicate submissions and keeps cleanup failures visible inside the dialog', async () => {
+test('batch probe submits once and keeps cleanup failures visible in the cell detail', async () => {
   const probe = deferred<any>();
   let calls = 0;
   let closed = 0;
   const h = loadHookModule(new URL('./WorkbuddyModelProbeModal.tsx', import.meta.url), {
     'react-i18next': { useTranslation: () => ({ t: (key: string) => key }) },
     '../../types/workbuddy': { getWorkbuddyAccountDisplayEmail: (account: any) => account.email },
-    '../SingleSelectFilterDropdown': { SingleSelectFilterDropdown: 'picker' },
+    '../../presentation/platformAccountPresentation': { buildWorkbuddyAccountPresentation: () => ({ planLabel: 'PRO', planClass: 'pro' }) },
     '../../hooks/useEscClose': { useEscCloseTopmost() {} },
     '../../services/workbuddyService': {
-      fetchWorkbuddyCloudModels: async () => [],
+      fetchWorkbuddyCloudModels: async () => [
+        { id: 'chosen', name: 'Chosen', credits: null, description: null, supportsImages: false, isDefault: false },
+      ],
+      fetchCodebuddyCnCloudModels: async () => [],
       probeWorkbuddyModel: () => { calls++; return probe.promise; },
+      probeCodebuddyCnModel: () => { throw new Error('unused'); },
     },
     '../../utils/workbuddyProbeStatus': {
-      clearWorkbuddyProbeRecord() {}, setWorkbuddyProbeRecord() {}, parseProbeResetAt: () => null,
+      clearWorkbuddyProbeRecord() {},
+      setWorkbuddyProbeRecord() {},
+      parseProbeResetAt: () => null,
+      dismissWorkbuddyProbeRecord() {},
+      subscribeWorkbuddyProbeStatus: () => () => {},
     },
   });
+
   h.render(() => h.exports.WorkbuddyModelProbeModal({
-    accounts: [{ id: 'a', email: 'a@example.invalid' }], currentAccountId: 'a', onClose: () => { closed++; },
+    accounts: [{ id: 'a', email: 'a@example.invalid' }],
+    currentAccountId: 'a',
+    onClose: () => { closed++; },
   }));
   await settlePromises();
-  nodes(h.flush()).find((node) => node.type === 'input' && node.props.id === 'workbuddy-probe-model')
-    .props.onChange({ target: { value: 'chosen' } });
-  const tree = nodes(h.flush());
-  const submit = tree.find((node) => node.type === 'button' && node.props.className === 'btn btn-primary');
+
+  // 勾选模型目录里的第一个模型
+  const modelLabel = nodes(h.flush()).find((node) => node.props?.className === 'wb-probe-model-item');
+  assert.ok(modelLabel, 'model list should render');
+  const modelCheckbox = modelLabel.props.children.find((child: any) => child?.type === 'input');
+  modelCheckbox.props.onChange({ target: { checked: true } });
+
+  const submit = nodes(h.flush()).find(
+    (node) => node.type === 'button' && node.props.className === 'btn btn-primary',
+  );
   assert.equal(submit.props.disabled, false);
   submit.props.onClick();
   submit.props.onClick();
   assert.equal(calls, 1);
-  assert.equal(nodes(h.flush()).find((node) => node.props.className === 'modal-overlay').props.onClick, undefined);
-  const cancel = nodes(h.flush()).find((node) => node.type === 'button' && node.props.className === 'btn btn-secondary');
-  assert.equal(cancel.props.disabled, undefined);
-  probe.resolve({ status: 'available', message: '', reply: 'OK', conversationId: 'created',
-    conversationDeleted: false, cleanupError: 'HTTP 503', keepConversation: false });
+
+  // 弹层点击背景不关闭（仅显式关闭）
+  assert.equal(nodes(h.flush()).find((node) => node.props.className === 'modal-overlay wb-probe-overlay').props.onClick, undefined);
+
+  probe.resolve({
+    status: 'available',
+    message: '',
+    reply: 'OK',
+    conversationId: 'created',
+    conversationDeleted: false,
+    cleanupError: 'HTTP 503',
+    keepConversation: false,
+  });
   await settlePromises();
-  const result = nodes(h.flush());
-  assert.ok(result.some((node) => node.props.children === 'workbuddy.modelProbe.retained'));
-  assert.ok(!result.some((node) => node.props.children === 'workbuddy.modelProbe.deleted'));
-  assert.ok(result.some((node) => Array.isArray(node.props.children) && node.props.children.includes('workbuddy.modelProbe.cleanupFailed')));
-  cancel.props.onClick();
-  assert.equal(closed, 1);
+
+  const detail = nodes(h.flush());
+  assert.ok(detail.some((node) => node.props.className === 'wb-probe-reply' && node.props.children === 'OK'));
+  assert.ok(!detail.some((node) => node.props.className === 'wb-probe-model-list'));
+  assert.ok(detail.some((node) => node.props.children === 'workbuddy.modelProbe.retained'));
+  assert.ok(!detail.some((node) => node.props.children === 'workbuddy.modelProbe.deleted'));
+  assert.ok(detail.some((node) => Array.isArray(node.props.children) && node.props.children.includes('workbuddy.modelProbe.cleanupFailed')));
+
+  const backToResults = detail.find((node) => node.props.className === 'wb-probe-quiet');
+  backToResults.props.onClick();
+  const cell = nodes(h.flush()).find(
+    (node) => node.type === 'button' && node.props.className === 'wb-probe-cell ok',
+  );
+  assert.ok(cell, 'returning to the matrix should retain the result');
+  cell.props.onClick();
+  assert.ok(nodes(h.flush()).some((node) => node.props.className === 'wb-probe-reply'));
+
+  const backToSetup = nodes(h.flush()).find(
+    (node) => node.type === 'button' && node.props.className === 'btn btn-secondary',
+  );
+  backToSetup.props.onClick();
+  assert.ok(nodes(h.flush()).some((node) => node.props.className === 'wb-probe-model-list'));
+  assert.equal(closed, 0);
   h.unmount();
 });

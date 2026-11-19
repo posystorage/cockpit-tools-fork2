@@ -26,8 +26,67 @@ pub(super) fn normalize_empty_function_arguments(body: &mut Value) {
     }
 }
 
-/// DeepSeek requires tool results immediately after their calls. Repair inline
-/// history only; continuation references may own results outside this request.
+/// Restore the text kept in a client-compatible reasoning summary for DeepSeek.
+/// Only the inline upstream copy changes. An opaque item without text stays opaque.
+pub(super) fn restore_deepseek_reasoning_text(body: &mut Value) {
+    let Some(input) = body.get_mut("input").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for item in input.iter_mut().filter(|item| item["type"] == "reasoning") {
+        if !item["content"].is_null() && !item["content"].as_array().is_some_and(Vec::is_empty) {
+            continue;
+        }
+        let Some(summary) = item["summary"].as_array() else {
+            continue;
+        };
+        let text = summary
+            .iter()
+            .filter(|part| part["type"] == "summary_text")
+            .filter_map(|part| part["text"].as_str())
+            .filter(|text| !text.trim().is_empty())
+            .collect::<Vec<_>>();
+        if !text.is_empty() {
+            item["content"] = json!([{"type":"reasoning_text","text":text.join("\n")}]);
+        }
+    }
+}
+
+/// DeepSeek accepts plaintext reasoning content. Its UUID-index marker is
+/// not an encrypted payload, and must not replace valid plaintext history.
+pub(super) fn normalize_deepseek_reasoning_history(body: &mut Value) {
+    let Some(input) = body.get_mut("input").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for item in input {
+        if item["type"] != "reasoning"
+            || !item["content"].as_array().is_some_and(|parts| {
+                !parts.is_empty() && parts.iter().all(|part| {
+                    part["type"] == "reasoning_text"
+                        && part["text"].as_str().is_some_and(|text| !text.trim().is_empty())
+                })
+            })
+        {
+            continue;
+        }
+        let placeholder = item["encrypted_content"].as_str()
+            .and_then(|stub| stub.rsplit_once('-'))
+            .is_some_and(|(id, index)| {
+                id.len() == 36 && uuid::Uuid::parse_str(id).is_ok()
+                    && !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit())
+            });
+        if placeholder {
+            item.as_object_mut().expect("reasoning item is an object").remove("encrypted_content");
+        }
+    }
+}
+
+pub(super) fn deepseek_rejected_missing_reasoning(message: &str) -> bool {
+    let message = message.to_ascii_lowercase();
+    message.contains("reasoning_text") && message.contains("must be passed back")
+}
+
+/// DeepSeek requires results immediately after the entire batch of calls.
+/// Repair inline history only; continuation references may own results outside this request.
 pub(super) fn normalize_deepseek_tool_history(body: &mut Value) {
     if !body["previous_response_id"].is_null() || !body["conversation"].is_null() {
         return;
@@ -46,59 +105,82 @@ pub(super) fn normalize_deepseek_tool_history(body: &mut Value) {
             *last = index;
         }
     }
-    let mut moves = HashMap::new();
+    let mut batches = HashMap::new();
     let mut moved_outputs = HashSet::new();
-    let mut missing = HashSet::new();
-    for (index, item) in input.iter().enumerate() {
-        let output_type = match item["type"].as_str() {
-            Some("function_call") if item["arguments"].is_string() => "function_call_output",
-            Some("custom_tool_call") if item["input"].is_string() => "custom_tool_call_output",
-            _ => continue,
-        };
-        let Some(id) = item["call_id"].as_str().filter(|id| !id.trim().is_empty()) else {
-            continue;
-        };
-        if !item["name"].as_str().is_some_and(|name| !name.is_empty()) || opaque_call(item) {
+    let mut batch_start = 0;
+    while batch_start < input.len() {
+        let batch_len = input[batch_start..]
+            .iter()
+            .take_while(|item| {
+                matches!(item["type"].as_str(), Some("function_call" | "custom_tool_call"))
+            })
+            .count();
+        if batch_len == 0 {
+            batch_start += 1;
             continue;
         }
-        match occurrences[id] {
-            (1, _) if output_type == "function_call_output" => {
-                missing.insert(index);
-            }
-            (2, output) if output > index + 1
-                && input[output]["type"] == output_type
-                && !opaque_call(&input[output]) =>
-            {
-                moves.insert(index, output);
-                moved_outputs.insert(output);
-            }
-            _ => {}
+        let batch_end = batch_start + batch_len;
+        let pairs = (batch_start..batch_end)
+            .map(|index| {
+                let call = &input[index];
+                let output_type = match call["type"].as_str() {
+                    Some("function_call") if call["arguments"].is_string() => "function_call_output",
+                    Some("custom_tool_call") if call["input"].is_string() => "custom_tool_call_output",
+                    _ => return None,
+                };
+                let id = call["call_id"].as_str().filter(|id| !id.trim().is_empty())?;
+                if !call["name"].as_str().is_some_and(|name| !name.is_empty()) || opaque_call(call) {
+                    return None;
+                }
+                match occurrences[id] {
+                    (1, _) if output_type == "function_call_output" => Some((id, None)),
+                    (2, output) if output >= batch_end
+                        && input[output]["type"] == output_type
+                        && !opaque_call(&input[output]) =>
+                    {
+                        Some((id, Some(output)))
+                    }
+                    _ => None,
+                }
+            })
+            .collect::<Option<Vec<_>>>();
+        batch_start = batch_end;
+        let Some(pairs) = pairs else {
+            continue;
+        };
+        let mut outputs: Vec<_> = pairs.iter().filter_map(|(_, output)| *output).collect();
+        outputs.sort_unstable();
+        let missing: Vec<_> = pairs
+            .into_iter()
+            .filter_map(|(id, output)| output.is_none().then(|| id.to_owned()))
+            .collect();
+        if missing.is_empty() && outputs.iter().copied().eq(batch_end..batch_end + outputs.len()) {
+            continue;
         }
+        moved_outputs.extend(outputs.iter().copied());
+        batches.insert(batch_end - 1, (outputs, missing));
     }
-    if moves.is_empty() && missing.is_empty() {
+    if batches.is_empty() {
         return;
     }
     let mut original = std::mem::take(input);
-    input.reserve(original.len() + missing.len());
+    input.reserve(original.len());
     for index in 0..original.len() {
         if moved_outputs.contains(&index) {
             continue;
         }
-        let item = original[index].take();
-        let result = if let Some(&output) = moves.get(&index) {
-            Some(original[output].take())
-        } else if missing.contains(&index) {
-            // Let the model decide how to proceed with the incomplete call.
-            Some(json!({
-                "type": "function_call_output",
-                "call_id": item["call_id"],
-                "output": "Tool result unavailable: the client did not record a result for this call."
-            }))
-        } else {
-            None
-        };
-        input.push(item);
-        input.extend(result);
+        input.push(original[index].take());
+        if let Some((outputs, missing)) = batches.remove(&index) {
+            input.extend(outputs.into_iter().map(|output| original[output].take()));
+            for call_id in missing {
+                // Let the model decide how to proceed with the incomplete call.
+                input.push(json!({
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": "Tool result unavailable: the client did not record a result for this call."
+                }));
+            }
+        }
     }
 }
 
@@ -180,6 +262,28 @@ pub(super) fn strip_legacy_codex_item_ids(body: &mut Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deepseek_reasoning_strips_only_identified_stubs_with_actual_reasoning_text() {
+        let stub = "00112233-4455-6677-8899-aabbccddeeff-12";
+        let text = json!([{"type":"reasoning_text","text":"  Keep the text exactly.\n"}]);
+        let mut body = json!({"input":[
+            {"type":"reasoning","encrypted_content":stub,"content":text},
+            {"type":"reasoning","encrypted_content":stub,"content":[]},
+            {"type":"reasoning","encrypted_content":stub,"content":[{"type":"summary_text","text":"summary"}]},
+            {"type":"reasoning","encrypted_content":"opaque-provider-cipher","content":text},
+            {"type":"compaction","encrypted_content":stub},
+        ]});
+        let original = body.clone();
+        normalize_deepseek_reasoning_history(&mut body);
+        assert_eq!(body["input"][0]["content"], original["input"][0]["content"]);
+        assert!(body["input"][0].get("encrypted_content").is_none());
+        assert_eq!(&body["input"].as_array().unwrap()[1..], &original["input"].as_array().unwrap()[1..]);
+        assert!(deepseek_rejected_missing_reasoning(
+            "The `reasoning_text` in the thinking mode must be passed back to the API. (request_id: fixture)"
+        ));
+        assert!(!deepseek_rejected_missing_reasoning("Invalid reasoning_text schema"));
+    }
 
     #[test]
     fn deepseek_history_leaves_opaque_ambiguous_and_server_owned_results_untouched() {

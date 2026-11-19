@@ -57,7 +57,7 @@ export function buildCodexAccountWindowStatQueries(
     resetTime?: number | null;
     windowMinutes?: number | null;
   }>,
-  nowSeconds: number,
+  nowMs: number,
 ): Array<{
   accountId: string;
   officialAccountId: string;
@@ -66,6 +66,7 @@ export function buildCodexAccountWindowStatQueries(
   startAt: number;
   endAt: number;
 }> {
+  const nowSeconds = Math.floor(nowMs / 1000);
   return windows.flatMap((window) => {
     if (window.id !== "primary" && window.id !== "secondary") {
       return [];
@@ -85,7 +86,7 @@ export function buildCodexAccountWindowStatQueries(
         accountEmail,
         windowKey: window.id,
         startAt: toCodexLocalAccessLogTimestamp(startSeconds),
-        endAt: toCodexLocalAccessLogTimestamp(nowSeconds),
+        endAt: nowMs,
       },
     ];
   });
@@ -145,6 +146,10 @@ export function formatCodexWindowCostUsd(value: number): string {
   return `$${formatCodexWindowCostAmount(value)}`;
 }
 
+export function formatCodexWindowAccountEstimate(value: number): string {
+  return `A ≈${formatCodexWindowCostUsd(value)}`;
+}
+
 /**
  * 按已消耗比例把窗口内累计费用折算成「满额约合多少」。
  *
@@ -184,7 +189,7 @@ export function formatCodexWindowStatsText(stats: CodexWindowStats): string {
   const parts = [
     `${formatCodexWindowRequestCount(stats.requestCount)} req`,
     formatCodexWindowTokenCount(stats.totalTokens),
-    `A $${formatCodexWindowCostAmount(stats.estimatedCostUsd)}`,
+    formatCodexWindowAccountEstimate(stats.estimatedCostUsd),
   ];
   if (stats.userCostUsd != null) {
     parts.push(`U $${formatCodexWindowCostAmount(stats.userCostUsd)}`);

@@ -528,11 +528,16 @@ impl Execution {
                 #[cfg(test)]
                 super::capture_live_geometry(&built)?;
                 if tokio::time::Instant::now() >= open_deadline {
-                    return Err(ServiceError::new(504,"upstream_connect_timeout","Image upstream response headers timed out"));
+                    return Err(ServiceError::new(
+                        504,
+                        "upstream_connect_timeout",
+                        "Image upstream response headers timed out",
+                    )
+                    .with_upstream_not_sent(true));
                 }
                 self.tracker.check_quota_before_send()?;
                 self.tracker.begin_attempt("http").await;
-                self.tracker.payload("upstream_request", "http", built.headers(), &payload.to_string());
+                self.tracker.payload_with("upstream_request", "http", built.headers(), || payload.to_string());
                 self.tracker.upstream_headers(built.headers());
                 self.tracker.image_request_models(
                     crate::models::codex_local_access::CodexLocalAccessImageRequestDiagnostic {
@@ -570,6 +575,15 @@ impl Execution {
                     }
                     if tokio::time::Instant::now() >= deadline {
                         return Err(super::super::retry::total_timeout());
+                    }
+                    // Non-streaming generation can finish before sending any headers.
+                    // A header timeout does not prove the POST was rejected; replaying
+                    // it on this or another source could generate a second image.
+                    if !streaming
+                        && error.code == "upstream_connect_timeout"
+                        && !error.upstream_not_sent
+                    {
+                        return Err(error);
                     }
                     let stream_open_timeout = streaming && error.code == "upstream_connect_timeout";
                     if stream_open_timeout {
@@ -616,7 +630,7 @@ impl Execution {
                         deadline,
                     )
                     .await?;
-                    self.renew_transport_after_tls(&error).await?;
+                    self.renew_transport_after_failure(&error).await?;
                     continue;
                 }
             };
@@ -656,7 +670,7 @@ impl Execution {
                                     deadline,
                                 )
                                 .await?;
-                                self.renew_transport_after_tls(&error).await?;
+                                self.renew_transport_after_failure(&error).await?;
                                 continue;
                             }
                             return Err(error);
@@ -678,6 +692,7 @@ impl Execution {
                     deadline,
                     &self.selected.image_model,
                     super::super::grok_errors::applies(&self.selected.route),
+                    self.selected.route.chatgpt_plan,
                 )
                 .await?;
                 exhausted = inspected.10.as_ref().and_then(super::super::quota_exhaustion::code);
@@ -879,8 +894,8 @@ impl Execution {
         }
     }
 
-    async fn renew_transport_after_tls(&mut self, error: &ServiceError) -> Result<(), ServiceError> {
-        if !matches!(error.transport_failure, Some(super::super::contract::TransportFailureKind::TlsDecrypt | super::super::contract::TransportFailureKind::TlsDecryptHttp2)) {
+    async fn renew_transport_after_failure(&mut self, error: &ServiceError) -> Result<(), ServiceError> {
+        if error.transport_failure_kind().is_none() {
             return Ok(());
         }
         self.tracker.release_route();

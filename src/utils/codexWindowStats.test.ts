@@ -57,7 +57,7 @@ test("builds 5h/7d queries from last full window to now in log milliseconds", ()
       { id: "primary", resetTime: resetAt, windowMinutes: 300 },
       { id: "secondary", resetTime: resetAt + 86_400, windowMinutes: 10_080 },
     ],
-    now,
+    now * 1000 + 431,
   );
   assert.deepEqual(queries, [
     {
@@ -66,7 +66,7 @@ test("builds 5h/7d queries from last full window to now in log milliseconds", ()
       accountEmail: "account@example.com",
       windowKey: "primary",
       startAt: (resetAt - 300 * 60) * 1000,
-      endAt: now * 1000,
+      endAt: now * 1000 + 431,
     },
     {
       accountId: "acct-1",
@@ -74,7 +74,7 @@ test("builds 5h/7d queries from last full window to now in log milliseconds", ()
       accountEmail: "account@example.com",
       windowKey: "secondary",
       startAt: (resetAt + 86_400 - 10_080 * 60) * 1000,
-      endAt: now * 1000,
+      endAt: now * 1000 + 431,
     },
   ]);
 });
@@ -105,10 +105,10 @@ test("renders Sub2API window_stats fields and hides empty usage", () => {
     estimatedCostUsd: 47.78,
   };
   assert.equal(hasVisibleCodexWindowStats(stats), true);
-  assert.equal(formatCodexWindowStatsText(stats), "422 req · 61.8M · A $47.78");
+  assert.equal(formatCodexWindowStatsText(stats), "422 req · 61.8M · A ≈$47.78");
   assert.equal(
     formatCodexWindowStatsText({ ...stats, userCostUsd: 1.52 }),
-    "422 req · 61.8M · A $47.78 · U $1.52",
+    "422 req · 61.8M · A ≈$47.78 · U $1.52",
   );
   assert.equal(
     hasVisibleCodexWindowStats({

@@ -76,7 +76,8 @@ fn direct_wakeup_and_pelican_use_the_account_store_and_separate_connection_pools
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
     }
-    let status = command.env_clear().env(CHILD,"1")
+    let status = crate::modules::test_support::isolated_child_env(&mut command, dir.path())
+        .env(CHILD, "1")
         .env("COCKPIT_TOOLS_DATA_DIR",dir.path())
         .env("COCKPIT_TEST_DIRECT_RESULT",dir.path().join("verified"))
         .args(["--exact","modules::codex_local_access::direct_identity_tests::direct_wakeup_and_pelican_use_the_account_store_and_separate_connection_pools","--test-threads=1"])
@@ -99,7 +100,10 @@ async fn direct_wire_case() {
             |ConnectInfo(peer): ConnectInfo<SocketAddr>,
              headers: HeaderMap,
              Json(body): Json<Value>| async move {
+                let workspaces: Vec<_> = headers.get_all("chatgpt-account-id")
+                    .iter().map(|value| value.to_str().unwrap()).collect();
                 Json(json!({"peer":peer.to_string(),"body":body,
+            "workspaces":workspaces,
             "installation":headers["x-codex-installation-id"].to_str().unwrap(),
             "session":headers["session-id"].to_str().unwrap(),
             "thread":headers["thread-id"].to_str().unwrap(),
@@ -118,11 +122,12 @@ async fn direct_wire_case() {
     let mut records = Vec::new();
     for id in ["a", "a", "b", "a"] {
         let account = account(id);
-        let (body, headers) = if records.len() % 2 == 0 {
+        let (body, mut headers) = if records.len() % 2 == 0 {
             build_pelican_request("fixture", "low", "<html/>", id).unwrap()
         } else {
             direct_codex_request(json!({"model":"fixture","input":"hi","stream":true})).unwrap()
         };
+        headers.insert("chatgpt-account-id".into(), "downstream-workspace".into());
         let response = send_upstream_request_with_authorization_url(
             "POST",
             &format!("http://{addr}/responses"),
@@ -154,6 +159,7 @@ async fn direct_wire_case() {
         assert_eq!(record["session"], headers["session-id"]);
         assert_eq!(record["thread"], record["session"]);
         assert_eq!(record["authorization"], format!("Bearer fixture-{id}"));
+        assert_eq!(record["workspaces"], json!([format!("workspace-{id}")]));
         records.push(record);
     }
     assert_eq!(records[0]["installation"], records[1]["installation"]);
@@ -164,5 +170,44 @@ async fn direct_wire_case() {
     assert_ne!(records[0]["peer"], records[2]["peer"]);
     assert_ne!(records[0]["session"], records[1]["session"]);
     assert!(!NATIVE_API_RUNNING.load(Ordering::Acquire));
+    wakeup_global_proxy_path(addr).await;
     task.abort();
+}
+
+async fn wakeup_global_proxy_path(origin: std::net::SocketAddr) {
+    use axum::{extract::Request, routing::post, Json, Router};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy_url = format!("http://{}", listener.local_addr().unwrap());
+    let proxy = Router::new().route("/responses", post(|request: Request| async move {
+        assert_eq!(request.uri().scheme_str(), Some("http"));
+        Json(json!({"path":"proxy"}))
+    }));
+    let proxy_task = tokio::spawn(async move { axum::serve(listener, proxy).await.unwrap() });
+    let mut config = crate::modules::config::get_user_config();
+    config.global_proxy_url.clone_from(&proxy_url);
+    // Keep the inherited environment deterministic even on machines with an OS proxy.
+    std::env::set_var("HTTP_PROXY", &proxy_url);
+    std::env::set_var("NO_PROXY", "127.0.0.1");
+    for (global_enabled, account_direct, expected_proxy) in [
+        (true, false, true), (false, false, false), (true, true, false),
+    ] {
+        config.global_proxy_enabled = global_enabled;
+        crate::modules::config::save_user_config(&config).unwrap();
+        let mut account = account("a");
+        account.egress_proxy_disabled = account_direct;
+        let (body, headers) = direct_codex_request(json!({"model":"fixture","input":"hi","stream":true})).unwrap();
+        let response = send_upstream_request_with_authorization_url(
+            "POST", &format!("http://{origin}/responses"), "/responses", &headers, &body,
+            &account, "Bearer fixture-a", None, Duration::from_secs(3),
+            &CodexLocalAccessTimeouts::default(), CodexLocalAccessImageGenerationMode::Disabled,
+            CodexLocalAccessRequestKind::Text,
+        ).await.unwrap();
+        let observation: Value = response.json().await.unwrap();
+        assert_eq!(observation["path"] == "proxy", expected_proxy, "{observation}");
+        if !expected_proxy {
+            assert_eq!(observation["authorization"], "Bearer fixture-a");
+        }
+    }
+    proxy_task.abort();
 }

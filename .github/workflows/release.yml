@@ -166,6 +166,9 @@ jobs:
               "1.3.57")
                 RELEASE_VERSIONS=("1.3.57" "1.3.56" "1.3.55" "1.3.54" "1.3.53" "1.3.52" "1.3.51" "1.3.50" "1.3.49" "1.3.48" "1.3.47" "1.3.46" "1.3.45" "1.3.44" "1.3.43")
                 ;;
+              "1.4.2")
+                RELEASE_VERSIONS=("1.4.2" "1.4.1" "1.4.0" "1.3.84" "1.3.83")
+                ;;
               "1.3.82")
                 RELEASE_VERSIONS=("1.3.82" "1.3.81" "1.3.80" "1.3.79" "1.3.78" "1.3.77" "1.3.76")
                 ;;
@@ -364,10 +367,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          COCKPIT_PREBUILT_FRONTEND_DIST: "dist"
         run: |
           set -euo pipefail
-          npx tauri build --ci
+          npx tauri build --ci --config src-tauri/tauri.prebuilt-frontend.conf.json
 
       - name: 📦 Build Windows portable archive
         shell: bash
@@ -507,15 +509,10 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🦀 Rust setup
-        uses: dtolnay/rust-toolchain@stable
+      - name: 💾 macOS release build cache
+        uses: ./.github/actions/macos-release-cache
         with:
-          targets: aarch64-apple-darwin
-
-      - name: 💾 Host build cache
-        uses: ./.github/actions/host-build-cache
-        with:
-          target: macos-aarch64
+          target: aarch64-apple-darwin
 
       - name: ⚙️ Node.js setup
         uses: actions/setup-node@v4
@@ -556,10 +553,9 @@ jobs:
           APPLE_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_ID || '' }}
           APPLE_PASSWORD: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_TEAM_ID || '' }}
-          COCKPIT_PREBUILT_FRONTEND_DIST: "dist"
         run: |
           set -euo pipefail
-          node scripts/tauri.cjs build --ci --target aarch64-apple-darwin
+          node scripts/tauri.cjs build --ci --target aarch64-apple-darwin --config src-tauri/tauri.prebuilt-frontend.conf.json
 
       - name: 📦 Prepare Universal binary inputs
         shell: bash
@@ -703,15 +699,10 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🦀 Rust setup
-        uses: dtolnay/rust-toolchain@stable
+      - name: 💾 macOS release build cache
+        uses: ./.github/actions/macos-release-cache
         with:
-          targets: x86_64-apple-darwin
-
-      - name: 💾 Host build cache
-        uses: ./.github/actions/host-build-cache
-        with:
-          target: macos-x86_64
+          target: x86_64-apple-darwin
 
       - name: ⚙️ Node.js setup
         uses: actions/setup-node@v4
@@ -752,10 +743,9 @@ jobs:
           APPLE_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_ID || '' }}
           APPLE_PASSWORD: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_TEAM_ID || '' }}
-          COCKPIT_PREBUILT_FRONTEND_DIST: "dist"
         run: |
           set -euo pipefail
-          node scripts/tauri.cjs build --ci --target x86_64-apple-darwin
+          node scripts/tauri.cjs build --ci --target x86_64-apple-darwin --config src-tauri/tauri.prebuilt-frontend.conf.json
 
       - name: 📦 Prepare Universal binary inputs
         shell: bash
@@ -1104,10 +1094,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          COCKPIT_PREBUILT_FRONTEND_DIST: "dist"
         run: |
           set -euo pipefail
-          npx tauri build --ci
+          npx tauri build --ci --config src-tauri/tauri.prebuilt-frontend.conf.json
 
       - name: 📥 Download release metadata
         uses: actions/download-artifact@v4
@@ -1462,12 +1451,12 @@ jobs:
       - build-macos-aarch64
       - build-macos-x86_64
       - build-macos-universal
-      - build-linux
     runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
       VERSION: ${{ needs.prepare-release.outputs.version }}
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
@@ -1490,6 +1479,8 @@ jobs:
           set -euo pipefail
           node scripts/release/build_merged_latest_json.cjs \
             --version "${VERSION}" \
+            --release-tag "${RELEASE_TAG}" \
+            --fork-validation \
             --repo "${GITHUB_REPOSITORY}" \
             --assets-dir "validation-workspace/release-assets" \
             --notes-file "validation-workspace/release-notes.md" \
@@ -1500,16 +1491,12 @@ jobs:
             .platforms["darwin-aarch64"] and
             .platforms["darwin-x86_64"] and
             .platforms["windows-x86_64"] and
-            .platforms["windows-x86_64-nsis"] and
-            .platforms["linux-x86_64-appimage"] and
-            .platforms["linux-x86_64-deb"] and
-            .platforms["linux-x86_64-rpm"] and
-            .platforms["linux-aarch64-appimage"] and
-            .platforms["linux-aarch64-deb"] and
-            .platforms["linux-aarch64-rpm"]
+            .platforms["windows-x86_64-nsis"]
           ' latest.json > /dev/null
 
-          test -n "$(find validation-workspace/release-assets -name '*_universal.dmg' -print -quit)"
+          for pattern in '*_aarch64.dmg' '*_x64.dmg' '*_universal.dmg' '*_x64-portable.zip'; do
+            test -n "$(find validation-workspace/release-assets -name "$pattern" -print -quit)"
+          done
 
       - name: 🔗 Generate validation checksums
         shell: bash

@@ -1,10 +1,10 @@
 import { resolveCodexAccountReferenceDisplayName } from "../utils/codexAccountDisplayName";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useDurableUiSetting } from "../hooks/useDurableUiSetting";
 import { previewDurableUiSetting, readDurableUiSetting } from "../utils/durableUiSettings";
 import { CodexOutputSpeed } from "../components/codex/CodexOutputSpeed";
 import { aggregateOutputSpeed, formatOutputSpeed } from "../utils/codexOutputSpeed";
-import { Check, CircleAlert, Columns3, Route, Zap } from "lucide-react";
+import { Check, CircleAlert, Columns3, Route, SlidersHorizontal, X, Zap } from "lucide-react";
 import { SingleSelectDropdown } from "../components/SingleSelectDropdown";
 import { PaginationControls } from "../components/PaginationControls";
 import { CodexRequestProxyLabel } from "../components/codex/CodexRequestProxyLabel";
@@ -65,6 +65,9 @@ type Props = Pick<CodexApiServiceViewProps,
   "normalizeRequestLogPageSize" |
   "REQUEST_LOG_PAGE_SIZE_OPTIONS" |
   "requestKindLabel" |
+  "requestLogAccountScope" |
+  "requestLogHighTokensOnly" |
+  "requestLogTokenThreshold" |
   "requestLogAccountQuery" |
   "requestLogApiKeyQuery" |
   "requestLogCurrentPage" |
@@ -90,6 +93,9 @@ type Props = Pick<CodexApiServiceViewProps,
   "requestLogTotalPages" |
   "resolveClientInstanceLabel" |
   "setRequestLogAccountQuery" |
+  "setRequestLogAccountScope" |
+  "setRequestLogHighTokensOnly" |
+  "setRequestLogTokenThreshold" |
   "setRequestLogApiKeyQuery" |
   "setRequestLogErrorQuery" |
   "setRequestLogInstanceQuery" |
@@ -120,6 +126,9 @@ export function CodexApiRequestLogs(props: Props) {
     normalizeRequestLogPageSize,
     REQUEST_LOG_PAGE_SIZE_OPTIONS,
     requestKindLabel,
+    requestLogAccountScope,
+    requestLogHighTokensOnly,
+    requestLogTokenThreshold,
     requestLogAccountQuery,
     requestLogApiKeyQuery,
     requestLogCurrentPage,
@@ -145,6 +154,9 @@ export function CodexApiRequestLogs(props: Props) {
     requestLogTotalPages,
     resolveClientInstanceLabel,
     setRequestLogAccountQuery,
+    setRequestLogAccountScope,
+    setRequestLogHighTokensOnly,
+    setRequestLogTokenThreshold,
     setRequestLogApiKeyQuery,
     setRequestLogErrorQuery,
     setRequestLogInstanceQuery,
@@ -169,6 +181,27 @@ export function CodexApiRequestLogs(props: Props) {
   const [selectedRequest, setSelectedRequest] = useState<CodexLocalAccessUsageEvent | null>(null);
   const visibleColumns = readLogColumns(useDurableUiSetting(LOG_COLUMNS_STORAGE_KEY));
   const [columnSettingsOpen, setColumnSettingsOpen] = useState(false);
+  const [tokenThresholdText, setTokenThresholdText] = useState(() => String(requestLogTokenThreshold));
+  useEffect(() => setTokenThresholdText(String(requestLogTokenThreshold)), [requestLogTokenThreshold]);
+  const typedThreshold = /^\d+$/.test(tokenThresholdText) ? Number(tokenThresholdText) : 0;
+  const validThreshold = Number.isSafeInteger(typedThreshold) && typedThreshold > 0;
+  const thresholdHint = t("codex.apiService.logs.highTokenHint", { threshold: formatCompactNumber(requestLogTokenThreshold) });
+  const activeAdvancedFilterCount = [
+    (requestLogSessionQuery ?? "").trim(),
+    (requestLogApiKeyQuery ?? "").trim(),
+    (requestLogInstanceQuery ?? "").trim(),
+    requestLogSourceKind && requestLogSourceKind !== "all" ? requestLogSourceKind : "",
+    (requestLogPeerIp ?? "").trim(),
+    (requestLogErrorQuery ?? "").trim(),
+  ].filter(Boolean).length;
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(
+    () => activeAdvancedFilterCount > 0,
+  );
+  useEffect(() => {
+    if (activeAdvancedFilterCount > 0) {
+      setAdvancedFiltersOpen(true);
+    }
+  }, [activeAdvancedFilterCount]);
   const columnVisible = (column: LogColumn) => visibleColumns.includes(column);
   const columnRequired = (column: LogColumn) => (column === "model" || column === "result") &&
     columnVisible(column) && !columnVisible(column === "model" ? "result" : "model");
@@ -185,147 +218,197 @@ export function CodexApiRequestLogs(props: Props) {
   const initialLoading = requestLogLoading && !requestLogLoaded;
   return (
               <>
-                <div className="codex-api-service-log-filters">
-                  <label>
-                    <span>{t("codex.apiService.logs.sessionFilter")}</span>
-                    <input
-                      value={requestLogSessionQuery}
-                      onChange={(event) => setRequestLogSessionQuery(event.target.value)}
-                      placeholder={t("codex.apiService.logs.sessionPlaceholder")}
-                    />
-                  </label>
-                  <label>
-                    <span>
-                      {t("codex.apiService.logs.modelFilter", "模型")}
-                    </span>
-                    <input
-                      value={requestLogModelQuery}
-                      onChange={(event) =>
-                        setRequestLogModelQuery(event.target.value)
-                      }
-                      placeholder={t(
-                        "codex.apiService.logs.modelPlaceholder",
-                        "Model ID",
-                      )}
-                    />
-                  </label>
-                  <label>
-                    <span>
-                      {t("codex.apiService.logs.accountFilter", "Account")}
-                    </span>
-                    <input
-                      value={requestLogAccountQuery}
-                      onChange={(event) =>
-                        setRequestLogAccountQuery(event.target.value)
-                      }
-                      placeholder={t("codex.apiService.logs.accountPlaceholder")}
-                    />
-                  </label>
-                  <label>
-                    <span>
-                      {t("codex.apiService.logs.apiKeyFilter", "API Key")}
-                    </span>
-                    <input
-                      value={requestLogApiKeyQuery}
-                      onChange={(event) =>
-                        setRequestLogApiKeyQuery(event.target.value)
-                      }
-                      placeholder={t(
-                        "codex.apiService.logs.apiKeyPlaceholder",
-                        "Name or ID",
-                      )}
-                    />
-                  </label>
-                  <label>
-                    <span>
-                      {t("codex.apiService.logs.instanceFilter", "Instance")}
-                    </span>
-                    <SingleSelectDropdown
-                      value={requestLogInstanceQuery}
-                      options={requestLogInstanceOptions}
-                      onChange={setRequestLogInstanceQuery}
-                      ariaLabel={t(
-                        "codex.apiService.logs.instanceFilter",
-                        "Instance",
-                      )}
-                      placeholder={t(
-                        "codex.apiService.logs.allInstances",
-                        "All Instances",
-                      )}
-                    />
-                  </label>
-                  <label>
-                    <span>{t("codex.apiService.logs.connectionSource")}</span>
-                    <SingleSelectDropdown
-                      value={requestLogSourceKind}
-                      options={Object.entries(sourceLabels).map(([value, label]) => ({ value, label }))}
-                      onChange={setRequestLogSourceKind}
-                      ariaLabel={t("codex.apiService.logs.connectionSource")}
-                    />
-                  </label>
-                  <label>
-                    <span>{t("codex.apiService.logs.peerIp")}</span>
-                    <input
-                      value={requestLogPeerIp}
-                      onChange={(event) => setRequestLogPeerIp(event.target.value)}
-                      spellCheck={false}
-                      placeholder="192.168.1.10"
-                    />
-                  </label>
-                  <label>
-                    <span>{t("codex.apiService.logs.kindFilter", "Type")}</span>
-                    <SingleSelectDropdown
-                      value={requestLogKindFilter}
-                      options={requestLogKindOptions}
-                      onChange={(value) =>
-                        setRequestLogKindFilter(value as RequestLogKindFilter)
-                      }
-                      ariaLabel={t("codex.apiService.logs.kindFilter", "Type")}
-                    />
-                  </label>
-                  <label>
-                    <span>
-                      {t("codex.apiService.logs.statusFilter", "Status")}
-                    </span>
-                    <SingleSelectDropdown
-                      value={requestLogStatusFilter}
-                      options={requestLogStatusOptions}
-                      onChange={(value) =>
-                        setRequestLogStatusFilter(
-                          value as RequestLogStatusFilter,
-                        )
-                      }
-                      ariaLabel={t(
-                        "codex.apiService.logs.statusFilter",
-                        "Status",
-                      )}
-                    />
-                  </label>
-                  <label>
-                    <span>
-                      {t("codex.apiService.logs.errorFilter", "Error")}
-                    </span>
-                    <input
-                      value={requestLogErrorQuery}
-                      onChange={(event) =>
-                        setRequestLogErrorQuery(event.target.value)
-                      }
-                      placeholder={t(
-                        "codex.apiService.logs.errorPlaceholder",
-                        "Error category",
-                      )}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={clearRequestLogFilters}
-                    disabled={!hasRequestLogFilters}
-                  >
-                    {t("codex.apiService.logs.clearFilters", "Clear Filters")}
-                  </button>
+                <div className="codex-api-service-log-filters-shell">
+                  <div className="codex-api-service-log-filters codex-api-service-log-filters-primary">
+                    <label>
+                      <span>
+                        {t("codex.apiService.logs.modelFilter", "模型")}
+                      </span>
+                      <input
+                        value={requestLogModelQuery}
+                        onChange={(event) =>
+                          setRequestLogModelQuery(event.target.value)
+                        }
+                        placeholder={t(
+                          "codex.apiService.logs.modelPlaceholder",
+                          "Model ID",
+                        )}
+                      />
+                    </label>
+                    <label>
+                      <span>
+                        {t("codex.apiService.logs.accountFilter", "Account")}
+                      </span>
+                      <input
+                        value={requestLogAccountQuery}
+                        onChange={(event) =>
+                          setRequestLogAccountQuery(event.target.value)
+                        }
+                        placeholder={t("codex.apiService.logs.accountPlaceholder")}
+                      />
+                    </label>
+                    <label>
+                      <span>{t("codex.apiService.logs.kindFilter", "Type")}</span>
+                      <SingleSelectDropdown
+                        value={requestLogKindFilter}
+                        options={requestLogKindOptions}
+                        onChange={(value) =>
+                          setRequestLogKindFilter(value as RequestLogKindFilter)
+                        }
+                        ariaLabel={t("codex.apiService.logs.kindFilter", "Type")}
+                      />
+                    </label>
+                    <label>
+                      <span>
+                        {t("codex.apiService.logs.statusFilter", "Status")}
+                      </span>
+                      <SingleSelectDropdown
+                        value={requestLogStatusFilter}
+                        options={requestLogStatusOptions}
+                        onChange={(value) =>
+                          setRequestLogStatusFilter(
+                            value as RequestLogStatusFilter,
+                          )
+                        }
+                        ariaLabel={t(
+                          "codex.apiService.logs.statusFilter",
+                          "Status",
+                        )}
+                      />
+                    </label>
+                    <div className="codex-request-log-filter-actions">
+                      <button
+                        type="button"
+                        className={`btn btn-secondary btn-sm${advancedFiltersOpen ? " is-active" : ""}`}
+                        onClick={() => setAdvancedFiltersOpen((open) => !open)}
+                        aria-expanded={advancedFiltersOpen}
+                      >
+                        <SlidersHorizontal size={13} />
+                        {t("codex.apiService.logs.moreFilters", "更多筛选")}
+                        {activeAdvancedFilterCount > 0 && (
+                          <span className="codex-request-log-filter-badge">
+                            {activeAdvancedFilterCount}
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={clearRequestLogFilters}
+                        disabled={!hasRequestLogFilters}
+                      >
+                        {t("codex.apiService.logs.clearFilters", "Clear Filters")}
+                      </button>
+                    </div>
+                  </div>
+                  {advancedFiltersOpen && (
+                    <div className="codex-api-service-log-filters codex-api-service-log-filters-secondary">
+                      <label>
+                        <span>{t("codex.apiService.logs.sessionFilter")}</span>
+                        <input
+                          value={requestLogSessionQuery}
+                          onChange={(event) => setRequestLogSessionQuery(event.target.value)}
+                          placeholder={t("codex.apiService.logs.sessionPlaceholder")}
+                        />
+                      </label>
+                      <label>
+                        <span>
+                          {t("codex.apiService.logs.apiKeyFilter", "API Key")}
+                        </span>
+                        <input
+                          value={requestLogApiKeyQuery}
+                          onChange={(event) =>
+                            setRequestLogApiKeyQuery(event.target.value)
+                          }
+                          placeholder={t(
+                            "codex.apiService.logs.apiKeyPlaceholder",
+                            "Name or ID",
+                          )}
+                        />
+                      </label>
+                      <label>
+                        <span>
+                          {t("codex.apiService.logs.instanceFilter", "Instance")}
+                        </span>
+                        <SingleSelectDropdown
+                          value={requestLogInstanceQuery}
+                          options={requestLogInstanceOptions}
+                          onChange={setRequestLogInstanceQuery}
+                          ariaLabel={t(
+                            "codex.apiService.logs.instanceFilter",
+                            "Instance",
+                          )}
+                          placeholder={t(
+                            "codex.apiService.logs.allInstances",
+                            "All Instances",
+                          )}
+                        />
+                      </label>
+                      <label>
+                        <span>{t("codex.apiService.logs.connectionSource")}</span>
+                        <SingleSelectDropdown
+                          value={requestLogSourceKind}
+                          options={Object.entries(sourceLabels).map(([value, label]) => ({ value, label }))}
+                          onChange={setRequestLogSourceKind}
+                          ariaLabel={t("codex.apiService.logs.connectionSource")}
+                        />
+                      </label>
+                      <label>
+                        <span>{t("codex.apiService.logs.peerIp")}</span>
+                        <input
+                          value={requestLogPeerIp}
+                          onChange={(event) => setRequestLogPeerIp(event.target.value)}
+                          spellCheck={false}
+                          placeholder="192.168.1.10"
+                        />
+                      </label>
+                      <label>
+                        <span>
+                          {t("codex.apiService.logs.errorFilter", "Error")}
+                        </span>
+                        <input
+                          value={requestLogErrorQuery}
+                          onChange={(event) =>
+                            setRequestLogErrorQuery(event.target.value)
+                          }
+                          placeholder={t(
+                            "codex.apiService.logs.errorPlaceholder",
+                            "Error category",
+                          )}
+                        />
+                      </label>
+                      <form className="codex-request-log-threshold" onSubmit={(event) => {
+                        event.preventDefault();
+                        if (validThreshold) setRequestLogTokenThreshold(typedThreshold);
+                      }}>
+                        <label>
+                          <span>{t("codex.apiService.logs.tokenThreshold")}</span>
+                          <input inputMode="numeric" value={tokenThresholdText}
+                            aria-invalid={!validThreshold}
+                            onChange={(event) => setTokenThresholdText(event.target.value)} />
+                        </label>
+                        <button type="submit" className="btn btn-secondary btn-sm"
+                          disabled={!validThreshold || typedThreshold === requestLogTokenThreshold}>
+                          {t("common.confirm")}
+                        </button>
+                      </form>
+                    </div>
+                  )}
                 </div>
                 <div className="codex-request-log-toolbar">
+                  {requestLogAccountScope && (
+                    <button type="button" className="btn btn-secondary btn-sm"
+                      title={t("codex.apiService.logs.clearFilters")}
+                      onClick={() => setRequestLogAccountScope(null)}>
+                      {maskAccountText(requestLogAccountScope.name)} <X size={13} aria-hidden="true" />
+                    </button>
+                  )}
+                  <button type="button" className="btn btn-secondary btn-sm codex-request-log-high-filter"
+                    title={thresholdHint} aria-pressed={requestLogHighTokensOnly}
+                    onClick={() => setRequestLogHighTokensOnly(!requestLogHighTokensOnly)}>
+                    <Zap size={13} aria-hidden="true" />
+                    {t("codex.apiService.logs.highTokenRequests")}
+                  </button>
                   {requestLogEvents.length > 0 && <div className="codex-output-speed-summary" title={t("common.outputSpeed.pageHint")}>
                     <span>{t("common.outputSpeed.pageAverage")} {pageSpeedValue == null ? "—" : t("common.outputSpeed.value", { value: pageSpeedValue })}</span>
                     <span>{t("common.outputSpeed.pageSamples", { count: pageSpeed.samples })}</span>
@@ -442,6 +525,18 @@ export function CodexApiRequestLogs(props: Props) {
                             {([["tokenInput", event.inputTokens], ["tokenOutput", event.outputTokens], ["tokenCache", event.cachedTokens], ["tokenTotal", event.totalTokens]] as const).map(([key, count]) => <span key={key} className={key === "tokenTotal" ? "codex-request-log-token-total" : undefined}>
                               <span className="codex-request-log-label" title={t(`codex.apiService.logs.${key}`)}>{t(`codex.apiService.logs.${key}`)}</span><span className="codex-request-log-token-value" title={String(count)}>{formatCompactNumber(count)}</span>
                             </span>)}
+                            {event.inputTextCharacters != null && (
+                              <span title={t("codex.apiService.logs.inputTextCharactersHint")}>
+                                <span className="codex-request-log-label">{t("codex.apiService.logs.inputTextCharacters")}</span>
+                                <span className="codex-request-log-token-value">{event.inputTextCharacters.toLocaleString()}</span>
+                              </span>
+                            )}
+                            {event.totalTokens >= requestLogTokenThreshold && (
+                              <span className="codex-request-log-high-token" title={thresholdHint}>
+                                <Zap size={12} aria-hidden="true" />
+                                {t("codex.apiService.logs.highTokenBadge")}
+                              </span>
+                            )}
                           </div></td>}
                           {columnVisible("cost") && <td className="numeric">{formatUsdCost(event.estimatedCostUsd)}</td>}
                           {columnVisible("performance") && <td><div className="codex-request-log-stack codex-request-log-performance">

@@ -203,7 +203,15 @@ pub fn get_data_dir() -> Result<PathBuf, String> {
     }
 
     #[cfg(test)]
-    let data_dir = crate::modules::test_support::fallback_data_dir();
+    let data_dir = if std::env::var_os("COCKPIT_TOOLS_TEST_ISOLATED_HOME")
+        .map(PathBuf::from)
+        .is_some_and(|home| dirs::home_dir().as_ref() == Some(&home))
+    {
+        // The restart regression runs in a child with its own home and preference file.
+        resolve_data_dir()?
+    } else {
+        crate::modules::test_support::fallback_data_dir()
+    };
     #[cfg(not(test))]
     let data_dir = resolve_data_dir()?;
 
@@ -346,15 +354,17 @@ pub fn schedule_index_migration() -> Result<(), String> {
 
 /// 加载账号数据
 pub fn load_account(account_id: &str) -> Result<Account, String> {
+    load_account_if_present(account_id)?.ok_or_else(|| format!("账号不存在: {}", account_id))
+}
+
+fn load_account_if_present(account_id: &str) -> Result<Option<Account>, String> {
     let accounts_dir = get_accounts_dir()?;
     let account_path = accounts_dir.join(format!("{}.json", account_id));
-
-    if !account_path.exists() {
-        return Err(format!("账号不存在: {}", account_id));
-    }
-
-    let content =
-        fs::read_to_string(&account_path).map_err(|e| format!("读取账号数据失败: {}", e))?;
+    let content = match fs::read_to_string(&account_path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(format!("读取账号数据失败: {}", error)),
+    };
 
     let mut account = deserialize_account_from_storage(&account_path, &content)
         .map_err(|error| format!("{error} (account file: {account_id}.json)"))?;
@@ -409,7 +419,7 @@ pub fn load_account(account_id: &str) -> Result<Account, String> {
             }
         }
     }
-    Ok(account)
+    Ok(Some(account))
 }
 
 /// 保存账号数据
@@ -689,25 +699,32 @@ pub fn create_pending_oauth_account(
     let _lock = lock_account_index()?;
     let mut index = load_account_index_locked()?;
     let target_id = build_account_storage_id(&email);
-    let existing_id = index
+    let existing = index
         .accounts
         .iter()
-        .find(|item| item.email.trim().eq_ignore_ascii_case(&email))
-        .map(|item| item.id.clone());
-
-    let mut account = if let Some(id) = existing_id {
-        // Never replace an unreadable existing account with an empty placeholder.
-        let mut account = load_account(&id)?;
-        account.email = email.clone();
-        account
-    } else {
-        let mut account = Account::new(
-            target_id,
-            email.clone(),
-            TokenData::new(String::new(), String::new(), 0, Some(email), None, None),
-        );
-        account.pending_oauth = true;
-        account
+        .find(|item| item.email.trim().eq_ignore_ascii_case(&email));
+    let loaded = existing
+        .map(|item| load_account_if_present(&item.id))
+        .transpose()?
+        .flatten();
+    let mut account = match loaded {
+        Some(mut account) => {
+            account.email = email.clone();
+            account
+        }
+        None => {
+            let mut account = Account::new(
+                existing.map_or(target_id, |item| item.id.clone()),
+                email.clone(),
+                TokenData::new(String::new(), String::new(), 0, Some(email), None, None),
+            );
+            if let Some(item) = existing {
+                account.name = item.name.clone();
+                account.created_at = item.created_at;
+            }
+            account.pending_oauth = true;
+            account
+        }
     };
 
     update.apply_to(&mut account);
@@ -759,7 +776,17 @@ pub fn upsert_account(
     // Existing IDs are referenced by instances, wakeup tasks and groups. Reimport
     // updates credentials in place; deterministic IDs apply only to new accounts.
     let mut account = if let Some(account_id) = existing_account_id {
-        let mut account = load_account(&account_id)?;
+        let mut account = match load_account_if_present(&account_id)? {
+            Some(account) => account,
+            None => {
+                let mut account = Account::new(account_id.clone(), email.clone(), token.clone());
+                if let Some(item) = index.accounts.iter().find(|item| item.id == account_id) {
+                    account.name = item.name.clone();
+                    account.created_at = item.created_at;
+                }
+                account
+            }
+        };
         let mut next_token = token;
         if next_token.project_id.is_none() {
             next_token.project_id = account.token.project_id.clone();
@@ -972,18 +999,27 @@ fn save_current_account_file(email: &str) -> Result<(), String> {
     Ok(())
 }
 
+const QUOTA_REFRESH_ACCOUNT_REIMPORTED: &str = "刷新期间账号已重新导入，请重试";
+
 /// 更新账号配额
-pub fn update_account_quota(account_id: &str, quota: QuotaData) -> Result<(), String> {
+pub fn update_account_quota(queried: &Account, quota: QuotaData) -> Result<(), String> {
     let _lock = lock_account_index()?;
-    let account = load_account(account_id)?;
+    let account = load_account(&queried.id)?;
+    if account.created_at != queried.created_at {
+        return Err(QUOTA_REFRESH_ACCOUNT_REIMPORTED.to_string());
+    }
     save_account_quota(account, quota)
 }
 
 fn save_account_quota(mut account: Account, mut quota: QuotaData) -> Result<(), String> {
+    use modules::platform_quota_history::{self, Platform};
+
+    let history = platform_quota_history::antigravity_metrics(&quota);
+    let observed_at = quota.last_updated.saturating_mul(1000);
     modules::quota::preserve_failed_quota_summary(&mut quota, account.quota.as_ref());
 
     // 容错：如果新获取的 models 为空，但之前有数据，保留原来的 models
-    if quota.models.is_empty() {
+    if quota.models.is_empty() && quota.quota_summary_updated_at.is_none() {
         if let Some(ref existing_quota) = account.quota {
             if !existing_quota.models.is_empty()
                 && !quota.is_forbidden
@@ -1016,6 +1052,13 @@ fn save_account_quota(mut account: Account, mut quota: QuotaData) -> Result<(), 
     account.update_quota(quota);
     account.usage_updated_at = Some(chrono::Utc::now().timestamp());
     save_account(&account)?;
+    platform_quota_history::record(
+        Platform::Antigravity,
+        &account.id,
+        account.created_at,
+        observed_at,
+        &history,
+    );
     if let Some(ref quota) = account.quota {
         let _ = modules::quota_cache::write_quota_cache("authorized", &account.email, quota);
     }
@@ -1037,7 +1080,8 @@ pub(super) async fn refresh_quota_after_wakeup(account_id: String) -> Result<(),
 fn save_quota_after_wakeup(queried: &Account, quota: QuotaData) -> Result<(), String> {
     let _lock = lock_account_index()?;
     let latest = load_account(&queried.id)?;
-    if !same_oauth_credentials(&latest.token, &queried.token)
+    if latest.created_at != queried.created_at
+        || !same_oauth_credentials(&latest.token, &queried.token)
         || latest.token.project_id != queried.token.project_id
         || latest.quota.as_ref().is_some_and(|stored| stored.last_updated > quota.last_updated)
     {
@@ -1120,6 +1164,50 @@ mod quota_refresh_cache_tests {
         let current = load_account(&account.id).unwrap();
         assert_eq!(current.token.access_token, "reauthorized");
         assert_eq!(current.quota.unwrap().last_updated, 2);
+
+        let mut reimported = previous.clone();
+        reimported.created_at += 1;
+        assert!(reimported.quota.is_none());
+        save_account(&reimported).unwrap();
+        let mut stale_refresh = previous.clone();
+        stale_refresh.disabled = true;
+        assert!(merge_quota_refresh_state_blocking(&mut stale_refresh, &previous.token).is_err());
+        assert!(!load_account(&reimported.id).unwrap().disabled);
+        let error = update_account_quota(&previous, snapshot(4, "2026-11-12T07:00:00Z"))
+            .unwrap_err();
+        assert!(error.contains("重新导入"));
+        save_quota_after_wakeup(&previous, snapshot(4, "2026-11-12T07:00:00Z")).unwrap();
+        assert!(load_account(&reimported.id).unwrap().quota.is_none());
+        update_account_quota(&reimported, snapshot(5, "2026-11-12T08:00:00Z")).unwrap();
+        assert_eq!(load_account(&reimported.id).unwrap().quota.unwrap().last_updated, 5);
+    }
+
+    #[test]
+    fn quota_refresh_keeps_failed_windows_but_a_confirmed_empty_response_removes_them() {
+        let _lock = crate::modules::test_support::env_lock().lock().unwrap();
+        let mut account = Account::new(
+            "empty-summary-fixture".into(), "quota-empty@example.invalid".into(),
+            TokenData::new("access".into(), "refresh".into(), 3600, None, None, None),
+        );
+        let mut previous = QuotaData::new();
+        previous.quota_summary_updated_at = Some(previous.last_updated);
+        previous.add_model("gemini-weekly".into(), None, 46, String::new());
+        account.update_quota(previous);
+
+        let mut failed = QuotaData::new();
+        failed.quota_summary_stale = true;
+        save_account_quota(account.clone(), failed).unwrap();
+        let cached = load_account(&account.id).unwrap();
+        assert_eq!(cached.quota.as_ref().unwrap().models[0].percentage, 46);
+        assert!(cached.quota.as_ref().unwrap().quota_summary_stale);
+
+        let mut empty = QuotaData::new();
+        empty.quota_summary_updated_at = Some(empty.last_updated);
+        save_account_quota(cached, empty).unwrap();
+        let stored = load_account(&account.id).unwrap().quota.unwrap();
+        assert!(stored.models.is_empty());
+        assert!(!stored.quota_summary_stale);
+        assert_eq!(stored.quota_summary_updated_at, Some(stored.last_updated));
     }
 }
 
@@ -1170,11 +1258,82 @@ struct AutoSwitchGroupDefinition {
     summary_family: SummaryBucketFamily,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct AutoSwitchGroupQuota {
     id: String,
     name: String,
+    /// 综合值：min(5h, 周, 模型平均)，未启用分窗口阈值时使用
     percentage: i32,
+    five_hour: Option<i32>,
+    weekly: Option<i32>,
+    model_average: Option<i32>,
+}
+
+/// 分窗口阈值（类似 Codex 的 5h / 周 双阈值）；None 表示沿用单一阈值逻辑
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AutoSwitchWindowThresholds {
+    five_hour: i32,
+    weekly: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SummaryWindow {
+    FiveHour,
+    Weekly,
+}
+
+pub(super) fn summary_bucket_window(name: &str) -> Option<SummaryWindow> {
+    let normalized = name.trim().to_lowercase();
+    if normalized.ends_with("5h") {
+        Some(SummaryWindow::FiveHour)
+    } else if normalized.ends_with("weekly") {
+        Some(SummaryWindow::Weekly)
+    } else {
+        None
+    }
+}
+
+fn resolve_auto_switch_window_thresholds(
+    cfg: &crate::modules::config::UserConfig,
+) -> Option<AutoSwitchWindowThresholds> {
+    cfg.auto_switch_window_thresholds_enabled
+        .then(|| AutoSwitchWindowThresholds {
+            five_hour: normalize_auto_switch_threshold(cfg.auto_switch_five_hour_threshold),
+            weekly: normalize_auto_switch_threshold(cfg.auto_switch_weekly_threshold),
+        })
+}
+
+/// 返回命中阈值的最低百分比；未命中返回 None
+fn group_hit_percentage(
+    group: &AutoSwitchGroupQuota,
+    threshold: i32,
+    windows: Option<AutoSwitchWindowThresholds>,
+) -> Option<i32> {
+    let Some(windows) = windows else {
+        return (group.percentage <= threshold).then_some(group.percentage);
+    };
+    [
+        group.five_hour.filter(|p| *p <= windows.five_hour),
+        group.weekly.filter(|p| *p <= windows.weekly),
+        group.model_average.filter(|p| *p <= threshold),
+    ]
+    .into_iter()
+    .flatten()
+    .min()
+}
+
+fn group_is_switch_ready(
+    group: &AutoSwitchGroupQuota,
+    threshold: i32,
+    windows: Option<AutoSwitchWindowThresholds>,
+) -> bool {
+    let Some(windows) = windows else {
+        return group.percentage > 0 && group.percentage >= threshold;
+    };
+    let ready = |value: Option<i32>, limit: i32| value.map_or(true, |p| p > 0 && p >= limit);
+    ready(group.five_hour, windows.five_hour)
+        && ready(group.weekly, windows.weekly)
+        && ready(group.model_average, threshold)
 }
 
 #[derive(Debug, Clone)]
@@ -1225,6 +1384,19 @@ fn available_ai_credits(account: &Account) -> Option<f64> {
 
 fn default_auto_switch_groups() -> Vec<AutoSwitchGroupDefinition> {
     vec![
+        AutoSwitchGroupDefinition {
+            id: "g4_carbon".into(),
+            name: "Gemini 4 Carbon".into(),
+            summary_family: SummaryBucketFamily::Carbon,
+            models: vec![
+                "gemini-4-carbon".into(),
+                "gemini-4-carbon-low".into(),
+                "gemini-4-carbon-medium".into(),
+                "gemini-4-carbon-high".into(),
+                "carbon:weekly".into(),
+                "gemini-carbon-wtu-weekly".into(),
+            ],
+        },
         AutoSwitchGroupDefinition {
             id: "g4_argon".into(),
             name: "Gemini 4 Argon".into(),
@@ -1289,6 +1461,15 @@ fn default_auto_switch_groups() -> Vec<AutoSwitchGroupDefinition> {
                 "gemini-3.8-flash-medium".into(),
                 "gemini-3.8-flash-high".into(),
                 "MODEL_PLACEHOLDER_M318".into(),
+                "gemini-4-hydrogen".into(),
+                "gemini-4-hydrogen-low".into(),
+                "gemini-4-hydrogen-medium".into(),
+                "gemini-4-hydrogen-high".into(),
+                "gemini-4-hydrogen-xhigh".into(),
+                "MODEL_PLACEHOLDER_M525".into(),
+                "MODEL_PLACEHOLDER_M526".into(),
+                "MODEL_PLACEHOLDER_M527".into(),
+                "MODEL_PLACEHOLDER_M528".into(),
                 "gemini-3-flash".to_string(),
                 "gemini-3.1-flash".to_string(),
                 "gemini-3-flash-image".to_string(),
@@ -1399,6 +1580,14 @@ fn resolve_monitored_auto_switch_groups(
 
 fn normalize_model_for_group_match(value: &str) -> String {
     let normalized = value.trim().to_lowercase();
+    if normalized.starts_with("gemini-4-carbon")
+        || matches!(
+            normalized.as_str(),
+            "carbon:weekly" | "gemini-carbon-wtu-weekly"
+        )
+    {
+        return "gemini-4-carbon".into();
+    }
     if normalized.starts_with("gemini-4-argon")
         || matches!(
             normalized.as_str(),
@@ -1409,6 +1598,9 @@ fn normalize_model_for_group_match(value: &str) -> String {
     }
     if normalized.starts_with("gemini-3.8-flash") {
         return "gemini-3.8-flash".into();
+    }
+    if normalized.starts_with("gemini-4-hydrogen") {
+        return "gemini-4-hydrogen".into();
     }
     if normalized.starts_with("claude-sonnet-5-5") {
         return "claude-sonnet-5-5".into();
@@ -1441,6 +1633,13 @@ fn model_matches_group_model(model_name: &str, group_model_id: &str) -> bool {
     left.starts_with(&(right.clone() + "-")) || right.starts_with(&(left + "-"))
 }
 
+pub(super) fn model_summary_family(model: &str) -> Option<SummaryBucketFamily> {
+    default_auto_switch_groups()
+        .into_iter()
+        .find(|group| group.models.iter().any(|id| model_matches_group_model(model, id)))
+        .map(|group| group.summary_family)
+}
+
 fn collect_group_quotas(
     account: &Account,
     groups: &[AutoSwitchGroupDefinition],
@@ -1458,12 +1657,22 @@ fn collect_group_quotas(
             let mut sum = 0i32;
             let mut count = 0usize;
             let mut summary_min: Option<i32> = None;
+            let mut five_hour: Option<i32> = None;
+            let mut weekly: Option<i32> = None;
+            let take_min = |slot: &mut Option<i32>, value: i32| {
+                *slot = Some(slot.map_or(value, |current| current.min(value)));
+            };
             for model in &quota.models {
                 if let Some(family) = summary_bucket_family(&model.name) {
                     if family == group.summary_family && !quota.quota_summary_stale {
-                        summary_min = Some(summary_min.map_or(model.percentage, |current| {
-                            current.min(model.percentage)
-                        }));
+                        take_min(&mut summary_min, model.percentage);
+                        match summary_bucket_window(&model.name) {
+                            Some(SummaryWindow::FiveHour) => {
+                                take_min(&mut five_hour, model.percentage)
+                            }
+                            Some(SummaryWindow::Weekly) => take_min(&mut weekly, model.percentage),
+                            None => {}
+                        }
                     }
                     continue;
                 }
@@ -1482,6 +1691,9 @@ fn collect_group_quotas(
                 id: group.id.clone(),
                 name: group.name.clone(),
                 percentage,
+                five_hour,
+                weekly,
+                model_average,
             })
         })
         .collect()
@@ -1510,6 +1722,7 @@ fn evaluate_auto_switch_trigger(
     monitored_groups: &[AutoSwitchGroupDefinition],
     credits_enabled: bool,
     credits_threshold: i32,
+    windows: Option<AutoSwitchWindowThresholds>,
 ) -> Option<AutoSwitchTriggerContext> {
     if monitored_groups.is_empty() {
         return None;
@@ -1566,14 +1779,14 @@ fn evaluate_auto_switch_trigger(
     let hit_groups: Vec<modules::antigravity_switch_history::AntigravityAutoSwitchHitGroup> =
         group_quotas
             .into_iter()
-            .filter(|group| group.percentage <= threshold)
-            .map(
-                |group| modules::antigravity_switch_history::AntigravityAutoSwitchHitGroup {
+            .filter_map(|group| {
+                let percentage = group_hit_percentage(&group, threshold, windows)?;
+                Some(modules::antigravity_switch_history::AntigravityAutoSwitchHitGroup {
                     group_id: group.id,
                     group_name: group.name,
-                    percentage: group.percentage,
-                },
-            )
+                    percentage,
+                })
+            })
             .collect();
     let current_credits_remaining = if credits_enabled {
         available_ai_credits(account)
@@ -1617,6 +1830,7 @@ fn can_be_auto_switch_candidate(
     monitored_groups: &[AutoSwitchGroupDefinition],
     credits_enabled: bool,
     credits_threshold: i32,
+    windows: Option<AutoSwitchWindowThresholds>,
 ) -> bool {
     if account.id == current_id || account.disabled {
         return false;
@@ -1636,7 +1850,7 @@ fn can_be_auto_switch_candidate(
     }
     if !group_quotas
         .iter()
-        .all(|group| group.percentage > 0 && group.percentage >= threshold)
+        .all(|group| group_is_switch_ready(group, threshold, windows))
     {
         return false;
     }
@@ -1965,6 +2179,7 @@ where
     let credits_enabled = cfg.auto_switch_credits_enabled;
     let credits_threshold =
         normalize_auto_switch_credits_threshold(cfg.auto_switch_credits_threshold);
+    let windows = resolve_auto_switch_window_thresholds(&cfg);
     let scope_mode = normalize_auto_switch_scope_mode(&cfg.auto_switch_scope_mode);
     let account_scope_mode =
         normalize_auto_switch_account_scope_mode(&cfg.auto_switch_account_scope_mode);
@@ -2019,6 +2234,7 @@ where
         &monitored_groups,
         credits_enabled,
         credits_threshold,
+        windows,
     ) else {
         return Ok(None);
     };
@@ -2034,6 +2250,7 @@ where
                 &monitored_groups,
                 credits_enabled,
                 credits_threshold,
+                windows,
             )
         })
         .collect();
@@ -2056,10 +2273,11 @@ where
 
     let target = &candidates[0];
     modules::logger::log_info(&format!(
-        "[AutoSwitch] 触发自动切号: current_id={}, target_id={}, threshold={}%, credits_enabled={}, credits_threshold={}, current_credits={:?}, scope={}, rule={}",
+        "[AutoSwitch] 触发自动切号: current_id={}, target_id={}, threshold={}%, windows={:?}, credits_enabled={}, credits_threshold={}, current_credits={:?}, scope={}, rule={}",
         current_id,
         target.id,
         threshold,
+        windows,
         credits_enabled,
         credits_threshold,
         trigger_context.current_credits_remaining,
@@ -2185,7 +2403,6 @@ pub async fn refresh_all_quotas_logic(
         })
         .map(|mut account| {
             let email = account.email.clone();
-            let account_id = account.id.clone();
             let permit = semaphore.clone();
             async move {
                 let _guard = permit.acquire().await.unwrap();
@@ -2194,7 +2411,7 @@ pub async fn refresh_all_quotas_logic(
                         let unresolved_forbidden = account.quota_error.as_ref().filter(|error| {
                             error.code == Some(403) && !quota.is_forbidden && quota.models.is_empty()
                         });
-                        if let Err(e) = update_account_quota(&account_id, quota) {
+                        if let Err(e) = update_account_quota(&account, quota) {
                             let msg = format!("Account {}: Save quota failed - {}", email, e);
                             Err(msg)
                         } else if let Some(error) = unresolved_forbidden {
@@ -2276,6 +2493,9 @@ fn merge_quota_refresh_state_blocking(
 
     let _lock = lock_account_index().map_err(AppError::Account)?;
     let mut latest = load_account(&account.id).map_err(AppError::Account)?;
+    if latest.created_at != account.created_at {
+        return Err(AppError::Account(QUOTA_REFRESH_ACCOUNT_REIMPORTED.to_string()));
+    }
     if !same_oauth_credentials(&latest.token, expected_token) {
         return Err(AppError::Account(
             "Antigravity OAuth credentials changed during quota refresh".to_owned(),
@@ -2337,8 +2557,12 @@ pub async fn fetch_quota_with_fresh_token(
         expected_token = account.token.clone();
     }
 
-    let (metadata, result) =
-        modules::quota::fetch_quota_for_token(&account.token, &account.email, skip_cache).await;
+    let verification_pending = account.quota_error.as_ref().is_some_and(|error| {
+        error.reason.as_deref() == Some("VALIDATION_REQUIRED") || error.validation_url.is_some()
+    });
+    let (metadata, result) = modules::quota::fetch_quota_for_token(
+        &account.token, &account.email, skip_cache || verification_pending,
+    ).await;
     // loadCodeAssist and the quota endpoints are separate requests. Persist any
     // project data it returned even if fetching model quotas subsequently failed.
     apply_project_metadata(&mut account.token, &metadata);
@@ -2755,6 +2979,16 @@ async fn perform_ide_switch(
     dual_no_restart: bool,
 ) -> Result<IdeSwitchResult, String> {
     let permit = try_begin_antigravity_switch(&ANTIGRAVITY_SWITCH_GATE)?;
+    let local_profile = tokio::task::spawn_blocking(|| {
+        if crate::commands::system::antigravity_ide_uses_shared_credentials() {
+            return Ok(None);
+        }
+        let profile = modules::instance::get_default_user_data_dir()?;
+        modules::instance::require_ide_switch_database(&profile, None)?;
+        Ok::<_, String>(Some(profile))
+    })
+    .await
+    .map_err(|error| error.to_string())??;
     let account = tokio::time::timeout(
         std::time::Duration::from_secs(60),
         prepare_account_for_injection(account_id),
@@ -2763,7 +2997,7 @@ async fn perform_ide_switch(
     .map_err(|_| "ANTIGRAVITY_SWITCH_PREPARATION_TIMEOUT".to_string())??;
 
     tokio::task::spawn_blocking(move || {
-        if crate::commands::system::antigravity_ide_uses_shared_credentials() {
+        let Some(default_dir) = local_profile else {
             let (account, launch_error) = modules::antigravity_shared_switch::switch(
                 &account,
                 modules::antigravity_shared_switch::SwitchTarget::Ide,
@@ -2776,14 +3010,15 @@ async fn perform_ide_switch(
                 permit,
                 shared: true,
             });
-        }
+        };
         if launch {
             modules::process::ensure_antigravity_launch_path_configured()?;
-        }
-        let default_dir = modules::instance::get_default_user_data_dir()?;
-        if launch {
             let default_dir_str = default_dir.to_string_lossy().into_owned();
-            modules::process::close_antigravity_instances(&[default_dir_str], 20)?;
+            modules::process::close_antigravity_instances(
+                &[default_dir_str],
+                20,
+                modules::process::AntigravityCloseMode::Restart,
+            )?;
             let _ = modules::instance::update_default_pid(None);
         }
         modules::instance::inject_account_to_profile_with_account(&default_dir, &account)?;
@@ -3107,6 +3342,43 @@ mod note_tests {
     }
 
     #[test]
+    fn pending_oauth_recovers_missing_details_without_overwriting_corrupt_records() {
+        let _lock = crate::modules::test_support::env_lock()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let data_dir = std::env::temp_dir().join(format!(
+            "antigravity-pending-missing-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+        ));
+        std::env::set_var("COCKPIT_TOOLS_TEST_DATA_DIR", &data_dir);
+        let email = "missing@example.test";
+        let pending = create_pending_oauth_account(email.into(), AccountNoteUpdate::default())
+            .expect("create pending account");
+        let detail = get_accounts_dir().unwrap().join(format!("{}.json", pending.id));
+
+        fs::remove_file(&detail).unwrap();
+        let recreated = create_pending_oauth_account(email.into(), AccountNoteUpdate::default())
+            .expect("recreate the missing pending account");
+        assert_eq!(recreated.id, pending.id);
+        assert_eq!(recreated.created_at, pending.created_at);
+
+        let token = TokenData::new("access".into(), "refresh".into(), 3600, None, None, None);
+        fs::remove_file(&detail).unwrap();
+        let authorized = upsert_account(email.into(), None, token.clone()).unwrap();
+        assert_eq!(authorized.id, pending.id);
+        assert!(!authorized.pending_oauth);
+        assert_eq!(load_account_index().unwrap().accounts.len(), 1);
+
+        fs::write(&detail, "invalid json").unwrap();
+        assert!(create_pending_oauth_account(email.into(), AccountNoteUpdate::default()).is_err());
+        assert!(upsert_account(email.into(), None, token).is_err());
+        assert_eq!(fs::read_to_string(detail).unwrap(), "invalid json");
+        std::env::remove_var("COCKPIT_TOOLS_TEST_DATA_DIR");
+        let _ = fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
     fn reimport_same_email_updates_existing_account_and_does_not_duplicate() {
         let _lock = crate::modules::test_support::env_lock()
             .lock()
@@ -3180,6 +3452,25 @@ mod new_antigravity_model_tests {
     use super::*;
 
     #[test]
+    fn carbon_and_shared_gemini_quota_windows_stay_separate() {
+        let mut account = Account::new(
+            "carbon-fixture".into(),
+            "fixture@example.test".into(),
+            TokenData::new("access".into(), "refresh".into(), 3600, None, None, None),
+        );
+        let mut quota = QuotaData::new();
+        quota.add_model("gemini-carbon-wtu-weekly".into(), None, 21, String::new());
+        quota.add_model("gemini-4-hydrogen-high".into(), None, 39, String::new());
+        account.quota = Some(quota);
+        let groups = collect_group_quotas(&account, &default_auto_switch_groups());
+        let carbon = groups.iter().find(|group| group.id == "g4_carbon").unwrap();
+        let flash = groups.iter().find(|group| group.id == "g3_flash").unwrap();
+        assert_eq!(carbon.weekly, Some(21));
+        assert_eq!(flash.weekly, None);
+        assert_eq!(flash.model_average, Some(39));
+    }
+
+    #[test]
     fn antigravity_quota_windows_trigger_switch_and_filter_candidates() {
         let account = |id: &str, windows: &[(&str, i32)], stale| {
             let mut account = Account::new(
@@ -3198,24 +3489,65 @@ mod new_antigravity_model_tests {
         let current = account("current", &[("gemini:5h", 78), ("gemini-weekly", 0)], false);
         let reported = collect_group_quotas(&current, &groups);
         let groups = reported_auto_switch_groups(AUTO_SWITCH_SCOPE_ANY_GROUP, groups, &reported);
-        let trigger = evaluate_auto_switch_trigger(&current, 0, AUTO_SWITCH_SCOPE_ANY_GROUP, &groups, false, 0).unwrap();
+        let trigger = evaluate_auto_switch_trigger(&current, 0, AUTO_SWITCH_SCOPE_ANY_GROUP, &groups, false, 0, None).unwrap();
         assert_eq!(trigger.hit_groups.len(), 2);
         assert!(trigger.hit_groups.iter().all(|group| group.percentage == 0));
 
         let ready = account("ready", &[("gemini-5h", 80), ("gemini:weekly", 57), ("3p-5h", 0)], false);
-        assert!(can_be_auto_switch_candidate(&ready, "current", 0, &groups, false, 0));
+        assert!(can_be_auto_switch_candidate(&ready, "current", 0, &groups, false, 0, None));
         for rejected in [
             account("exhausted", &[("gemini-weekly", 0)], false),
             account("stale", &[("gemini-weekly", 90)], true),
             account("other-pool", &[("gemini-argon-wtu-weekly", 90)], false),
         ] {
-            assert!(!can_be_auto_switch_candidate(&rejected, "current", 0, &groups, false, 0));
+            assert!(!can_be_auto_switch_candidate(&rejected, "current", 0, &groups, false, 0, None));
         }
 
         let legacy = account("legacy", &[("gemini-3.1-pro-high", 85), ("gemini-3-flash", 67)], true);
-        assert!(can_be_auto_switch_candidate(&legacy, "current", 0, &groups, false, 0));
+        assert!(can_be_auto_switch_candidate(&legacy, "current", 0, &groups, false, 0, None));
         let stale_current = account("current", &[("gemini-weekly", 0), ("gemini-3.1-pro-high", 81)], true);
-        assert!(evaluate_auto_switch_trigger(&stale_current, 0, AUTO_SWITCH_SCOPE_ANY_GROUP, &groups, false, 0).is_none());
+        assert!(evaluate_auto_switch_trigger(&stale_current, 0, AUTO_SWITCH_SCOPE_ANY_GROUP, &groups, false, 0, None).is_none());
+    }
+
+    #[test]
+    fn antigravity_split_window_thresholds_apply_per_window() {
+        let account = |id: &str, windows: &[(&str, i32)]| {
+            let mut account = Account::new(
+                id.into(), "fixture@example.test".into(),
+                TokenData::new("access".into(), "refresh".into(), 3600, None, None, None),
+            );
+            let mut quota = QuotaData::new();
+            for (name, percentage) in windows {
+                quota.add_model((*name).into(), None, *percentage, String::new());
+            }
+            account.quota = Some(quota);
+            account
+        };
+        let groups: Vec<_> = default_auto_switch_groups()
+            .into_iter()
+            .filter(|group| group.id == "g3_flash")
+            .collect();
+        let split = Some(AutoSwitchWindowThresholds { five_hour: 30, weekly: 5 });
+        let scope = AUTO_SWITCH_SCOPE_SELECTED_GROUPS;
+
+        // 5h 低于 5h 阈值即触发，即使周额度充足
+        let low_5h = account("current", &[("gemini-5h", 25), ("gemini-weekly", 90)]);
+        let trigger = evaluate_auto_switch_trigger(&low_5h, 0, scope, &groups, false, 0, split).unwrap();
+        assert_eq!(trigger.hit_groups[0].percentage, 25);
+        // 单阈值模式（threshold=10）下同一账号不触发
+        assert!(evaluate_auto_switch_trigger(&low_5h, 10, scope, &groups, false, 0, None).is_none());
+
+        // 周额度 8% 高于周阈值 5%，5h 充足：不触发
+        let ok = account("current", &[("gemini-5h", 80), ("gemini-weekly", 8)]);
+        assert!(evaluate_auto_switch_trigger(&ok, 0, scope, &groups, false, 0, split).is_none());
+        let low_weekly = account("current", &[("gemini-5h", 80), ("gemini-weekly", 4)]);
+        assert!(evaluate_auto_switch_trigger(&low_weekly, 0, scope, &groups, false, 0, split).is_some());
+
+        // 候选账号需各窗口都满足各自阈值
+        assert!(can_be_auto_switch_candidate(&ok, "x", 0, &groups, false, 0, split));
+        assert!(!can_be_auto_switch_candidate(&low_5h, "x", 0, &groups, false, 0, split));
+        let exhausted_weekly = account("c", &[("gemini-5h", 100), ("gemini-weekly", 0)]);
+        assert!(!can_be_auto_switch_candidate(&exhausted_weekly, "x", 0, &groups, false, 0, split));
     }
 
     #[test]
@@ -3224,6 +3556,7 @@ mod new_antigravity_model_tests {
             id: "claude_45".into(),
             name: "Claude".into(),
             percentage: 10,
+            ..Default::default()
         }];
         let groups = reported_auto_switch_groups(
             AUTO_SWITCH_SCOPE_ANY_GROUP,
@@ -3237,6 +3570,7 @@ mod new_antigravity_model_tests {
             default_auto_switch_groups(),
             &reported,
         );
+        assert!(explicit.iter().any(|group| group.id == "g4_carbon"));
         assert!(explicit.iter().any(|group| group.id == "g4_argon"));
     }
 
@@ -3244,6 +3578,12 @@ mod new_antigravity_model_tests {
     fn new_groups_keep_legacy_models_and_separate_new_versions() {
         let groups = default_auto_switch_groups();
         assert!(groups.iter().any(|group| group.id == "g3_pro"));
+        let carbon = groups.iter().find(|group| group.id == "g4_carbon").unwrap();
+        assert!(carbon.models.contains(&"gemini-4-carbon-high".into()));
+        assert_eq!(
+            normalize_model_for_group_match("gemini-4-carbon-high"),
+            "gemini-4-carbon"
+        );
         let argon = groups.iter().find(|group| group.id == "g4_argon").unwrap();
         assert!(argon.models.contains(&"gemini-4-argon-high".into()));
         assert_eq!(
@@ -3254,9 +3594,19 @@ mod new_antigravity_model_tests {
             normalize_model_for_group_match("claude-sonnet-4-6"),
             normalize_model_for_group_match("claude-sonnet-5-5-high")
         );
+        let flash = groups.iter().find(|group| group.id == "g3_flash").unwrap();
+        assert!(flash.models.contains(&"gemini-4-hydrogen-xhigh".into()));
+        assert_eq!(
+            normalize_model_for_group_match("gemini-4-hydrogen-xhigh"),
+            "gemini-4-hydrogen"
+        );
         assert_ne!(
             normalize_model_for_group_match("gemini-3-flash"),
             normalize_model_for_group_match("gemini-3.8-flash-high")
+        );
+        assert_ne!(
+            normalize_model_for_group_match("gemini-3.8-flash-high"),
+            normalize_model_for_group_match("gemini-4-hydrogen-xhigh")
         );
     }
 }

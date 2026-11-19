@@ -25,6 +25,7 @@ fn live_quota_condition_requires_valid_minified_locals() {
 struct Options {
     api_service: bool,
     native_fast: bool,
+    native_predictions: bool,
     api_key_auth_verified: bool,
     fast_only: bool,
     full_quota_only: bool,
@@ -65,6 +66,7 @@ impl Default for Options {
         Self {
             api_service: false,
             native_fast: true,
+            native_predictions: false,
             api_key_auth_verified: true,
             fast_only: false,
             full_quota_only: false,
@@ -138,6 +140,7 @@ async fn start(options: Options) -> Running {
     let profile_dir = options.profile_dir.clone();
     let api_service = options.api_service;
     let native_fast = options.native_fast;
+    let native_predictions = options.native_predictions;
     let api_key_auth_verified = options.api_key_auth_verified;
     let quota_compat = options.quota_compat;
     let public_entry = options.public_entry;
@@ -214,8 +217,9 @@ async fn start(options: Options) -> Running {
                     } else if expression
                         .starts_with("window.__cockpitQuotaCompat.installLiveQuotaGuard(")
                     {
-                        notice = Some(json!({"phase":"cache-policy","reason":"applied"}));
                         json!({"ok":true})
+                    } else if expression == "window.__cockpitServiceRspack.verifyRequestedDocument()" {
+                        json!({"ok":true,"predictions":{"ok":true}})
                     } else if let Some(nonce) = argument(expression, "prepareHandoff") {
                         prepared_nonce = Some(nonce);
                         preparations += 1;
@@ -241,8 +245,12 @@ async fn start(options: Options) -> Running {
                         } else {
                             json!({"ok":true,"reason":"saved-home-draft"})
                         }
-                    } else if let Some(nonce) = argument(expression, "reloadPreparedDocument") {
-                        assert_eq!(Some(&nonce), prepared_nonce.as_ref());
+                    } else if expression == "window.__cockpitStartupGuard.reload()"
+                        || argument(expression, "reloadPreparedDocument").is_some()
+                    {
+                        if let Some(nonce) = argument(expression, "reloadPreparedDocument") {
+                            assert_eq!(Some(&nonce), prepared_nonce.as_ref());
+                        }
                         reload_attempts += 1;
                         if options.disconnect_on_reload {
                             let _ = notices_tx.send(json!({"phase":"reload-disconnected"}));
@@ -385,13 +393,14 @@ async fn start(options: Options) -> Running {
                 url,
                 profile_dir,
                 native_fast,
-                false,
+                native_predictions,
                 quota_compat,
                 api_key_auth_verified,
                 api_service,
                 preload_first,
                 startup,
                 stop_rx,
+                None,
             )
             .await
         } else {
@@ -399,7 +408,7 @@ async fn start(options: Options) -> Running {
                 url,
                 profile_dir,
                 native_fast,
-                false,
+                native_predictions,
                 quota_compat,
                 api_key_auth_verified,
                 api_service,
@@ -407,6 +416,7 @@ async fn start(options: Options) -> Running {
                 startup,
                 stop_rx,
                 live_quota,
+                None,
             )
             .await
         }
@@ -424,9 +434,11 @@ async fn start(options: Options) -> Running {
 
 impl Running {
     async fn notice(&mut self, phase: &str, reason: Option<&str>) -> Value {
+        let mut received = Vec::new();
         timeout(Duration::from_secs(10), async {
             loop {
                 let notice = self.notices.recv().await.expect("runtime diagnostic");
+                received.push(notice.clone());
                 if notice["phase"] == phase && reason.is_none_or(|value| notice["reason"] == value)
                 {
                     return notice;
@@ -434,7 +446,7 @@ impl Running {
             }
         })
         .await
-        .expect("expected diagnostic in time")
+        .unwrap_or_else(|_| panic!("expected diagnostic {phase}/{reason:?}; received {received:?}"))
     }
 
     async fn finish(self, abort: bool) -> Vec<Value> {
@@ -500,10 +512,16 @@ async fn api_service_fallback_waits_without_automatic_reload() {
         api_key_auth_verified: false,
         quota_compat: false,
         public_entry: true,
+        current_layout: true,
+        startup: None,
         ..Options::default()
     })
     .await;
-    runtime.notice("document", Some("restart-required")).await;
+    if cfg!(any(target_os = "windows", target_os = "macos")) {
+        runtime.notice("activation", Some("quota-restart-required")).await;
+    } else {
+        runtime.notice("document", Some("restart-required")).await;
+    }
     assert_eq!(runtime.navigations.load(Ordering::Acquire), 0);
     let calls = runtime.finish(false).await;
     assert_eq!(
@@ -529,6 +547,7 @@ async fn api_service_public_entry_uses_current_page_on_supported_platforms() {
             quota_compat,
             live_quota: true,
             public_entry: true,
+            startup: None,
             ..Options::default()
         })
         .await;
@@ -641,7 +660,7 @@ async fn live_quota_failure_never_falls_back_to_reload_or_reports_active() {
         let reason = if invalid_plan {
             "quota-location-invalid"
         } else {
-            "debugger-enable-failed"
+            "transport-failed"
         };
         assert_ne!(
             runtime.notice("activation", Some(reason)).await["state"],
@@ -665,6 +684,35 @@ async fn live_quota_failure_never_falls_back_to_reload_or_reports_active() {
         );
         assert_eq!(methods(&calls, "Page.reload"), 0);
     }
+}
+
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn fresh_bound_oauth_predictions_preflight_without_fast_and_respect_the_draft_guard() {
+    let mut runtime = start(Options {
+        api_service: true,
+        api_key_auth_verified: false,
+        native_fast: false,
+        native_predictions: true,
+        quota_compat: false,
+        public_entry: true,
+        live_rspack: true,
+        reload_rejections: vec!["draft-present"],
+        ..Options::default()
+    })
+    .await;
+    runtime.notice("document", Some("draft-present")).await;
+    assert_eq!(runtime.navigations.load(Ordering::Acquire), 0);
+    assert_eq!(
+        runtime.notice("activation", Some("module-evaluated")).await["state"],
+        "active"
+    );
+    assert_eq!(runtime.navigations.load(Ordering::Acquire), 1);
+    let calls = runtime.finish(false).await;
+    assert_eq!(expressions(&calls, "window.__cockpitServiceRspack.verifyRequestedDocument()"), 1);
+    assert_eq!(methods(&calls, "Page.addScriptToEvaluateOnNewDocument"), 1);
+    assert_eq!(expressions(&calls, "window.__cockpitStartupGuard.reload()"), 2);
+    assert_safe_protocol(&calls);
 }
 
 #[tokio::test]
@@ -1641,7 +1689,8 @@ async fn disabled_and_stopped_sessions_do_not_connect() {
         false,
         false,
         None,
-        receiver
+        receiver,
+        None,
     )
     .await
     .is_ok());
@@ -1656,7 +1705,8 @@ async fn disabled_and_stopped_sessions_do_not_connect() {
         false,
         false,
         None,
-        receiver
+        receiver,
+        None,
     )
     .await
     .is_ok());
@@ -1693,11 +1743,16 @@ async fn verified_api_fast_running_document_never_reloads() {
         api_service: true,
         quota_compat: false,
         public_entry: true,
+        current_layout: true,
         startup: None,
         ..Options::default()
     })
     .await;
-    runtime.notice("document", Some("restart-required")).await;
+    if cfg!(any(target_os = "windows", target_os = "macos")) {
+        runtime.notice("activation", Some("quota-restart-required")).await;
+    } else {
+        runtime.notice("document", Some("restart-required")).await;
+    }
     assert_eq!(runtime.navigations.load(Ordering::Acquire), 0);
     let calls = runtime.finish(false).await;
     assert_eq!(
@@ -1752,7 +1807,7 @@ async fn live_quota_worker_preserves_an_already_active_fast_module() {
 
 #[cfg(target_os = "windows")]
 #[tokio::test]
-async fn windows_api_fresh_startup_retains_legacy_live_unlock_without_reload() {
+async fn windows_api_fresh_startup_registers_preload_without_reloading_an_open_document() {
     let mut runtime = start(Options {
         api_service: true,
         quota_compat: false,
@@ -1761,9 +1816,7 @@ async fn windows_api_fresh_startup_retains_legacy_live_unlock_without_reload() {
         ..Options::default()
     })
     .await;
-    runtime
-        .notice("activation", Some("quota-breakpoint-armed"))
-        .await;
+    runtime.notice("document", Some("restart-required")).await;
     assert_eq!(runtime.navigations.load(Ordering::Acquire), 0);
     let calls = runtime.finish(false).await;
     assert_eq!(
@@ -1773,6 +1826,7 @@ async fn windows_api_fresh_startup_retains_legacy_live_unlock_without_reload() {
     assert!(calls.iter().any(|call| call["params"]["source"]
         .as_str()
         .is_some_and(|source| source.contains("__cockpitStartupPreloadStarted"))));
+    assert_safe_protocol(&calls);
 }
 
 #[cfg(target_os = "macos")]
@@ -1813,7 +1867,7 @@ async fn full_quota_only_module_is_not_replaced_by_a_live_guard_on_reconnect() {
     })
     .await;
     runtime.notice("activation", Some("module-evaluated")).await;
-    runtime.notice("cache-policy", Some("applied")).await;
+    runtime.notice("document", Some("live-runtime-registered")).await;
     let calls = runtime.finish(false).await;
     assert_eq!(methods(&calls, "Debugger.enable"), 0);
     assert_eq!(
@@ -1823,9 +1877,9 @@ async fn full_quota_only_module_is_not_replaced_by_a_live_guard_on_reconnect() {
     assert_eq!(
         expressions(
             &calls,
-            "window.__cockpitQuotaCompat.installLiveQuotaGuard({})"
+            "window.__cockpitQuotaCompat.installLiveQuotaGuard()"
         ),
-        1
+        0
     );
 }
 
@@ -1887,6 +1941,6 @@ async fn page_worker_waits_for_browser_completion_before_replacing_its_owner() {
 
 #[test]
 fn automatic_fast_does_not_supply_catalog_fallbacks() {
-    let runtime = bootstrap(true, false, false, true, false, "catalog-test");
+    let runtime = bootstrap(true, false, false, true, false, "catalog-test", None);
     assert!(!runtime.contains("serviceTierFallbacks"));
 }

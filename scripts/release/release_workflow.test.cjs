@@ -49,6 +49,9 @@ test("enabled platform uploads use retry helper and the actual fork tag", () => 
     assert.match(body, /actions\/checkout@v4/);
     assert.match(body, /actions\/setup-node@v4/);
     assert.match(body, /node scripts\/release\/upload_release_assets\.cjs/);
+    if (job !== 'build-macos-universal') {
+      assert.match(body, /tauri(?:\.cjs)? build .*--config src-tauri\/tauri\.prebuilt-frontend\.conf\.json/);
+    }
   }
 });
 
@@ -137,6 +140,40 @@ test("trusted main CI and release jobs share caches, with correct platform separ
   assert.match(cache, /save-if: .*github.event_name != 'pull_request'.*refs\/heads\/main/);
   assert.match(cache, /if: runner.os != 'macOS'/);
   assert.doesNotMatch(workflow, /Library\/Caches\/tauri|uses: swatinem\/rust-cache/);
+});
+
+test("macOS release builds use the same target cache as main prewarming", () => {
+  const warm = fs.readFileSync(path.join(__dirname, "../../.github/workflows/warm-macos-release-cache.yml"), "utf8");
+  assert.match(warm, /uses: \.\/.github\/actions\/macos-release-cache\s+with:\s+target: \$\{\{ matrix.target \}\}/);
+  for (const [arch, next, target] of [
+    ["aarch64", "build-macos-x86_64", "aarch64-apple-darwin"],
+    ["x86_64", "build-macos-universal", "x86_64-apple-darwin"],
+  ]) {
+    assert.ok(warm.includes(target));
+    assert.match(jobBody(`build-macos-${arch}`, next), new RegExp(`uses: ./\\.github/actions/macos-release-cache\\s+with:\\s+target: ${target}`));
+  }
+});
+
+test("the fork validation bundle only waits for the packages the fork builds", () => {
+  const body = jobBody("validate-release-artifacts");
+  const needs = body.slice(body.indexOf("    needs:"), body.indexOf("    runs-on:"));
+  assert.deepEqual([...needs.matchAll(/^      - (.+)$/gm)].map((match) => match[1]), [
+    "prepare-release", "build-windows", "build-macos-aarch64", "build-macos-x86_64", "build-macos-universal",
+  ]);
+  assert.match(body, /--release-tag "\$\{RELEASE_TAG\}"/);
+  assert.match(body, /--fork-validation/);
+});
+
+test("1.4.2 release notes include each newly merged upstream release in order", () => {
+  const versions = ["1.4.2", "1.4.1", "1.4.0", "1.3.84", "1.3.83"];
+  const mapping = workflow.match(/"1[.]4[.]2"\)\s*RELEASE_VERSIONS=\(([^)]*)\)/);
+  assert.ok(mapping);
+  assert.equal(mapping[1], versions.map((version) => `"${version}"`).join(" "));
+  for (const file of ["CHANGELOG.md", "CHANGELOG.zh-CN.md"]) {
+    const changelog = fs.readFileSync(path.join(__dirname, "../..", file), "utf8");
+    const headings = [...changelog.matchAll(/^## \[([\d.]+)] - /gm)].map((match) => match[1]);
+    assert.deepEqual(headings.slice(0, versions.length), versions, file);
+  }
 });
 
 test("1.3.73 release notes include precisely the four new upstream releases", () => {

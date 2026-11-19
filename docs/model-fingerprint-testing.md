@@ -2,7 +2,7 @@
 
 入口按钮统一为“指纹测智”：账号概览页位于“鹈鹕测智”按钮紧邻左侧；模型供应商页位于“一键测试”按钮紧邻左侧。两处均使用原有批量操作区，不在顶部工具栏重复放置入口。
 
-- 请求模型：gpt-5.6-sol/terra/luna、gpt-6-astra/sol/luna、gpt-6.1-sol。
+- 请求模型：gpt-5.6-sol/terra/luna、gpt-6-astra/sol/luna、gpt-6.1-sol、gpt-6.2-sol/astra。
 - 首次默认勾选 gpt-5.6-sol、gpt-6-sol、gpt-6-astra；之后记忆模型选择，包括全部取消。
 - 首次不勾选账号；开始测试后记忆本次实际使用的账号／API Key。
 - OAuth 账号、独立 API Key 账号、模型供应商中的各个 API Key 均可选择；相同上游、Key、协议和鉴权方式去重。
@@ -25,7 +25,7 @@ API 上游按保存的 Responses、Chat Completions 或 Anthropic 协议和显�
 请求选项仍为上述七个模型，`gpt-5.5` 不作为请求选项；参考候选不裁剪或改名。
 参考库和分析代码随应用打包，分析在本地进行，不上传凭据或回答到 ModelTrace。
 候选概率是参考库内的统计归因，不是模型身份的确定证明；返回的 model 字段只作单独展示。
-gpt-6.1-sol 可作为请求模型选择；当前固定参考库尚无 GPT-6.1 Sol 或 Terra 指纹，分析仍在既有候选内进行，不新增未经校准的参考数据。
+GPT-6.1 Sol、GPT-6.2 Sol 和 GPT-6.2 Astra 可手动选择。固定参考库没有 GPT-6.1 或 GPT-6.2 的校准指纹，分析仍在既有 18 个候选内进行。
 未集成 ModelTrace Guard 任务监测插件、hooks 或自动额外采样。
 
 本版不修改额度耗尽提示窗口隐藏功能。

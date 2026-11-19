@@ -29,7 +29,10 @@ mod request_diagnostics_poll_tests {
         let task = tokio::spawn(async move {
             let mut requests = Vec::new();
             for response in responses {
-                let (mut socket, _) = listener.accept().await.unwrap();
+                let (mut socket, _) = timeout(REQUEST_DIAGNOSTICS_POLL_TIMEOUT, listener.accept())
+                    .await
+                    .expect("diagnostic fixture did not receive a connection")
+                    .unwrap();
                 let mut request = Vec::new();
                 while !request.windows(4).any(|window| window == b"\r\n\r\n") {
                     let mut bytes = [0_u8; 1024];
@@ -198,16 +201,18 @@ mod request_diagnostics_poll_tests {
     async fn request_diagnostics_pull_bounds_total_body_time_and_cancels_closed_endpoint() {
         let mut delayed = FakeDiagnosticResponse::json(json!({"events":[fake_detail("late")]}));
         delayed.chunked = true;
-        delayed.body_delay = Duration::from_millis(150);
+        // Give a cold Windows HTTP client time to connect while keeping the
+        // fixture body later than the entire request deadline.
+        delayed.body_delay = Duration::from_secs(2);
         let (port, server) = fake_diagnostic_server(vec![delayed]).await;
         let client = build_localhost_http_client(REQUEST_DIAGNOSTICS_POLL_TIMEOUT, "test").unwrap();
         let started = Instant::now();
-        let error = pull_request_diagnostics_from_port(&client, port, Duration::from_millis(40))
+        let error = pull_request_diagnostics_from_port(&client, port, Duration::from_secs(1))
             .await
             .unwrap_err();
         assert!(error.contains("超时"));
-        assert!(started.elapsed() < Duration::from_millis(500));
-        server.await.unwrap();
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert_eq!(server.await.unwrap().len(), 1);
 
         let mut delayed =
             FakeDiagnosticResponse::json(json!({"events":[fake_detail("cancelled")]}));
@@ -222,7 +227,10 @@ mod request_diagnostics_poll_tests {
         .await
         .unwrap();
         assert!(result.is_none());
-        server.await.unwrap();
+        // Cancellation can win before the connection opens. The test owns
+        // the fixture and must stop it even when no client reached accept.
+        server.abort();
+        let _ = server.await;
     }
 
     #[tokio::test]

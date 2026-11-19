@@ -28,6 +28,8 @@ mod go_limits_tests;
 
 #[path = "images_credentials_retry_tests.rs"]
 mod credentials_retry_tests;
+#[path = "images_open_timeout_tests.rs"]
+mod open_timeout_tests;
 
 #[tokio::test]
 async fn oauth_image_request_fault_keeps_error_without_refresh_rotation_or_cooling() {
@@ -1231,7 +1233,13 @@ async fn image_status_and_network_retries_have_independent_attempt_counters() {
     assert_eq!(response.status(), 200);
     let _: Value = response.json().await.unwrap();
     assert_eq!(calls.load(Ordering::SeqCst), 3);
-    assert_eq!(host.selections.lock().unwrap().len(), 1);
+    {
+        let selections = host.selections.lock().unwrap();
+        assert_eq!(selections.len(), 2);
+        assert!(selections[0].preferred_account_id.is_none());
+        assert_eq!(selections[1].preferred_account_id.as_deref(), Some("image-account"));
+        assert!(!selections[1].force_refresh);
+    }
     assert_eq!(host.capacity.available_permits(), 1);
     cleanup(handle, upstream, root).await;
 }

@@ -87,7 +87,7 @@ for (const platform of ['antigravity', 'antigravity_ide']) {
   });
 }
 
-test('Cursor retains its three primary bars and the upstream On-Demand window', async () => {
+test('Cursor shows its three included quotas and the separate On-Demand quota', async () => {
   const store = (await server.ssrLoadModule('/src/stores/useCursorAccountStore.ts')).useCursorAccountStore;
   const account = { id: 'cursor-test', email: 'cursor@example.com', access_token: '', created_at: 0, last_used: 0,
     cursor_usage_raw: { individualUsage: { plan: { totalPercentUsed: 20, autoPercentUsed: 30, apiPercentUsed: 40 }, onDemand: { used: 100, limit: 1000, enabled: true } } } };

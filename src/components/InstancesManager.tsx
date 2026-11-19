@@ -1,3 +1,4 @@
+import { isLaunchPathApp, readMissingLaunchPathApp } from '../utils/appLaunchPath';
 import { useDurableUiSetting } from '../hooks/useDurableUiSetting';
 import { previewDurableUiSetting } from '../utils/durableUiSettings';
 import { isCodexLaunchCancelled } from '../utils/codexLaunchCancellation';
@@ -32,6 +33,8 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  ArrowDown,
+  ArrowUp,
 } from "lucide-react";
 import { confirm as confirmDialog, open } from "@tauri-apps/plugin-dialog";
 import md5 from "blueimp-md5";
@@ -91,6 +94,7 @@ import {
 } from "../services/codexInstanceService";
 import { CodexSpeedSelect } from "./codex/CodexSpeedSelect";
 import { SingleSelectDropdown } from "./SingleSelectDropdown";
+import { SingleSelectFilterDropdown } from "./SingleSelectFilterDropdown";
 import type { CodexAppSpeed } from "../types/codex";
 import { getCodexExperimentalModelErrorMessage } from "../utils/codexExperimentalModel";
 import { isCodexInstanceAccountConflict } from "../utils/codexInstanceLaunchConflict";
@@ -210,6 +214,7 @@ interface InstancesManagerProps<TAccount extends AccountLike> {
     | "workbuddy"
     | "minimax_code"
     | "zcode";
+  onLaunchRequest?: (instance: InstanceProfile) => void;
   onInstanceStarted?: (instance: InstanceProfile) => void | Promise<void>;
   onBeforeStart?: (instance: InstanceProfile) => boolean | Promise<boolean>;
   onInstanceStartError?: (
@@ -624,6 +629,7 @@ export function InstancesManager<TAccount extends AccountLike>({
   getAccountDisplayText,
   getAccountSearchText,
   appType = "antigravity",
+  onLaunchRequest,
   onInstanceStarted,
   onBeforeStart,
   onInstanceStartError,
@@ -631,7 +637,15 @@ export function InstancesManager<TAccount extends AccountLike>({
   isAccountAllowedForLaunchMode,
   toolbarExtraActions,
 }: InstancesManagerProps<TAccount>) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const copyTimeoutDuration = useMemo(
+    () => new Intl.NumberFormat(i18n.resolvedLanguage ?? i18n.language, {
+      style: "unit",
+      unit: "minute",
+      unitDisplay: "short",
+    }),
+    [i18n.resolvedLanguage, i18n.language],
+  );
   const {
     instances,
     defaults,
@@ -706,6 +720,7 @@ export function InstancesManager<TAccount extends AccountLike>({
   const [formCodexOpenConfigLoading, setFormCodexOpenConfigLoading] =
     useState(false);
   const [formCopySourceInstanceId, setFormCopySourceInstanceId] = useState("");
+  const [formCopyTimeoutMinutes, setFormCopyTimeoutMinutes] = useState("10");
   const [formError, setFormError] = useState<string | null>(null);
   const formErrorRef = useRef<HTMLDivElement | null>(null);
   const copyAutoNameRef = useRef("");
@@ -1066,6 +1081,7 @@ export function InstancesManager<TAccount extends AccountLike>({
     setFormWorkingDir("");
     setFormExtraArgs("");
     setFormInitMode("empty");
+    setFormCopyTimeoutMinutes("10");
     setFormLaunchMode(isCliOnlyApp ? "cli" : "app");
     setFormAppSpeed("standard");
     setFormBindAccountId("");
@@ -1624,6 +1640,10 @@ export function InstancesManager<TAccount extends AccountLike>({
             : resolveBindAccountValue(formBindAccountId),
           modelRouting: nextModelRouting,
           copySourceInstanceId: formCopySourceInstanceId || defaultInstanceId,
+          copyTimeoutSeconds:
+            isCodexApp && formInitMode === "copy"
+              ? Number(formCopyTimeoutMinutes) * 60
+              : undefined,
         });
         if (
           created?.id &&
@@ -1690,42 +1710,25 @@ export function InstancesManager<TAccount extends AccountLike>({
   const handleMissingPathError = (error: unknown, instanceId?: string) => {
     if (isCodexApp && isCodexLaunchCancelled(error)) return true;
     const message = String(error ?? "");
-    const missingPathPrefix = "APP_PATH_NOT_FOUND:";
-    const multiInstanceExePrefix = "CLAUDE_MULTI_INSTANCE_REQUIRES_EXE:";
-    const isMissingPath = message.startsWith(missingPathPrefix);
-    const isMultiInstanceExeRequired = message.startsWith(
-      multiInstanceExePrefix,
-    );
-    if (!isMissingPath && !isMultiInstanceExeRequired) {
-      return false;
-    }
-    const rawApp = isMultiInstanceExeRequired
-      ? message.slice(multiInstanceExePrefix.length)
-      : message.slice(missingPathPrefix.length);
-    const app =
-      rawApp === "codex" ||
-      rawApp === "claude" ||
-      rawApp === "antigravity" ||
-      rawApp === "vscode" ||
-      rawApp === "windsurf" ||
-      rawApp === "kiro" ||
-      rawApp === "cursor" ||
-      rawApp === "grok" ||
-      rawApp === "codebuddy" ||
-      rawApp === "codebuddy_cn" ||
-      rawApp === "qoder" ||
-      rawApp === "zcode"
-        ? rawApp
-        : appType;
+    const app = message === 'APP_PATH_NOT_FOUND:antigravity_legacy'
+      ? 'antigravity'
+      : message.startsWith('CLAUDE_MULTI_INSTANCE_REQUIRES_EXE:')
+        ? 'claude'
+        : readMissingLaunchPathApp(error);
+    if (!app || !isLaunchPathApp(app)) return false;
+    const pathRuntimeTarget = message === 'APP_PATH_NOT_FOUND:antigravity_legacy'
+      ? 'antigravity' : app === 'antigravity' ? 'antigravity_ide' : undefined;
     const runtimeTarget =
       appType === "antigravity" || appType === "antigravity_ide"
         ? appType
         : undefined;
-    const retry = instanceId
+    const retry = message.startsWith('APP_PATH_MISSING_AFTER_SWITCH:')
+      ? { kind: 'launchOnly' as const, instanceId, runtimeTarget }
+      : instanceId
       ? { kind: "instance" as const, instanceId, runtimeTarget }
       : { kind: "default" as const, runtimeTarget };
     window.dispatchEvent(
-      new CustomEvent("app-path-missing", { detail: { app, retry } }),
+      new CustomEvent("app-path-missing", { detail: { app, pathRuntimeTarget, retry } }),
     );
     return true;
   };
@@ -1866,6 +1869,10 @@ export function InstancesManager<TAccount extends AccountLike>({
   );
 
   const handleStart = async (instance: InstanceProfile) => {
+    if (onLaunchRequest) {
+      onLaunchRequest(instance);
+      return;
+    }
     await startStoppedInstance(instance, {
       showRunningNotice: supportsStopControl && !usesTerminalLaunch(instance),
       showSuccessMessage: true,
@@ -2597,23 +2604,16 @@ export function InstancesManager<TAccount extends AccountLike>({
               onChange={(event) => setSearchQuery(event.target.value)}
             />
           </div>
-          <div className="sort-select">
-            <ArrowDownWideNarrow size={14} className="sort-icon" />
-            <select
-              value={sortField}
-              onChange={(event) =>
-                previewDurableUiSetting(sortKeys.sortField, event.target.value)
-              }
-              aria-label={t("instances.sort.label", "排序")}
-            >
-              <option value="createdAt">
-                {t("instances.sort.createdAt", "按创建时间")}
-              </option>
-              <option value="lastLaunchedAt">
-                {t("instances.sort.lastLaunchedAt", "按启动时间")}
-              </option>
-            </select>
-          </div>
+          <SingleSelectFilterDropdown
+            value={sortField}
+            options={[
+              { value: "createdAt", label: t("instances.sort.createdAt", "按创建时间") },
+              { value: "lastLaunchedAt", label: t("instances.sort.lastLaunchedAt", "按启动时间") },
+            ]}
+            ariaLabel={t("instances.sort.label", "排序")}
+            icon={<ArrowDownWideNarrow size={14} />}
+            onChange={(value) => previewDurableUiSetting(sortKeys.sortField, value)}
+          />
           <button
             className="sort-direction-btn"
             onClick={() =>
@@ -2626,7 +2626,7 @@ export function InstancesManager<TAccount extends AccountLike>({
             }
             aria-label={t("instances.sort.toggleDirection", "切换排序方向")}
           >
-            {sortDirection === "asc" ? "⬆" : "⬇"}
+            {sortDirection === "asc" ? <ArrowUp size={15} /> : <ArrowDown size={15} />}
           </button>
           <button
             className="sort-direction-btn"
@@ -2795,7 +2795,14 @@ export function InstancesManager<TAccount extends AccountLike>({
                 </div>
                 <div className="instance-main-info">
                   <div className="instance-title-row">
-                    <span className="instance-name">
+                    <span
+                      className="instance-name"
+                      title={
+                        instance.isDefault
+                          ? t("instances.defaultName", "默认实例")
+                          : instance.name
+                      }
+                    >
                       {instance.isDefault
                         ? t("instances.defaultName", "默认实例")
                         : instance.name}
@@ -3430,6 +3437,21 @@ export function InstancesManager<TAccount extends AccountLike>({
                         "会复制来源实例的目录、绑定账号、启动方式和混合路由，不必重新配一遍。",
                       )}
                     </p>
+                    {isCodexApp && (
+                      <div className="form-group">
+                        <label>{t("instances.form.copyTimeout", "Copy timeout")}</label>
+                        <SingleSelectDropdown
+                          value={formCopyTimeoutMinutes}
+                          onChange={setFormCopyTimeoutMinutes}
+                          options={[2, 10, 30, 60].map((minutes) => ({
+                            value: String(minutes),
+                            label: copyTimeoutDuration.format(minutes),
+                          }))}
+                          ariaLabel={t("instances.form.copyTimeout", "Copy timeout")}
+                          className="instance-copy-source-select"
+                        />
+                      </div>
+                    )}
                     {selectedCopySourceInstance?.running && (
                       <p className="form-hint warning">
                         {t(

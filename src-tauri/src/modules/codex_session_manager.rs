@@ -13,7 +13,7 @@ use uuid::Uuid;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
-use crate::modules;
+use crate::modules::{self, codex_session_rollout_reader as rollout_reader};
 
 const DEFAULT_INSTANCE_ID: &str = "__default__";
 const DEFAULT_INSTANCE_NAME: &str = "默认实例";
@@ -399,6 +399,30 @@ fn read_token_stats_from_rollout_uncached(
     rollout_path: &Path,
     file_len: u64,
 ) -> Option<(u64, u64, u64)> {
+    if rollout_reader::is_compressed(rollout_path) {
+        // Compressed byte offsets cannot be used to seek to JSONL records.
+        let mut reader = BufReader::new(rollout_reader::open(rollout_path).ok()?);
+        let mut line = Vec::new();
+        let mut latest = None;
+        // Token-count records are small. Discard the rest of oversized
+        // conversation records without growing the line buffer.
+        const MAX_TOKEN_RECORD_BYTES: u64 = 1024 * 1024;
+        while reader.by_ref().take(MAX_TOKEN_RECORD_BYTES + 1).read_until(b'\n', &mut line).ok()? != 0 {
+            if line.len() as u64 > MAX_TOKEN_RECORD_BYTES {
+                if line.last() != Some(&b'\n') {
+                    reader.skip_until(b'\n').ok()?;
+                }
+                line.clear();
+                continue;
+            }
+            if let Some(stats) = parse_token_stats_line(&line) {
+                latest = Some(stats);
+            }
+            line.clear();
+        }
+        return latest;
+    }
+
     let mut file = File::open(rollout_path).ok()?;
     let mut offset = file_len;
     let mut pending_prefix = Vec::new();
@@ -450,51 +474,41 @@ fn byte_before_is_newline(file: &mut File, offset: u64) -> std::io::Result<bool>
 }
 
 fn parse_token_stats_lines(content: &[u8]) -> Option<(u64, u64, u64)> {
-    for line in content.split(|byte| *byte == b'\n').rev() {
-        let raw = String::from_utf8_lossy(line);
-        let trimmed = raw.trim();
-        if trimmed.is_empty()
-            || !trimmed.contains("\"token_count\"")
-            || !trimmed.contains("\"total_token_usage\"")
-        {
-            continue;
-        }
+    content
+        .split(|byte| *byte == b'\n')
+        .rev()
+        .find_map(parse_token_stats_line)
+}
 
-        let Ok(parsed) = serde_json::from_str::<JsonValue>(trimmed) else {
-            continue;
-        };
-        if parsed.get("type").and_then(|value| value.as_str()) != Some("event_msg") {
-            continue;
-        }
-        let Some(payload) = parsed.get("payload") else {
-            continue;
-        };
-        if payload.get("type").and_then(|value| value.as_str()) != Some("token_count") {
-            continue;
-        }
-        let Some(usage) = payload
-            .get("info")
-            .and_then(|info| info.get("total_token_usage"))
-        else {
-            continue;
-        };
-
-        let input = usage
-            .get("input_tokens")
-            .and_then(|value| value.as_u64())
-            .unwrap_or(0);
-        let output = usage
-            .get("output_tokens")
-            .and_then(|value| value.as_u64())
-            .unwrap_or(0);
-        let total = usage
-            .get("total_tokens")
-            .and_then(|value| value.as_u64())
-            .unwrap_or(0);
-        return Some((input, output, total));
+fn parse_token_stats_line(line: &[u8]) -> Option<(u64, u64, u64)> {
+    let raw = String::from_utf8_lossy(line);
+    let trimmed = raw.trim();
+    if !trimmed.contains("\"token_count\"") || !trimmed.contains("\"total_token_usage\"") {
+        return None;
     }
 
-    None
+    let parsed: JsonValue = serde_json::from_str(trimmed).ok()?;
+    if parsed.get("type")?.as_str()? != "event_msg" {
+        return None;
+    }
+    let payload = parsed.get("payload")?;
+    if payload.get("type")?.as_str()? != "token_count" {
+        return None;
+    }
+    let usage = payload.get("info")?.get("total_token_usage")?;
+    let input = usage
+        .get("input_tokens")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let output = usage
+        .get("output_tokens")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let total = usage
+        .get("total_tokens")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    Some((input, output, total))
 }
 
 pub fn list_sessions_across_instances(
@@ -1693,7 +1707,7 @@ fn collect_export_session_entries(
     let instances = collect_instances()?;
     let mut selected = HashMap::<String, (CodexSyncInstance, ThreadSnapshot)>::new();
     for instance in &instances {
-        for snapshot in load_thread_snapshots(instance)? {
+        for snapshot in scan_thread_snapshots(instance, Some(requested_ids))? {
             if !requested_ids.contains(&snapshot.id) {
                 continue;
             }
@@ -2238,21 +2252,55 @@ fn is_instance_running(
 }
 
 fn load_thread_snapshots(instance: &CodexSyncInstance) -> Result<Vec<ThreadSnapshot>, String> {
+    scan_thread_snapshots(instance, None)
+}
+
+fn scan_thread_snapshots(
+    instance: &CodexSyncInstance,
+    export_selection: Option<&HashSet<String>>,
+) -> Result<Vec<ThreadSnapshot>, String> {
     let session_index_map = read_session_index_map(&instance.data_dir)?;
     let display_context = modules::codex_session_display::SessionDisplayContext::load(&instance.data_dir);
     let mut snapshots = Vec::new();
+    let mut readable_plain_paths = HashSet::new();
     for dir_name in SESSION_DIRS {
         let root_dir = instance.data_dir.join(dir_name);
         if !root_dir.exists() {
             continue;
         }
         for rollout_path in list_rollout_files(&root_dir)? {
-            let Some(session_meta) = read_rollout_session_meta(&rollout_path)? else {
+            let compressed = rollout_reader::is_compressed(&rollout_path);
+            // Sorted discovery visits plain JSONL first. The official reader also
+            // prefers it when both representations of the same path are present.
+            if compressed && readable_plain_paths.contains(&rollout_path.with_extension("")) {
                 continue;
+            }
+            let session_meta = match read_rollout_session_meta(&rollout_path) {
+                Ok(Some(metadata)) => metadata,
+                Ok(None) => continue,
+                Err(error) => {
+                    // Export reads the selected rollout's dependencies separately.
+                    // Fail only when this file may itself be a selected rollout.
+                    let unselected = export_selection.is_some_and(|selected| {
+                        modules::codex_history_projection_repair::rollout_file_ids(&rollout_path)
+                            .is_some_and(|(logical, _)| !selected.contains(&logical))
+                    });
+                    if !unselected {
+                        return Err(error);
+                    }
+                    modules::logger::log_warn(&format!(
+                        "[Codex Session Manager] Cannot read unselected export rollout {}: {error}",
+                        rollout_path.display(),
+                    ));
+                    continue;
+                }
             };
             let Some(id) = session_meta_id(&session_meta) else {
                 continue;
             };
+            if !compressed {
+                readable_plain_paths.insert(rollout_path.clone());
+            }
             let cwd = session_meta_cwd(&session_meta).unwrap_or_else(|| "未知工作目录".to_string());
             let index_title = session_index_map
                 .get(&id)
@@ -2290,11 +2338,6 @@ fn load_thread_snapshots(instance: &CodexSyncInstance) -> Result<Vec<ThreadSnaps
                 .map(|snapshot| snapshot.id.clone()).collect::<HashSet<_>>();
             snapshots.retain(|snapshot| !resolved_ids.contains(&snapshot.id) || heads.get(&snapshot.id)
                 .is_some_and(|head| rollout_reader::same_storage_path(head, &snapshot.rollout_path)));
-            // During materialization both names may coexist; the official reader prefers plain JSONL.
-            let plain_paths = snapshots.iter().filter(|snapshot| !rollout_reader::is_compressed(&snapshot.rollout_path))
-                .map(|snapshot| snapshot.rollout_path.clone()).collect::<HashSet<_>>();
-            snapshots.retain(|snapshot| !rollout_reader::is_compressed(&snapshot.rollout_path)
-                || !plain_paths.contains(&snapshot.rollout_path.with_extension("")));
         }
         Err(error) => modules::logger::log_warn(&format!("[Codex Session Manager] current rollout heads unavailable: {error}")),
     }
@@ -2333,9 +2376,6 @@ fn list_rollout_files(root_dir: &Path) -> Result<Vec<PathBuf>, String> {
     result.sort();
     Ok(result)
 }
-
-#[path = "codex_session_rollout_reader.rs"]
-mod rollout_reader;
 
 fn history_read_error(detail: &str) -> String {
     modules::i18n::translate(&modules::config::get_user_config().language,

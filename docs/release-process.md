@@ -28,6 +28,7 @@ Include a separate fork beta section when a later build changes fork behavior.
 The 1.3.82 upgrade aggregates exactly 1.3.82, 1.3.81, 1.3.80, 1.3.79, 1.3.78,
 1.3.77 and 1.3.76, including the fork adaptation in the 1.3.82 section. The
 1.3.75 baseline is not repeated in the new draft release notes.
+The 1.4.2 upgrade includes 1.4.2, 1.4.1, 1.4.0, 1.3.84 and 1.3.83.
 
 ## Draft builds
 
@@ -68,7 +69,7 @@ reporting the build as complete.
 
 ## Build caches and macOS packaging
 
-依赖缓存由 `.github/actions/host-build-cache` 统一配置。CI 在可信的 `main` push 上构建并保存缓存，后续 tag 可读取默认分支缓存；不同 tag 之间不能互读各自生成的缓存。CI 与 release 按相同平台标识使用 `shared-key`，Rust 工具链、依赖与环境仍参与键计算，workspace 指向仓库根目录的 `target`，不缓存宿主业务 crate。Windows/Linux 缓存实际的 Tauri 工具目录；macOS 的 create-dmg 脚本随 bundler 写入 `target/.../bundle/share`，不再缓存不存在的 `~/Library/Caches/tauri`。首次启用或工具链变化仍可能冷编译，实际提速需由后续远端构建确认。
+Windows release 和通用 CI 使用 `.github/actions/host-build-cache`。macOS ARM 和 Intel release 与主分支预热任务共用 `.github/actions/macos-release-cache`，按 Rust 目标架构区分缓存，使用同一固定工具链。预热任务在 `main` 保存缓存，标签构建可读取；两套动作均使用仓库根目录的 `target`，不缓存宿主业务 crate。首次启用或工具链变化仍可能冷编译，实际提速由后续远端构建确认。
 
 Universal 不再从源码重编两套宿主。ARM 和 Intel release job 在本轮构建后通过 `scripts/release/macos-universal.cjs --mode stage` 上传Rust 宿主的薄二进制，附带版本、commit、workflow run ID 和 SHA-256。Universal job 等待这两个 job 完成，使用同一 run 的具名 artifact；`--mode merge` 校验身份、文件哈希、实际架构，合并宿主，并逐片提取比对原始内容，再运行官方 `tauri bundle --target universal-apple-darwin`，沿用签名、资源和 DMG 流程。缺失或不匹配直接失败，不回退到其他版本或旧产物。CI matrix 中的 Universal 源码构建仍保留，用于独立兼容性验证。
 
@@ -106,5 +107,8 @@ be described as signed and notarized. Universal uses this run's thin inputs and
 receives its own final signature.
 
 Manual workflow runs on a valid release tag can leave `publish=false` to produce
-validation artifacts only. Setting it to true uploads to the same draft Release;
+validation artifacts only. The validation bundle checks both Windows installers,
+the portable archive, all three DMGs and signed updater entries for Windows x64
+and both macOS architectures. The manifest URLs use the actual candidate tag.
+Setting `publish=true` uploads to the same draft Release;
 it does not make that Release public.

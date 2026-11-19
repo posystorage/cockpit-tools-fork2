@@ -1,4 +1,44 @@
 {
+  "antigravityLaunch": {
+    "initializeTitle": "Antigravity IDE perlu diinisialisasi",
+    "initializeThenSwitch": "Buka IDE sekali agar dapat beralih akun.",
+    "initializeThenBind": "Jalankan instans sekali agar dapat menautkan akun.",
+    "initializeThenUseAccount": "Jalankan instans sekali agar dapat memakai akun tertaut.",
+    "initializeAction": "Jalankan sekali",
+    "initializeHint": "Antigravity IDE perlu diinisialisasi. Jalankan instans yang dipilih sekali sebelum melanjutkan.",
+    "initializeWaiting": "Menunggu inisialisasi Antigravity IDE. Lanjutkan secara manual jika sudah siap.",
+    "initializeRetry": "Inisialisasi belum selesai. Pastikan IDE sudah terbuka, lalu coba lagi.",
+    "pathLabel": "Jalur peluncuran",
+    "pathConfigured": "Dikonfigurasi",
+    "pathDetected": "Terdeteksi otomatis",
+    "pathInvalid": "Jalur yang dikonfigurasi tidak valid",
+    "pathCheckFailed": "Pemeriksaan jalur gagal",
+    "pathSaveAndRetry": "Simpan dan coba lagi",
+    "switchAndCopy": "Ganti dan salin",
+    "sharedInstanceStart": "Ganti akun bersama dan jalankan",
+    "sharedInstanceHint": "Instans Antigravity lain tetap terbuka dan dapat beralih ke akun baru.",
+    "sharedInstanceRestart": "Hanya instans terpilih yang akan dimulai ulang.",
+    "lastSharedAccount": "Akun bersama terakhir yang dipilih",
+    "sharedAccountUnknown": "Belum ada pergantian tercatat",
+    "sharedInstanceSubtitle": "Setiap instans memakai folder terpisah dan berbagi login Google.",
+    "sharedInstanceStarted": "Login bersama diperbarui. Permintaan peluncuran dikirim.",
+    "sharedInstanceLaunchFailed": "Login bersama diperbarui, tetapi instans gagal dijalankan: {{error}}",
+    "sharedCopySource": "Salin folder konfigurasi instans terpilih.",
+    "quickSwitchSetting": "Berlaku untuk penggantian cepat di Antigravity IDE. Di dialog akun, Anda dapat memilih untuk menjalankan klien setiap kali mengganti akun.",
+    "title": "Pilih klien",
+    "switchOnly": "Ganti saja",
+    "switchAndLaunch": "Ganti dan jalankan",
+    "homeDirectory": "Folder beranda",
+    "invalidDirectory": "Pilih folder yang sudah ada.",
+    "directoryFailed": "Pemilih folder tidak dapat dibuka. {{error}}",
+    "shared": "Login Google digunakan bersama oleh {{clients}}.",
+    "sharedHint": "Klien dengan login Google yang sama dapat berganti akun bersamaan.",
+    "clientOnly": "Klien ini menggunakan login sendiri.",
+    "cliAuth": "agy mengikuti pengaturan autentikasinya. Kunci API atau kredensial Google Cloud yang dikonfigurasi diprioritaskan.",
+    "cliMissing": "agy tidak ditemukan. Instal Antigravity CLI resmi lalu coba lagi.",
+    "terminalFailed": "Terminal tidak dapat disiapkan. {{error}}",
+    "switchedTerminalFailed": "Akun sudah diganti, tetapi terminal tidak dapat dibuka. {{error}}"
+  },
   "pelican": {
     "caseKinds": {
       "mathExact": "Matematika · peluang eksak",
@@ -624,6 +664,7 @@
         "expiresAt": "Kedaluwarsa: {{time}}",
         "unlimited": "Kuota tak terbatas",
         "leftPercent": "Tersisa {{value}}%",
+        "weeklyLimitReached": "Batas mingguan tercapai",
         "cachedRefreshFailed": "Pembaruan gagal; menampilkan data terakhir yang berhasil",
         "lastSuccessfulQuery": "Keberhasilan terakhir: {{time}}",
         "cachedNeedsReauth": "⚠️ Verifikasi web diperlukan untuk melanjutkan (data cache di bawah)"
@@ -661,7 +702,14 @@
       },
       "clear": "Hapus",
       "loginSuccess": "Login berhasil",
-      "switchAccount": "Ganti Akun"
+      "switchAccount": "Ganti Akun",
+      "tokenFormat": {
+        "summary": "Kolom wajib & contoh (klik untuk memperluas)",
+        "single": "Contoh tunggal",
+        "singleToken": "Contoh tunggal (Token)",
+        "singleJson": "Contoh tunggal (JSON)",
+        "batchJson": "Contoh massal (JSON)"
+      }
     },
     "appName": "Cockpit Tools​",
     "collapse": "Ciutkan",
@@ -769,6 +817,7 @@
     }
   },
   "nav": {
+    "workbuddyAi": "WorkBuddy AI",
     "overview": "Antigravity IDE​",
     "accounts": "Akun",
     "wakeup": "Tugas Bangun",
@@ -828,6 +877,7 @@
     "reset": "Atur ulang ke bawaan",
     "tip": "Seret untuk mengurutkan ulang. Maksimal tiga platform dapat ditampilkan di bilah sisi. Jika hanya satu yang dipilih, hanya satu yang ditampilkan.",
     "tipWithGroups": "Seret untuk mengurutkan. Maksimal {{max}} entri dapat ditampilkan di bilah sisi. Anak grup tidak memiliki sakelar bilah sisi/dasbor dan hanya digunakan untuk bilah menu serta pemilihan platform default.",
+    "tipWithSidebarShortcuts": "Seret untuk mengubah urutan. Bilah samping dapat menampilkan hingga {{max}} entri, termasuk platform individual dari grup.",
     "tipWithGroupsUnlimited": "Seret untuk mengurutkan ulang. Jumlah entri di bilah sisi tidak dibatasi. Anak grup tidak memiliki toggle bilah sisi/dasbor dan hanya digunakan untuk visibilitas tray dan pengalihan platform bawaan.",
     "addGroup": "Tambah grup",
     "editGroup": "Edit​",
@@ -852,6 +902,10 @@
     "hiddenBadge": "Tersembunyi",
     "openFromMore": "Kelola tata letak platform",
     "dragHandleLabel": "Seret untuk mengurutkan ulang",
+    "sortKeyboardInstructions": "Tekan Spasi untuk mulai mengurutkan, gunakan tombol panah untuk memindahkan, tekan Spasi atau Enter untuk meletakkan, dan Esc untuk membatalkan.",
+    "sortPosition": "Posisi {{position}} dari {{total}}.",
+    "sortPlaced": "Dipindahkan ke posisi {{position}}.",
+    "sortCancelled": "Pengurutan dibatalkan.",
     "collapseAllChildren": "Ciutkan semua platform anak",
     "expandAllChildren": "Perluas semua platform anak",
     "addChildPlatform": "Tambah platform anak",
@@ -866,7 +920,9 @@
     "groupEnabledHint": "Aktifkan atau nonaktifkan semua platform dalam grup",
     "disabledHint": "Menonaktifkan akan menghentikan tugas otomatis dan menyembunyikan pengaturan platform. Tampilan entri diatur terpisah",
     "enableAll": "Aktifkan semua",
-    "disableAll": "Nonaktifkan semua"
+    "disableAll": "Nonaktifkan semua",
+    "confirmResetDesc": "Kembalikan ke default akan menghapus grup kustom dan pengaturan urutan. Lanjutkan?",
+    "confirmDeleteGroupDesc": "Hapus grup \"{{name}}\"? Platform di dalamnya akan ditampilkan kembali secara terpisah."
   },
   "privacy": {
     "hideSensitive": "Sembunyikan email",
@@ -1084,7 +1140,8 @@
         "savedForNextLaunch": "Tersimpan. Perubahan akan berlaku saat Codex berikutnya dijalankan melalui Cockpit; sesi saat ini tetap tidak berubah.",
         "restartRollbackFailed": "Rute baru gagal dimulai dan konfigurasi asli tidak dapat dimulai ulang: ",
         "restartRolledBack": "Rute baru gagal dimulai. Konfigurasi asli telah dipulihkan dan Codex dimulai ulang: {{error}}"
-      }
+      },
+      "copyTimeout": "Batas waktu penyalinan"
     },
     "quota": {
       "unbound": "Tidak ada akun tertaut",
@@ -1143,6 +1200,7 @@
         "preparingCredentials": "Memeriksa token dan memperbarui kredensial lengkap bila diperlukan...",
         "profileReady": "auth.json / keychain instans telah diperbarui dengan aman",
         "cliPrepared": "Perintah peluncuran CLI siap",
+        "cliResumeStarted": "Kelanjutan sesi CLI dimulai di latar belakang",
         "startingClient": "Memulai dan memverifikasi proses klien Codex..."
       }
     },
@@ -1197,6 +1255,11 @@
       "message": "Hapus instansi {{name}}? Pendaftarannya akan dihapus dan folder instansi terkelola dipindahkan ke tempat sampah. Folder khusus dan terlindungi akan dipertahankan."
     },
     "launchDialog": {
+      "customCommand": "Perintah kustom",
+      "useDefaultCommand": "Perintah bawaan",
+      "customCommandHint": "Kosongkan untuk menjalankan perintah bawaan.",
+      "rememberDirectory": "Direktori kerja terakhir diingat.",
+      "chooseDirectory": "Pilih direktori",
       "title": "Luncurkan instans",
       "terminal": "Jendela terminal",
       "command": "Perintah peluncuran",
@@ -1290,6 +1353,9 @@
       "trayIconStyleDesc": "Pilih ikon template sistem atau ikon app asli berwarna",
       "trayIconStyleTemplate": "Ikon template",
       "trayIconStyleColor": "Ikon berwarna",
+      "menuBarLeftClick": "Tindakan klik kiri pada ikon bar menu",
+      "menuBarLeftClickMenu": "Buka menu kuota",
+      "menuBarLeftClickWindow": "Buka jendela utama",
       "floatingCardStartup": "Tampilkan kartu mengambang saat mulai",
       "floatingCardStartupDesc": "Tampilkan kartu akun mengambang secara otomatis setelah aplikasi diluncurkan",
       "floatingCardAlwaysOnTop": "Kartu mengambang selalu di atas secara bawaan",
@@ -1304,6 +1370,9 @@
       "floatingCardShowNowAction": "Tampilkan kartu mengambang",
       "dataDir": "Direktori Data",
       "dataDirDesc": "Lokasi penyimpanan akun dan berkas konfigurasi.",
+      "dataDirPending": "Setelah dimulai ulang, Cockpit Tools akan membaca data dari {{path}}.",
+      "dataDirPendingDefault": "Setelah dimulai ulang, Cockpit Tools akan memakai direktori bawaan.",
+      "dataDirEnvironment": "Sesi saat ini memakai direktori yang ditetapkan oleh COCKPIT_TOOLS_DATA_DIR.",
       "topRightAdVisible": "Tampilkan promo atas",
       "topRightAdVisibleDesc": "Sembunyikan slot promo atas di aplikasi. Halaman Sponsor tidak terpengaruh.",
       "opencodeTitle": "Integrasi OpenCode",
@@ -1389,6 +1458,10 @@
       "antigravityStartupWakeupDesc": "Jalankan tugas bangun Antigravity IDE yang diaktifkan sekali setelah aplikasi dimulai",
       "codexLaunchOnSwitch": "Luncurkan Aplikasi Codex saat mengganti Codex",
       "codexLaunchOnSwitchDesc": "Mulai atau mulai ulang Aplikasi Codex setelah mengganti akun",
+      "codexAutomaticSessionRepair": "Perbaikan visibilitas sesi otomatis",
+      "codexAutomaticSessionRepairDesc": "Pilih apakah indeks sesi dan stempel waktu berkas riwayat perlu diperbaiki saat membuka Codex dari Cockpit atau mengganti penyedia sesi.",
+      "codexAutomaticSessionRepairIndexOnly": "Indeks saja",
+      "codexAutomaticSessionRepairQuick": "Perbaikan cepat",
       "autoSwitchAccountScope": "Cakupan penggantian akun otomatis",
       "autoSwitchAccountScopeDesc": "Hanya pantau dan ganti akun dalam cakupan ini.",
       "autoSwitchAccountScopeAll": "Semua akun",
@@ -1497,6 +1570,8 @@
       "claudeSettingsTitle": "Pengaturan Claude",
       "claudeAutoRefresh": "Penyegaran otomatis kuota Claude",
       "claudeAutoRefreshDesc": "Menyegarkan cache kuota akun Claude secara otomatis di latar belakang.",
+      "claudeShareCodeSessionsOnSwitch": "Sinkronkan sesi Code saat beralih akun",
+      "claudeShareCodeSessionsOnSwitchDesc": "Bagikan daftar sesi Code antarakun lokal saat beralih profil bawaan Claude Desktop di macOS.",
       "claudeAppPath": "Target peluncuran Claude Desktop",
       "claudeAppPathDesc": "Profil default dapat memakai target Microsoft Store; profil multi-instans membutuhkan Claude.exe asli.",
       "antigravityLaunchOnSwitch": "Jalankan Antigravity IDE saat beralih",
@@ -1537,6 +1612,10 @@
       "webdavAllowedDomainsDesc": "Pisahkan koma; kosong = tanpa batas",
       "claudeQuotaDisplayRemaining": "Kuota Claude sebagai % sisa",
       "claudeQuotaDisplayRemainingDesc": "Default: % terpakai. Aktif = % sisa. Auto-switch & peringatan tetap pakai rasio terpakai.",
+      "menuBarLeftClick": "Klik kiri di bar menu",
+      "menuBarLeftClickDesc": "Klik kanan selalu membuka menu kuota.",
+      "menuBarLeftClickQuotaMenu": "Menu kuota",
+      "menuBarLeftClickMainWindow": "Jendela utama",
       "menuBarQuota": "Kuota langsung di bilah menu",
       "menuBarQuotaDesc": "Saat diaktifkan, tampilkan sisa kuota akun saat ini platform terpilih di samping ikon. Opsi platform di dialog.",
       "menuBarQuotaEnabledDesc": "Aktif · {{platform}} · sisa akun saat ini platform itu (terendah dari kuota)",
@@ -1566,11 +1645,10 @@
       "codexPreserveExternalBridgeDesc": "Pertahankan jembatan Codex Web GPT yang terverifikasi melalui catatan lokal saat berganti akun OAuth. Nonaktif secara bawaan.",
       "codexEnhancements": {
         "quotaCompat": "Kuota mode campuran",
-        "quotaCompatDesc": "Dengan login OAuth asli dan rute API eksternal, kuota langganan tidak memblokir pesan API lokal. Penggunaan nyata dan kuota gambar tidak berubah.",
-        "restartHint": "Prediksi bawaan nonaktif secara default. Mulai ulang tiap instans Codex terkait setelah perubahan dan biarkan Cockpit Tools berjalan. Dikte bawaan mengikuti kemampuan dan pengaturan klien; Cockpit tidak mengambil alih atau memaksakan pengaktifannya.",
+        "quotaCompatDesc": "Instans layanan API menampilkan kuota tersedia untuk tampilan dan pemeriksaan lokal klien. Penggunaan aktual di penyedia dan batas gambar tidak berubah. Sakelar ini hanya untuk kombinasi OAuth dan API eksternal lainnya.",
         "configFailed": "Gagal membaca atau menyimpan pengaturan: {{error}}",
         "nativePredictions": "Prediksi langkah berikutnya bawaan (Tab)",
-        "nativePredictionsDesc": "Membuat saran pesan berikutnya dengan penyedia API dan model percakapan saat ini. Menggunakan kredit API tambahan; mulai ulang Codex setelah menyimpan."
+        "nativePredictionsDesc": "Aktif secara bawaan. Saran menggunakan penyedia API dan model percakapan saat ini serta menambah penggunaan API. Setelah mengubah pengaturan ini, mulai ulang instans Codex terkait dan biarkan Cockpit Tools tetap berjalan."
       },
       "timeDisplayMode": "Tampilan waktu",
       "timeDisplayModeDesc": "Waktu pada kartu dan daftar akun. Bawaan menggunakan waktu pergantian akun"
@@ -1918,6 +1996,14 @@
   },
   "appPath": {
     "missing": {
+      "pathLabel": "Lokasi peluncuran {{app}}",
+      "configurePath": "Atur lokasi",
+      "configureHint": "Pilih berkas yang dapat dijalankan atau kosongkan kolom untuk deteksi otomatis.",
+      "cliHint": "{{app}} tidak ditemukan. Pilih berkas program atau pasang CLI dan deteksi kembali.",
+      "invalidPath": "Lokasi ini tidak menunjuk ke berkas program {{app}} yang dapat dijalankan.",
+      "accountAlreadySwitched": "Akun sudah beralih. Hanya peluncuran aplikasi yang akan dicoba ulang.",
+      "saveAndRetry": "Simpan dan coba lagi",
+      "operationCancelled": "Peluncuran dibatalkan.",
       "scanEmpty": "Aplikasi tidak terdeteksi sedang berjalan. Jalankan lalu coba lagi, atau pilih jalurnya secara manual.",
       "scanEmptyGeneric": "{{app}} tidak terdeteksi sedang berjalan. Jalankan lalu coba lagi, atau pilih jalurnya secara manual.",
       "title": "Jalur aplikasi tidak ditemukan",
@@ -2269,7 +2355,13 @@
     "refreshTime": "Pembaruan",
     "lastSwitchTimeFull": "Pergantian: {{time}}",
     "refreshTimeFull": "Pembaruan: {{time}}",
-    "toggleTimeMode": "Tampilkan waktu pergantian atau pembaruan"
+    "toggleTimeMode": "Tampilkan waktu pergantian atau pembaruan",
+    "quotaSummary": {
+      "geminiModels": "Model Gemini",
+      "claudeAndGptModels": "Model Claude dan GPT",
+      "weeklyLimit": "Batas mingguan",
+      "fiveHourLimit": "Batas 5 jam"
+    }
   },
   "overview": {
     "title": "Ringkasan",
@@ -2565,6 +2657,8 @@
       "crontabValidate": "Validasi",
       "crontabValidateHint": "Ekspresi akan divalidasi saat menyimpan",
       "crontabPreviewEmpty": "Silakan masukkan ekspresi Crontab yang valid",
+      "weeklyQuotaResetOnly": "Bangunkan hanya setelah kuota mingguan direset",
+      "weeklyQuotaResetHint": "Setiap akun yang dipilih dibangunkan setelah kuota mingguannya direset.",
       "timeWindowEnabled": "Aktifkan jendela waktu",
       "timeWindowHint": "Saat diaktifkan, reset kuota hanya dipicu dalam jendela; di luar menggunakan waktu tetap.",
       "timeWindow": "Jendela aktif reset kuota",
@@ -2642,6 +2736,17 @@
     "other_group": "Model Lainnya"
   },
   "codex": {
+    "subagentDefaults": {
+      "title": "Setelan bawaan subagen",
+      "description": "Nilai ini berlaku untuk subagen baru. Nilai yang dipilih saat menjalankan subagen lebih diutamakan. Kosongkan kolom untuk memakai nilai bawaan Codex."
+    },
+    "modelInstructions": {
+      "title": "Instruksi sistem",
+      "description": "Pilih file UTF-8 lokal. Perubahan langsung disimpan dan berlaku untuk sesi baru.",
+      "deferred": "Pilihan berlaku setelah beralih dari DeepSeek.",
+      "selectFile": "Pilih file",
+      "useDefault": "Gunakan bawaan"
+    },
     "cli": {
       "launchSuccess": "Codex CLI telah dijalankan",
       "selectWorkingDir": "Pilih folder kerja Codex CLI"
@@ -2649,54 +2754,19 @@
     "resetAutomation": {
       "nothingToReset": "Tidak ada periode kuota yang perlu direset saat ini.",
       "unknownOutcome": "Hasil reset tidak dapat dipastikan. Coba lagi.",
-      "applyAllHint": "Jika diaktifkan, Simpan menyalin aturan ini ke semua akun dan mengganti pengaturan khusus serta nonaktif.",
-      "applyAll": "Simpan untuk semua akun",
-      "accountHint": "Akun tanpa pengaturan sendiri memakai aturan bersama. Penyimpanan hanya berlaku untuk akun ini.",
-      "title": "Pemakaian kartu otomatis",
-      "accountTab": "Akun ini",
-      "publicTab": "Aturan bersama",
-      "inherit": "Ikuti aturan bersama",
-      "custom": "Aturan khusus",
-      "off": "Nonaktif",
-      "entryDefault": "Atur otomatis",
       "noCredits": "Tidak ada kartu",
-      "publicHint": "Aturan bawaan untuk akun tanpa pengaturan sendiri. Pengaturan khusus atau nonaktif tetap dipertahankan.",
-      "before": "Sebelum kedaluwarsa",
-      "expiry": "Pakai sebelum kedaluwarsa",
       "minutes": "menit",
       "hours": "jam",
       "days": "hari",
-      "hostHint": "Berjalan selama Cockpit Tools terbuka. Kartu dipilih oleh server. Setelah penukaran otomatis, akun yang sama menunggu 30 menit sebelum menukar kartu secara otomatis lagi.",
-      "invalidTime": "Masukkan durasi positif dalam detik bulat.",
-      "invalidPercent": "Masukkan persentase bulat dari 0 hingga 100.",
-      "loadFailed": "Gagal memuat aturan: {{error}}",
-      "saveFailed": "Gagal menyimpan aturan: {{error}}",
-      "conflict": "Aturan telah berubah di tempat lain. Muat ulang.",
+      "conflict": "Info akun berubah saat reset berlangsung. Silakan coba lagi.",
       "busy": "Reset sedang berlangsung untuk akun ini.",
-      "storageError": "Aturan reset tidak dapat dibaca atau disimpan.",
+      "storageError": "Catatan reset tidak dapat dibaca atau disimpan.",
       "timeout": "Waktu permintaan habis. ID tersimpan akan dipakai ulang agar kartu tidak terpakai dua kali.",
-      "history": "Aktivitas terbaru",
-      "reasonExpiry": "Hampir kedaluwarsa",
-      "reasonQuota": "Kuota rendah",
-      "reasonManual": "Reset manual",
-      "reasonCheck": "Pemeriksaan latar",
-      "pending": "Menunggu hasil",
-      "editPublic": "Edit aturan bersama",
       "accountMissing": "Akun sudah tidak ada.",
-      "masterLabel": "Gunakan kartu secara otomatis",
-      "ruleSource": "Sumber aturan",
-      "weeklyTrigger": "Ambang mingguan",
-      "weeklyRemaining": "Sisa mingguan ≤",
-      "previewTitle": "Pratinjau pemicu",
-      "previewAny": "Satu kartu digunakan saat salah satu kondisi aktif terpenuhi:",
       "previewExpiry": "Kartu kedaluwarsa dalam {{value}} {{unit}}",
       "previewWeekly": "Sisa kuota mingguan paling banyak {{percent}}%",
-      "previewOff": "Penggunaan otomatis nonaktif. Aturan di bawah tidak berlaku.",
-      "previewEmpty": "Tidak ada kondisi aktif. Kartu tidak akan digunakan otomatis.",
-      "cardOn": "Oto.",
-      "cardOff": "Mati",
-      "orSeparator": " atau ",
-      "inheritHint": "Pengaturan ini mengikuti aturan bersama. Edit aturan tersebut atau pilih aturan khusus."
+      "previewWeeklyAfterCredits": "Kuota mingguan tersisa {{percent}}% atau kurang dan kredit dipastikan tidak dapat digunakan",
+      "orSeparator": " atau "
     },
     "overload": {
       "setting": "Coba lagi saat penuh",
@@ -2727,6 +2797,10 @@
     "quotaHistory": {
       "storage": {
         "title": "Penyimpanan riwayat",
+        "recordCount": "Jumlah catatan",
+        "diskSpace": "Ruang disk",
+        "defaultAccount": "Akun bawaan",
+        "recording": "Pencatatan",
         "usage": "{{records}} catatan · {{size}} di disk",
         "loadFailed": "Penyimpanan riwayat tidak dapat dibaca.",
         "enabled": "Catat riwayat",
@@ -2761,7 +2835,14 @@
       "details": "Rincian",
       "onlyChanges": "Hanya perubahan",
       "noChanges": "Tidak ada perubahan kuota pada periode ini.",
-      "sampledAt": "Waktu sampel",
+      "recordedAt": "Waktu pencatatan",
+      "noValue": "Tidak ada",
+      "shortConsumed": "Pemakaian 5 jam",
+      "weeklyConsumed": "Pemakaian mingguan",
+      "shortRemaining": "Sisa 5j",
+      "shortDelta": "Ubah 5j",
+      "weeklyRemaining": "Sisa Mingguan",
+      "weeklyDelta": "Ubah Mingguan",
       "changeFromPrevious": "Perubahan dari sampel sebelumnya",
       "points": "{{value}} poin persentase",
       "account": "Akun",
@@ -2793,11 +2874,12 @@
     },
     "launchErrors": {
       "sessionRestoreFailed": "Perbaikan sesi gagal dan pemulihan cadangan belum selesai. Peluncuran dihentikan; periksa log dan cadangan sebelum mencoba lagi.",
-      "sessionCheckTimeout": "Pemeriksaan sesi kehabisan waktu. Peluncuran dihentikan; coba lagi atau periksa log.",
-      "sessionFileTooLarge": "Header berkas sesi terlalu besar. Peluncuran dihentikan; periksa log.",
       "bindingFailed": "Tidak dapat memastikan akun yang terhubung. Proses mulai dihentikan; coba beralih akun lagi.",
       "processScanFailed": "Tidak dapat memeriksa proses latar belakang sebelumnya. Proses mulai dihentikan; coba lagi.",
-      "proxyEntryFailed": "Proxy yang dikonfigurasi tidak dapat dimulai. Rute lain tidak digunakan; coba lagi."
+      "proxyEntryFailed": "Proxy yang dikonfigurasi tidak dapat dimulai. Rute lain tidak digunakan; coba lagi.",
+      "proxyEnvUnavailable": "Pengaturan proksi gagal diterapkan. Periksa berkas .env instans Codex ini dan coba lagi.",
+      "proxyEnvChanged": "Berkas .env berubah saat peluncuran. Simpan perubahan dan coba lagi.",
+      "proxyEnvStopFailed": "Berkas .env berubah saat peluncuran dan Codex tidak dapat dihentikan. Tutup instans dan coba lagi."
     },
     "oauthProxy": {
       "toggle": "Masuk lewat proksi",
@@ -2873,6 +2955,7 @@
         "operation": "Tindakan",
         "manage": "Kelola",
         "resetDefaults": "Pulihkan default",
+        "embeddedFallback": "Katalog model terbaru tidak tersedia. Cockpit menggunakan katalog bawaan.",
         "inheritHint": "Model resmi mempertahankan bidang kemampuannya; model khusus menggunakan templat umum. Model yang terlihat dapat ditambah atau dihapus.",
         "validation": {
           "required": "Pertahankan setidaknya satu model.",
@@ -2919,6 +3002,20 @@
       "quota": {
         "hourly": "5h​",
         "weekly": "Weekly​"
+      },
+      "sessionResume": {
+        "title": "Lanjutkan sesi",
+        "enabled": "Kirim perintah untuk melanjutkan saat instans ini dimulai",
+        "cliHint": "Menjalankan di terminal akan mengirim perintah yang telah disetel. Pratinjau, penyalinan, dan perintah khusus berfungsi seperti biasa. Jika peralihan diatur untuk memulai instans ini, perintah dikirim di latar belakang.",
+        "target": "Sesi yang dilanjutkan",
+        "recentActivity": "Sesi dengan aktivitas terbaru",
+        "lastCreated": "Sesi yang terakhir dibuat",
+        "previousDesktopSession": "Sesi yang dibuka sebelum dihentikan",
+        "specific": "Sesi tertentu",
+        "threadId": "ID sesi",
+        "prompt": "Perintah untuk melanjutkan",
+        "invalidId": "Masukkan UUID sesi yang valid.",
+        "promptRequired": "Masukkan perintah untuk melanjutkan."
       },
       "syncAllRecords": {
         "action": "Sinkronkan semua catatan instans",
@@ -3016,7 +3113,8 @@
       "hideNativeQuotaBannerTitle": "Sembunyikan pemberitahuan kuota bawaan Codex",
       "hideNativeQuotaBannerDescription": "Menyembunyikan pemberitahuan kuota habis di klien desktop tanpa mengubah kuota akun atau status layanan. Aktif secara bawaan saat desktop dimulai melalui layanan API, nonaktif pada kondisi lain. Pilihan disimpan per instans. Mode CLI tidak mengubah tampilan.",
       "quotaDisplayCompatibilityTitle": "Kompatibilitas tampilan kuota",
-      "quotaDisplayCompatibilityDescription": "Perubahan tampilan kuota sementara belum didukung dalam versi ini. Sakelar ini hanya menyimpan preferensi instans. Pembukaan kunci pengiriman lokal Layanan API dan penyembunyian peringatan tetap berfungsi secara independen."
+      "quotaDisplayCompatibilityDescription": "Perubahan tampilan kuota sementara belum didukung dalam versi ini. Sakelar ini hanya menyimpan preferensi instans. Pembukaan kunci pengiriman lokal Layanan API dan penyembunyian peringatan tetap berfungsi secara independen.",
+      "advancedMaintenanceTitle": "Pemeliharaan & Diagnostik"
     },
     "switch": "Ganti",
     "switched": "Beralih ke {{email}}",
@@ -3079,7 +3177,8 @@
       "portInUseAction": "Tutup port dan coba lagi",
       "timeout": "Autentikasi habis waktu. Silakan klik",
       "timeoutRetry": "Perbarui Link Auth",
-      "reauthEmailLabel": "Akun otorisasi ulang"
+      "reauthEmailLabel": "Akun otorisasi ulang",
+      "reauthEmailChangeHint": "Jika email masuk Anda telah berubah, gunakan alamat baru di peramban. Cockpit memperbarui alamat tersimpan setelah memastikan pengguna dan ruang kerjanya sama."
     },
     "token": {
       "importPartial": "Impor selesai. Berhasil: {{success}}, gagal: {{failed}}. {{errors}}",
@@ -3163,7 +3262,7 @@
         "save": "Simpan koleksi",
         "freeNotice": "Akun gratis belum didukung. Akun gratis tidak dapat dipilih.",
         "freeUnsupported": "Akun gratis belum didukung",
-        "restrictFreeToggle": "Batasi akun Free",
+        "restrictFreeToggle": "Sembunyikan akun Free di luar layanan",
         "sessionAffinityConfirmTitle": "Aktifkan afinitas sesi?",
         "sessionAffinityDescription": "Setelah diaktifkan, percakapan yang sama akan berusaha tetap memakai akun yang sama. Jika akun tidak tersedia, perutean dapat beralih; setelah kedaluwarsa akun akan dipilih ulang.",
         "pendingOauthUnsupported": "Auth tertunda: tidak",
@@ -3575,7 +3674,7 @@
       "hideApiKey": "Sembunyikan API Key",
       "apiKeyHiddenHint": "API Key disembunyikan. Klik untuk menampilkan.",
       "modelCatalog": {
-        "restartHint": "Katalog model telah diperbarui. Jika Codex sedang berjalan, mulai ulang untuk menerapkan perubahan.",
+        "launchHint": "Jalankan Codex dari Cockpit dengan akun ini untuk menerapkan pengaturan model yang disimpan.",
         "label": "Daftar model",
         "fetch": "Ambil dari penyedia",
         "fetching": "Mengambil...",
@@ -3583,7 +3682,7 @@
         "placeholder": "Masukkan satu ID model per baris atau pisahkan ID dengan koma.",
         "editHint": "Model yang diambil hanya dimasukkan ke draf ini. Tinjau dan edit sebelum menyimpan.",
         "syncToggle": "Sinkronkan model penyedia ke Codex",
-        "syncDescription": "Setelah disimpan, daftar ini digunakan untuk membuat katalog model Codex yang dikelola Cockpit. Katalog khusus tidak ditimpa.",
+        "syncDescription": "Daftar ini diterapkan saat Anda menjalankan Codex dari Cockpit dengan akun ini. Katalog model khusus yang sudah ada lebih diprioritaskan.",
         "fetchCredentialsRequired": "Masukkan API Key dan Base URL terlebih dahulu.",
         "fetchEmpty": "Penyedia tidak mengembalikan model. Daftar saat ini tetap dipertahankan.",
         "fetchFailed": "Gagal mengambil model penyedia: {{error}}",
@@ -3739,7 +3838,7 @@
       "reset": "Setel ulang",
       "weeklyBlocksHourly": "Kuota mingguan 0, jadi kuota 5 jam tidak tersedia",
       "windowStats": "Terpakai {{tokens}} · {{cost}}",
-      "windowStatsHint": "Jumlah permintaan, token, dan tagihan akun lewat layanan API sejak jendela penuh",
+      "windowStatsHint": "Permintaan layanan API, token, dan perkiraan nilai penggunaan dalam jendela kuota ini",
       "windowUsed": "Terpakai {{tokens}} · {{cost}}",
       "windowReq": "{{count}} mnt",
       "resetCredits": "Reset {{count}}",
@@ -3764,8 +3863,8 @@
       "resetCreditRecordsLoadFailed": "Gagal memuat catatan reset: {{error}}",
       "resetCreditGrantedAt": "Diberikan",
       "resetCreditExpiresAt": "Kedaluwarsa",
-      "windowAccountCostHint": "Tagihan akun (perkiraan harga model)",
-      "windowEstimatedFullCostHint": "Dihitung dari pemakaian saat ini: biaya akun bila jendela ini terpakai penuh",
+      "windowAccountCostHint": "Perkiraan nilai penggunaan berdasarkan harga API model. Sisa kuota langganan mengikuti persentase yang dilaporkan akun.",
+      "windowEstimatedFullCostHint": "Perkiraan nilai penggunaan untuk seluruh jendela, dihitung dari porsi kuota yang sudah terpakai",
       "windowUserCostHint": "Tagihan pengguna",
       "windowWeeks": "Kuota {{count}} minggu",
       "windowDays": "Kuota {{count}} hari",
@@ -3919,7 +4018,7 @@
         "interval": "Interval​",
         "quota_reset": "Setelah reset kuota"
       },
-      "scheduleQuotaResetHint": "Saat wakeup reset kuota diaktifkan, penyegaran otomatis akan disesuaikan untuk berjalan setiap 2 menit.",
+      "scheduleQuotaResetHint": "Tugas dipicu berdasarkan waktu reset kuota akun terakhir yang tercatat. Interval penyegaran otomatis Codex tetap sesuai pengaturan.",
       "quotaResetWindowLabel": "Kondisi pemicu jendela reset",
       "quotaResetWindowHint": "primary_window biasanya memetakan ke kuota 5 jam. Untuk pengguna gratis mungkin memetakan ke kuota mingguan, dan dapat bervariasi berdasarkan langganan.",
       "quotaResetDelayLabel": "Jeda setelah reset",
@@ -3995,7 +4094,6 @@
       "triggerQuotaReset": "Pemicu reset kuota",
       "manualRunConfirm": "Jalankan tugas \"{{name}}\" sekarang? {{count}} akun akan dibangunkan secara berurutan.",
       "noticeSavedEnabled": "Tugas tersimpan. Total tugas: {{count}}.",
-      "noticeSavedEnabledWithQuotaReset": "Tugas tersimpan. Total tugas: {{count}}. Penyegaran otomatis Codex telah disesuaikan menjadi setiap {{minutes}} menit.",
       "noticeSavedDisabled": "Pengaturan tugas tersimpan. Semua tugas saat ini dijeda.",
       "noticeTaskFinished": "Tugas selesai. {{count}} akun berhasil.",
       "noticeTaskFinishedWithError": "Tugas selesai. {{success}} berhasil dan {{failed}} gagal.",
@@ -4147,9 +4245,6 @@
       "repairModal": {
         "historyDuplicateOrdinals": "Riwayat berikut memiliki nomor urut ganda. Perbaikan indeks melewatinya dan perbaikan penuh tidak dapat dilanjutkan. Pilih “Perbaiki indeks chat” untuk sesi lain.\n{{details}}",
         "projectsDeferredAction": "Tutup instans lalu pilih Proyek lokal di dialog perbaikan sesi.",
-        "projectsStateSize": "Berkas status terbesar: {{file}} ({{bytes}} bita).",
-        "projectsQuickBudget": "Pemindaian cepat proyek mencapai batas.",
-        "projectsStateTooLarge": "Berkas status proyek melebihi ukuran yang didukung.",
         "projectsStopHint": "Tutup instans terpilih sebelum memulihkan. Anda dapat melihat pratinjau sekarang.",
         "modeProjectsDesc": "Pulihkan proyek lokal dan kaitan obrolan. Riwayat percakapan tetap utuh.",
         "modeProjects": "Proyek lokal",
@@ -4231,7 +4326,7 @@
         "projectsSuccess": "Pemulihan selesai: {{projects}} proyek, {{assignments}} hubungan; melewati {{skipped}} proyek dan {{ambiguous}} percakapan ambigu.",
         "projectsPending": "Pemulihan sebelumnya terputus. Tutup instans lalu jalankan perbaikan lengkap untuk memulihkan penulisan yang belum selesai.",
         "projectsDeferred": "Sebagian metadata ditunda. Tutup instans lalu ulangi perbaikan cepat, atau gunakan perbaikan lengkap.",
-        "switchProjectsDeferred": "Kredensial telah diperbarui, tetapi status proyek lokal gagal disinkronkan. Tutup instans Codex terkait, lalu jalankan kembali dari Cockpit."
+        "switchProjectsDeferred": "Kredensial telah diperbarui, tetapi status proyek lokal atau percakapan gagal disinkronkan. Tutup instans Codex terkait, lalu jalankan kembali dari Cockpit."
       },
       "importModal": {
         "title": "Impor sesi",
@@ -4331,6 +4426,14 @@
       }
     },
     "sessionUsage": {
+      "comparison": {
+        "localTotal": "Token sesi lokal · periode dan instans terpilih",
+        "profileTotal": "Profil resmi · total token sepanjang waktu",
+        "account": "Akun Codex",
+        "noAccount": "Tambahkan akun Codex OAuth untuk melihat total resminya.",
+        "loadError": "Total resmi gagal dimuat.",
+        "unavailable": "Profil resmi tidak memberikan total."
+      },
       "tab": "Pemakaian",
       "listTab": "Sesi",
       "title": "Pemakaian sesi",
@@ -4736,7 +4839,8 @@
           "totalGranted": "Diberikan",
           "totalAvailable": "Tersedia",
           "isAvailable": "Saldo tersedia",
-          "modelLimitsEnabled": "Batas model"
+          "modelLimitsEnabled": "Batas model",
+          "weeklyShort": "Minggu"
         },
         "accountBalance": "Saldo akun",
         "unlimitedQuota": "Tak terbatas",
@@ -4900,6 +5004,7 @@
       "repairFailedWithError": "Perbaikan visibilitas gagal: {{error}}"
     },
     "accountNote": {
+      "refreshEmailHint": "Jika email akun OpenAI Anda berubah, otorisasi ulang akun dan ruang kerja yang sama untuk memperbaruinya di sini.",
       "title": "Catatan Akun",
       "label": "Catatan Akun",
       "desc": "Tambahkan kata sandi, 2FA, URL email, telepon, dan catatan lain untuk {{account}}.",
@@ -5017,7 +5122,7 @@
         "responsesTitle": "Entri Responses",
         "responsesNote": "Entri Responses native Codex.",
         "anthropicTitle": "Pesan Anthropic",
-        "claudeCodeNoModels": "Kunci ini tidak memiliki model prasetel Claude Code. Simpan alias di aturan model terlebih dahulu.",
+        "claudeCodeNoModels": "Tidak ada model percakapan yang tersedia untuk kunci ini. Periksa aturan model dan kumpulan akunnya.",
         "claudeCodeSettingsChanged": "Setelan berubah setelah pratinjau. Buat pratinjau baru.",
         "claudeCodeServiceUnavailable": "Model untuk kunci ini tidak dapat dimuat. Periksa layanan API dan status kunci.",
         "claudeCodeNoBackup": "Tidak ada cadangan yang cocok dengan setelan saat ini.",
@@ -5054,6 +5159,11 @@
         "saveRules": "Simpan Aturan",
         "rulesSaved": "Aturan model tersimpan",
         "pricingAction": "Harga",
+        "refreshCatalog": "Perbarui model",
+        "refreshComplete": "Model dan harga telah diperiksa.",
+        "refreshFailed": "Model dan harga gagal diperbarui. Data saat ini tetap digunakan.",
+        "refreshModelsFailed": "Model gagal diperbarui. Katalog saat ini tetap digunakan.",
+        "refreshPricesFailed": "Harga gagal diperbarui. Harga saat ini tetap digunakan.",
         "pricingTitle": "Harga Model",
         "pricingDesc": "USD / 1M token, hanya untuk statistik lokal.",
         "pricingModel": "Nama model",
@@ -5090,6 +5200,16 @@
         "pricingRepriceCompleted": "Estimasi historis diperbarui",
         "pricingRepriceSaveBlocked": "Hitung ulang sedang berjalan; simpan setelah selesai"
       },
+      "accountPools": {
+        "title": "Kumpulan akun bernama",
+        "add": "Tambah kumpulan akun",
+        "name": "Nama kumpulan",
+        "deleteHint": "Kunci tertaut mempertahankan cakupan akun saat kumpulan dihapus.",
+        "detach": "Putuskan tautan kumpulan",
+        "saved": "Kumpulan akun disimpan",
+        "removed": "Kumpulan akun dihapus",
+        "detached": "Tautan kunci ke kumpulan diputus"
+      },
       "keys": {
         "policyTitle": "Kebijakan Model",
         "advancedPolicyTitle": "Lanjutan: Kebijakan Model",
@@ -5112,6 +5232,13 @@
         "tokenLimit": "Batas total token",
         "tokenLimitPlaceholder": "Contoh: 10m",
         "tokenLimitHint": "Kosongkan untuk tanpa batas. Token input dan output dijumlahkan di semua model.",
+        "monthlyTokens": {
+          "title": "Pengingat token bulanan",
+          "used": "Bulan ini: {{used}} token",
+          "hint": "Kosongkan untuk menonaktifkan. Pengingat muncul sekali per bulan kalender setempat dan permintaan tetap berjalan.",
+          "invalid": "Masukkan jumlah token sebagai bilangan bulat.",
+          "notification": "{{label}} telah memakai {{used}} token bulan ini dan mencapai ambang pengingat {{threshold}} token."
+        },
         "tokenLimitInvalid": "Masukkan batas token yang valid, misalnya 10m atau 10000000",
         "tokenLimitUsage": "Batas token",
         "tokenLimitCurrentUsage": "Terpakai: {{used}} token",
@@ -5149,6 +5276,10 @@
         "maxRetryInterval": "Tunggu retry",
         "disableCooling": "Matikan cooldown",
         "saveOptions": "Simpan Opsi",
+        "accountQuotaFloor": "Sisa kuota minimum",
+        "accountQuotaFloorHint": "Akun berhenti menerima permintaan baru saat sisa kuota pada salah satu periode mencapai nilai ini. Kosongkan untuk menonaktifkan.",
+        "accountQuotaFloorInvalid": "Masukkan persentase bulat dari 1 hingga 100.",
+        "accountQuotaFloorSaveFailed": "Sisa kuota minimum gagal disimpan.",
         "immediateSseResponse": "SSE 200 langsung",
         "maxConcurrentImageRequests": "Permintaan gambar per akun",
         "maxAccountConcurrency": "Konkurensi akun",
@@ -5217,10 +5348,17 @@
         "tokenOutput": "Keluar",
         "tokenCache": "Cache",
         "tokenTotal": "Total",
+        "inputTextCharacters": "Karakter masukan",
+        "inputTextCharactersHint": "Jumlah karakter Unicode dalam teks pesan dan instruksi pada permintaan ini, termasuk riwayat teks yang dikirim klien.",
+        "highTokenRequests": "Permintaan dengan token tinggi",
+        "highTokenBadge": "Pemakaian tinggi",
+        "tokenThreshold": "Ambang token",
+        "highTokenHint": "Permintaan tercatat yang menggunakan setidaknya {{threshold}} token",
         "speedAdjusted": "{{tier}} → Standar",
         "officialDefaultSpeed": "Jalur langganan resmi tidak mendukung penggantian kecepatan. Percobaan ini dikirim dengan kecepatan bawaan.",
         "sentTier": "Dikirim: {{tier}}",
-        "originalTier": "Tingkat awal: {{tier}}"
+        "originalTier": "Tingkat awal: {{tier}}",
+        "moreFilters": "Filter lainnya"
       },
       "timeouts": {
         "retryTitle": "Percobaan ulang pengiriman dan akun",
@@ -5290,7 +5428,13 @@
       "usage": {
         "title": "Statistik pemakaian",
         "lastRecorded": "Terakhir dicatat",
-        "trendEmpty": "Tidak ada permintaan pada rentang yang dipilih"
+        "inputTextCoverage": "{{measured}} dari {{total}} permintaan terukur",
+        "trendEmpty": "Tidak ada permintaan pada rentang yang dipilih",
+        "periodTokens": "Token per interval",
+        "cumulativeTokens": "Token kumulatif",
+        "tokenComposition": "Rincian penggunaan token",
+        "nonReasoningOutput": "Keluaran nonpenalaran",
+        "reasoningTokens": "Penalaran"
       },
       "accountModelMappings": {
         "action": "Peta model",
@@ -5984,6 +6128,13 @@
         "nodeCount": "{{count}} simpul",
         "updatedAt": "Diperbarui: {{time}}",
         "autoUpdate": "Perbarui tiap 6 jam",
+        "dnsOverride": "Timpa DNS",
+        "ipv6": "Aktifkan IPv6",
+        "dnsServers": "Server DNS",
+        "dnsServersHint": "Satu alamat per baris. Kosongkan untuk memakai Cloudflare DoH.",
+        "networkScope": "Berlaku untuk koneksi proksi baru dari sumber ini.",
+        "invalidDnsServer": "Masukkan alamat server DNS yang valid di setiap baris.",
+        "networkSaveFailed": "Setelan jaringan tidak dapat disimpan atau diterapkan. Coba lagi.",
         "snapshotNotice": "Pembaruan tidak mengubah konfigurasi tertaut. Tautkan kembali untuk menerapkan pembaruan.",
         "defaultLabel": "Bawaan",
         "defaultEmpty": "Belum diatur",
@@ -6257,6 +6408,13 @@
       "restart": "Mulai ulang CLI",
       "restarting": "Memulai ulang…",
       "restarted": "Layanan CLI telah dimulai ulang.",
+      "autoRefresh": "Segarkan CLI otomatis setelah berpindah akun",
+      "autoRefreshHint": "Segarkan daemon CLI bawaan saat tidak aktif dan tidak ada klien terhubung.",
+      "autoDeferred": "Penyegaran CLI otomatis tidak dapat dikonfirmasi. Periksa daemon sebelum memulai ulang.",
+      "workspaceConfirmed": "Daemon CLI telah dimulai ulang dan ruang kerja OAuth yang dipilih telah diverifikasi.",
+      "workspaceUnconfirmed": "Daemon CLI telah dimulai ulang. Ruang kerja OAuth yang dipilih tidak dapat diverifikasi.",
+      "workspaceMismatch": "Daemon CLI yang dimulai ulang menggunakan akun atau ruang kerja OAuth lain.",
+      "restartUnconfirmed": "Daemon CLI baru tidak dapat diverifikasi. Coba lagi atau salin perintah ke terminal.",
       "restartFailed": "Gagal memulai ulang. Coba lagi atau salin perintah ke terminal.",
       "title": "Perbarui akun CLI",
       "description": "Kredensial telah disimpan, tetapi layanan latar belakang Codex CLI untuk profil ini masih berjalan dan mungkin tetap memakai akun sebelumnya.",
@@ -6479,6 +6637,12 @@
       "saveOnly": "Simpan saja",
       "validationBusy": "Pemeriksaan lokasi sebelumnya masih berjalan. Coba lagi sebentar lagi."
     },
+    "customProviderUsage": {
+      "title": "Kueri kuota kustom",
+      "settings": "Pengaturan kueri (JSON)",
+      "hint": "Kosongkan untuk deteksi otomatis. Gunakan headers untuk menambahkan header permintaan. Pisahkan jalur bidang alternatif dengan | untuk mengambil nilai pertama yang bukan null.",
+      "invalid": "Periksa JSON, pastikan endpoint menggunakan origin yang sama, dan periksa pemetaan bidang."
+    },
     "openaiUsage": {
       "monthCost": "Biaya bulan ini",
       "scope": "Biaya organisasi; permintaan dan token hanya untuk API teks. Statistik memakai UTC.",
@@ -6524,7 +6688,7 @@
       "official": "Riwayat resmi",
       "local": "Penggunaan lokal",
       "officialHint": "Catatan resmi selama 30 hari terakhir.",
-      "localHint": "Mencatat tindakan manual dan otomatis melalui aplikasi ini mulai sekarang, tanpa mengisi data lama.",
+      "localHint": "Mencatat tindakan manual melalui aplikasi ini dan mempertahankan catatan otomatis sebelumnya, tanpa mengisi data lama.",
       "officialEmpty": "Tidak ada reset dalam 30 hari terakhir",
       "localEmpty": "Belum ada catatan penggunaan lokal",
       "received": "Reset diterima",
@@ -6541,7 +6705,13 @@
       "requestId": "ID permintaan",
       "more": "Tampilkan lagi",
       "loadFailed": "Gagal memuat riwayat",
-      "officialUnavailable": "Riwayat reset resmi tidak tersedia untuk akun ini"
+      "officialUnavailable": "Riwayat reset resmi tidak tersedia untuk akun ini",
+      "legacyActivityTitle": "Log aktivitas sebelumnya (hanya baca)",
+      "legacyActivityHint": "Ditampilkan berdasarkan ID akun tersimpan saja; tidak menyimpulkan identitas ruang kerja atau hasil penukaran kartu.",
+      "legacyReasonExpiry": "Hampir kedaluwarsa",
+      "legacyReasonQuota": "Kuota rendah",
+      "legacyReasonManual": "Reset manual",
+      "legacyReasonCheck": "Pemeriksaan latar"
     }
   },
   "codebuddy": {
@@ -6559,7 +6729,16 @@
         "dir": "Direktori"
       },
       "unknownTime": "Waktu tidak diketahui",
-      "searchPlaceholder": "Cari judul atau direktori kerja"
+      "searchPlaceholder": "Cari judul atau direktori kerja",
+      "rebind": {
+        "title": "Ubah folder ruang kerja",
+        "scope": "Tautkan ulang semua sesi lokal dari folder ini di instans WorkBuddy yang dipilih. Tutup instans tersebut sebelum menerapkan perubahan.",
+        "instance": "Instans WorkBuddy",
+        "choose": "Pilih folder baru",
+        "apply": "Tautkan ulang sesi",
+        "noSessions": "Tidak ada lagi sesi lokal di folder tersebut. Muat ulang daftar dan coba lagi.",
+        "success": "Sesi lokal yang ditautkan ulang ({{count}})"
+      }
     },
     "title": "Akun CodeBuddy",
     "noAccounts": "Tidak ada akun CodeBuddy",
@@ -6677,7 +6856,8 @@
       "desc": "Klik tombol di bawah ini dan selesaikan otorisasi GitHub Copilot di peramban Anda."
     },
     "token": {
-      "desc": "Tempel token akses GitHub Copilot atau data JSON yang diekspor."
+      "desc": "Tempel token akses GitHub Copilot atau data JSON yang diekspor.",
+      "requiredFields": "Kolom wajib: pada mode Token tempelkan GitHub access token secara langsung; mode JSON memerlukan id, github_login, github_id, github_access_token, copilot_token, created_at, dan last_used."
     },
     "import": {
       "localDesc": "Impor data akun GitHub Copilot dari VS Code lokal atau berkas JSON.",
@@ -6856,6 +7036,10 @@
       "thresholdDesc": "Ganti otomatis saat grup model yang dipantau mencapai persentase ambang ini",
       "creditsEnable": "Pantau kredit",
       "creditsThreshold": "Ambang kredit",
+      "windowThresholdsEnable": "Ambang 5 jam dan mingguan terpisah",
+      "fiveHourThreshold": "Ambang 5 jam",
+      "weeklyThreshold": "Ambang mingguan",
+      "windowThresholdsHint": "Akun berganti saat salah satu kuota mencapai ambangnya. Ambang umum tetap berlaku untuk kuota model.",
       "creditsThresholdDesc": "Juga ganti otomatis saat kredit tersisa berada pada atau di bawah nilai ini",
       "triggerModel": "Trigger Model​",
       "scopeAnyGroup": "Any model group​",
@@ -7050,7 +7234,8 @@
       "desc": "Klik tombol di bawah ini dan selesaikan otorisasi Devin di peramban Anda."
     },
     "token": {
-      "desc": "Tempel token akses Devin atau data JSON yang diekspor."
+      "desc": "Tempel token akses Devin atau data JSON yang diekspor.",
+      "requiredFields": "Kolom wajib: github_access_token (API Key)"
     },
     "import": {
       "localDesc": "Impor data akun Devin dari berkas JSON.",
@@ -7154,7 +7339,8 @@
       "startUrlRequired": "Masukkan URL awal IAM Identity Center"
     },
     "token": {
-      "desc": "Tempel token akses Kiro atau data JSON yang diekspor."
+      "desc": "Tempel token akses Kiro atau data JSON yang diekspor.",
+      "requiredFields": "Kolom wajib: untuk JSON disarankan access_token + refresh_token (accessToken / refreshToken hanya untuk kompatibilitas)."
     },
     "import": {
       "localDesc": "Impor dari aplikasi lokal atau JSON. Akun JSON disimpan terlebih dahulu, lalu kredensial dan kuota diperbarui di latar belakang.",
@@ -7786,6 +7972,39 @@
       "detailError": "Kesalahan check-in"
     }
   },
+  "codebuddyCli": {
+    "launchTitle": "Jalankan CodeBuddy CN",
+    "launchDesktop": "Jalankan aplikasi desktop",
+    "recheck": "Periksa lagi",
+    "checking": "Memeriksa ketersediaan CodeBuddy CLI…",
+    "rememberDirectory": "Folder kerja terakhir diingat untuk akun ini.",
+    "installGuide": "Panduan instalasi resmi",
+    "launch": "Jalankan CLI",
+    "terminalOpened": "Perintah telah dikirim. Lihat keluaran CLI di terminal.",
+    "account": "Akun",
+    "selectAccount": "Pilih akun",
+    "chooseDirectory": "Pilih folder",
+    "homeDirectory": "Folder pengguna",
+    "instances": "Instans CLI",
+    "newInstance": "Instans baru",
+    "editInstance": "Edit instans",
+    "noInstances": "Belum ada instans tersimpan.",
+    "removeConfirmation": "Hapus instans ini? Konfigurasi dan riwayat CLI tetap tersimpan di disk.",
+    "errors": {
+      "cliCheckFailed": "Tidak dapat memeriksa ketersediaan CodeBuddy CLI.",
+      "accountMissing": "Akun tersimpan tidak ditemukan.",
+      "accountUnreadable": "Akun tersimpan tidak dapat dibaca.",
+      "credentialMissing": "Akun ini tidak memiliki token akses. Otorisasi ulang di CodeBuddy atau CodeBuddy CN.",
+      "workingDirInvalid": "Pilih folder kerja yang sudah ada.",
+      "nameRequired": "Masukkan nama instans.",
+      "instanceMissing": "Instans tidak ditemukan.",
+      "storageError": "Data instans CLI tidak dapat dibaca atau disimpan.",
+      "cliMissing": "CodeBuddy CLI tidak ditemukan. Instal sesuai panduan resmi.",
+      "launchFailed": "CodeBuddy CLI gagal dijalankan.",
+      "terminalFailed": "Terminal tidak dapat dibuka.",
+      "terminalUnsupported": "Pilih terminal yang didukung di Pengaturan Umum. Di macOS gunakan Terminal, iTerm2, atau Ghostty."
+    }
+  },
   "codebuddyCn": {
     "title": "Akun CodeBuddy CN",
     "noAccounts": "Tidak ada akun CodeBuddy CN",
@@ -7811,6 +8030,27 @@
     "syncFailed": "Sinkronisasi gagal: {{error}}",
     "syncSuccess": "{{count}} akun berhasil disinkronkan ke WorkBuddy",
     "syncToWorkbuddy": "Sinkronkan ke WorkBuddy"
+  },
+  "workbuddyAi": {
+    "search": "Cari akun WorkBuddy AI",
+    "noAccounts": "Belum ada akun WorkBuddy AI",
+    "addAccount": "Tambah akun WorkBuddy AI",
+    "oauthDesc": "Buka halaman masuk WorkBuddy AI di browser.",
+    "tokenDesc": "Tempel token akses WorkBuddy AI atau JSON yang diekspor.",
+    "importDesc": "Impor dari aplikasi lokal atau berkas JSON.",
+    "importClient": "Impor dari WorkBuddy AI",
+    "flowNotice": {
+      "title": "Tentang akun WorkBuddy AI",
+      "desc": "Pergantian akun memperbarui berkas masuk lokal dan membuka edisi internasional.",
+      "permission": "Impor dan pergantian akun memakai berkas masuk edisi internasional. Aplikasi resmi menangani kolom yang sudah terenkripsi.",
+      "network": "Otorisasi, pembaruan token, dan pemeriksaan kredit terhubung ke WorkBuddy AI. Berkas masuk dan materi enkripsi tetap di perangkat."
+    },
+    "oauthFeature": {
+      "title": "Masuk ke WorkBuddy AI",
+      "signIn": "Masuk ke WorkBuddy AI di browser.",
+      "switch": "Setelah otorisasi, ganti akun edisi internasional dari daftar.",
+      "credits": "Lihat sisa kredit di kartu akun."
+    }
   },
   "workbuddy": {
     "desktopEdition": "WorkBuddy (edisi Tiongkok)",
@@ -7989,6 +8229,13 @@
       "timeRangeError": "Waktu mulai tidak boleh lebih lambat dari waktu selesai"
     },
     "modelProbe": {
+      "results": "Hasil pengujian",
+      "reply": "Balasan model",
+      "backToSetup": "Kembali ke pengaturan",
+      "catalogUnavailable": "Model gagal dimuat.",
+      "scopeAll": "Semua ({{count}})",
+      "scopeSelected": "Dipilih ({{count}})",
+      "scopeCurrent": "Akun saat ini",
       "title": "Uji model",
       "hint": "Mengirim pesan singkat dan membaca balasan. Menggunakan sedikit kuota. Percakapan uji dihapus secara bawaan.",
       "account": "Akun",
@@ -8013,12 +8260,19 @@
       "open": "Uji model"
     },
     "probeNotice": {
+      "recovered": "{{model}} kembali tersedia pada {{time}}",
       "until": "{{model}} dibatasi pada uji terakhir, pulih {{time}}",
       "unavailable": "{{model}} dibatasi pada uji terakhir",
       "failed": "Uji terakhir {{model}} gagal"
     }
   },
   "minimaxCode": {
+    "credentialRefresh": {
+      "signInClient": "Masuk ke klien MiniMax Code, lalu coba lagi.",
+      "authorizeAgain": "Otorisasi ulang akun MiniMax Code atau impor kembali setelah masuk ke klien.",
+      "credentialsChanged": "Kredensial MiniMax Code berubah. Silakan coba lagi.",
+      "missingAccessToken": "MiniMax Code tidak mengembalikan token akses saat pembaruan."
+    },
     "title": "Akun MiniMax Code",
     "noAccounts": "Tidak ada akun MiniMax Code",
     "addAccount": "Tambah Akun MiniMax Code",
@@ -8455,13 +8709,15 @@
       "addToClaude": "Tambah ke Claude CLI",
       "addToClaudeDesktop": "Tambah ke Claude",
       "addToClaudeCli": "Tambah ke Claude CLI",
+      "addToGrok": "Tambah ke Grok",
       "codexShort": "Codex",
       "claudeShort": "Claude CLI",
       "deployToCodex": "Deploy cepat ke Codex",
       "deploying": "Mengambil model…",
       "deploySuccess": "Diterapkan ke Codex: {{count}} model",
       "deployFailed": "Deployment gagal: {{error}}",
-      "useKey": "Gunakan kunci"
+      "useKey": "Gunakan kunci",
+      "deleteConfirm": "Hapus kunci tersimpan \"{{name}}\"? Tindakan ini tidak dapat dibatalkan."
     },
     "prefill": {
       "codexReady": "Pengaturan APIKEY.FUN telah diisi. Periksa sebelum menambahkannya ke Codex.",
@@ -8483,7 +8739,7 @@
       "title": "Gunakan kunci API",
       "family": "Grup",
       "platform": "Sistem saat ini",
-      "unsupportedGroup": "Belum ada klien sekali klik untuk grup ini."
+      "unsupportedGroup": "Cockpit Tools belum memiliki templat konfigurasi klien untuk antarmuka {{family}} dari APIKEY.FUN. Anda dapat mengaturnya secara manual pada klien yang mendukung antarmuka ini."
     },
     "campaign": {
       "badge": "11.11",
@@ -8498,6 +8754,7 @@
     }
   },
   "grok": {
+    "emptyBillingQuota": "Layanan penagihan Grok tidak mengembalikan data kuota. Coba lagi nanti.",
     "search": "Cari akun Grok CLI...",
     "flowNotice": {
       "title": "Pengelolaan akun Grok CLI",
@@ -9210,5 +9467,125 @@
   "apiRelay": {
     "baseUrlLabel": "URL dasar penyedia",
     "clearBaseUrl": "Hapus URL dasar"
+  },
+  "antigravityTokenUsage": {
+    "tab": "Pemakaian Sesi",
+    "subtitle": "Pemakaian token lokal dari sesi Antigravity",
+    "title": "Pemakaian Token Sesi Antigravity",
+    "desc": "Menggabungkan pemakaian token aktual dari basis data sesi lokal Antigravity (~/.gemini/antigravity) dalam mode baca-saja, memisahkan token Thinking dan Output secara ketat.",
+    "hint": "Pemindaian baca-saja pada SQLite steps/gen_metadata (mendukung WAL), tembolok RPC, dan transkrip JSONL. Token Output tidak menyertakan Thinking (tanpa hitung ganda); token perkiraan dipisahkan dari jumlah pasti API.",
+    "summary": {
+      "badge": "Token Lokal",
+      "input": "Masukan",
+      "thinking": "Penalaran",
+      "output": "Keluaran",
+      "cache": "Tembolok",
+      "total": "Jumlah",
+      "turns": "Giliran",
+      "sessionsUnit": "sesi",
+      "scanning": "Memindai…",
+      "updating": "Memperbarui…",
+      "detail": "Rincian"
+    },
+    "range": {
+      "label": "Rentang Waktu",
+      "today": "Hari Ini",
+      "7d": "7 Hari Terakhir",
+      "30d": "30 Hari Terakhir",
+      "month": "Bulan Ini",
+      "all": "Semua Waktu"
+    },
+    "granularity": {
+      "label": "Granularitas",
+      "day": "Harian",
+      "week": "Mingguan",
+      "month": "Bulanan"
+    },
+    "kinds": {
+      "all": "Semua Jenis",
+      "main": "Utama",
+      "swarm": "Kawanan (Swarm)",
+      "subagent": "Sub-agen"
+    },
+    "filters": {
+      "kindLabel": "Jenis Sesi",
+      "modelLabel": "Model AI",
+      "workspaceLabel": "Ruang Kerja",
+      "allModels": "Semua Model",
+      "allWorkspaces": "Semua Ruang Kerja",
+      "searchPlaceholder": "Cari judul, ID sesi, ruang kerja, model…"
+    },
+    "dataDir": {
+      "label": "Folder Data:",
+      "customBadge": "Kustom",
+      "choose": "Ubah Folder",
+      "reset": "Atur Ulang Bawaan"
+    },
+    "actions": {
+      "refresh": "Muat Ulang",
+      "rebuild": "Pindai Ulang",
+      "backToAccounts": "Kembali ke Akun"
+    },
+    "rebuildConfirm": {
+      "title": "Pindai Ulang Penuh",
+      "message": "Hapus tembolok pindai lokal Cockpit Tools dan baca ulang seluruh berkas sesi Antigravity dalam mode baca-saja. Lanjutkan?"
+    },
+    "status": {
+      "scanning": "Memindai basis data sesi Antigravity…",
+      "ready": "Memindai {{dbFiles}} berkas DB · {{sessions}} sesi · {{turns}} giliran",
+      "idle": "Belum dipindai",
+      "cacheStats": "Tembolok {{hits}} cocok / {{misses}} baru ({{durationMs}} md)",
+      "scannedAt": "Disinkronkan {{time}}"
+    },
+    "cards": {
+      "total": "Jumlah Token",
+      "totalExact": "Jumlah Token Pasti",
+      "input": "Token Masukan",
+      "thinking": "Token Penalaran",
+      "output": "Token Keluaran",
+      "cache": "Token Tembolok",
+      "conversations": "Percakapan",
+      "turns": "Giliran",
+      "coverage": "Cakupan Pasti",
+      "avgPerDay": "Rata-rata / Hari Aktif"
+    },
+    "estimated": {
+      "notice": "{{turns}} giliran tanpa data mentah API diestimasi secara terpisah (tidak ditambahkan ke Jumlah Pasti):"
+    },
+    "trend": {
+      "title": "Tren Pemakaian Token",
+      "empty": "Tidak ada pemakaian token pada rentang waktu terpilih"
+    },
+    "tables": {
+      "byModel": "Berdasarkan Model",
+      "byWorkspace": "Berdasarkan Ruang Kerja",
+      "byKind": "Berdasarkan Jenis Sesi (Utama / Swarm / Sub-agen)",
+      "conversations": "Daftar Sesi Percakapan",
+      "conversationTitle": "Percakapan",
+      "modelName": "Model AI",
+      "workspaceName": "Ruang Kerja",
+      "sessions": "Sesi",
+      "turns": "Giliran",
+      "total": "Jumlah",
+      "updatedAt": "Diperbarui"
+    },
+    "pagination": {
+      "info": "Halaman {{page}} / {{totalPages}} ({{totalItems}} sesi)"
+    },
+    "detail": {
+      "openParent": "Buka Sesi Induk",
+      "children": "Sesi Turunan (Swarm / Sub-agen)",
+      "turnsTimeline": "Linimasa Token per Giliran"
+    },
+    "empty": {
+      "title": "Tidak ada pemakaian token untuk filter saat ini",
+      "desc": "Coba ubah Rentang Waktu ke \"Semua Waktu\" atau klik Muat Ulang setelah memakai Antigravity.",
+      "dirMissing": "Direktori data Antigravity tidak ditemukan. Periksa jalur folder di atas.",
+      "noRows": "Tidak ada data yang cocok"
+    },
+    "errors": {
+      "loadFailed": "Gagal memuat pemakaian token: {{error}}",
+      "syncFailed": "Gagal memindai pemakaian token: {{error}}"
+    }
   }
 }

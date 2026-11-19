@@ -587,9 +587,8 @@ fn resolve_target_modified_at_ms(
 }
 
 fn resolve_rollout_path(data_dir: &Path, rollout_path: &str) -> PathBuf {
-    let trimmed = rollout_path.trim();
-    let stripped = trimmed.strip_prefix(r"\\?\").unwrap_or(trimmed);
-    let path = Path::new(stripped);
+    // Keep the UNC and volume prefixes used by Windows for absolute paths.
+    let path = Path::new(rollout_path.trim());
     if path.is_absolute() {
         path.to_path_buf()
     } else {
@@ -855,7 +854,6 @@ fn collect_sqlite_cwd_normalizations(
         .map_err(|error| format_sqlite_read_error(db_path, "读取 SQLite cwd 失败", &error))?;
     let mut normalizations = Vec::new();
     for row in rows {
-        check_launch_visibility_budget("scan_sqlite_cwd")?;
         let (thread_id, cwd) =
             row.map_err(|error| format_sqlite_read_error(db_path, "读取 SQLite cwd 失败", &error))?;
         if !selection.includes_session_id(&thread_id) || !is_windows_workspace_path(cwd.trim()) {

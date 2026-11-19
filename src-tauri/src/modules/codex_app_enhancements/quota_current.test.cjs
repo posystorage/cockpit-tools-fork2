@@ -113,7 +113,7 @@ test('actual current submit expression removes only verified OAuth quota guards 
   const pure = settings(); pure.resolvedConfig.model_providers.relay.requires_openai_auth = false;
   const blocked = [false, false, false, false, false, false, false, false, { isLoading: false }, true, true];
   assert.equal(funcs[0](...blocked, 'local', pure, 'relay', {}, scope(), h.context), true);
-  assert.equal(funcs[1](...blocked, 'local', pure, 'relay', {}, scope(), h.context), false);
+  assert.equal(funcs[1](...blocked, 'local', pure, 'relay', {}, scope(), h.context), true);
   assert.equal(funcs[1](...blocked, 'local', pure, 'openai', {}, scope(), h.context), true);
   blocked[0] = true;
   assert.equal(funcs[1](...blocked, 'local', pure, 'relay', {}, scope(), h.context), true);

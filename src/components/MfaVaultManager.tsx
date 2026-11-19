@@ -525,6 +525,7 @@ export function MfaVaultManager() {
   };
 
   const handleImport = async () => {
+    setExportError('');
     try {
       let dataStr = '';
       try {
@@ -573,7 +574,7 @@ export function MfaVaultManager() {
       }
     } catch (err) {
       console.error('Import error:', err);
-      alert(t('mfaVault.importErrorMsg', '导入失败，请检查文件内容格式。'));
+      setExportError(t('mfaVault.importErrorMsg', '导入失败，请检查文件内容格式。'));
     }
   };
 
@@ -1090,7 +1091,7 @@ export function MfaVaultManager() {
           </div>
           <p className="mfa-migration-summary">{t(qrExportScope === 'selected'
             ? 'mfaVault.migrationSelectedSummary' : 'mfaVault.migrationAllSummary', {
-            count: qrPages.reduce((sum, page) => sum + page.count, 0),
+            count: qrPages.reduce<number>((sum, page) => sum + page.count, 0),
           })}</p>
           <p className="mfa-migration-warning">{t('mfaVault.migrationWarning')}</p>
           <img className="mfa-migration-image" src={qrPages[qrPageIndex].dataUrl}

@@ -176,7 +176,7 @@ interface AccountState {
     currentAccountsByTarget: CurrentAccountsByTarget;
     loading: boolean;
     error: string | null;
-    fetchAccounts: () => Promise<void>;
+    fetchAccounts: (options?: { background?: boolean }) => Promise<void>;
     fetchCurrentAccount: (runtimeTarget?: AntigravityRuntimeTarget) => Promise<void>;
     addAccount: (email: string, refreshToken: string) => Promise<Account>;
     deleteAccount: (accountId: string) => Promise<void>;
@@ -186,7 +186,7 @@ interface AccountState {
     refreshAllQuotas: (trigger?: 'auto' | 'manual') => Promise<RefreshStats>;
     startOAuthLogin: (update?: AccountNoteUpdate) => Promise<Account>;
     reorderAccounts: (accountIds: string[]) => Promise<void>;
-    switchAccount: (accountId: string, runtimeTarget?: AntigravityRuntimeTarget) => Promise<Account>;
+    switchAccount: (accountId: string, runtimeTarget?: AntigravityRuntimeTarget, launch?: boolean, inlinePathRecovery?: boolean) => Promise<Account>;
     syncCurrentFromClient: () => Promise<void>;
     updateAccountTags: (accountId: string, tags: string[]) => Promise<Account>;
     updateAccountNotes: (accountId: string, update: string | AccountNoteUpdate) => Promise<Account>;
@@ -201,7 +201,7 @@ export const useAccountStore = create<AccountState>()(
       loading: false,
       error: null,
 
-      fetchAccounts: async () => {
+      fetchAccounts: async ({ background = false } = {}) => {
           const now = Date.now();
           
           // 如果正在请求中，且距离上次请求不足 DEBOUNCE_MS，复用现有 Promise
@@ -213,7 +213,9 @@ export const useAccountStore = create<AccountState>()(
           
           fetchAccountsPromise = (async () => {
               const requestId = ++fetchAccountsSeq;
-              set({ loading: true, error: null });
+              if (!background || get().accounts.length === 0) {
+                  set({ loading: true, error: null });
+              }
               try {
                   const accounts = await accountService.listAccounts();
                   if (requestId !== fetchAccountsSeq) {
@@ -221,11 +223,11 @@ export const useAccountStore = create<AccountState>()(
                   }
                   if (accounts.length === 0 && get().accounts.length > 0 && !allowNextEmptyAccountList) {
                       console.warn('[AccountStore] 忽略异常空账号列表，保留本地缓存账号');
-                      set({ loading: false });
+                      set({ loading: false, error: null });
                       return;
                   }
                   allowNextEmptyAccountList = false;
-                  set({ accounts, loading: false });
+                  set({ accounts, loading: false, error: null });
               } catch (e) {
                   if (requestId !== fetchAccountsSeq) {
                       return;
@@ -474,11 +476,11 @@ export const useAccountStore = create<AccountState>()(
         await get().fetchAccounts();
     },
 
-    switchAccount: async (accountId: string, runtimeTarget?: AntigravityRuntimeTarget) => {
+    switchAccount: async (accountId, runtimeTarget, launch, inlinePathRecovery) => {
         const target = resolveRuntimeTarget(runtimeTarget);
         const previousCurrentAccountId = get().currentAccountsByTarget[target]?.id ?? null;
         try {
-            const account = await accountService.switchAccount(accountId, target);
+            const account = await accountService.switchAccount(accountId, target, launch, inlinePathRecovery);
             set((state) => ({
                 currentAccount: account,
                 currentAccountsByTarget: updateCurrentAccountsByTarget(

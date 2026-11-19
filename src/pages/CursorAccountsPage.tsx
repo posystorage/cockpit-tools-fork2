@@ -21,6 +21,8 @@ import {
   Tag,
   ChevronDown,
   Play,
+  ArrowDown,
+  ArrowUp,
   Eye,
   EyeOff,
   Lock,
@@ -37,6 +39,7 @@ import { PaginationControls } from '../components/PaginationControls';
 import { AccountSelectionToolbar } from '../components/AccountSelectionToolbar';
 import { usePlatformAccountGroups } from '../hooks/usePlatformAccountGroups';
 import { QuickSettingsPopover } from '../components/QuickSettingsPopover';
+import { PlatformQuotaHistoryButton } from '../components/PlatformQuotaHistoryButton';
 import { MultiSelectFilterDropdown, type MultiSelectFilterOption } from '../components/MultiSelectFilterDropdown';
 import { SingleSelectFilterDropdown } from '../components/SingleSelectFilterDropdown';
 import {
@@ -841,7 +844,7 @@ export function CursorAccountsPage() {
           <button className="sort-direction-btn" onClick={() => setSortDirection((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
             title={sortDirection === 'desc' ? t('common.shared.sort.descTooltip', '当前：降序，点击切换为升序') : t('common.shared.sort.ascTooltip', '当前：升序，点击切换为降序')}
             aria-label={t('common.shared.sort.toggleDirection', '切换排序方向')}>
-            {sortDirection === 'desc' ? '⬇' : '⬆'}
+            {sortDirection === 'desc' ? <ArrowDown size={15} /> : <ArrowUp size={15} />}
           </button>
         </div>
         <div className="toolbar-right">
@@ -872,6 +875,9 @@ export function CursorAccountsPage() {
               <CircleAlert size={14} />
             </button>
           )}
+          <PlatformQuotaHistoryButton platform="cursor" accounts={accounts.map((account) => ({
+            value: account.id, label: maskAccountText(getCursorAccountDisplayEmail(account)), createdAt: account.created_at,
+          }))} />
           <QuickSettingsPopover type="cursor" />
         </div>
       </div>

@@ -28,6 +28,8 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AccountLastUsed } from '../components/AccountLastUsed'
+import { AntigravityLaunchDialog } from '../components/AntigravityLaunchDialog'
+import { setAntigravityRuntimeTarget, type AntigravityLaunchClient, type AntigravityRuntimeTarget } from '../utils/antigravityRuntimeTarget'
 import { useAccountStore } from '../stores/useAccountStore'
 import * as accountService from '../services/accountService'
 import { Account } from '../types/account'
@@ -40,7 +42,6 @@ import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import { open as openFileDialog } from '@tauri-apps/plugin-dialog'
 import { useModalErrorState } from '../components/ModalErrorMessage'
-import { formatAntigravitySwitchError } from '../utils/antigravitySwitchError'
 import { useEscClose } from '../hooks/useEscClose'
 import { useMfaCountdown } from '../hooks/useMfaCountdown'
 import { useEnterConfirm } from '../hooks/useEnterConfirm'
@@ -201,8 +202,6 @@ export function useAccountsPageController({ onNavigate }: AccountsPageProps) {
     updateAccountNotes
   } = useAccountStore()
   const currentAccount = currentAccountsByTarget[antigravityRuntimeTarget] ?? null
-
-  const formatSwitchError = useCallback((error: unknown) => formatAntigravitySwitchError(t, error), [t])
 
   // ─── 验证状态标记 ────────────────────────────────────────────────────
   // 优先读 disabled_reason（新版后端写入），没有则回退到验证历史（向后兼容）
@@ -381,6 +380,7 @@ export function useAccountsPageController({ onNavigate }: AccountsPageProps) {
   const [refreshingAll, setRefreshingAll] = useState(false)
   const [wakeupRunning, setWakeupRunning] = useState(false)
   const [switching, setSwitching] = useState<string | null>(null)
+  const [launchAccountId, setLaunchAccountId] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
   const [refreshWarnings, setRefreshWarnings] = useState<
     Record<string, { kind: 'auth' | 'error'; message: string }>
@@ -1792,28 +1792,33 @@ export function useAccountsPageController({ onNavigate }: AccountsPageProps) {
     })
   }
 
-  const handleSwitch = async (accountId: string) => {
+  const handleSwitch = (accountId: string) => {
     setMessage(null)
     const targetAccount = accounts.find((account) => account.id === accountId)
     if (isPendingAntigravityAccount(targetAccount)) {
       if (targetAccount) openPendingOAuthAccount(targetAccount)
       return
     }
-    setSwitching(accountId)
+    setLaunchAccountId(accountId)
+  }
+
+  const confirmLaunchSwitch = async (
+    client: AntigravityLaunchClient, launch: boolean, options?: accountService.AntigravityCliLaunchOptions,
+  ) => {
+    if (!launchAccountId) return
+    setSwitching(launchAccountId)
     try {
-      const account = await switchAccount(accountId, antigravityRuntimeTarget)
-      await fetchCurrentAccount(antigravityRuntimeTarget)
+      const account = client === 'cli'
+        ? await accountService.switchAntigravityCli(launchAccountId, launch, options)
+        : await switchAccount(launchAccountId, client, launch, true)
+      if (client !== 'cli') setAntigravityRuntimeTarget(client)
       setMessage({ text: t('messages.switched', { email: maskAccountText(account.email) }) })
-    } catch (e) {
-      const raw = formatSwitchError(e)
-      if (!raw.startsWith('APP_PATH_NOT_FOUND:')) {
-        setMessage({
-          text: t('messages.switchFailed', { error: raw }),
-          tone: 'error'
-        })
-      }
+    } finally {
+      void Promise.allSettled([
+        fetchAccounts(), fetchCurrentAccount('antigravity'), fetchCurrentAccount('antigravity_ide'),
+      ])
+      setSwitching(null)
     }
-    setSwitching(null)
   }
 
   const openSwitchHistoryModal = () => {
@@ -1973,16 +1978,16 @@ export function useAccountsPageController({ onNavigate }: AccountsPageProps) {
     setImporting(false)
   }
 
-  const handleImportFromLocal = async () => {
+  const handleImportFromLocal = async (target: AntigravityRuntimeTarget) => {
     setImporting(true)
     setAddStatus('loading')
     setAddMessage(t('modals.import.importingLocal'))
     try {
-      const imported = await accountService.importFromLocal(antigravityRuntimeTarget)
+      const imported = await accountService.importFromLocal(target)
       await fetchAccounts()
       await new Promise((resolve) => setTimeout(resolve, 180))
       await fetchAccounts()
-      await refreshQuota(imported.id, antigravityRuntimeTarget)
+      await refreshQuota(imported.id, target)
       await fetchAccounts()
       await assignAccountsToAddTargetGroup([imported])
       setAddStatus('success')
@@ -2899,7 +2904,7 @@ export function useAccountsPageController({ onNavigate }: AccountsPageProps) {
             </div>
           )}
 
-          <div className="card-quota-grid">
+          <div className="card-quota-grid antigravity-card-quota">
             {isForbidden ? (
               <div className="quota-forbidden" title={forbiddenTitle}>
                 <Lock size={14} />
@@ -2915,11 +2920,12 @@ export function useAccountsPageController({ onNavigate }: AccountsPageProps) {
                 {renderCustomQuotaSection(account, false)}
               </>
             )}
-            <div className="quota-credits-field">
+            {availableCreditsDisplay !== '' && <div className="quota-credits-field">
               <span className="quota-credits-label">
                 {t('common.shared.credits.availableAiCredits', 'Available AI Credits')}: {availableCreditsDisplay}
               </span>
-            </div>
+            </div>}
+            <AccountLastUsed accountId={account.id} lastSwitchedAt={account.last_switched_at} refreshAt={account.quota?.last_updated} createdAt={account.created_at} formatDate={formatDate} />
           </div>
 
           {accountTags.length > 0 && (
@@ -2933,7 +2939,7 @@ export function useAccountsPageController({ onNavigate }: AccountsPageProps) {
             </div>
           )}
           <div className="card-footer antigravity-card-footer">
-            <AccountLastUsed accountId={account.id} lastSwitchedAt={account.last_switched_at} createdAt={account.created_at} formatDate={formatDate} />
+            <AccountLastUsed accountId={account.id} lastSwitchedAt={account.last_switched_at} refreshAt={account.quota?.last_updated} createdAt={account.created_at} formatDate={formatDate} />
             <div className="card-actions">
               {isPendingAntigravityAccount(account) && (
                 <button
@@ -3154,7 +3160,7 @@ export function useAccountsPageController({ onNavigate }: AccountsPageProps) {
         return (
           <div
             key={account.id}
-            className={`${styles.card} ${isCurrent ? styles.cardCurrent : ''} ${isSelected ? styles.cardSelected : ''} ${isSwitching ? styles.cardSwitching : ''}`}
+            className={`${styles.card} ${styles.antigravityCard} ${isCurrent ? styles.cardCurrent : ''} ${isSelected ? styles.cardSelected : ''} ${isSwitching ? styles.cardSwitching : ''}`}
             onClick={() => {
               if (!switching) toggleSelect(account.id)
             }}
@@ -3182,7 +3188,9 @@ export function useAccountsPageController({ onNavigate }: AccountsPageProps) {
                 {maskAccountText(account.email)}
               </span>
             </span>
-            <AccountLastUsed accountId={account.id} lastSwitchedAt={account.last_switched_at} createdAt={account.created_at} formatDate={formatDate} />
+            <span className={`tier-badge ${tierBadge.className}`}>
+              {tierBadge.label}
+            </span>
             <div className={styles.quotas}>
               {groupQuotas.length > 0 ? (
                 groupQuotas.map((gq) => (
@@ -3195,6 +3203,7 @@ export function useAccountsPageController({ onNavigate }: AccountsPageProps) {
                       className={styles.dot}
                       style={{ background: gq.color }}
                     />
+                    <span className={styles.quotaGroupName}>{gq.name}</span>
                     {gq.percentage}%
                   </span>
                 ))
@@ -3240,6 +3249,9 @@ export function useAccountsPageController({ onNavigate }: AccountsPageProps) {
             >
               <Play size={12} />
             </button>
+            <div className={styles.antigravityCardTime}>
+              <AccountLastUsed accountId={account.id} lastSwitchedAt={account.last_switched_at} refreshAt={account.quota?.last_updated} createdAt={account.created_at} formatDate={formatDate} />
+            </div>
           </div>
         )
       })
@@ -3549,11 +3561,11 @@ export function useAccountsPageController({ onNavigate }: AccountsPageProps) {
                   {renderCustomQuotaSection(account, true)}
                 </>
               )}
-              <div className="quota-credits-field">
+              {availableCreditsDisplay !== '' && <div className="quota-credits-field">
                 <span className="quota-credits-label">
                   {t('common.shared.credits.availableAiCredits', 'Available AI Credits')}: {availableCreditsDisplay}
                 </span>
-              </div>
+              </div>}
             </div>
           </td>
           <td>
@@ -3701,6 +3713,9 @@ export function useAccountsPageController({ onNavigate }: AccountsPageProps) {
   )
 
   return {
+    launchAccount: accounts.find((account) => account.id === launchAccountId),
+    closeLaunchDialog: () => setLaunchAccountId(null),
+    confirmLaunchSwitch,
     grouping,
     accountGroups: grouping.groups,
     accountNoteCopiedKey,
@@ -3915,6 +3930,17 @@ export function useAccountsPageController({ onNavigate }: AccountsPageProps) {
 
 /** 组合业务 Controller 与独立 View，保持原组件公开调用入口不变。 */
 export function AccountsPage(props: AccountsPageProps) {
-  const controller = useAccountsPageController(props);
-  return <AccountsOverviewView {...controller} />;
+  const { launchAccount, closeLaunchDialog, confirmLaunchSwitch, ...controller } = useAccountsPageController(props);
+  const tier = launchAccount && getAntigravityTierBadge(launchAccount.quota);
+  return <>
+    <AccountsOverviewView {...controller} />
+    {launchAccount && tier && <AntigravityLaunchDialog key={launchAccount.id}
+      account={{ label: controller.maskAccountText(launchAccount.email), badge: <span className={`tier-badge ${tier.className}`} title={tier.label}>{tier.label}</span> }}
+      initialClient={controller.antigravityRuntimeTarget}
+      primaryLabel={() => controller.t('antigravityLaunch.switchAndLaunch')}
+      onClose={closeLaunchDialog}
+      onLaunch={(client, options) => confirmLaunchSwitch(client, true, options)}
+      onSwitchOnly={(client) => confirmLaunchSwitch(client, false)}
+      onPrepareCopy={() => confirmLaunchSwitch('cli', false)} />}
+  </>;
 }

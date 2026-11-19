@@ -1,9 +1,61 @@
 use super::truncate_chars;
 use serde_json::Value;
 
+/// JSON-RPC 请求 id：initialize=1, session/load=2, session/set_model=3, session/prompt=4
+const INIT_ID: u64 = 1;
+const LOAD_ID: u64 = 2;
+const SET_MODEL_ID: u64 = 3;
+const PROMPT_ID: u64 = 4;
+
+/// 归一化模型名用于比对：小写且只保留字母数字（hy4free ↔ hy4-free）。
+fn normalized_model_name(value: &str) -> String {
+    value
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .collect()
+}
+
+/// 读流结束后的收尾判定：
+/// - 已有错误/回复文本：以它们为准（错误可能来自限流，文本说明模型已实际回复）。
+/// - prompt 正常结束（end_turn）：视为可用；模型实际执行者已由 update() 与
+///   `usage.model` 比对过（防 set_model 静默失效）。
+/// - prompt 未完成且无任何文本：若连 initialize/session/load 的 ack 都没有，
+///   说明连接根本没建立成功 → 握手不完整；否则交给调用方按 NO_REPLY 处理。
+fn finalize_outcome(outcome: &mut AcpOutcome) {
+    if outcome.error.is_some() || !outcome.text.trim().is_empty() || outcome.prompt_done {
+        return;
+    }
+    let session_ready =
+        outcome.ack_ids.contains(&INIT_ID) && outcome.ack_ids.contains(&LOAD_ID);
+    if !session_ready {
+        outcome.error = Some(
+            "WORKBUDDY_PROBE_HANDSHAKE_INCOMPLETE (no ack for initialize/session/load)".into(),
+        );
+    }
+}
+
 pub(super) struct AcpOutcome {
     pub(super) text: String,
     pub(super) error: Option<String>,
+    /// 已确认收到成功响应的 JSON-RPC 请求 id（响应可能在 POST 内联，也可能在 SSE 流里）
+    pub(super) ack_ids: Vec<u64>,
+    /// session/prompt 的最终响应是否已收到（一轮对话结束）
+    pub(super) prompt_done: bool,
+    /// 本次探测请求的模型名（用于和 prompt 结果 usage.model 比对，防 set_model 失效）
+    pub(super) expected_model: String,
+}
+
+impl AcpOutcome {
+    pub(super) fn new(expected_model: &str) -> Self {
+        Self {
+            text: String::new(),
+            error: None,
+            ack_ids: Vec::new(),
+            prompt_done: false,
+            expected_model: expected_model.to_string(),
+        }
+    }
 }
 
 /// 读取 ACP SSE 流：累积 agent_message_chunk 的文本，捕获错误事件与限流文案。
@@ -93,10 +145,7 @@ pub(super) async fn read_acp_reply(
 ) -> AcpOutcome {
     use futures_util::StreamExt;
 
-    let mut outcome = AcpOutcome {
-        text: String::new(),
-        error: None,
-    };
+    let mut outcome = AcpOutcome::new(model);
 
     let mut headers = reqwest::header::HeaderMap::new();
     if let Ok(value) = format!("Bearer {}", session_token).parse() {
@@ -209,28 +258,31 @@ pub(super) async fn read_acp_reply(
             }
         };
 
-        // 客户端 bootstrap 序列：initialize → session/load → session/set_model → session/prompt。
-        // 少了 set_model，沙箱会用默认模型跑，探测结果就与所选模型无关（永远 OK）。
-        let mut prompt_response = String::new();
+        // An empty POST response only accepts the request. Its JSON-RPC result
+        // arrives on the GET stream, so wait for each handshake step there
+        // unless the POST already returned the matching result.
+        let mut stream = resp.bytes_stream();
+        let mut decoder = ReplyDecoder::default();
+        let mut stream_ended = false;
         let calls: [(&'static str, u64, serde_json::Value); 4] = [
             (
                 "initialize",
-                1,
+                INIT_ID,
                 serde_json::json!({ "protocolVersion": 1, "clientCapabilities": {} }),
             ),
             (
                 "session/load",
-                2,
+                LOAD_ID,
                 serde_json::json!({ "sessionId": session_id, "cwd": "/", "mcpServers": [] }),
             ),
             (
                 "session/set_model",
-                3,
+                SET_MODEL_ID,
                 serde_json::json!({ "sessionId": session_id, "modelId": model }),
             ),
             (
                 "session/prompt",
-                4,
+                PROMPT_ID,
                 serde_json::json!({
                     "sessionId": session_id,
                     "prompt": [{ "type": "text", "text": "Reply with OK." }]
@@ -238,76 +290,58 @@ pub(super) async fn read_acp_reply(
             ),
         ];
         for (method, id, params) in calls {
-            match send(method, id, params).await {
-                Ok(response_text) => {
-                    if let Some(err) = parse_acp_post_error(&response_text) {
-                        outcome.error = Some(format!("{}: {}", method, err));
-                        return;
-                    }
-                    if method != "session/prompt" && !rpc_acknowledged(&response_text, id) {
-                        outcome.error = Some("WORKBUDDY_PROBE_HANDSHAKE_INCOMPLETE".into());
-                        return;
-                    }
-                    if method == "session/prompt" {
-                        prompt_response = response_text;
-                    }
-                }
-                Err(e) => {
-                    outcome.error = Some(e);
-                    return;
-                }
-            }
-        }
-
-        let mut decoder = ReplyDecoder::default();
-        // Some servers return prompt updates in the POST body while the GET
-        // channel stays idle. Decode those updates before awaiting another byte.
-        if let Err(error) = decoder.feed(prompt_response.as_bytes(), true, session_id, &mut outcome)
-        {
-            outcome.error = Some(error);
-            return;
-        }
-        if !outcome.text.trim().is_empty() || outcome.error.is_some() {
-            return;
-        }
-        let mut stream = resp.bytes_stream();
-        while let Some(chunk) = stream.next().await {
-            match chunk {
-                Ok(bytes) => {
-                    if let Err(error) = decoder.feed(&bytes, false, session_id, &mut outcome) {
-                        outcome.error = Some(error);
-                        return;
-                    }
-                }
+            let body = match send(method, id, params).await {
+                Ok(body) => body,
                 Err(error) => {
-                    outcome.error = Some(error.without_url().to_string());
+                    outcome.error = Some(error);
                     return;
                 }
+            };
+            if let Err(error) = ReplyDecoder::decode_post(&body, session_id, &mut outcome) {
+                outcome.error = Some(format!("{method}: {error}"));
+                return;
             }
-            if !outcome.text.trim().is_empty() || outcome.error.is_some() {
+
+            while outcome.error.is_none()
+                && if id == PROMPT_ID {
+                    outcome.text.trim().is_empty()
+                } else {
+                    !outcome.ack_ids.contains(&id)
+                }
+                && !stream_ended
+            {
+                let decoded = match stream.next().await {
+                    Some(Ok(bytes)) => decoder.feed(&bytes, false, session_id, &mut outcome),
+                    Some(Err(error)) => Err(error.without_url().to_string()),
+                    None => {
+                        stream_ended = true;
+                        decoder.feed(&[], true, session_id, &mut outcome)
+                    }
+                };
+                if let Err(error) = decoded {
+                    outcome.error = Some(error);
+                }
+            }
+            if outcome.error.is_some() {
+                return;
+            }
+            if id != PROMPT_ID && !outcome.ack_ids.contains(&id) {
+                outcome.error = Some(format!("WORKBUDDY_PROBE_HANDSHAKE_INCOMPLETE ({method})"));
                 return;
             }
         }
-        if let Err(error) = decoder.feed(&[], true, session_id, &mut outcome) {
-            outcome.error = Some(error);
-        }
+        finalize_outcome(&mut outcome);
     };
 
-    if tokio::time::timeout(deadline, read_future).await.is_err() {
+    // The prompt result can arrive before its text updates. Keep reading
+    // within the probe deadline even after receiving a successful result.
+    if tokio::time::timeout(deadline, read_future).await.is_err() && !outcome.prompt_done {
         outcome.error = Some("WORKBUDDY_PROBE_TIMEOUT".into());
     }
     if let Some(error) = &mut outcome.error {
         *error = error.replace(session_token, "<redacted>");
     }
     outcome
-}
-
-fn rpc_acknowledged(body: &str, id: u64) -> bool {
-    body.lines().any(|line| {
-        let text = line.strip_prefix("data:").unwrap_or(line).trim();
-        serde_json::from_str::<Value>(text)
-            .is_ok_and(|value| value["id"] == id && value.get("result").is_some())
-    })
 }
 
 #[derive(Default)]
@@ -317,6 +351,18 @@ struct ReplyDecoder {
 }
 
 impl ReplyDecoder {
+    fn decode_post(body: &str, session: &str, outcome: &mut AcpOutcome) -> Result<(), String> {
+        let body = body.trim();
+        if body.is_empty() {
+            return Ok(());
+        }
+        if let Ok(value) = serde_json::from_str::<Value>(body) {
+            Self::update(&value, session, outcome);
+            return Ok(());
+        }
+        Self::default().feed(body.as_bytes(), true, session, outcome)
+    }
+
     fn feed(
         &mut self,
         bytes: &[u8],
@@ -378,6 +424,60 @@ impl ReplyDecoder {
     }
 
     fn update(value: &Value, session: &str, outcome: &mut AcpOutcome) {
+        // JSON-RPC 响应（带 id + result/error）：登记握手确认；错误响应直接失败。
+        // id 可能是数字或字符串，两种都接受。
+        if value.get("id").is_some()
+            && (value.get("result").is_some() || value.get("error").is_some())
+        {
+            let id = match &value["id"] {
+                Value::Number(number) => number.as_u64(),
+                Value::String(text) => text.parse::<u64>().ok(),
+                _ => None,
+            };
+            if value.get("error").is_some() {
+                let message = parse_acp_post_error(&value.to_string())
+                    .or_else(|| {
+                        value["error"]["message"].as_str().map(str::to_string)
+                    })
+                    .unwrap_or_else(|| "WORKBUDDY_PROBE_REJECTED".into());
+                outcome.error = Some(message);
+                return;
+            }
+            if let Some(id) = id {
+                if !outcome.ack_ids.contains(&id) {
+                    outcome.ack_ids.push(id);
+                }
+                if id == PROMPT_ID {
+                    outcome.prompt_done = true;
+                    // prompt 结果内嵌的限流/错误信息（result._meta.errorMessage）
+                    if let Some(err) = parse_acp_post_error(&value.to_string()) {
+                        outcome.error = Some(err);
+                        return;
+                    }
+                    // 服务端在 usage.model 里报告实际执行的模型。
+                    // set_model 若被静默忽略，这里会暴露成「跑了别的模型」。
+                    let ran = value
+                        .pointer("/result/usage/model")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    if !ran.is_empty() && !outcome.expected_model.is_empty() {
+                        let (ran_n, want_n) = (
+                            normalized_model_name(ran),
+                            normalized_model_name(&outcome.expected_model),
+                        );
+                        if !ran_n.is_empty()
+                            && !want_n.is_empty()
+                            && ran_n != want_n
+                        {
+                            outcome.error = Some(format!(
+                                "WORKBUDDY_PROBE_MODEL_MISMATCH (server ran {ran})"
+                            ));
+                        }
+                    }
+                }
+            }
+            return;
+        }
         if let Some(error) = parse_acp_post_error(&value.to_string()) {
             outcome.error = Some(error);
             return;
@@ -425,10 +525,7 @@ mod tests {
         let text = "data: {\"params\":{\"sessionId\":\"chosen\",\ndata: \"update\":{\"sessionUpdate\":\"agent_message_chunk\",\"content\":{\"type\":\"text\",\"text\":\"可用\"}}}}\n\n";
         let bytes = text.as_bytes();
         let split = bytes.iter().position(|byte| *byte >= 128).unwrap() + 1;
-        let mut result = AcpOutcome {
-            text: String::new(),
-            error: None,
-        };
+        let mut result = AcpOutcome::new("chosen");
         let mut decoder = ReplyDecoder::default();
         decoder
             .feed(&bytes[..split], false, "chosen", &mut result)
@@ -437,10 +534,7 @@ mod tests {
             .feed(&bytes[split..], false, "chosen", &mut result)
             .unwrap();
         assert_eq!(result.text, "可用");
-        let mut other = AcpOutcome {
-            text: String::new(),
-            error: None,
-        };
+        let mut other = AcpOutcome::new("chosen");
         ReplyDecoder::default()
             .feed(bytes, true, "other", &mut other)
             .unwrap();
@@ -448,18 +542,60 @@ mod tests {
     }
 
     #[test]
-    fn model_selection_requires_its_own_ack_and_quota_requires_error_evidence() {
-        assert!(rpc_acknowledged(
-            r#"{"jsonrpc":"2.0","id":3,"result":{}}"#,
-            3
-        ));
-        assert!(!rpc_acknowledged(r#"{"id":2,"result":{}}"#, 3));
-        assert!(!rpc_acknowledged(
-            r#"{"id":3,"error":{"message":"unsupported"}}"#,
-            3
-        ));
+    fn quota_requires_error_evidence() {
         assert!(parse_acp_post_error(r#"{"id":3,"result":{"model":"quota-model"}}"#).is_none());
         let body = r#"{"id":4,"result":{"_meta":{"codebuddy.ai/errorMessage":"{\"message\":\"quota exhausted\"}"}}}"#;
         assert!(parse_acp_post_error(body).is_some());
+    }
+
+    #[test]
+    fn prompt_result_reports_usage_model_and_flags_mismatch() {
+        // 真实后端形态：POST 空响应体，SSE 流只推 id=4 的最终 result（含 usage.model）
+        let mut outcome = AcpOutcome::new("hy4free");
+        ReplyDecoder::default()
+            .feed(
+                br#"data: {"jsonrpc":"2.0","id":4,"result":{"_meta":{"traceparent":"00-x"},"stopReason":"end_turn","usage":{"model":"hy4-free","outputTokens":18}}}"#,
+                true,
+                "s1",
+                &mut outcome,
+            )
+            .unwrap();
+        assert!(outcome.error.is_none(), "alias naming must not fail");
+        assert!(outcome.prompt_done);
+
+        let mut mismatch = AcpOutcome::new("deepseek-v4.1-flash");
+        ReplyDecoder::default()
+            .feed(
+                br#"data: {"jsonrpc":"2.0","id":4,"result":{"stopReason":"end_turn","usage":{"model":"hy3","outputTokens":5}}}"#,
+                true,
+                "s1",
+                &mut mismatch,
+            )
+            .unwrap();
+        assert!(mismatch
+            .error
+            .unwrap_or_default()
+            .starts_with("WORKBUDDY_PROBE_MODEL_MISMATCH"));
+    }
+
+    #[test]
+    fn prompt_error_response_surfaces_message() {
+        let payload = r#"data: {"jsonrpc":"2.0","id":4,"error":{"code":-32000,"message":"您的使用量已超出频率限制，将在 2026-11-13T18:00:00+08:00 重置"}}"#;
+        let mut outcome = AcpOutcome::new("hy4free");
+        ReplyDecoder::default()
+            .feed(payload.as_bytes(), true, "s1", &mut outcome)
+            .unwrap();
+        let message = outcome.error.unwrap_or_default();
+        assert!(message.contains("频率限制"));
+    }
+
+    #[test]
+    fn stream_without_any_ack_is_handshake_incomplete() {
+        // POST 全空响应体 + SSE 无任何响应 → 握手不完整
+        let mut outcome = AcpOutcome::new("hy4free");
+        ReplyDecoder::default().feed(b"", true, "s1", &mut outcome).unwrap();
+        assert!(!outcome.prompt_done);
+        assert!(outcome.text.is_empty());
+        assert!(outcome.ack_ids.is_empty());
     }
 }

@@ -33,9 +33,11 @@ function composer(mac) {
 function setup(flags = {}, { host = 182735, menus = menuIds, queries = modelQueryIds } = {}) {
   const modules = new Map();
   const preloads = [];
+  const assetName = id => id + '.abcdef1234.js';
   const sources = new Map([
-    ...menus.map(id => [id, menu]),
-    ...queries.map(id => [id, modelQuery]),
+    ...[...new Set([...menus, ...queries])].map(id => [
+      id, [menus.includes(id) ? menu : '', queries.includes(id) ? modelQuery : ''].join('\n'),
+    ]),
     [host, queue], [543778, composer(true)], [634303, composer(false)],
   ]);
   const html = '<script type="module" src="/assets/123.abcdef1234.js"></script>';
@@ -46,7 +48,14 @@ function setup(flags = {}, { host = 182735, menus = menuIds, queries = modelQuer
       return id;
     } },
     Blob, AbortSignal, location: new URL('app://-/index.html'),
-    __cockpitEnhancements: { nativeFast: true, apiKeyAuthVerified: true, apiService: true, ...flags },
+    __cockpitEnhancements: {
+      nativeFast: true, apiKeyAuthVerified: true, apiService: true,
+      rspackSpeedAssets: {
+        entryScripts: ['123.abcdef1234.js'],
+        hosts: [assetName(host)], menus: menus.map(assetName), modelQueries: queries.map(assetName),
+      },
+      ...flags,
+    },
     HTMLScriptElement: { supports: () => true }, addEventListener() {},
     document: {
       documentElement: null,
@@ -244,7 +253,7 @@ test('the updated desktop manifest selects the new speed routes and forwards the
     687108, 750210, 782647, 838074, 872702, 963873];
   const host = 739301;
   const h = setup({}, { host, menus, queries });
-  assert.equal((await h.root.__cockpitServiceRspack.verifySpeedDocument()).ok, true);
+  assert.equal((await h.root.__cockpitServiceRspack.verifyRequestedDocument()).ok, true);
   h.preload();
   assert.equal(h.root.__cockpitStartupPreload.speed.ok, true);
   assert.equal(h.root.__cockpitStartupPreload.ultra.ok, true);
@@ -258,47 +267,75 @@ test('the updated desktop manifest selects the new speed routes and forwards the
   }), 'priority');
 });
 
-test('macOS and Windows only hand local API Service quota decisions to the gateway', async () => {
-  for (const mixed of [false, true]) {
-    const h = setup({nativeFast: !mixed, apiKeyAuthVerified: !mixed, quotaCompat: mixed});
-    h.preload();
-    assert.equal(h.root.__cockpitStartupPreload.quota.ok, true, h.root.__cockpitStartupPreload.quota.reason);
-    for (const id of [543778, 634303]) {
-      const modules = { tl5a: {jR: 'threadProvider'}, eLmE: {F9: 'reserve'}, a6kU: {U: 'usage'} };
-      const {itX7: factory} = await h.exports(id);
-      const blocked = factory(name => modules[name]);
-      const provider = { requires_openai_auth: mixed, experimental_bearer_token: 'agt_codex_test', base_url: 'http://127.0.0.1:8765/v1' };
-      const settings = { isConfigDataPending: false, resolvedConfig: {
-        model_provider: 'codex_local_access', model_providers: {codex_local_access: provider},
-      } };
-      function submit({props, route, thread, threadProvider, reserve = true, usage = true, load} = {}) {
-        return blocked({hostId: 'local', ...props}, {
-          reader: { _U: key => key === 'threadProvider' ? threadProvider : key === 'reserve' && reserve, Ul: key => key === 'usage' && usage },
-          config: { Fc: () => settings }, scope: {value: route ?? {kind:'new'}}, thread, load,
-        });
-      }
-      assert.equal(submit(), false);
-      assert.equal(submit({reserve: false}), false);
-      assert.equal(submit({usage: false}), false);
-      assert.equal(submit({props: {disabled: true}}), true);
-      assert.equal(submit({load: {isLoading: true}}), true);
-      assert.equal(submit({props: {hostId: 'remote'}}), true);
-      assert.equal(submit({props: {useAsbDirect: true}}), true);
-      assert.equal(submit({props: {selectedProject: {type: 'remote'}}}), true);
-      assert.equal(submit({route: {kind: 'new', cloudThreadPrototype: {}}}), true);
-      assert.equal(submit({route: {kind: 'cloud'}}), true);
-      const existing = {thread: 't1', route: {kind: 'local', conversationId: 't1'}};
-      assert.equal(submit(existing), true);
-      assert.equal(submit({...existing, threadProvider: 'openai'}), true);
-      assert.equal(submit({...existing, threadProvider: 'codex_local_access'}), false);
-      provider.base_url = 'https://remote.example/v1';
-      assert.equal(submit(), true);
-      provider.base_url = 'http://localhost:8765/v1';
-      settings.isConfigDataPending = true;
-      assert.equal(submit(), true);
-    }
+test('Codex 26.1111.71025 restores the speed menu and forwards GPT-6.2 Sol Ultrafast', async () => {
+  const host = 907538;
+  const menus = [131020, 155556, 166418, 184348, 24668, 29761, 360659, 884042, 955783];
+  const queries = [184659, 24668, 262625, 263369, 304386, 415411, 440403, 579702,
+    692212, 780248, 84646, 961945, 968289];
+  const h = setup({}, { host, menus, queries });
+  assert.equal((await h.root.__cockpitServiceRspack.verifyRequestedDocument()).ok, true);
+  h.preload();
+  assert.equal(h.root.__cockpitStartupPreload.speed.ok, true);
+  assert.equal(h.root.__cockpitStartupPreload.ultra.ok, true);
+  const { menu: show, modelQuery: query } = await h.exports(24668);
+  assert.equal(show({}, 'local', { tn: () => ({ authMethod: 'apikey' }) }).serviceTierAccess, true);
+  assert.equal(query({ cc: data => data?.custom }, { JW: 'flag' })(
+    { hostId: 'local', authMethod: 'apikey' },
+    { get: key => key === 'flag' ? false : { data: { custom: true } }, queryClient: {} },
+  ).select().includeUltraReasoningEffort, true);
+  const { saved, explicit } = await h.exports(host);
+  const manager = { getHostId: () => 'local', getAccount: async () => ({ account: { type: 'apiKey' } }) };
+  const environment = { runtime: { isUsingCopilotInference: async () => false }, settings: { ready: true } };
+  assert.equal(await saved(manager, environment).readServiceTier(), true);
+  assert.equal(await explicit(manager, environment)({
+    submissionOptions: { model: 'gpt-6.2-sol', serviceTier: 'ultrafast' },
+  }), 'ultrafast');
+});
+
+test('previously unseen host and lazy chunks retain the speed selector and model query', async () => {
+  const host = 400000;
+  const menus = [400001, 400002];
+  const h = setup({}, { host, menus, queries: [400002, 400003] });
+  for (const id of [host, ...menus, 400003]) {
+    h.sources.set(id, h.sources.get(id).replaceAll('.tn', '.renamedLookup')
+      .replaceAll('.cc', '.renamedProviderCheck').replaceAll('.JW', '.renamedFlags'));
+  }
+  h.sources.set(400004, 'export const unrelated = { serviceTierAccess: false };');
+  h.root.__cockpitEnhancements.rspackSpeedAssets.menus.push('400004.abcdef1234.js');
+  assert.equal((await h.root.__cockpitServiceRspack.verifyRequestedDocument()).ok, true);
+  h.preload();
+  assert.equal(h.root.__cockpitStartupPreload.speed.ok, true);
+  assert.equal(h.root.__cockpitStartupPreload.ultra.ok, true);
+  assert.ok(!Object.keys(h.root.imports).some(url => url.includes('400004.')));
+  for (const id of menus) {
+    const { menu: show } = await h.exports(id);
+    assert.equal(show({}, 'local', { renamedLookup: () => ({ authMethod: 'apiKey' }) }).serviceTierAccess, true);
   }
 });
+
+test('speed candidates for another installed build do not patch the running document', async () => {
+  const h = setup({ apiService: false });
+  h.root.__cockpitEnhancements.rspackSpeedAssets.entryScripts = ['123.ff00ff00ff.js'];
+  const verified = await h.root.__cockpitServiceRspack.verifyRequestedDocument();
+  assert.equal(verified.reason, 'speed-assets-build-mismatch');
+  h.preload();
+  assert.equal(h.root.__cockpitStartupPreload.speed.ok, false);
+  assert.equal(h.root.imports, undefined);
+});
+
+test('the earlier Rspack build with the same host still enables native speed', async () => {
+  const h = setup({}, {
+    host: 907538,
+    menus: [156209, 184348, 24705, 29761, 356505, 360659, 524154, 884042],
+    queries: [146068, 215569, 24705, 267924, 304386, 424504, 505901, 529959,
+      551475, 613538, 613959, 662473, 860605, 906325, 953083, 961945],
+  });
+  assert.equal((await h.root.__cockpitServiceRspack.verifyRequestedDocument()).ok, true);
+  h.preload();
+  assert.equal(h.root.__cockpitStartupPreload.speed.ok, true);
+  assert.equal(h.root.__cockpitStartupPreload.ultra.ok, true);
+});
+
 
 test('Ultra reasoning respects native eligibility and only adds the verified local custom route', async () => {
   const h = setup();
@@ -326,33 +363,6 @@ test('Ultra reasoning respects native eligibility and only adds the verified loc
   }
 });
 
-test('live quota resolves the Mac and Windows guards in both lazy chunks without changing the document', async () => {
-  const h = setup();
-  const entry = 'app://-/assets/123.abcdef1234.js';
-  h.root.document.scripts = [{src: entry}];
-  h.root.fetch = async url => {
-    const xhr = new h.root.XMLHttpRequest();
-    xhr.open('GET', url);
-    xhr.send();
-    return {ok: true, text: async () => xhr.responseText};
-  };
-  h.root.AbortSignal = AbortSignal;
-  const result = await h.root.__cockpitServiceRspack.prepareLiveQuotaGate();
-  assert.equal(result.ok, true, result.reason);
-  assert.deepEqual(Array.from(result.rspackPlans, plan => plan.hardVariable), ['b','b']);
-  assert.deepEqual(Array.from(result.rspackPlans, plan => plan.guardVariable), ['usage','usage']);
-  assert.deepEqual(Array.from(result.rspackPlans, plan => plan.scope), ['s','s']);
-  assert.equal(h.root.document.documentElement, null);
-});
-
-test('a changed speed contract preserves quota and publishes no partial speed graph', () => {
-  const h = setup();
-  h.sources.delete(menuIds.at(-1));
-  h.preload();
-  assert.equal(h.root.__cockpitStartupPreload.speed.ok, false);
-  assert.equal(h.root.__cockpitStartupPreload.quota.ok, true, h.root.__cockpitStartupPreload.quota.reason);
-  assert.equal(Object.keys(h.root.imports).length, 2);
-});
 
 test('predictions share the Rspack import map in both API Service auth modes', () => {
   for (const apiKeyAuthVerified of [true, false]) {
@@ -372,4 +382,25 @@ test('predictions share the Rspack import map in both API Service auth modes', (
     assert.equal(Object.keys(h.root.imports).length, apiKeyAuthVerified ? 22 : 3);
     assert.ok(Object.hasOwn(h.root.imports, url));
   }
+});
+
+test('bound OAuth predictions pass preflight independently of Fast', async () => {
+  const h = setup({nativePredictions: true, nativeFast: false, apiKeyAuthVerified: false});
+  const rspack = h.root.__cockpitPredictionRspack;
+  const transform = rspack.transform;
+  const checked = [];
+  rspack.selectLayout = () => ({ initial: 42, composer: 43, host: 44, settings: 45 });
+  rspack.transform = (source, kind, id) => {
+    checked.push([kind, id]);
+    return { ok: true, source };
+  };
+  for (const id of [42, 43, 44, 45]) h.sources.set(id, '');
+  const verified = await h.root.__cockpitServiceRspack.verifyRequestedDocument();
+  assert.equal(verified.ok, true, verified.reason);
+  assert.deepEqual(checked, [['initial', 42], ['composer', 43], ['host', 44], ['settings', 45]]);
+
+  rspack.transform = transform;
+  const unsupported = await h.root.__cockpitServiceRspack.verifyRequestedDocument();
+  assert.equal(unsupported.ok, false);
+  assert.equal(unsupported.reason, 'initial-contract');
 });

@@ -327,6 +327,10 @@ const RAW_CLAUDE_DESKTOP_GATEWAY_PROVIDER_PRESETS: readonly ClaudeDesktopGateway
         labelOverride: 'MiniMax-M3',
         supports1m: true,
       }),
+      createRoute('claude-opus-4-7', 'MiniMax-M3.1-Flash', {
+        labelOverride: 'MiniMax-M3.1-Flash',
+        supports1m: true,
+      }),
       createRoute('claude-haiku-4-5', 'MiniMax-M2.7', {
         labelOverride: 'MiniMax-M2.7',
       }),
@@ -343,6 +347,10 @@ const RAW_CLAUDE_DESKTOP_GATEWAY_PROVIDER_PRESETS: readonly ClaudeDesktopGateway
     modelMappings: [
       createRoute('claude-sonnet-4-6', 'MiniMax-M3', {
         labelOverride: 'MiniMax-M3',
+        supports1m: true,
+      }),
+      createRoute('claude-opus-4-7', 'MiniMax-M3.1-Flash', {
+        labelOverride: 'MiniMax-M3.1-Flash',
         supports1m: true,
       }),
       createRoute('claude-haiku-4-5', 'MiniMax-M2.7', {
@@ -705,6 +713,21 @@ const RAW_CLAUDE_DESKTOP_GATEWAY_PROVIDER_PRESETS: readonly ClaudeDesktopGateway
     website: 'https://novita.ai',
     apiKeyUrl: 'https://novita.ai',
     modelMappings: repeatedMappedRoute('zai-org/glm-5.1'),
+  },
+  {
+    id: 'requesty',
+    name: 'Requesty',
+    baseUrls: ['https://router.requesty.ai'],
+    authScheme: 'bearer',
+    connectionMode: 'local_mapping',
+    website: 'https://www.requesty.ai',
+    apiKeyUrl: 'https://app.requesty.ai/api-keys',
+    modelMappings: roleMappedRoutes(
+      'anthropic/claude-sonnet-5-5',
+      'anthropic/claude-opus-5-5',
+      'anthropic/claude-haiku-5-5',
+      { supports1m: true },
+    ),
   },
   {
     id: 'pipellm',

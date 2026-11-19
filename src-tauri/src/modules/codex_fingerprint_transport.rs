@@ -8,6 +8,8 @@ const FINGERPRINT_MODELS: &[&str] = &[
     "gpt-6-sol",
     "gpt-6-luna",
     "gpt-6.1-sol",
+    "gpt-6.2-sol",
+    "gpt-6.2-astra",
 ];
 struct FingerprintRun {
     id: String,
@@ -461,6 +463,10 @@ mod fingerprint_transport_tests {
         assert!(fingerprint_endpoint("file:///tmp/example", "responses").is_err());
         assert!(FINGERPRINT_MODELS.contains(&"gpt-6.1-sol"));
         assert!(!FINGERPRINT_MODELS.contains(&"gpt-5.5"));
+        for model in ["gpt-6.2-sol", "gpt-6.2-astra"] {
+            assert!(FINGERPRINT_MODELS.contains(&model));
+            assert_eq!(fingerprint_response_body(model, "numbers")["model"], model);
+        }
         let body = fingerprint_response_body("gpt-6.1-sol", "numbers");
         assert_eq!(body["model"], "gpt-6.1-sol");
         assert_eq!(body["instructions"], "");

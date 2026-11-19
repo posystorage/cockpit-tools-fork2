@@ -197,43 +197,6 @@ test('OAuth, remote, pending config, direct official and cloud routes restore th
   assert.match(h.renderBanner(), /data-oauth-banner/);
 });
 
-test('API Service instances keep the subscription notice off from first render regardless of project config or thread provider', () => {
-  const h = bannerHarness();
-  h.context.__cockpitEnhancements.apiService = true;
-  for (const state of ['pending', 'preloading', 'active', 'unsupported']) {
-    h.context.__cockpitEnhancements.nativePatchState = state;
-    for (const config of [{ isConfigDataPending: true }, { isConfigDataPending: false, resolvedConfig: { model_provider: 'openai' } }, mixedSettings()]) {
-      for (const provider of [null, 'openai', 'relay', 'unknown']) {
-        h.values.provider = provider;
-        assert.equal(h.renderBanner({ settings: config }), '<main></main>');
-      }
-    }
-  }
-  h.context.__cockpitEnhancements.quotaCompat = false;
-  assert.equal(h.renderBanner(), '<main></main>', 'instance binding does not depend on the mixed-mode setting');
-  assert.equal(h.renderOutside(), '', 'an API Service window does not wait for a composer route scope');
-  h.context.__cockpitEnhancements.apiService = false;
-  assert.match(h.renderBanner(), /data-oauth-banner/, 'returning to an ordinary account restores the notice immediately');
-});
-
-test('API Service visibility never rewrites quota data, removes safety content or suppresses model/image notices', () => {
-  const h = bannerHarness();
-  h.context.__cockpitEnhancements.apiService = true;
-  const snapshot = JSON.stringify(h.usage);
-  assert.equal(h.renderBanner(), '<main></main>');
-  assert.equal(JSON.stringify(h.usage), snapshot);
-  for (const type of ['image_generation_limit_reached', 'selected_model_limit_reached', 'luna_reserve', 'unknown']) {
-    h.usage.rate_limit_upsell.banner_type = type;
-    assert.match(h.renderBanner(), /data-oauth-banner/);
-  }
-  h.usage.rate_limit_upsell.banner_type = 'pro_rate_limit_reached';
-  h.bannerProps.lowerPriorityContent = h.React.createElement('p', null, 'Safety notice');
-  assert.equal(h.renderBanner(), '<main><p>Safety notice</p></main>');
-  h.values.host = 'remote';
-  assert.equal(h.renderBanner(), '<main><p>Safety notice</p></main>', 'the policy belongs to the API Service window, not its current project host');
-  h.context.__cockpitEnhancements.apiService = false;
-  assert.match(h.renderBanner(), /data-oauth-banner/);
-});
 
 test('image limits, model limits, warnings, unknown banners and safety fallback remain visible', () => {
   const h = bannerHarness();
@@ -444,65 +407,10 @@ test('quota activation requires both real modules to evaluate, with one shared i
   first.fast.cancelHandoff('quota-bundle'); next.fast.cancelHandoff('quota-bundle');
 });
 
-test('API Service binding alone prepares and activates both notice modules without mixed-mode compatibility', async () => {
-  const first = bundleBrowser();
-  Object.assign(first.context.__cockpitEnhancements, { quotaCompat: false, apiService: true });
-  const prepared = await first.fast.prepareHandoff('api-service-only');
-  assert.equal(prepared.ok, true);
-  first.listeners.get('beforeunload')();
-  const next = bundleBrowser();
-  Object.assign(next.context.__cockpitEnhancements, { quotaCompat: false, apiService: true });
-  next.context.name = first.context.name;
-  assert.equal(next.fast.consumeHandoff('api-service-only').ok, true);
-  assert.equal(next.blobs.size, 2);
-  next.context.__cockpitNativeFastComplete();
-  next.context.__cockpitNativeFastComplete('quota');
-  assert.equal(next.context.__cockpitEnhancements.nativePatchState, 'active');
-  assert.equal(next.context.__cockpitEnhancements.nativePatchFeatures, '0001');
-  first.fast.cancelHandoff('api-service-only'); next.fast.cancelHandoff('api-service-only');
-});
-
-test('APIService unsupported Fast or quota contracts leave native dictation and all modules intact', async () => {
-  for (const failure of ['fast', 'quota-initial', 'quota-primary']) {
-    const first = bundleBrowser();
-    Object.assign(first.context.__cockpitEnhancements, { apiService: true, nativeFast: failure === 'fast' });
-    if (failure !== 'fast') {
-      const originalFetch = first.context.fetch;
-      first.context.fetch = async url => {
-        const response = await originalFetch(url);
-        const text = await response.text();
-        return { ok: true, text: async () => failure === 'quota-initial' && url === initialUrl
-          ? text.replace('modelProvider||null', 'unsupportedProvider||null')
-          : failure === 'quota-primary' && url === primaryUrl
-            ? text.replace('submitDisabled:disabled', 'otherDisabled:disabled') : text };
-      };
-    }
-    const prepared = await first.fast.prepareHandoff('unsupported-' + failure);
-    assert.equal(prepared.ok, false, JSON.stringify(prepared));
-    assert.equal(prepared.mode, undefined, 'unsupported contracts cannot activate a partial mode');
-    assert.equal(first.listeners.has('beforeunload'), false, 'failed preparation cannot stage a later partial activation');
-    assert.equal(first.context.name, 'existing-name');
-    assert.equal(first.elements.length, 0);
-    assert.equal(first.blobs.size, 0);
-    assert.equal(first.context.__cockpitNativeDictation, undefined);
-    assert.equal(first.context.__cockpitApiDictation, undefined);
-    const hookStart = first.capabilityFixture.indexOf('function l6u(');
-    const hook = first.fast.functionRange(first.capabilityFixture, hookStart);
-    assert.ok(hook);
-    let native = { isLoading: false, isCapable: true };
-    Object.assign(first.context, { u6u: { c: () => [] }, ty: {}, Eu: () => native });
-    vm.runInNewContext(first.capabilityFixture.slice(hook.start, hook.end), first.context);
-    for (const value of [true, false, null]) {
-      native = { isLoading: value === null, isCapable: value === true };
-      assert.equal(first.context.l6u(), value, 'native dictation entry follows its original capability');
-      assert.equal(first.context.l6u(true), value, 'ChatGPT dictation entry follows its original capability');
-    }
-  }
-});
 
 test('quota handoffs reject retired capability mode, partial modules and instance-scope tampering', async () => {
   const first = bundleBrowser();
-  Object.assign(first.context.__cockpitEnhancements, { apiService: true, nativeFast: false });
+  Object.assign(first.context.__cockpitEnhancements, { apiService: false, nativeFast: false });
   const prepared = await first.fast.prepareHandoff('quota-validation');
   assert.equal(prepared.ok, true);
   assert.equal(prepared.mode, 'full');
@@ -523,7 +431,7 @@ test('quota handoffs reject retired capability mode, partial modules and instanc
   ]) {
     const changed = JSON.parse(JSON.stringify(payload)); mutate(changed);
     const next = bundleBrowser();
-    Object.assign(next.context.__cockpitEnhancements, { apiService: true, nativeFast: false });
+    Object.assign(next.context.__cockpitEnhancements, { apiService: false, nativeFast: false });
     next.context.name = prefix + JSON.stringify(changed);
     assert.equal(next.fast.consumeHandoff('quota-validation').ok, false);
     assert.equal(next.context.name, 'existing-name');
@@ -531,7 +439,7 @@ test('quota handoffs reject retired capability mode, partial modules and instanc
     assert.equal(next.elements.length, 0);
     assert.equal(next.context.__cockpitEnhancements.nativePatchState, 'unsupported');
   }
-  const official = bundleBrowser(); official.context.name = first.context.name;
+  const official = bundleBrowser(); official.context.__cockpitEnhancements.apiService = true; official.context.name = first.context.name;
   assert.equal(official.fast.consumeHandoff('quota-validation').ok, false);
   assert.equal(official.blobs.size, 0);
   first.fast.cancelHandoff('quota-validation');

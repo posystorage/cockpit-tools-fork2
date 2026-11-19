@@ -117,9 +117,8 @@ export function createCodexAccountWindowStatsReader(options: {
     running = true;
     lastStartedAt = now();
     try {
-      const nowSeconds = Math.floor(lastStartedAt / 1000);
       const queries = startedScope.accounts.flatMap((account) => buildCodexAccountWindowStatQueries(
-        account.id, account.officialAccountId, account.accountEmail, account.windows, nowSeconds,
+        account.id, account.officialAccountId, account.accountEmail, account.windows, lastStartedAt,
       ));
       const rows = await options.read(queries);
       if (disposed || startedRevision !== revision) return;
