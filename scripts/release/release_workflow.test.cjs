@@ -55,14 +55,18 @@ test("enabled platform uploads use retry helper and the actual fork tag", () => 
   }
 });
 
-test("macOS release builds use the wrapper that cleans temporary DMG mounts", () => {
-  for (const [job, next, target] of [
-    ["build-macos-aarch64", "build-macos-x86_64", "aarch64-apple-darwin"],
-    ["build-macos-x86_64", "build-macos-universal", "x86_64-apple-darwin"],
+test("all macOS builds create one DMG in the same bundle and architecture they stage", () => {
+  for (const [job, next, target, arch, command] of [
+    ["build-macos-aarch64", "build-macos-x86_64", "aarch64-apple-darwin", "aarch64", "build"],
+    ["build-macos-x86_64", "build-macos-universal", "x86_64-apple-darwin", "x64", "build"],
+    ["build-macos-universal", "build-linux", "universal-apple-darwin", "universal", "bundle"],
   ]) {
-    assert.ok(jobBody(job, next).includes(`node scripts/tauri.cjs build --ci --target ${target}`));
+    const body = jobBody(job, next);
+    const bundleDir = `target/${target}/release/bundle`;
+    assert.match(body, new RegExp(`node scripts/tauri\\.cjs ${command} --ci --target ${target} --bundles app(?:\\s+--config |\\s*$)`, "m"));
+    assert.match(body, new RegExp(`inject-dmg-readme\\.cjs \\\\\\s+--bundle-dir "${bundleDir}" --mac-arch ${arch}\\s*$`, "m"));
+    assert.match(body, new RegExp(`stage_release_assets\\.cjs \\\\\\s+--platform macos \\\\\\s+--mac-arch ${arch} \\\\\\s+--assets-dir "${bundleDir}"`, "m"));
   }
-  assert.match(jobBody("build-macos-universal", "build-linux"), /node scripts\/tauri.cjs bundle --ci --target universal-apple-darwin/);
 });
 
 test("macOS signing requires an explicit fork opt-in and complete credentials", () => {

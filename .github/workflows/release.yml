@@ -559,7 +559,7 @@ jobs:
             export APPLE_SIGNING_IDENTITY=-
             unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
           fi
-          node scripts/tauri.cjs build --ci --target aarch64-apple-darwin --config src-tauri/tauri.prebuilt-frontend.conf.json
+          node scripts/tauri.cjs build --ci --target aarch64-apple-darwin --bundles app --config src-tauri/tauri.prebuilt-frontend.conf.json
 
       - name: 📦 Prepare Universal binary inputs
         shell: bash
@@ -579,12 +579,12 @@ jobs:
           compression-level: 1
           if-no-files-found: error
 
-      - name: 📝 Rebuild DMG with installation instructions
+      - name: 📝 Build final DMG with installation instructions
         shell: bash
         run: |
           set -euo pipefail
           node scripts/release/inject-dmg-readme.cjs \
-            --bundle-dir "target/aarch64-apple-darwin/release/bundle"
+            --bundle-dir "target/aarch64-apple-darwin/release/bundle" --mac-arch aarch64
 
       - name: ✅ Notarize final DMG and verify macOS assets
         if: env.APPLE_SIGNING_ENABLED == 'true'
@@ -753,7 +753,7 @@ jobs:
             export APPLE_SIGNING_IDENTITY=-
             unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
           fi
-          node scripts/tauri.cjs build --ci --target x86_64-apple-darwin --config src-tauri/tauri.prebuilt-frontend.conf.json
+          node scripts/tauri.cjs build --ci --target x86_64-apple-darwin --bundles app --config src-tauri/tauri.prebuilt-frontend.conf.json
 
       - name: 📦 Prepare Universal binary inputs
         shell: bash
@@ -773,12 +773,12 @@ jobs:
           compression-level: 1
           if-no-files-found: error
 
-      - name: 📝 Rebuild DMG with installation instructions
+      - name: 📝 Build final DMG with installation instructions
         shell: bash
         run: |
           set -euo pipefail
           node scripts/release/inject-dmg-readme.cjs \
-            --bundle-dir "target/x86_64-apple-darwin/release/bundle"
+            --bundle-dir "target/x86_64-apple-darwin/release/bundle" --mac-arch x64
 
       - name: ✅ Notarize final DMG and verify macOS assets
         if: env.APPLE_SIGNING_ENABLED == 'true'
@@ -961,14 +961,14 @@ jobs:
             export APPLE_SIGNING_IDENTITY=-
             unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
           fi
-          node scripts/tauri.cjs bundle --ci --target universal-apple-darwin
+          node scripts/tauri.cjs bundle --ci --target universal-apple-darwin --bundles app
 
-      - name: 📝 Rebuild DMG with installation instructions
+      - name: 📝 Build final DMG with installation instructions
         shell: bash
         run: |
           set -euo pipefail
           node scripts/release/inject-dmg-readme.cjs \
-            --bundle-dir "target/universal-apple-darwin/release/bundle"
+            --bundle-dir "target/universal-apple-darwin/release/bundle" --mac-arch universal
 
       - name: ✅ Notarize final DMG and verify macOS assets
         if: env.APPLE_SIGNING_ENABLED == 'true'

@@ -1,0 +1,94 @@
+name: macOS package preflight for 1.4.2b3
+
+on:
+  push:
+    branches:
+      - codex/preflight-1.4.2b3
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  package:
+    name: Package ${{ matrix.arch }}
+    runs-on: macos-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: aarch64, target: aarch64-apple-darwin, updater: darwin-aarch64-app }
+          - { arch: x64, target: x86_64-apple-darwin, updater: darwin-x86_64-app }
+          - { arch: universal, target: universal-apple-darwin }
+    env:
+      SOURCE_RUN: '44702871593'
+      SOURCE_SHA: 25fbe32bb8abba4f54be1be1f40f0cf1e402d32c
+      VERSION: '1.4.2'
+      TARGET: ${{ matrix.target }}
+      MAC_ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install
+      - uses: actions/download-artifact@v4
+        with:
+          name: universal-inputs-aarch64
+          path: universal-inputs/aarch64-apple-darwin
+          run-id: ${{ env.SOURCE_RUN }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: universal-inputs-x86_64
+          path: universal-inputs/x86_64-apple-darwin
+          run-id: ${{ env.SOURCE_RUN }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-metadata
+          path: release-metadata
+          run-id: ${{ env.SOURCE_RUN }}
+          github-token: ${{ github.token }}
+      - name: Verify original inputs and stage target binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          GITHUB_SHA="$SOURCE_SHA" GITHUB_RUN_ID="$SOURCE_RUN" \
+            node scripts/release/macos-universal.cjs --mode merge --inputs universal-inputs --version "$VERSION"
+          if [[ "$MAC_ARCH" != universal ]]; then
+            mkdir -p "target/$TARGET/release"
+            install -m 755 "universal-inputs/$TARGET/cockpit-tools" "target/$TARGET/release/cockpit-tools"
+          fi
+      - name: Bundle app, updater archive and final DMG
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: '-'
+        run: |
+          set -euo pipefail
+          node scripts/tauri.cjs bundle --ci --target "$TARGET" --bundles app
+          node scripts/release/inject-dmg-readme.cjs --bundle-dir "target/$TARGET/release/bundle" --mac-arch "$MAC_ARCH"
+          codesign --verify --deep --strict "target/$TARGET/release/bundle/macos/Cockpit Tools.app"
+          hdiutil verify "target/$TARGET/release/bundle/dmg/Cockpit Tools_${VERSION}_${MAC_ARCH}.dmg"
+          node scripts/release/stage_release_assets.cjs \
+            --platform macos --mac-arch "$MAC_ARCH" --assets-dir "target/$TARGET/release/bundle" --output-dir release-assets
+      - name: Build and inspect the draft updater manifest
+        if: matrix.updater != ''
+        shell: bash
+        env:
+          UPDATER_TARGET: ${{ matrix.updater }}
+        run: |
+          set -euo pipefail
+          node scripts/release/build_target_latest_json.cjs \
+            --version "$VERSION" --release-tag 1.4.2b3 --repo "$GITHUB_REPOSITORY" \
+            --assets-dir release-assets --notes-file release-metadata/release-notes.md \
+            --published-at "$(cat release-metadata/published-at.txt)" --targets "$UPDATER_TARGET" --output-dir target-manifests
+          jq -e --arg url "https://github.com/${GITHUB_REPOSITORY}/releases/download/1.4.2b3/Cockpit.Tools_${MAC_ARCH}.app.tar.gz" \
+            '.url == $url and (.signature | length > 0)' "target-manifests/latest-${UPDATER_TARGET}.json"

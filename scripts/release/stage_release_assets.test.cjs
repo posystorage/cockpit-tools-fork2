@@ -77,3 +77,19 @@ test('whitelist accepts release packages and rejects bundle helpers', () => {
   assert.equal(isAllowedReleaseAsset('macos', 'Cockpit Tools.app.tar.gz.sig'), true);
   assert.equal(isAllowedReleaseAsset('macos', 'template.applescript'), false);
 });
+
+test('rejects incomplete macOS release assets before upload', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cockpit-stage-incomplete-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const options = { platform: 'macos', assetsDir: root, outputDir: path.join(root, 'staged'), macArch: 'universal' };
+  writeFile(path.join(root, 'Cockpit Tools.app.tar.gz'));
+  writeFile(path.join(root, 'Cockpit Tools.app.tar.gz.sig'), 'signature');
+  assert.throws(() => stageReleaseAssets(options), /Incomplete macOS universal bundle/);
+  assert.equal(fs.existsSync(options.outputDir), false);
+  const wrongDmg = path.join(root, 'Cockpit Tools_1.4.2_x64.dmg');
+  writeFile(wrongDmg);
+  assert.throws(() => stageReleaseAssets(options), /Incomplete macOS universal bundle/);
+  fs.renameSync(wrongDmg, path.join(root, 'Cockpit Tools_1.4.2_universal.dmg'));
+  writeFile(path.join(root, 'Cockpit Tools.app.tar.gz.sig'), '');
+  assert.throws(() => stageReleaseAssets(options), /Incomplete macOS universal bundle/);
+});
