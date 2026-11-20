@@ -555,6 +555,10 @@ jobs:
           APPLE_TEAM_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_TEAM_ID || '' }}
         run: |
           set -euo pipefail
+          if [[ "${APPLE_SIGNING_ENABLED}" != "true" ]]; then
+            export APPLE_SIGNING_IDENTITY=-
+            unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          fi
           node scripts/tauri.cjs build --ci --target aarch64-apple-darwin --config src-tauri/tauri.prebuilt-frontend.conf.json
 
       - name: 📦 Prepare Universal binary inputs
@@ -745,6 +749,10 @@ jobs:
           APPLE_TEAM_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_TEAM_ID || '' }}
         run: |
           set -euo pipefail
+          if [[ "${APPLE_SIGNING_ENABLED}" != "true" ]]; then
+            export APPLE_SIGNING_IDENTITY=-
+            unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          fi
           node scripts/tauri.cjs build --ci --target x86_64-apple-darwin --config src-tauri/tauri.prebuilt-frontend.conf.json
 
       - name: 📦 Prepare Universal binary inputs
@@ -949,6 +957,10 @@ jobs:
           APPLE_TEAM_ID: ${{ env.APPLE_SIGNING_ENABLED == 'true' && secrets.APPLE_TEAM_ID || '' }}
         run: |
           set -euo pipefail
+          if [[ "${APPLE_SIGNING_ENABLED}" != "true" ]]; then
+            export APPLE_SIGNING_IDENTITY=-
+            unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          fi
           node scripts/tauri.cjs bundle --ci --target universal-apple-darwin
 
       - name: 📝 Rebuild DMG with installation instructions
