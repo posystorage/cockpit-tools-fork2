@@ -126,6 +126,17 @@ function stageReleaseAssets(options) {
     throw new Error(`No whitelisted ${platform} release assets found in ${assetsDir}`);
   }
 
+  if (platform === 'macos') {
+    const names = [...stagedByName.keys()];
+    const dmgs = names.filter((name) => name.endsWith('.dmg'));
+    const archives = names.filter((name) => name.endsWith('.app.tar.gz'));
+    if (dmgs.length !== 1 || !dmgs[0].endsWith(`_${macArch}.dmg`) ||
+        archives.length !== 1 || !stagedByName.has(`${archives[0]}.sig`) || names.length !== 3 ||
+        [...stagedByName.values()].some((file) => fs.statSync(file).size === 0)) {
+      throw new Error(`Incomplete macOS ${macArch} bundle: expected one matching DMG, updater archive and signature; found ${names.join(', ')}`);
+    }
+  }
+
   fs.rmSync(outputDir, { recursive: true, force: true });
   fs.mkdirSync(outputDir, { recursive: true });
 

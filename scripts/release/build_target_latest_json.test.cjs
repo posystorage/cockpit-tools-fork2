@@ -57,6 +57,7 @@ test('builds a macOS target manifest from the raw Tauri updater archive', () => 
   const outputDir = path.join(root, 'output');
 
   fs.mkdirSync(path.join(rawAssetsDir, 'macos'), { recursive: true });
+  fs.writeFileSync(path.join(rawAssetsDir, 'Cockpit Tools_1.2.3_aarch64.dmg'), 'dmg');
   fs.writeFileSync(path.join(rawAssetsDir, 'macos', 'Cockpit Tools.app.tar.gz'), 'archive');
   fs.writeFileSync(
     path.join(rawAssetsDir, 'macos', 'Cockpit Tools.app.tar.gz.sig'),
